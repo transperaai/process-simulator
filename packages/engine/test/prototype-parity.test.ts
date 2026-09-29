@@ -63,11 +63,13 @@ describe("port parity with the prototype engine", () => {
 
   // The port draws random numbers from separate streams per purpose, so single
   // runs differ from the prototype; across many replications the results must
-  // agree. Fixed seeds keep this deterministic (no flakiness).
+  // agree. Fixed seeds keep this deterministic (no flakiness). The prototype
+  // starts from an empty business, so the warm-up (a deliberate fix, PRD §6.8
+  // item 6) is switched off to compare like with like.
   const REPS = 300;
   for (const [label, leads] of [["baseline", 12], ["double leads", 24]] as const) {
     it(`agrees statistically with the prototype (${label})`, () => {
-      const model = { ...northbeamModel(), leadsPerWeek: leads };
+      const model: EngineModel = { ...northbeamModel(), leadsPerWeek: leads, warmupWeeks: 0 };
       const ours = simulate(model, REPS, 1);
       const theirs = proto.simulate(model, REPS, 1);
       const rel = (a: number, b: number) => Math.abs(a - b) / b;

@@ -10,12 +10,18 @@ describe("random streams", () => {
       ...base,
       steps: base.steps.map((s) => (s.id === "audit" ? { ...s, work: 2, rework: 0.05 } : s)),
     };
-    const arrivals = (m: EngineModel) => runOnce(m, 7, true).entities!.map((e) => e.t0);
+    // The automatic warm-up differs between the two (it depends on cycle
+    // time), but the measured window's arrivals come from their own stream.
+    const arrivals = (m: EngineModel) =>
+      runOnce(m, 7, true)
+        .entities!.map((e) => e.t0)
+        .filter((t) => t >= 0);
     expect(arrivals(faster)).toEqual(arrivals(base));
   });
 
   it("keeps other steps' service draws when one step changes", () => {
-    const base = northbeamModel();
+    // A fixed warm-up, so both runs draw the same number of warm-up samples.
+    const base: EngineModel = { ...northbeamModel(), warmupWeeks: 4 };
     const changed: EngineModel = {
       ...base,
       steps: base.steps.map((s) => (s.id === "seo" ? { ...s, work: 20 } : s)),
@@ -24,7 +30,7 @@ describe("random streams", () => {
     // service durations must match exactly.
     const qualifyDurations = (m: EngineModel) =>
       runOnce(m, 3, true)
-        .entities!.flatMap((e) => e.trace.filter((s) => s.step === "qualify" && s.tE !== null))
+        .entities!.flatMap((e) => e.trace.filter((s) => s.step === "qualify" && s.tE !== null && s.tS! >= 0))
         .sort((a, b) => a.tS! - b.tS!)
         .slice(0, 20)
         .map((s) => s.tE! - s.tS!);

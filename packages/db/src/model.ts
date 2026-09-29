@@ -70,6 +70,8 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
         work: Number(step.work_hours),
         wait: Number(step.wait_hours),
         rework: Number(step.rework_rate),
+        // Entered WIP (0 included) makes the run start from it instead of a warm-up.
+        ...(step.current_wip != null ? { currentWip: Number(step.current_wip) } : {}),
         next,
       };
     });

@@ -97,6 +97,7 @@ const step = (
   wait_dist: "lognormal",
   rework_rate: rework,
   tool,
+  current_wip: null,
   x,
   y,
 });

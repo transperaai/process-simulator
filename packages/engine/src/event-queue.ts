@@ -1,9 +1,15 @@
+interface Node<T> {
+  t: number;
+  seq: number;
+  ev: T;
+}
+
 /**
  * Binary min-heap of timed events. Ties on time are broken by insertion
  * order, so the simulation is deterministic regardless of heap layout.
  */
 export class EventQueue<T extends { t: number }> {
-  private heap: { ev: T; seq: number }[] = [];
+  private heap: Node<T>[] = [];
   private seq = 0;
 
   get size(): number {
@@ -12,14 +18,18 @@ export class EventQueue<T extends { t: number }> {
 
   push(ev: T): void {
     const heap = this.heap;
-    heap.push({ ev, seq: this.seq++ });
-    let i = heap.length - 1;
+    const node: Node<T> = { t: ev.t, seq: this.seq++, ev };
+    let i = heap.length;
+    heap.push(node);
+    // Sift up: move parents down into the hole until the node fits.
     while (i > 0) {
       const parent = (i - 1) >> 1;
-      if (!this.less(i, parent)) break;
-      [heap[i], heap[parent]] = [heap[parent]!, heap[i]!];
+      const p = heap[parent]!;
+      if (!before(node, p)) break;
+      heap[i] = p;
       i = parent;
     }
+    heap[i] = node;
   }
 
   pop(): T | undefined {
@@ -27,26 +37,29 @@ export class EventQueue<T extends { t: number }> {
     if (!heap.length) return undefined;
     const top = heap[0]!.ev;
     const last = heap.pop()!;
-    if (heap.length) {
-      heap[0] = last;
+    const n = heap.length;
+    if (n) {
+      // Sift down: move the smaller child up into the hole until `last` fits.
       let i = 0;
       for (;;) {
         const l = 2 * i + 1;
-        const r = l + 1;
-        let m = i;
-        if (l < heap.length && this.less(l, m)) m = l;
-        if (r < heap.length && this.less(r, m)) m = r;
-        if (m === i) break;
-        [heap[i], heap[m]] = [heap[m]!, heap[i]!];
-        i = m;
+        if (l >= n) break;
+        let c = l;
+        let child = heap[l]!;
+        if (l + 1 < n && before(heap[l + 1]!, child)) {
+          c = l + 1;
+          child = heap[c]!;
+        }
+        if (!before(child, last)) break;
+        heap[i] = child;
+        i = c;
       }
+      heap[i] = last;
     }
     return top;
   }
+}
 
-  private less(a: number, b: number): boolean {
-    const x = this.heap[a]!;
-    const y = this.heap[b]!;
-    return x.ev.t < y.ev.t || (x.ev.t === y.ev.t && x.seq < y.seq);
-  }
+function before<T>(x: Node<T>, y: Node<T>): boolean {
+  return x.t < y.t || (x.t === y.t && x.seq < y.seq);
 }

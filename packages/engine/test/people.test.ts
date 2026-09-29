@@ -14,8 +14,11 @@ function withPeople(extra: Partial<Record<string, Partial<EnginePerson>>> = {}):
   return { ...base, people };
 }
 
+/** Who started serving `step` in the measured window (the warm-up before t = 0 is history). */
 const servedBy = (model: EngineModel, step: string, seed = 1) =>
-  runOnce(model, seed, true).entities!.flatMap((e) => e.trace.filter((s) => s.step === step && s.person).map((s) => s.person!));
+  runOnce(model, seed, true).entities!.flatMap((e) =>
+    e.trace.filter((s) => s.step === step && s.person && s.tS! >= 0).map((s) => s.person!),
+  );
 
 describe("named people", () => {
   it("synthesises one person per head-count when a model has no people", () => {

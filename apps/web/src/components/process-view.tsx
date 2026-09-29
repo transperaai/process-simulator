@@ -1,35 +1,34 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ModelError, toEngineModel, type ProcessBundle } from "@transpera-flow/db";
 import type { EngineModel } from "@transpera-flow/engine";
+import { discardChange, revertField } from "@/lib/drafts/discard";
+import { EMPTY_DIFF, diffBundles, unresolvedSteps } from "@/lib/drafts/diff";
+import { serverDraftBackend } from "@/lib/drafts/server-backend";
+import { MemoryDraftBackend } from "@/lib/drafts/session";
+import { useDraftSession } from "@/lib/drafts/use-draft-session";
 import { PASTE_OFFSET, copySteps, deleteSelection, duplicateSteps, pasteSteps, type StepClipboard } from "@/lib/editor/commands";
+import { describeValue, fieldLabel, namesOf } from "@/lib/editor/describe";
 import type { Conflict, ProcessEditor } from "@/lib/editor/editor";
-import { liveStore } from "@/lib/editor/live-store";
-import type { Scalar } from "@/lib/editor/ops";
-import { MemoryStore } from "@/lib/editor/store";
-import { useProcessEditor } from "@/lib/editor/use-editor";
+import type { Scalar, Table } from "@/lib/editor/ops";
 import { useSimulation } from "@/lib/sim/use-simulation";
+import { ChangesPanel, DraftBar, DraftCompare, type DraftView } from "./draft-panels";
 import { ConflictPrompt } from "./fields";
 import { KpiStrip } from "./kpi-strip";
 import { NO_SELECTION, ProcessCanvas, type CanvasCommands, type Selection } from "./process-canvas";
-import { FIELD_LABELS, StepInspector } from "./step-inspector";
+import { StepInspector } from "./step-inspector";
 import { UtilisationBars } from "./utilisation-bars";
 
 /**
  * How edits are saved: `live` to the database as the signed-in user, `demo`
- * in memory (lost on reload), `readonly` not at all (viewers).
+ * in memory (lost on reload), `readonly` not at all (viewers). Either way
+ * edits go into the process's draft, never the live revision (issue #9).
  */
 export type EditMode = "live" | "demo" | "readonly";
 
-export function ProcessView({ bundle: initial, mode }: { bundle: ProcessBundle; mode: EditMode }) {
-  const [state, editor] = useProcessEditor(initial, () =>
-    mode === "live" ? liveStore(initial.revision.id) : new MemoryStore(initial),
-  );
-  const bundle = state.bundle;
-  const editable = mode !== "readonly";
-  const [selection, setSelection] = useState<Selection>(NO_SELECTION);
-
+/** A bundle's engine model, the same object while the model is unchanged (moving a step doesn't change it). */
+function useEngineModel(bundle: ProcessBundle): { model: EngineModel | null; error: string | null } {
   const resolved = useMemo(() => {
     try {
       return { model: toEngineModel(bundle), error: null };
@@ -38,14 +37,50 @@ export function ProcessView({ bundle: initial, mode }: { bundle: ProcessBundle; 
       throw err;
     }
   }, [bundle]);
-  // Only a change to the model itself re-runs the simulation (moving a step doesn't).
   const modelKey = resolved.model ? JSON.stringify(resolved.model) : null;
   const model = useMemo(() => (modelKey ? (JSON.parse(modelKey) as EngineModel) : null), [modelKey]);
+  return { model, error: resolved.error };
+}
+
+export function ProcessView({ live: initialLive, draft: initialDraft, mode }: { live: ProcessBundle; draft: ProcessBundle | null; mode: EditMode }) {
+  const [session, drafts, state] = useDraftSession(initialLive, initialDraft, () =>
+    mode === "live" ? serverDraftBackend(initialLive.process.id) : new MemoryDraftBackend(initialLive),
+  );
+  const editor = session.editor;
+  const canEdit = mode !== "readonly";
+  const hasDraft = drafts.draft !== null || drafts.opening;
+  // Editors see the draft by default; everyone else the live model.
+  const [view, setView] = useState<DraftView>(canEdit ? "draft" : "live");
+  const showingLive = hasDraft && view === "live";
+  const working = state.bundle;
+  const live = drafts.live;
+  const bundle = showingLive ? live : working;
+  const editable = canEdit && !showingLive;
+  const [selection, setSelection] = useState<Selection>(NO_SELECTION);
+  const [compare, setCompare] = useState(false);
+
+  const diff = useMemo(() => (hasDraft ? diffBundles(live, working) : EMPTY_DIFF), [hasDraft, live, working]);
+  const names = useMemo(() => namesOf(working, live), [working, live]);
+
+  const workingModel = useEngineModel(working);
+  const liveModel = useEngineModel(live);
+  const resolved = showingLive ? liveModel : workingModel;
+  const model = resolved.model;
   // While an edit leaves the process unsimulatable, keep showing the last results.
-  const [lastModel, setLastModel] = useState(model);
-  if (model && model !== lastModel) setLastModel(model);
-  const sim = useSimulation(model);
+  const [lastModel, setLastModel] = useState(workingModel.model);
+  if (workingModel.model && workingModel.model !== lastModel) setLastModel(workingModel.model);
+  // The draft (or, with no draft, live as the editor holds it) runs always; live runs too when shown or compared.
+  const draftSim = useSimulation(workingModel.model);
+  const liveSim = useSimulation(hasDraft && (showingLive || compare) ? liveModel.model : null);
+  const sim = showingLive ? liveSim : draftSim;
   const result = sim.run?.result ?? null;
+
+  const restore = useCallback(
+    (table: Table, id: string) => {
+      editor.run((b) => discardChange(session.getState().live, b, table, id));
+    },
+    [editor, session],
+  );
 
   // Selection can outlive what it points at (after a delete or an undo).
   const selected = useMemo(() => {
@@ -156,10 +191,48 @@ export function ProcessView({ bundle: initial, mode }: { bundle: ProcessBundle; 
     return () => window.removeEventListener("keydown", onKey);
   }, [editable, editor, selected, commands, bundle.steps]);
 
-  const shownModel = model ?? lastModel;
+  const shownModel = showingLive ? model : (model ?? lastModel);
+  const unresolved = useMemo(() => unresolvedSteps(working), [working]);
+  const blocked = state.saving
+    ? "Wait for your edits to save."
+    : state.conflicts.length
+      ? "Settle the conflicting edits first (keep mine / keep theirs)."
+      : workingModel.error
+        ? `The draft can't be simulated: ${workingModel.error}.`
+        : null;
+
+  const select = (table: Table, id: string) => {
+    setView("draft");
+    setSelection(table === "steps" ? { steps: [id], edges: [] } : { steps: [], edges: [id] });
+  };
 
   return (
     <div className="flex flex-col gap-3">
+      <DraftBar
+        session={session}
+        drafts={drafts}
+        canEdit={canEdit}
+        view={showingLive ? "live" : "draft"}
+        onView={(v) => {
+          setView(v);
+          setSelection(NO_SELECTION);
+        }}
+        changes={diff.list.length}
+        blocked={blocked}
+        unresolved={unresolved}
+        compare={compare}
+        onCompare={setCompare}
+        onReview={(id) => select("steps", id)}
+      />
+      {compare && hasDraft && (
+        <DraftCompare
+          live={liveModel.model ? { model: liveModel.model, result: liveSim.run?.result ?? null } : null}
+          draft={workingModel.model ? { model: workingModel.model, result: draftSim.run?.result ?? null } : null}
+          currency={working.workspace.settings.currency}
+          liveNumber={live.revision.number}
+          draftNumber={drafts.draft?.number ?? live.revision.number + 1}
+        />
+      )}
       {shownModel ? (
         <KpiStrip
           model={shownModel}
@@ -185,6 +258,9 @@ export function ProcessView({ bundle: initial, mode }: { bundle: ProcessBundle; 
           selection={selected}
           onSelectionChange={setSelection}
           commands={editable ? commands : null}
+          diff={showingLive || !hasDraft ? null : diff}
+          onRestore={editable ? restore : null}
+          savedLabel={hasDraft ? "Saved to draft" : "Saved"}
         />
         {inspected && editable ? (
           <StepInspector
@@ -199,10 +275,25 @@ export function ProcessView({ bundle: initial, mode }: { bundle: ProcessBundle; 
               editor.run((b) => deleteSelection(b, [inspected.id], []));
               setSelection(NO_SELECTION);
             }}
+            draft={
+              hasDraft
+                ? {
+                    change: diff.steps.get(inspected.id),
+                    names,
+                    onRevert: (field) => editor.run((b) => revertField(session.getState().live, b, "steps", inspected.id, field)),
+                    onDiscard: () => editor.run((b) => discardChange(session.getState().live, b, "steps", inspected.id)),
+                  }
+                : null
+            }
           />
-        ) : shownModel ? (
-          <UtilisationBars model={shownModel} result={result} />
-        ) : null}
+        ) : (
+          <div className="flex flex-col gap-3">
+            {!showingLive && (
+              <ChangesPanel diff={diff} live={live} bundle={working} editor={editable ? editor : null} names={names} onSelect={select} />
+            )}
+            {shownModel && <UtilisationBars model={shownModel} result={result} />}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -221,19 +312,10 @@ function SaveProblems({
   error: string | null;
 }) {
   if (!conflicts.length && !error) return null;
-  const names = new Map<string, string>([
-    ...bundle.steps.map((s) => [s.id, s.name] as const),
-    ...bundle.roles.map((r) => [r.id, r.name] as const),
-    ...bundle.people.map((p) => [p.id, p.name] as const),
-  ]);
-  const show = (field: string, v: Scalar): string => {
-    if (v === null || v === "") return "blank";
-    if (field === "probability" || field === "rework_rate") return `${Math.round(Number(v) * 1000) / 10}%`;
-    if (field.endsWith("_id")) return names.get(String(v)) ?? "a removed item";
-    return String(v);
-  };
+  const names = namesOf(bundle);
+  const show = (field: string, v: Scalar): string => describeValue(field, v, names);
   const subject = (c: Conflict) => {
-    const label = FIELD_LABELS[c.field] ?? c.field;
+    const label = fieldLabel(c.field);
     if (c.table === "steps") return `${names.get(c.id) ?? "a step"}'s ${label}`;
     const edge = bundle.edges.find((e) => e.id === c.id);
     return edge ? `the ${label} of ${names.get(edge.from_step_id)} → ${names.get(edge.to_step_id)}` : `a connection's ${label}`;

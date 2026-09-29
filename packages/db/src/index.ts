@@ -21,4 +21,4 @@ export {
   northbeamRoleIds,
   northbeamStepIds,
 } from "./fixtures/northbeam";
-export { listProcesses, loadLiveProcessBySlug, loadProcessBundle, type Db } from "./queries";
+export { listProcesses, loadLiveProcessBySlug, loadProcessBundle, loadProcessBySlug, type Db } from "./queries";

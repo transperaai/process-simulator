@@ -70,6 +70,7 @@ function newStepRow(bundle: ProcessBundle, kind: NewStepKind, outcome: StepOutco
     current_wip: null,
     x: Math.round(x),
     y: Math.round(y),
+    assumption: false,
   };
 }
 

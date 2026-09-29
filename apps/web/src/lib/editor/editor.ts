@@ -1,6 +1,6 @@
 // The process editor's state (issue #8): the process as the editor shows it,
 // undo and redo, saving, and same-field conflicts. Framework-free so it can be
-// unit tested; `useProcessEditor` wraps it for React.
+// unit tested; `useDraftSession` (lib/drafts) wraps it for React.
 //
 // Edits apply to the local copy at once (optimistic) and are saved in order,
 // one at a time, so each save's `base` is what the previous one stored. Undo
@@ -124,6 +124,16 @@ export class ProcessEditor {
     this.set({ error: null });
   }
 
+  /**
+   * Start over from `bundle`, with no history, conflicts or error: after a
+   * draft is published or discarded, its edits can't be undone one by one.
+   * Call once saves have settled.
+   */
+  reset(bundle: ProcessBundle): void {
+    this.undoStack = [];
+    this.redoStack = [];
+    this.set({ bundle, undoLabel: null, redoLabel: null, conflicts: [], error: null });
+  }
   /** Resolves once every save queued so far has finished. */
   settled(): Promise<void> {
     return this.queue;

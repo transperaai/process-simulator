@@ -1,6 +1,7 @@
 import "server-only";
 import {
   loadLiveProcessBySlug,
+  loadProcessBySlug,
   type PersonLeaveRow,
   type PersonRoleRow,
   type PersonRow,
@@ -24,6 +25,11 @@ export async function listWorkspaces(): Promise<Pick<WorkspaceRow, "id" | "name"
 /** The workspace's first process at its live revision, or null if not visible. */
 export async function loadLiveProcess(slug: string): Promise<ProcessBundle | null> {
   return loadLiveProcessBySlug(await createClient(), slug);
+}
+
+/** The workspace's first process: its live revision and its open draft, if any (issue #9). */
+export async function loadProcessForEditing(slug: string): Promise<{ live: ProcessBundle; draft: ProcessBundle | null } | null> {
+  return loadProcessBySlug(await createClient(), slug);
 }
 
 export interface PersonDetail extends PersonRow {

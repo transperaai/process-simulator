@@ -9,6 +9,9 @@
 // place; right-click it (or Shift+F10) for its menu. Shift-click and
 // Shift-drag select several steps. The swimlane view groups steps by role.
 // Every change goes through the editor, so it is undoable and saved.
+// In a draft (issue #9) the map shows the diff against live: new steps and
+// connections dashed, removed ones as struck-through ghosts (with Restore),
+// changed values old → new, and unconfirmed estimates badged.
 
 import {
   Background,
@@ -42,6 +45,7 @@ import {
   type Dispatch,
   type KeyboardEvent,
   type MouseEvent,
+  type ReactNode,
   type SetStateAction,
 } from "react";
 import type { SimulationResult } from "@transpera-flow/engine";
@@ -61,8 +65,11 @@ import {
   updateEdge,
   type NewStepKind,
 } from "@/lib/editor/commands";
+import { discardProblem } from "@/lib/drafts/discard";
+import type { ChangeKind, DraftDiff, StepChange } from "@/lib/drafts/diff";
 import type { EditorState, ProcessEditor } from "@/lib/editor/editor";
 import type { InlineField } from "@/lib/editor/inline-edit";
+import type { Table } from "@/lib/editor/ops";
 import { laneLayout, type Lane } from "@/lib/editor/lanes";
 import { formatHours, formatNumber } from "@/lib/format";
 import { usePlayback } from "@/lib/playback/use-playback";
@@ -95,7 +102,23 @@ type StepNodeData = {
   editing: InlineField | null;
   /** The bottleneck, while playback plays. */
   pulse: boolean;
+  /** How the draft changed this step against live; null outside a draft or when unchanged. */
+  change: ChangeKind | null;
+  /** A step the draft removed, drawn where it is live. */
+  ghost: boolean;
+  /** A removed step that can be put back from its card. */
+  restorable: boolean;
+  /** The step's values are unconfirmed estimates. */
+  estimate: boolean;
+  /** Live values the draft changed, as shown on the card. */
+  wasName: string | null;
+  wasWho: string | null;
+  wasWork: string | null;
+  wasWait: string | null;
 };
+
+/** Removed steps and connections are drawn under ids of their own, next to the draft's rows. */
+const ghostId = (id: string) => `ghost:${id}`;
 
 type StepFlowNode = Node<StepNodeData, "step">;
 type TerminalFlowNode = Node<StepNodeData, "terminal">;
@@ -109,12 +132,85 @@ function sameNode(a: FlowNode, b: FlowNode): boolean {
   return (Object.keys(a.data) as (keyof StepNodeData)[]).every((k) => a.data[k] === b.data[k]);
 }
 
-/** `alone`: it is the only thing selected, so its inline editor shows. */
-type BranchData = { probability: number; tag: string | null; alone: boolean };
+/**
+ * `alone`: it is the only thing selected, so its inline editor shows.
+ * `was`: its live label, when the draft changed its share or tag.
+ */
+type BranchData = {
+  probability: number;
+  tag: string | null;
+  alone: boolean;
+  change: ChangeKind | null;
+  was: string | null;
+  ghost: boolean;
+  restorable: boolean;
+};
 type BranchFlowEdge = Edge<BranchData, "branch">;
 
-/** Lets the custom edge reach the editor without threading it through React Flow's data. */
-const CanvasContext = createContext<{ editor: ProcessEditor | null }>({ editor: null });
+/** Lets custom nodes and edges reach the editor without threading it through React Flow's data. */
+const CanvasContext = createContext<{ editor: ProcessEditor | null; restore: ((table: Table, id: string) => void) | null }>({
+  editor: null,
+  restore: null,
+});
+
+const badgeClass = "pointer-events-none absolute -top-2 left-2 rounded-full border px-1.5 text-[10px] leading-4 font-semibold";
+
+/** "New", "Changed" or "Removed" on a card in a draft, and "Estimate" on unconfirmed values. */
+function Badges({ change, estimate }: { change: ChangeKind | null; estimate: boolean }) {
+  const label = change === "added" ? "New" : change === "changed" ? "Changed" : change === "removed" ? "Removed" : null;
+  return (
+    <>
+      {label && (
+        <span
+          aria-hidden
+          className={`${badgeClass} ${change === "removed" ? "border-crit bg-crit-soft text-crit" : "border-accent bg-accent-soft text-fg"}`}
+        >
+          {label}
+        </span>
+      )}
+      {estimate && (
+        <span
+          aria-hidden
+          title="Unconfirmed estimate"
+          className={`${badgeClass} border-warn bg-warn-soft text-fg ${label ? "left-auto right-6" : ""}`}
+        >
+          Estimate
+        </span>
+      )}
+    </>
+  );
+}
+
+/** A live value the draft changed, struck through, then the draft's. */
+function Was({ was, children }: { was: string | null; children: ReactNode }) {
+  if (was === null) return <>{children}</>;
+  return (
+    <>
+      <s className="text-fg-3">{was}</s>
+      <span aria-hidden className="text-accent"> → </span>
+      <span className="font-semibold text-fg">{children}</span>
+    </>
+  );
+}
+
+function RestoreButton({ table, id, what }: { table: Table; id: string; what: string }) {
+  const { restore } = useContext(CanvasContext);
+  if (!restore) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => restore(table, id)}
+      className="nodrag nopan pointer-events-auto rounded-token border border-line bg-panel px-1.5 py-0.5 text-[11px] font-semibold text-fg not-italic no-underline hover:bg-panel-2"
+      aria-label={`Restore ${what}`}
+    >
+      Restore
+    </button>
+  );
+}
+
+/** Card classes for a step's place in the draft. */
+const changeClass = (d: StepNodeData) =>
+  d.ghost ? "opacity-70 !border-dashed !border-crit" : d.change === "added" ? "!border-dashed !border-2 !border-accent" : "";
 
 const handleClass = (editable: boolean) =>
   editable ? "!size-2.5 !border-2 !border-panel !bg-fg-3 hover:!bg-accent" : "!bg-line-2";
@@ -137,9 +233,25 @@ const selectedRing = "outline-2 outline-offset-2 outline-accent";
 const percent = (p: number) => `${Math.round(p * 1000) / 10}%`;
 
 /** What a screen reader hears for a step. */
-function stepLabel({ step, role, person, warning, reworkTo }: StepNodeData): string {
+function stepLabel({ step, role, person, warning, reworkTo, change, estimate, wasName, wasWho, wasWork, wasWait }: StepNodeData): string {
+  const draft =
+    change === "added"
+      ? "new in this draft"
+      : change === "removed"
+        ? "removed in this draft"
+        : change === "changed"
+          ? `changed in this draft${[
+              wasName && `, was named ${wasName}`,
+              wasWho && `, was ${wasWho}`,
+              wasWork && `, hands-on time was ${wasWork}`,
+              wasWait && `, wait was ${wasWait}`,
+            ]
+              .filter(Boolean)
+              .join("")}`
+          : null;
+  const flags = [draft, estimate && "unconfirmed estimate", warning && `warning: ${warning}`];
   if (step.kind === "start" || step.kind === "end") {
-    return [step.name, step.kind === "start" ? "start" : `end, ${step.outcome}`, warning && `warning: ${warning}`].filter(Boolean).join(", ");
+    return [step.name, step.kind === "start" ? "start" : `end, ${step.outcome}`, ...flags].filter(Boolean).join(", ");
   }
   return [
     step.name,
@@ -148,38 +260,49 @@ function stepLabel({ step, role, person, warning, reworkTo }: StepNodeData): str
     `${formatHours(step.work_hours)} work`,
     `${formatHours(step.wait_hours)} wait`,
     reworkTo && `${percent(Number(step.rework_rate))} rework back to ${reworkTo}`,
-    warning && `warning: ${warning}`,
+    ...flags,
   ]
     .filter(Boolean)
     .join(", ");
 }
 
 function StepNode({ data, selected }: NodeProps<StepFlowNode>) {
-  const { step, role, person, avgQueue, bottleneck, warning, editable, reworkTo, editing, pulse } = data;
+  const { step, role, person, avgQueue, bottleneck, warning, editable, reworkTo, editing, pulse, ghost } = data;
   const who = person?.name ?? role?.name;
   return (
     <div
-      className={`relative rounded-token border bg-panel shadow-token ${editing ? "w-60 border-accent" : "w-44"} ${bottleneck && !editing ? "border-crit ring-2 ring-crit/40" : editing ? "" : "border-line-2"} ${selected ? selectedRing : ""}`}
+      className={`relative rounded-token border bg-panel shadow-token ${editing ? "w-60 border-accent" : "w-44"} ${bottleneck && !editing && !ghost ? "border-crit ring-2 ring-crit/40" : editing ? "" : "border-line-2"} ${changeClass(data)} ${selected ? selectedRing : ""}`}
     >
       {pulse && !editing && (
         <span aria-hidden className="bottleneck-pulse pointer-events-none absolute -inset-1.5 rounded-token border-2 border-crit" />
       )}
-      <Handle type="target" position={Position.Left} className={handleClass(editable)} />
+      <Badges change={data.change} estimate={data.estimate} />
+      <Handle type="target" position={Position.Left} className={handleClass(editable && !ghost)} />
       <div className="h-1 rounded-t-token" style={{ background: role?.color ?? "var(--line-2)" }} />
       {editing ? (
         <NodeInlineEditor step={step} focus={editing} />
+      ) : ghost ? (
+        <div className="flex items-start justify-between gap-1 px-2.5 py-2">
+          <p className="font-semibold leading-tight text-fg-2 line-through">{step.name}</p>
+          {data.restorable && <RestoreButton table="steps" id={step.id} what={step.name} />}
+        </div>
       ) : (
         <div className="px-2.5 py-2">
+          {data.wasName !== null && <p className="text-[11px] leading-tight text-fg-3 line-through">{data.wasName}</p>}
           <p data-field="name" className="font-semibold leading-tight">
             {step.name}
           </p>
           <p data-field={person ? "person_id" : "role_id"} className="text-xs text-fg-2">
-            {who ?? (step.kind === "decision" ? "Decision" : step.kind === "wait" ? "Wait" : "No role")}
+            <Was was={data.wasWho}>{who ?? (step.kind === "decision" ? "Decision" : step.kind === "wait" ? "Wait" : "No role")}</Was>
             {person && <span className="text-fg-3"> · pinned</span>}
           </p>
-          <p className="mt-1 flex justify-between font-mono text-[11px] text-fg-3 tabular-nums">
-            <span data-field="work_hours">{Number(step.work_hours) ? `${formatHours(step.work_hours)} work` : "—"}</span>
-            <span data-field="wait_hours">{Number(step.wait_hours) ? `${formatHours(step.wait_hours)} wait` : ""}</span>
+          <p className="mt-1 flex justify-between gap-1 font-mono text-[11px] text-fg-3 tabular-nums">
+            <span data-field="work_hours">
+              <Was was={data.wasWork}>{Number(step.work_hours) || data.wasWork ? `${formatHours(step.work_hours)} work` : "—"}</Was>
+            </span>
+            <span data-field="wait_hours">
+              <Was was={data.wasWait}>{Number(step.wait_hours) || data.wasWait ? `${formatHours(step.wait_hours)} wait` : ""}</Was>
+            </span>
           </p>
           {reworkTo && Number(step.rework_rate) > 0 && (
             <p className="mt-0.5 truncate text-[11px] text-fg-3" title={`Rework goes back to ${reworkTo}`}>
@@ -194,21 +317,34 @@ function StepNode({ data, selected }: NodeProps<StepFlowNode>) {
         </div>
       )}
       {warning && <Warning text={warning} />}
-      <Handle type="source" position={Position.Right} className={handleClass(editable)} />
+      <Handle type="source" position={Position.Right} className={handleClass(editable && !ghost)} />
     </div>
   );
 }
 
 function TerminalNode({ data, selected }: NodeProps<TerminalFlowNode>) {
-  const { step, warning, editable, editing } = data;
+  const { step, warning, editing, ghost } = data;
+  const editable = data.editable && !ghost;
   const tone =
     step.outcome === "won" ? "bg-good-soft text-fg" : step.outcome === "lost" ? "bg-panel-2 text-fg-2" : "bg-accent-soft text-fg";
   return (
     <div
-      className={`relative border text-xs font-semibold ${editing ? "w-44 rounded-token border-accent bg-panel" : `rounded-full border-line-2 px-3 py-1.5 ${tone}`} ${selected ? selectedRing : ""}`}
+      className={`relative border text-xs font-semibold ${editing ? "w-44 rounded-token border-accent bg-panel" : `rounded-full border-line-2 px-3 py-1.5 ${tone}`} ${changeClass(data)} ${selected ? selectedRing : ""}`}
     >
+      <Badges change={data.change} estimate={data.estimate} />
       {step.kind !== "start" && <Handle type="target" position={Position.Left} className={handleClass(editable)} />}
-      {editing ? <NodeInlineEditor step={step} focus="name" /> : <span data-field="name">{step.name}</span>}
+      {editing ? (
+        <NodeInlineEditor step={step} focus="name" />
+      ) : ghost ? (
+        <span className="flex items-center gap-1.5">
+          <span className="line-through">{step.name}</span>
+          {data.restorable && <RestoreButton table="steps" id={step.id} what={step.name} />}
+        </span>
+      ) : (
+        <span data-field="name">
+          <Was was={data.wasName}>{step.name}</Was>
+        </span>
+      )}
       {warning && <Warning text={warning} />}
       {step.kind === "start" && <Handle type="source" position={Position.Right} className={handleClass(editable)} />}
     </div>
@@ -225,6 +361,45 @@ function BranchEdge(props: EdgeProps<BranchFlowEdge>) {
   const tag = data?.tag ?? null;
   const editing = selected && data?.alone && editor;
   const text = [p < 1 ? percent(p) : null, tag].filter(Boolean).join(" · ");
+  const ghost = data?.ghost ?? false;
+  const was = data?.was ?? null;
+  if (ghost || was !== null) {
+    return (
+      <>
+        <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} interactionWidth={ghost ? 0 : 18} />
+        <EdgeLabelRenderer>
+          <div
+            className="nodrag nopan absolute flex items-center gap-1 rounded-token bg-panel px-1 font-mono text-[11px] tabular-nums"
+            style={{ transform: `translate(${labelX}px, ${labelY}px) translate(-50%, -50%)`, pointerEvents: "all" }}
+          >
+            {ghost ? (
+              <>
+                <s className="text-crit">{text || "removed"}</s>
+                {data?.restorable && <RestoreButton table="edges" id={id.slice("ghost:".length)} what="this connection" />}
+              </>
+            ) : (
+              <Was was={was}>{text || "100%"}</Was>
+            )}
+          </div>
+        </EdgeLabelRenderer>
+        {editing && (
+          <EdgeLabelRenderer>
+            <div
+              className="nodrag nopan absolute"
+              style={{
+                transform: `translate(${labelX}px, ${labelY + 14}px) scale(${1 / zoom}) translate(-50%, 0)`,
+                transformOrigin: "0 0",
+                zIndex: 1002,
+                pointerEvents: "all",
+              }}
+            >
+              <BranchEditor key={id} editor={editor} edgeId={id} probability={p} tag={tag} />
+            </div>
+          </EdgeLabelRenderer>
+        )}
+      </>
+    );
+  }
   return (
     <>
       <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} interactionWidth={18} />
@@ -402,6 +577,12 @@ interface CanvasProps {
   onSelectionChange: Dispatch<SetStateAction<Selection>>;
   /** Duplicate, copy, delete and inspect, shared with the keyboard shortcuts. */
   commands: CanvasCommands | null;
+  /** The draft's changes against live, drawn on the map (issue #9); null outside a draft. */
+  diff?: DraftDiff | null;
+  /** Put a removed step or connection back as it is live; null when the map is read-only. */
+  onRestore?: ((table: Table, id: string) => void) | null;
+  /** What the toolbar says once edits are saved ("Saved", "Saved to draft"). */
+  savedLabel?: string;
 }
 
 export function ProcessCanvas(props: CanvasProps) {
@@ -412,8 +593,20 @@ export function ProcessCanvas(props: CanvasProps) {
   );
 }
 
-function Canvas({ bundle, result, editor, editorState, selection, onSelectionChange, commands }: CanvasProps) {
+function Canvas({
+  bundle,
+  result,
+  editor,
+  editorState,
+  selection,
+  onSelectionChange,
+  commands,
+  diff = null,
+  onRestore = null,
+  savedLabel = "Saved",
+}: CanvasProps) {
   const editable = editor !== null;
+  const canvasContext = useMemo(() => ({ editor, restore: editor ? onRestore : null }), [editor, onRestore]);
   const flow = useReactFlow();
   const wrapper = useRef<HTMLDivElement>(null);
   // Positions of nodes mid-drag, and sizes React Flow measured; the rest comes from the bundle.
@@ -443,9 +636,15 @@ function Canvas({ bundle, result, editor, editorState, selection, onSelectionCha
     const people = new Map(bundle.people.map((p) => [p.id, p]));
     const names = new Map(bundle.steps.map((s) => [s.id, s.name]));
     const selected = new Set(selection.steps);
-    return [...bundle.steps]
+    const who = (s: StepRow) =>
+      (s.person_id ? people.get(s.person_id)?.name : undefined) ?? (s.role_id ? roles.get(s.role_id)?.name : undefined) ?? "No role";
+    /** What the card shows for a live value the draft changed, or null. */
+    const was = (change: StepChange | undefined, fields: string[], show: (live: StepRow) => string): string | null =>
+      change?.kind === "changed" && change.fields.some((f) => fields.includes(f.field)) ? show(change.live!) : null;
+    const drafted = [...bundle.steps]
       .sort((a, b) => order.get(a.id)! - order.get(b.id)!)
       .map((step): FlowNode => {
+        const change = diff?.steps.get(step.id);
         const data: StepNodeData = {
           step,
           role: step.role_id ? (roles.get(step.role_id) ?? null) : null,
@@ -457,6 +656,15 @@ function Canvas({ bundle, result, editor, editorState, selection, onSelectionCha
           reworkTo: step.rework_to_step_id ? (names.get(step.rework_to_step_id) ?? null) : null,
           editing: editing && editingId === step.id ? editing.field : null,
           pulse: playback.pulsing && result?.bnStep === step.id,
+          // A move alone isn't worth a badge; the changes list has it.
+          change: change && (change.kind !== "changed" || change.fields.length) ? change.kind : null,
+          ghost: false,
+          restorable: false,
+          estimate: step.assumption === true,
+          wasName: was(change, ["name"], (l) => l.name),
+          wasWho: was(change, ["role_id", "person_id"], who),
+          wasWork: was(change, ["work_hours"], (l) => `${formatHours(l.work_hours)} work`),
+          wasWait: was(change, ["wait_hours"], (l) => `${formatHours(l.wait_hours)} wait`),
         };
         const node: FlowNode = {
           id: step.id,
@@ -475,29 +683,119 @@ function Canvas({ bundle, result, editor, editorState, selection, onSelectionCha
         nodeCache.set(step.id, node);
         return node;
       });
-  }, [bundle, result, selection.steps, dragging, measured, warnings, editable, order, layout, editing, editingId, nodeCache, playback.pulsing]);
+    // Removed steps, where they are live, under the draft's cards.
+    const ghosts = [...(diff?.steps.values() ?? [])]
+      .filter((c) => c.kind === "removed")
+      .map((c): FlowNode => {
+        const step = c.live!;
+        const data: StepNodeData = {
+          step,
+          role: step.role_id ? (roles.get(step.role_id) ?? null) : null,
+          person: step.person_id ? (people.get(step.person_id) ?? null) : null,
+          avgQueue: null,
+          bottleneck: false,
+          warning: null,
+          editable: false,
+          reworkTo: null,
+          editing: null,
+          pulse: false,
+          change: "removed",
+          ghost: true,
+          restorable: editable && !discardProblem(bundle, c),
+          estimate: false,
+          wasName: null,
+          wasWho: null,
+          wasWork: null,
+          wasWait: null,
+        };
+        const id = ghostId(step.id);
+        return {
+          id,
+          type: step.kind === "start" || step.kind === "end" ? "terminal" : "step",
+          position: { x: Number(step.x), y: Number(step.y) },
+          draggable: false,
+          selectable: false,
+          connectable: false,
+          focusable: false,
+          deletable: false,
+          ariaLabel: stepLabel(data),
+          ...(measured.has(id) ? { measured: measured.get(id) } : {}),
+          data,
+        };
+      });
+    return [...ghosts, ...drafted];
+  }, [bundle, result, selection.steps, dragging, measured, warnings, editable, order, layout, editing, editingId, nodeCache, playback.pulsing, diff]);
 
   const edges = useMemo(() => {
     const selected = new Set(selection.edges);
     const alone = selection.edges.length === 1 && !selection.steps.length;
     const names = new Map(bundle.steps.map((s) => [s.id, s.name]));
+    const present = new Set(bundle.steps.map((s) => s.id));
     const rank = (e: { from_step_id: string; to_step_id: string }) => (order.get(e.from_step_id) ?? 0) * 1e4 + (order.get(e.to_step_id) ?? 0);
-    return [...bundle.edges]
+    const labelOf = (p: number, tag: string | null) => [p < 1 ? percent(p) : null, tag].filter(Boolean).join(" · ") || "100%";
+    const drafted = [...bundle.edges]
       .sort((a, b) => rank(a) - rank(b))
-      .map(
-        (e): BranchFlowEdge => ({
+      .map((e): BranchFlowEdge => {
+        const change = diff?.edges.get(e.id);
+        const relabelled = change?.kind === "changed" && change.fields.some((f) => f.field === "probability" || f.field === "condition_tag");
+        const was = relabelled ? labelOf(Number(change.live!.probability), change.live!.condition_tag) : null;
+        const tone = selected.has(e.id) || change ? "var(--accent)" : "var(--line-2)";
+        return {
           id: e.id,
           source: e.from_step_id,
           target: e.to_step_id,
           type: "branch",
           selected: selected.has(e.id),
-          data: { probability: Number(e.probability), tag: e.condition_tag, alone },
-          style: { stroke: selected.has(e.id) ? "var(--accent)" : "var(--line-2)", strokeWidth: selected.has(e.id) ? 2.5 : 1.5 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: selected.has(e.id) ? "var(--accent)" : "var(--line-2)" },
-          ariaLabel: `Connection from ${names.get(e.from_step_id)} to ${names.get(e.to_step_id)}, ${percent(Number(e.probability))}${e.condition_tag ? `, tag ${e.condition_tag}` : ""}`,
-        }),
-      );
-  }, [bundle, selection.edges, selection.steps.length, order]);
+          data: {
+            probability: Number(e.probability),
+            tag: e.condition_tag,
+            alone,
+            change: change?.kind ?? null,
+            was,
+            ghost: false,
+            restorable: false,
+          },
+          style: {
+            stroke: tone,
+            strokeWidth: selected.has(e.id) ? 2.5 : change ? 2 : 1.5,
+            ...(change?.kind === "added" ? { strokeDasharray: "6 4" } : {}),
+          },
+          markerEnd: { type: MarkerType.ArrowClosed, color: tone },
+          ariaLabel: `Connection from ${names.get(e.from_step_id)} to ${names.get(e.to_step_id)}, ${percent(Number(e.probability))}${e.condition_tag ? `, tag ${e.condition_tag}` : ""}${
+            change?.kind === "added" ? ", new in this draft" : change ? `, changed in this draft${was ? `, was ${was}` : ""}` : ""
+          }`,
+        };
+      });
+    const ghosts = [...(diff?.edges.values() ?? [])]
+      .filter((c) => c.kind === "removed")
+      .map((c): BranchFlowEdge => {
+        const e = c.live!;
+        const end = (id: string) => (present.has(id) ? id : ghostId(id));
+        return {
+          id: ghostId(e.id),
+          source: end(e.from_step_id),
+          target: end(e.to_step_id),
+          type: "branch",
+          selectable: false,
+          focusable: false,
+          deletable: false,
+          reconnectable: false,
+          data: {
+            probability: Number(e.probability),
+            tag: e.condition_tag,
+            alone: false,
+            change: "removed",
+            was: null,
+            ghost: true,
+            restorable: editable && !discardProblem(bundle, c),
+          },
+          style: { stroke: "var(--crit)", strokeWidth: 1.5, strokeDasharray: "4 4", opacity: 0.7 },
+          markerEnd: { type: MarkerType.ArrowClosed, color: "var(--crit)" },
+          ariaLabel: "Connection removed in this draft",
+        };
+      });
+    return [...ghosts, ...drafted];
+  }, [bundle, selection.edges, selection.steps.length, order, diff, editable]);
 
   const onNodesChange = (changes: NodeChange<StepFlowNode | TerminalFlowNode>[]) => {
     const moves: { id: string; x: number; y: number }[] = [];
@@ -676,7 +974,7 @@ function Canvas({ bundle, result, editor, editorState, selection, onSelectionCha
   };
 
   return (
-    <CanvasContext.Provider value={{ editor }}>
+    <CanvasContext.Provider value={canvasContext}>
       <InlineEditContext.Provider value={inline}>
         <div
           ref={wrapper}
@@ -691,8 +989,17 @@ function Canvas({ bundle, result, editor, editorState, selection, onSelectionCha
           {/* Before the map in the page, so Tab reaches the toolbar first. */}
           {editable && editorState && (
             <div className="absolute top-2.5 left-2.5 z-10 max-w-[calc(100%-1.25rem)]">
-              <Toolbar bundle={bundle} editor={editor} state={editorState} onAdd={addFromToolbar} lanes={lanes} onToggleLanes={toggleLanes} />
+              <Toolbar bundle={bundle} editor={editor} state={editorState} onAdd={addFromToolbar} lanes={lanes} onToggleLanes={toggleLanes} savedLabel={savedLabel} />
             </div>
+          )}
+          {diff && diff.list.length > 0 && (
+            <p
+              aria-hidden
+              className="absolute top-2.5 right-2.5 z-10 hidden rounded-token border border-line bg-panel/95 px-2 py-1 text-[11px] text-fg-2 shadow-token md:block"
+            >
+              <span className="mr-1 inline-block h-2.5 w-4 border border-dashed border-accent align-middle" /> new ·{" "}
+              <s>removed</s> · <s className="text-fg-3">was</s> → now
+            </p>
           )}
           {!editable && (
             <div className="absolute top-2.5 left-2.5 z-10">
@@ -858,6 +1165,7 @@ function Toolbar({
   onAdd,
   lanes,
   onToggleLanes,
+  savedLabel,
 }: {
   bundle: ProcessBundle;
   editor: ProcessEditor;
@@ -865,6 +1173,7 @@ function Toolbar({
   onAdd: (kind: NewStepKind, outcome: StepOutcome | null) => void;
   lanes: boolean;
   onToggleLanes: () => void;
+  savedLabel: string;
 }) {
   const [kind, setKind] = useState<NewStepKind>("task");
   const [outcome, setOutcome] = useState<StepOutcome | "">("");
@@ -941,7 +1250,7 @@ function Toolbar({
       <LaneToggle lanes={lanes} onToggle={onToggleLanes} />
       <KeysHelp mod={mod} />
       <span className="px-1 text-fg-3" aria-live="polite">
-        {state.saving ? "Saving…" : "Saved"}
+        {state.saving ? "Saving…" : savedLabel}
       </span>
     </div>
   );

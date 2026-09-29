@@ -1,13 +1,35 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ModelError, toEngineModel, type ProcessBundle } from "@transpera-flow/db";
+import type { EngineModel } from "@transpera-flow/engine";
+import { deleteSelection } from "@/lib/editor/commands";
+import type { Conflict, ProcessEditor } from "@/lib/editor/editor";
+import { liveStore } from "@/lib/editor/live-store";
+import type { Scalar } from "@/lib/editor/ops";
+import { MemoryStore } from "@/lib/editor/store";
+import { useProcessEditor } from "@/lib/editor/use-editor";
 import { useSimulation } from "@/lib/sim/use-simulation";
+import { ConflictPrompt } from "./fields";
 import { KpiStrip } from "./kpi-strip";
-import { ProcessCanvas } from "./process-canvas";
+import { NO_SELECTION, ProcessCanvas, type Selection } from "./process-canvas";
+import { FIELD_LABELS, StepInspector } from "./step-inspector";
 import { UtilisationBars } from "./utilisation-bars";
 
-export function ProcessView({ bundle }: { bundle: ProcessBundle }) {
+/**
+ * How edits are saved: `live` to the database as the signed-in user, `demo`
+ * in memory (lost on reload), `readonly` not at all (viewers).
+ */
+export type EditMode = "live" | "demo" | "readonly";
+
+export function ProcessView({ bundle: initial, mode }: { bundle: ProcessBundle; mode: EditMode }) {
+  const [state, editor] = useProcessEditor(initial, () =>
+    mode === "live" ? liveStore(initial.revision.id) : new MemoryStore(initial),
+  );
+  const bundle = state.bundle;
+  const editable = mode !== "readonly";
+  const [selection, setSelection] = useState<Selection>(NO_SELECTION);
+
   const resolved = useMemo(() => {
     try {
       return { model: toEngineModel(bundle), error: null };
@@ -16,30 +38,152 @@ export function ProcessView({ bundle }: { bundle: ProcessBundle }) {
       throw err;
     }
   }, [bundle]);
-  const sim = useSimulation(resolved.model);
+  // Only a change to the model itself re-runs the simulation (moving a step doesn't).
+  const modelKey = resolved.model ? JSON.stringify(resolved.model) : null;
+  const model = useMemo(() => (modelKey ? (JSON.parse(modelKey) as EngineModel) : null), [modelKey]);
+  // While an edit leaves the process unsimulatable, keep showing the last results.
+  const [lastModel, setLastModel] = useState(model);
+  if (model && model !== lastModel) setLastModel(model);
+  const sim = useSimulation(model);
   const result = sim.run?.result ?? null;
 
-  if (!resolved.model) {
-    return (
-      <p role="alert" className="rounded-token border border-crit bg-crit-soft p-3">
-        This process can&apos;t be simulated yet: {resolved.error}
-      </p>
-    );
-  }
+  // Selection can outlive what it points at (after a delete or an undo).
+  const selected = useMemo(() => {
+    const steps = new Set(bundle.steps.map((s) => s.id));
+    const edges = new Set(bundle.edges.map((e) => e.id));
+    return { steps: selection.steps.filter((id) => steps.has(id)), edges: selection.edges.filter((id) => edges.has(id)) };
+  }, [bundle, selection]);
+  const inspected = selected.steps.length === 1 && !selected.edges.length ? bundle.steps.find((s) => s.id === selected.steps[0]) : undefined;
+
+  useEffect(() => {
+    if (!editable) return;
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target instanceof HTMLElement ? e.target : null;
+      // Text fields keep their own undo and delete keys.
+      if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+      const mod = e.metaKey || e.ctrlKey;
+      const key = e.key.toLowerCase();
+      if (mod && key === "z") {
+        e.preventDefault();
+        if (e.shiftKey) editor.redo();
+        else editor.undo();
+      } else if (mod && key === "y") {
+        e.preventDefault();
+        editor.redo();
+      } else if ((e.key === "Delete" || e.key === "Backspace") && !mod) {
+        // Only from the map itself (or nowhere in particular), not from a button.
+        if (target && target !== document.body && (!target.closest(".react-flow") || target.closest("button"))) return;
+        if (editor.run((b) => deleteSelection(b, selected.steps, selected.edges))) {
+          e.preventDefault();
+          setSelection(NO_SELECTION);
+        }
+      } else if (e.key === "Escape" && target?.closest(".react-flow")) {
+        setSelection(NO_SELECTION);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editable, editor, selected]);
+
+  const shownModel = model ?? lastModel;
 
   return (
     <div className="flex flex-col gap-3">
-      <KpiStrip
-        model={resolved.model}
-        currency={bundle.workspace.settings.currency}
-        result={result}
-        status={sim.status}
-        durationMs={sim.run?.durationMs}
-      />
+      {shownModel ? (
+        <KpiStrip
+          model={shownModel}
+          currency={bundle.workspace.settings.currency}
+          result={result}
+          status={sim.status}
+          durationMs={sim.run?.durationMs}
+        />
+      ) : null}
+      {resolved.error && (
+        <p role="alert" className="rounded-token border border-crit bg-crit-soft p-3">
+          This process can&apos;t be simulated yet: {resolved.error}.
+          {shownModel && result ? " The figures above are from before this change." : ""}
+        </p>
+      )}
+      {editable && <SaveProblems editor={editor} bundle={bundle} conflicts={state.conflicts} error={state.error} />}
       <div className="grid gap-3 lg:grid-cols-[1fr_22rem]">
-        <ProcessCanvas bundle={bundle} result={result} />
-        <UtilisationBars model={resolved.model} result={result} />
+        <ProcessCanvas
+          bundle={bundle}
+          result={result}
+          editor={editable ? editor : null}
+          editorState={editable ? state : null}
+          selection={selected}
+          onSelectionChange={setSelection}
+        />
+        {inspected && editable ? (
+          <StepInspector
+            key={inspected.id}
+            bundle={bundle}
+            step={inspected}
+            editor={editor}
+            onClose={() => setSelection(NO_SELECTION)}
+            onDelete={() => {
+              editor.run((b) => deleteSelection(b, [inspected.id], []));
+              setSelection(NO_SELECTION);
+            }}
+          />
+        ) : shownModel ? (
+          <UtilisationBars model={shownModel} result={result} />
+        ) : null}
       </div>
+    </div>
+  );
+}
+
+/** Same-field conflicts waiting for "keep mine / keep theirs", and the last failed save. */
+function SaveProblems({
+  editor,
+  bundle,
+  conflicts,
+  error,
+}: {
+  editor: ProcessEditor;
+  bundle: ProcessBundle;
+  conflicts: Conflict[];
+  error: string | null;
+}) {
+  if (!conflicts.length && !error) return null;
+  const names = new Map<string, string>([
+    ...bundle.steps.map((s) => [s.id, s.name] as const),
+    ...bundle.roles.map((r) => [r.id, r.name] as const),
+    ...bundle.people.map((p) => [p.id, p.name] as const),
+  ]);
+  const show = (field: string, v: Scalar): string => {
+    if (v === null || v === "") return "blank";
+    if (field === "probability" || field === "rework_rate") return `${Math.round(Number(v) * 1000) / 10}%`;
+    if (field.endsWith("_id")) return names.get(String(v)) ?? "a removed item";
+    return String(v);
+  };
+  const subject = (c: Conflict) => {
+    const label = FIELD_LABELS[c.field] ?? c.field;
+    if (c.table === "steps") return `${names.get(c.id) ?? "a step"}'s ${label}`;
+    const edge = bundle.edges.find((e) => e.id === c.id);
+    return edge ? `the ${label} of ${names.get(edge.from_step_id)} → ${names.get(edge.to_step_id)}` : `a connection's ${label}`;
+  };
+  return (
+    <div className="flex flex-col gap-2">
+      {conflicts.map((c) => (
+        <ConflictPrompt
+          key={`${c.table}:${c.id}:${c.field}`}
+          subject={subject(c)}
+          theirs={show(c.field, c.theirs)}
+          mine={show(c.field, c.mine)}
+          onKeepMine={() => void editor.keepMine(c)}
+          onKeepTheirs={() => editor.keepTheirs(c)}
+        />
+      ))}
+      {error && (
+        <p role="alert" className="rounded-token border border-crit bg-crit-soft p-2 text-xs">
+          {error}{" "}
+          <button type="button" onClick={() => editor.dismissError()} className="underline">
+            Dismiss
+          </button>
+        </p>
+      )}
     </div>
   );
 }

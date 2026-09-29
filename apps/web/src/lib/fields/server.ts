@@ -67,6 +67,38 @@ export async function saveField<T extends Exclude<FieldValue, readonly string[]>
   return { status: "saved", value: readField(result.row, field) as T };
 }
 
+export type Scalar = string | number | boolean | null;
+
+export type FieldsOutcome =
+  | { status: "saved" }
+  /** Fields someone else changed since `base`, with their stored values. The other fields were saved. */
+  | { status: "conflict"; theirs: Record<string, Scalar> }
+  | { status: "not_found" }
+  | { status: "error"; message: string };
+
+/**
+ * Save several fields of one row in one call, each checked against its own
+ * base, as `saveField` does for one. Used where one edit changes fields that
+ * must move together, such as a step's kind and outcome.
+ */
+export async function saveFields(
+  target: EditableTable,
+  key: Record<string, string>,
+  base: Record<string, Scalar>,
+  changes: Record<string, Scalar>,
+): Promise<FieldsOutcome> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("save_fields", { target, key, base, changes });
+  if (error) return errorOutcome(error);
+  const result = data as unknown as FieldsResult;
+  if (result.status === "not_found") return { status: "not_found" };
+  const conflicts = result.conflicts ?? {};
+  if (result.status === "conflict" && Object.keys(conflicts).length) {
+    return { status: "conflict", theirs: conflicts as Record<string, Scalar> };
+  }
+  return { status: "saved" };
+}
+
 /** Replace a set held in a link table (e.g. a person's roles) if it is still `base`. */
 export async function saveLinks(
   target: LinkTable,

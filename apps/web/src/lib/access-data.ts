@@ -72,6 +72,14 @@ export async function loadAccessSettings(slug: string): Promise<AccessSettings |
   };
 }
 
+/** Whether the signed-in user can edit the workspace's processes and people (RLS helper). */
+export async function canEditWorkspace(workspaceId: string): Promise<boolean> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("can_edit_workspace", { ws: workspaceId });
+  if (error) throw error;
+  return data === true;
+}
+
 /** Whether the signed-in user can manage the workspace's access (RLS helper). */
 export async function canManageWorkspace(workspaceId: string): Promise<boolean> {
   const supabase = await createClient();

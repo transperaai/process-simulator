@@ -1,5 +1,5 @@
-import type { EngineModel, EnginePerson, EngineStep } from "@transpera-flow/engine";
-import type { ProcessBundle, StepRow } from "./types";
+import type { Distribution as EngineDistribution, EngineModel, EnginePerson, EngineStep } from "@transpera-flow/engine";
+import type { DistParams, Distribution, ProcessBundle, StepRow } from "./types";
 
 const WORKING_DAYS_PER_WEEK = 5;
 const DAY_MS = 86_400_000;
@@ -46,6 +46,17 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
   if (startEdges.length !== 1) throw new ModelError("The start step needs exactly one outgoing edge");
   const entry = startEdges[0]!.to_step_id;
 
+  /** An edge may lead to a working step or a won/lost end; anything else would strand items in the engine. */
+  const checkTarget = (from: string, to: string) => {
+    const target = byId.get(to);
+    if (!target) throw new ModelError(`Edge from '${from}' points at a missing step`);
+    if (target.kind === "start") throw new ModelError(`Edge from '${from}' leads back to the start step`);
+    if (target.kind === "end" && target.outcome !== "won" && target.outcome !== "lost") {
+      throw new ModelError(`End step '${target.name}' ends as '${target.outcome}'; only won and lost ends can be simulated`);
+    }
+  };
+  checkTarget(starts[0]!.name, entry);
+
   const sinkFor = (outcome: "won" | "lost") => {
     const ends = steps.filter((step) => step.kind === "end" && step.outcome === outcome);
     if (ends.length > 1) throw new ModelError(`At most one '${outcome}' end step is supported, found ${ends.length}`);
@@ -61,7 +72,7 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
         .sort(byIdAsc)
         .map((e) => ({ to: e.to_step_id, p: Number(e.probability) }));
       if (!next.length) throw new ModelError(`Step '${step.name}' has no outgoing edge`);
-      for (const n of next) if (!byId.has(n.to)) throw new ModelError(`Edge from '${step.name}' points at a missing step`);
+      for (const n of next) checkTarget(step.name, n.to);
       return {
         id: step.id,
         name: step.name,
@@ -70,6 +81,8 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
         work: Number(step.work_hours),
         wait: Number(step.wait_hours),
         rework: Number(step.rework_rate),
+        ...optional("workDist", engineDistribution(step.work_dist, step.work_params, Number(step.work_hours))),
+        ...optional("waitDist", engineDistribution(step.wait_dist, step.wait_params, Number(step.wait_hours))),
         // Entered WIP (0 included) makes the run start from it instead of a warm-up.
         ...(step.current_wip != null ? { currentWip: Number(step.current_wip) } : {}),
         next,
@@ -144,6 +157,41 @@ function resolvePeopleRows(bundle: ProcessBundle, working: EngineStep[], startDa
     };
   }
   return people;
+}
+
+const optional = <K extends string, V>(key: K, value: V | undefined) =>
+  (value === undefined ? {} : { [key]: value }) as Partial<Record<K, V>>;
+
+/** A finite number from a jsonb value, or null. */
+const num = (v: unknown): number | null =>
+  typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && v.trim() && Number.isFinite(Number(v)) ? Number(v) : null;
+
+/**
+ * A triangular range in hours from a step's params. Missing or inconsistent
+ * values fall back to half to one and a half times the mean, peaking at it.
+ */
+export function triangularRange(params: DistParams | null | undefined, mean: number): { min: number; mode: number; max: number } {
+  const min = num(params?.min);
+  const mode = num(params?.mode);
+  const max = num(params?.max);
+  if (min !== null && mode !== null && max !== null && min >= 0 && min <= mode && mode <= max) return { min, mode, max };
+  return { min: mean * 0.5, mode: mean, max: mean * 1.5 };
+}
+
+/**
+ * The engine's distribution for a stored `*_dist` and `*_params`. Undefined
+ * means the engine's default (lognormal with its default spread), which is
+ * what a lognormal step without a `cv` gets, so untouched rows simulate as before.
+ */
+export function engineDistribution(
+  dist: Distribution,
+  params: DistParams | null | undefined,
+  mean: number,
+): EngineDistribution | undefined {
+  if (dist === "constant") return { kind: "constant" };
+  if (dist === "triangular") return { kind: "triangular", ...triangularRange(params, mean) };
+  const cv = num(params?.cv);
+  return cv !== null && cv >= 0 ? { kind: "lognormal", cv } : undefined;
 }
 
 function byIdAsc(a: { id: string }, b: { id: string }): number {

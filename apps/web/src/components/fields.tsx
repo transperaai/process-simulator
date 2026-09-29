@@ -12,6 +12,37 @@ import { useField, type Field } from "@/lib/fields/use-field";
 const inputClass =
   "w-full rounded-token border border-line bg-panel px-2 py-1.5 tabular-nums disabled:bg-panel-2 disabled:text-fg-2";
 
+/** The "keep mine / keep theirs" prompt for a same-field conflict. `subject` names the field when it isn't next to it. */
+export function ConflictPrompt({
+  subject,
+  theirs,
+  mine,
+  onKeepMine,
+  onKeepTheirs,
+}: {
+  subject?: ReactNode;
+  theirs: string;
+  mine: string;
+  onKeepMine: () => void;
+  onKeepTheirs: () => void;
+}) {
+  return (
+    <div role="alert" className="mt-1 rounded-token border border-warn bg-warn-soft p-2 text-xs">
+      <p>
+        Someone else changed {subject ?? "this"} to <strong>{theirs}</strong> while you were editing.
+      </p>
+      <div className="mt-1.5 flex gap-2">
+        <button type="button" onClick={onKeepMine} className="rounded-token bg-accent px-2 py-0.5 font-semibold text-accent-fg">
+          Keep mine ({mine})
+        </button>
+        <button type="button" onClick={onKeepTheirs} className="rounded-token border border-line px-2 py-0.5">
+          Keep theirs
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function FieldStatus<T extends FieldValue>({ field, display }: { field: Field<T>; display: (v: T) => string }) {
   if (field.phase === "saving") {
     return (
@@ -22,23 +53,12 @@ function FieldStatus<T extends FieldValue>({ field, display }: { field: Field<T>
   }
   if (field.phase === "conflict") {
     return (
-      <div role="alert" className="mt-1 rounded-token border border-warn bg-warn-soft p-2 text-xs">
-        <p>
-          Someone else changed this to <strong>{display(field.theirs as T)}</strong> while you were editing.
-        </p>
-        <div className="mt-1.5 flex gap-2">
-          <button
-            type="button"
-            onClick={() => void field.keepMine()}
-            className="rounded-token bg-accent px-2 py-0.5 font-semibold text-accent-fg"
-          >
-            Keep mine ({display(field.draft)})
-          </button>
-          <button type="button" onClick={field.keepTheirs} className="rounded-token border border-line px-2 py-0.5">
-            Keep theirs
-          </button>
-        </div>
-      </div>
+      <ConflictPrompt
+        theirs={display(field.theirs as T)}
+        mine={display(field.draft)}
+        onKeepMine={() => void field.keepMine()}
+        onKeepTheirs={field.keepTheirs}
+      />
     );
   }
   if (field.phase === "error") {
@@ -223,6 +243,56 @@ export function NumberField({
         />
         {unit && <span className="shrink-0 text-fg-3">{unit}</span>}
       </span>
+    </Shell>
+  );
+}
+
+export interface SelectOption {
+  value: string;
+  label: string;
+}
+
+/** A choice, saved on change. "" is the value for "none" (null). */
+export function SelectField({
+  label,
+  value,
+  save,
+  options,
+  noneLabel,
+  disabled,
+  hint,
+}: {
+  label: string;
+  value: string | null;
+  save: Saver<string | null>;
+  options: SelectOption[];
+  /** Offer "none" (saved as null) under this label. */
+  noneLabel?: string;
+  disabled?: boolean;
+  hint?: ReactNode;
+}) {
+  const id = useId();
+  const field = useField<string | null>(value, (base, next) => save(base, next || null));
+  const names = new Map(options.map((o) => [o.value, o.label]));
+  const display = (v: string | null) => (v ? (names.get(v) ?? "a removed item") : (noneLabel ?? "none"));
+  return (
+    <Shell id={id} label={label} hint={hint} field={field} display={display}>
+      <select
+        id={id}
+        disabled={disabled}
+        value={field.draft ?? ""}
+        className={inputClass}
+        onChange={(e) => void field.commit(e.target.value || null)}
+      >
+        {noneLabel !== undefined && <option value="">{noneLabel}</option>}
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+        {/* A stored value that is no longer an option (a removed role) still shows. */}
+        {field.draft && !names.has(field.draft) && <option value={field.draft}>A removed item</option>}
+      </select>
     </Shell>
   );
 }

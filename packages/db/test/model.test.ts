@@ -282,7 +282,8 @@ describe("services", () => {
   it("leaves out inactive services and services entering another process", () => {
     const other = "c0000000-0000-4000-8000-0000000000ff";
     const b = patch(patch(northbeamBundle(), seo, { active: false }), ppc, { entry_process_id: other });
-    expect(toEngineModel(b, { startDate: START })).toEqual(toEngineModel(withoutServices(), { startDate: START }));
+    // The only active service's leads go to the other process, so none arrive here (issue #13).
+    expect(toEngineModel(b, { startDate: START })).toEqual({ ...toEngineModel(withoutServices(), { startDate: START }), leadsPerWeek: 0 });
     const c = patch(northbeamBundle(), ppc, { entry_process_id: null });
     expect(Object.keys(toEngineModel(c, { startDate: START }).services!)).toEqual([seo, ppc]);
   });

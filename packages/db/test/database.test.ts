@@ -56,10 +56,16 @@ describe("seed", () => {
           [NORTHBEAM_WORKSPACE_ID],
         ),
         services: await many("select * from services where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
+        leadSources: await many("select * from lead_sources where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
+        seasonality: await many("select * from seasonality where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
+        demand: (await one("select * from demand_settings where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID])) ?? null,
       } as ProcessBundle;
     });
     expect(bundle.process.live_revision_id).toBe(NORTHBEAM_REVISION_ID);
     expect(bundle.services).toHaveLength(2);
+    expect(bundle.leadSources).toHaveLength(3);
+    expect(bundle.leadSources!.map((s) => s.provenance)).toEqual(northbeamBundle().leadSources!.map((s) => s.provenance));
+    expect(bundle.demand).toMatchObject({ provenance: northbeamBundle().demand!.provenance });
     const opts = { startDate: "2026-10-05" };
     expect(toEngineModel(bundle, opts)).toEqual(toEngineModel(northbeamBundle(), opts));
   });

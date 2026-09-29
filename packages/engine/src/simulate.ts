@@ -8,6 +8,7 @@
 //
 // Time runs from -warmup to H; everything reported is measured over [0, H].
 
+import { arrivalTimes as drawArrivals } from "./demand";
 import { EventQueue } from "./event-queue";
 import type {
   Distribution,
@@ -585,21 +586,14 @@ export function runOnce(
   // Arrivals: Poisson process over the horizon. The warm-up's arrivals come
   // from their own stream, drawn backwards from t = 0, so the measured
   // window's arrivals are the same whatever the warm-up length. Only the next
-  // arrival sits in the event queue, which keeps the heap small.
-  const arrivalTimes: number[] = [];
-  const meanGap = model.hoursPerWeek / model.leadsPerWeek;
-  if (W > 0) {
-    push({ t: 0, type: "measure" });
-    const early = streams.get("arrivals:warmup");
-    for (let tb = -expo(early, meanGap); tb >= -W; tb -= expo(early, meanGap)) arrivalTimes.push(tb);
-    arrivalTimes.reverse();
-  }
-  const arrivals = streams.get("arrivals");
+  // arrival sits in the event queue, which keeps the heap small. The rate
+  // follows the calendar when the model has seasonality or growth (demand.ts).
+  if (W > 0) push({ t: 0, type: "measure" });
+  const arrivalTimes = drawArrivals(model, H, W, streams.get("arrivals"), streams.get("arrivals:warmup"));
   // Each arrival's service comes from the mix, on its own streams (warm-up and
   // measured window apart, as for the arrival times).
   const mixWarmup = streams.get("mix:warmup");
   const mix = streams.get("mix");
-  for (let ta = expo(arrivals, meanGap); ta < H; ta += expo(arrivals, meanGap)) arrivalTimes.push(ta);
   let nextArrival = 0;
   const scheduleArrival = () => {
     if (nextArrival < arrivalTimes.length) push({ t: arrivalTimes[nextArrival++]!, type: "arrive" });

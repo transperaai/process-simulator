@@ -1,6 +1,17 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "./database.types";
-import type { ProcessBundle, ProcessRevisionRow, ProcessRow, ServiceRow, StepRow, WorkspaceRow, WorkspaceSettings } from "./types";
+import type {
+  DemandSettingsRow,
+  LeadSourceRow,
+  ProcessBundle,
+  ProcessRevisionRow,
+  ProcessRow,
+  SeasonalityRow,
+  ServiceRow,
+  StepRow,
+  WorkspaceRow,
+  WorkspaceSettings,
+} from "./types";
 
 // Reads shared by the web app (signed-in session) and the MCP server (API
 // token). Both pass a client that acts as the user, so RLS decides what is
@@ -18,6 +29,11 @@ function rows<T>(r: { data: T | null; error: unknown }): T {
 export const SERVICE_COLUMNS =
   "id, workspace_id, name, pricing_model, price, margin, tenure_months, churn_monthly_base, mix_share, entry_process_id, path_tags, active" as const;
 
+/** The `LeadSourceRow`, `SeasonalityRow` and `DemandSettingsRow` columns. */
+export const LEAD_SOURCE_COLUMNS = "id, workspace_id, name, volume_week, conversion_to_qualified, provenance" as const;
+export const SEASONALITY_COLUMNS = "id, workspace_id, month, multiplier, provenance" as const;
+export const DEMAND_SETTINGS_COLUMNS = "workspace_id, growth_monthly, provenance" as const;
+
 /** Load one process revision with everything needed to render and simulate it. */
 export async function loadProcessBundle(
   db: Db,
@@ -26,17 +42,21 @@ export async function loadProcessBundle(
   revisionId: string,
 ): Promise<ProcessBundle> {
   const ws = workspace.id;
-  const [revision, roles, steps, edges, people, personRoles, personSkills, personLeave, services] = await Promise.all([
-    db.from("process_revisions").select("id, workspace_id, process_id, number, status").eq("id", revisionId).single(),
-    db.from("roles").select("*").eq("workspace_id", ws),
-    db.from("steps").select("*").eq("revision_id", revisionId),
-    db.from("edges").select("*").eq("revision_id", revisionId),
-    db.from("people").select("id, workspace_id, name, fte, capacity_hours_week, cost_rate, active, start_date, end_date").eq("workspace_id", ws),
-    db.from("person_roles").select("person_id, role_id, workspace_id").eq("workspace_id", ws),
-    db.from("person_skills").select("person_id, step_id, workspace_id").eq("workspace_id", ws),
-    db.from("person_leave").select("id, person_id, workspace_id, start_date, end_date").eq("workspace_id", ws),
-    db.from("services").select(SERVICE_COLUMNS).eq("workspace_id", ws),
-  ]);
+  const [revision, roles, steps, edges, people, personRoles, personSkills, personLeave, services, leadSources, seasonality, demand] =
+    await Promise.all([
+      db.from("process_revisions").select("id, workspace_id, process_id, number, status").eq("id", revisionId).single(),
+      db.from("roles").select("*").eq("workspace_id", ws),
+      db.from("steps").select("*").eq("revision_id", revisionId),
+      db.from("edges").select("*").eq("revision_id", revisionId),
+      db.from("people").select("id, workspace_id, name, fte, capacity_hours_week, cost_rate, active, start_date, end_date").eq("workspace_id", ws),
+      db.from("person_roles").select("person_id, role_id, workspace_id").eq("workspace_id", ws),
+      db.from("person_skills").select("person_id, step_id, workspace_id").eq("workspace_id", ws),
+      db.from("person_leave").select("id, person_id, workspace_id, start_date, end_date").eq("workspace_id", ws),
+      db.from("services").select(SERVICE_COLUMNS).eq("workspace_id", ws),
+      db.from("lead_sources").select(LEAD_SOURCE_COLUMNS).eq("workspace_id", ws),
+      db.from("seasonality").select(SEASONALITY_COLUMNS).eq("workspace_id", ws),
+      db.from("demand_settings").select(DEMAND_SETTINGS_COLUMNS).eq("workspace_id", ws).maybeSingle(),
+    ]);
 
   // The casts narrow text columns that check constraints already limit, and the settings jsonb.
   return {
@@ -51,6 +71,10 @@ export async function loadProcessBundle(
     personSkills: rows(personSkills) ?? [],
     personLeave: rows(personLeave) ?? [],
     services: (rows(services) ?? []) as ServiceRow[],
+    // Provenance is jsonb; LeadSourceRow and the others give it its shape.
+    leadSources: (rows(leadSources) ?? []) as LeadSourceRow[],
+    seasonality: (rows(seasonality) ?? []) as SeasonalityRow[],
+    demand: rows(demand) as DemandSettingsRow | null,
   };
 }
 

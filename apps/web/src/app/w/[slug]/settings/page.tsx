@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { loadWorkspaceSettings } from "@/lib/data";
+import { DemandSettings } from "./demand-settings";
 import { PeopleSettings, SimulationSettings } from "./people-settings";
 import { ServicesSettings } from "./services-settings";
 
@@ -24,6 +25,7 @@ export default async function WorkspaceSettingsPage(props: PageProps<"/w/[slug]/
       </p>
       <SimulationSettings data={data} />
       <ServicesSettings data={data} />
+      <DemandSettings data={data} />
       <PeopleSettings data={data} />
     </main>
   );

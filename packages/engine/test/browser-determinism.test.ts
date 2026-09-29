@@ -65,6 +65,14 @@ describe("determinism across hosts", () => {
     expect(await runInWorker(model, 30, 1)).toBe(JSON.stringify(simulate(model, 30, 1)));
   }, 60_000);
 
+  it("Northbeam with seasonality and growth: Node and a browser worker agree byte for byte", async () => {
+    const model = {
+      ...northbeamWithServices(),
+      demand: { seasonality: [1.3, 1.2, 1.1, 1, 0.9, 0.8, 0.6, 0.7, 1.1, 1.2, 1.1, 0.5], growthMonthly: 0.03, startMonth: 8.93 },
+    };
+    expect(await runInWorker(model, 30, 1)).toBe(JSON.stringify(simulate(model, 30, 1)));
+  }, 60_000);
+
   it("large synthetic model: Node and a browser worker agree byte for byte", async () => {
     const model = largeModel();
     expect(await runInWorker(model, 5, 17)).toBe(JSON.stringify(simulate(model, 5, 17)));

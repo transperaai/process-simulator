@@ -1,12 +1,14 @@
 import "server-only";
 import {
   loadLiveProcessBySlug,
+  SERVICE_COLUMNS,
   type PersonLeaveRow,
   type PersonRoleRow,
   type PersonRow,
   type PersonSkillRow,
   type ProcessBundle,
   type RoleRow,
+  type ServiceRow,
   type StepRow,
   type WorkspaceRow,
   type WorkspaceSettings,
@@ -49,6 +51,11 @@ export interface WorkspaceSettingsData {
   personRoles: PersonRoleRow[];
   personSkills: PersonSkillRow[];
   personLeave: LeaveDetail[];
+  services: ServiceRow[];
+  /** The workspace's processes, for a service's entry process. */
+  processes: { id: string; name: string; kind: string }[];
+  /** Condition tags on the connections of the live processes, as hints for services' path tags. */
+  conditionTags: string[];
 }
 
 export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSettingsData | null> {
@@ -64,13 +71,14 @@ export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSett
 
   const { data: processes, error: pError } = await supabase
     .from("processes")
-    .select("live_revision_id")
+    .select("id, name, kind, live_revision_id")
     .eq("workspace_id", ws)
-    .not("live_revision_id", "is", null);
+    .order("created_at")
+    .order("id");
   if (pError) throw pError;
-  const revisions = processes.map((p) => p.live_revision_id as string);
+  const revisions = processes.flatMap((p) => (p.live_revision_id ? [p.live_revision_id] : []));
 
-  const [canEdit, canManage, roles, steps, people, personRoles, personSkills, personLeave] = await Promise.all([
+  const [canEdit, canManage, roles, steps, people, personRoles, personSkills, personLeave, services, tags] = await Promise.all([
     supabase.rpc("can_edit_workspace", { ws }),
     supabase.rpc("can_manage_workspace", { ws }),
     supabase.from("roles").select("id, name, color").eq("workspace_id", ws).order("name"),
@@ -94,8 +102,12 @@ export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSett
       .select("id, person_id, workspace_id, start_date, end_date, note")
       .eq("workspace_id", ws)
       .order("start_date"),
+    supabase.from("services").select(SERVICE_COLUMNS).eq("workspace_id", ws).order("created_at").order("id"),
+    supabase.from("edges").select("condition_tag").in("revision_id", revisions).not("condition_tag", "is", null),
   ]);
-  for (const r of [canEdit, canManage, roles, steps, people, personRoles, personSkills, personLeave]) if (r.error) throw r.error;
+  for (const r of [canEdit, canManage, roles, steps, people, personRoles, personSkills, personLeave, services, tags]) {
+    if (r.error) throw r.error;
+  }
 
   return {
     workspace: { ...workspace, settings: workspace.settings as unknown as WorkspaceSettings },
@@ -107,5 +119,9 @@ export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSett
     personRoles: personRoles.data ?? [],
     personSkills: personSkills.data ?? [],
     personLeave: personLeave.data ?? [],
+    // The cast narrows pricing_model, which a check constraint limits.
+    services: (services.data ?? []) as ServiceRow[],
+    processes: processes.map(({ id, name, kind }) => ({ id, name, kind })),
+    conditionTags: [...new Set((tags.data ?? []).map((e) => e.condition_tag?.trim() ?? "").filter(Boolean))].sort(),
   };
 }

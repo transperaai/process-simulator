@@ -3,6 +3,7 @@
 import { refresh } from "next/cache";
 import type { SaveOutcome } from "@/lib/fields/field-controller";
 import { saveField, saveLinks } from "@/lib/fields/server";
+import { isTagList, parseNewService, parseServiceField, type ServiceField } from "@/lib/services";
 import { createClient } from "@/lib/supabase/server";
 
 // Writes from the workspace settings page. Every write runs as the signed-in
@@ -146,6 +147,55 @@ export async function removeLeave(leaveId: string): Promise<ActionResult> {
   const { data, error } = await supabase.from("person_leave").delete().eq("id", leaveId).select("id");
   if (error) return failure(error);
   if (!data.length) return { error: "That leave was already removed, or you can't edit it." };
+  refresh();
+  return {};
+}
+
+// Services (issue #12). Owners and editors manage them; RLS enforces that.
+
+export async function saveServiceField(
+  serviceId: string,
+  field: ServiceField,
+  base: Scalar,
+  value: Scalar,
+): Promise<SaveOutcome<Scalar>> {
+  const parsed = parseServiceField(serviceId, field, base, value);
+  if (!parsed) return invalid;
+  if (!(await signedIn())) return signedOut;
+  return saveField("services", { id: parsed.serviceId }, parsed.field, parsed.base, parsed.value);
+}
+
+/** A service's path tags, saved as one list. */
+export async function saveServiceTags(serviceId: string, base: string[], next: string[]): Promise<SaveOutcome<string[]>> {
+  if (!isId(serviceId) || !isTagList(base) || !isTagList(next)) return invalid;
+  if (!(await signedIn())) return signedOut;
+  return saveField<string[]>("services", { id: serviceId }, "path_tags", base, next);
+}
+
+export async function createService(workspaceId: string, _prev: ActionResult, form: FormData): Promise<ActionResult> {
+  if (!isId(workspaceId)) return { error: "Couldn't save. Try again." };
+  const service = parseNewService(form);
+  if ("error" in service) return service;
+  const supabase = await createClient();
+  // The first service takes every arrival; later ones start at a share of 0,
+  // so adding one doesn't change the simulation until its share is set.
+  const { count, error: countError } = await supabase
+    .from("services")
+    .select("id", { count: "exact", head: true })
+    .eq("workspace_id", workspaceId);
+  if (countError) return failure(countError);
+  const { error } = await supabase.from("services").insert({ workspace_id: workspaceId, ...service, mix_share: count ? 0 : 1 });
+  if (error) return failure(error);
+  refresh();
+  return {};
+}
+
+export async function removeService(serviceId: string): Promise<ActionResult> {
+  if (!isId(serviceId)) return { error: "Couldn't remove it. Try again." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("services").delete().eq("id", serviceId).select("id");
+  if (error) return failure(error);
+  if (!data.length) return { error: "That service was already removed, or you can't edit it." };
   refresh();
   return {};
 }

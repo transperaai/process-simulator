@@ -8,7 +8,7 @@ import type { FieldValue, SaveOutcome } from "./field-controller";
 // what may be written. Server Actions validate their inputs, then call these.
 
 /** Tables `save_fields` accepts. Keep in sync with the migration's allow-list. */
-export type EditableTable = "workspaces" | "roles" | "people" | "person_leave" | "processes" | "steps" | "edges";
+export type EditableTable = "workspaces" | "roles" | "people" | "person_leave" | "processes" | "steps" | "edges" | "services";
 
 /** Link tables `save_links` accepts, and their member column. */
 export const LINK_MEMBERS = { person_roles: "role_id", person_skills: "step_id" } as const;
@@ -42,9 +42,10 @@ function errorOutcome(error: { code?: string; message: string }): SaveOutcome<ne
 
 /**
  * Save one field of one row if its stored value is still `base`.
- * `field` is a column, or `column.key` for one key of a jsonb column.
+ * `field` is a column, or `column.key` for one key of a jsonb column. A
+ * string array is a text[] column's value (e.g. a service's path tags).
  */
-export async function saveField<T extends Exclude<FieldValue, readonly string[]>>(
+export async function saveField<T extends string | number | boolean | null | string[]>(
   target: EditableTable,
   key: Record<string, string>,
   field: string,

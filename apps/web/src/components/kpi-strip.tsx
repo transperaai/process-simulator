@@ -13,6 +13,8 @@ interface Tile {
   label: string;
   value: string;
   detail: string;
+  /** What the figure means (docs/PRD.md §13), shown on hover. */
+  definition?: string;
   tone?: "crit";
 }
 
@@ -23,37 +25,56 @@ export function KpiStrip({ model, currency, result, status, durationMs }: KpiStr
   const money = (v: number) => formatCurrency(v, currency);
   const bnId = result?.bnRole ?? null;
   const bn = bnId ? k?.roles[bnId] : undefined;
+  const weeks = model.horizonWeeks;
 
+  // Two rows of four: the flow, then the revenue it brings in.
   const tiles: Tile[] = [
-    {
-      label: `Wins / ${model.horizonWeeks} wks`,
-      value: k ? formatNumber(k.won.mean) : "–",
-      detail: k ? formatRange(k.won, whole) : "",
-    },
+    { label: `Wins / ${weeks} wks`, value: k ? formatNumber(k.won.mean) : "–", detail: k ? formatRange(k.won, whole) : "" },
     { label: "Lost", value: k ? whole(k.lost.mean) : "–", detail: k ? formatRange(k.lost, whole) : "" },
     {
       label: "Cycle time",
       value: k ? days(k.cycle.mean) : "–",
       detail: k ? `P50 ${days(k.cycle.p50)} · P90 ${days(k.cycle.p90)}` : "",
     },
-    { label: "New MRR", value: k ? money(k.mrrAdded.mean) : "–", detail: k ? formatRange(k.mrrAdded, money) : "" },
     {
       label: "Bottleneck",
       value: bnId ? (model.roles[bnId]?.name ?? "–") : "–",
       detail: bn ? `${formatPercent(bn.util.mean)} utilised · ${formatRange(bn.util, formatPercent)}` : "",
       tone: bn && bn.util.mean > 0.85 ? "crit" : undefined,
     },
+    {
+      label: "New MRR",
+      value: k ? money(k.mrrAdded.mean) : "–",
+      detail: k ? formatRange(k.mrrAdded, money) : "",
+      definition: "Monthly fees of the retainer clients won in the horizon.",
+    },
+    {
+      label: `Billed / ${weeks} wks`,
+      value: k ? money(k.billed.mean) : "–",
+      detail: k ? formatRange(k.billed, money) : "",
+      definition:
+        "Revenue billed within the horizon by the clients won in it, net of churn; one-off projects bill when won. Existing clients aren't included yet.",
+    },
+    {
+      label: "LTV added",
+      value: k ? money(k.ltvAdded.mean) : "–",
+      detail: k ? formatRange(k.ltvAdded, money) : "",
+      definition: "For each new win: price × expected tenure (retainers) or the price (one-off).",
+    },
+    {
+      label: "Lost revenue",
+      value: k ? money(k.lostRevenue.mean) : "–",
+      detail: k ? formatRange(k.lostRevenue, money) : "",
+      definition: "For each lost lead: what it would have been worth if won (price × expected tenure for retainers).",
+    },
   ];
 
   return (
-    <section aria-label="Key results" className="grid grid-cols-2 gap-2 md:grid-cols-5">
-      {tiles.map((t, i) => (
-        <div
-          key={t.label}
-          className={`rounded-token border border-line bg-panel px-3 py-2 shadow-token ${i === tiles.length - 1 ? "col-span-2 md:col-span-1" : ""}`}
-        >
+    <section aria-label="Key results" className="grid grid-cols-2 gap-2 md:grid-cols-4">
+      {tiles.map((t) => (
+        <div key={t.label} title={t.definition} className="min-w-0 rounded-token border border-line bg-panel px-3 py-2 shadow-token">
           <p className="font-mono text-[11px] uppercase tracking-widest text-fg-3">{t.label}</p>
-          <p className={`font-display text-xl font-bold tabular-nums ${t.tone === "crit" ? "text-crit" : ""}`}>{t.value}</p>
+          <p className={`truncate font-display text-xl font-bold tabular-nums ${t.tone === "crit" ? "text-crit" : ""}`}>{t.value}</p>
           <p className="text-xs text-fg-2 tabular-nums">{t.detail}&nbsp;</p>
         </div>
       ))}

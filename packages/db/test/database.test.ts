@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   NORTHBEAM_REVISION_ID,
   NORTHBEAM_WORKSPACE_ID,
+  northbeamAccess,
   northbeamBundle,
   northbeamStepIds,
   seedSql,
@@ -30,7 +31,7 @@ describe("seed", () => {
 
   it("seed.sql is up to date with the fixtures", () => {
     const onDisk = readFileSync(new URL("../supabase/seed.sql", import.meta.url), "utf8");
-    expect(onDisk).toBe(seedSql([northbeamBundle()]));
+    expect(onDisk).toBe(seedSql([northbeamBundle()], [northbeamAccess()]));
   });
 
   it("round-trips: rows loaded from the database resolve to the same engine model", async () => {

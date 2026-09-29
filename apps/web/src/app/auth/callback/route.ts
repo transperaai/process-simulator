@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-/** Magic-link landing: exchange the code for a session, then go home. */
+/** Sign-in landing: exchange the code for a session, resolve workspace access, then go home. */
 export async function GET(request: NextRequest) {
   const url = request.nextUrl.clone();
   const code = url.searchParams.get("code");
@@ -14,6 +14,12 @@ export async function GET(request: NextRequest) {
     if (result.error) {
       console.error("auth callback: code exchange failed", result.error.code, result.error.message);
       error = result.error.message;
+    } else {
+      // Grant or withdraw workspace access from the allowed domains and
+      // pre-assigned emails (docs/adr/0003-workspace-access.md). A failure
+      // here must not block sign-in; the home page retries.
+      const access = await supabase.rpc("resolve_my_access");
+      if (access.error) console.error("auth callback: resolving access failed", access.error.code, access.error.message);
     }
   } else if (!error) {
     error = "The sign-in link was missing its code.";

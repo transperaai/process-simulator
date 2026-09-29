@@ -10,7 +10,8 @@ export async function signInWithGoogle(): Promise<void> {
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
-    options: { redirectTo: `${origin}/auth/callback` },
+    // openid makes Google return an ID token, which carries the hosted-domain (hd) claim used for domain joins.
+    options: { redirectTo: `${origin}/auth/callback`, scopes: "openid" },
   });
   if (error || !data.url) redirect(`/login?error=${encodeURIComponent(error?.message ?? "Google sign-in is unavailable.")}`);
   redirect(data.url);

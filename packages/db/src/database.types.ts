@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      audit_log: {
+        Row: {
+          action: string
+          actor_id: string | null
+          actor_kind: string
+          created_at: string
+          diff: Json
+          id: string
+          target_id: string | null
+          target_table: string
+          workspace_id: string | null
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          actor_kind?: string
+          created_at?: string
+          diff?: Json
+          id?: string
+          target_id?: string | null
+          target_table: string
+          workspace_id?: string | null
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          actor_kind?: string
+          created_at?: string
+          diff?: Json
+          id?: string
+          target_id?: string | null
+          target_table?: string
+          workspace_id?: string | null
+        }
+        Relationships: []
+      }
       edges: {
         Row: {
           condition_tag: string | null
@@ -83,33 +119,49 @@ export type Database = {
       }
       memberships: {
         Row: {
+          active: boolean
           created_at: string
           created_by: string | null
           id: string
+          person_id: string | null
           role: Database["public"]["Enums"]["membership_role"]
+          source: string
           updated_at: string
           user_id: string
           workspace_id: string
         }
         Insert: {
+          active?: boolean
           created_at?: string
           created_by?: string | null
           id?: string
+          person_id?: string | null
           role: Database["public"]["Enums"]["membership_role"]
+          source?: string
           updated_at?: string
           user_id: string
           workspace_id: string
         }
         Update: {
+          active?: boolean
           created_at?: string
           created_by?: string | null
           id?: string
+          person_id?: string | null
           role?: Database["public"]["Enums"]["membership_role"]
+          source?: string
           updated_at?: string
           user_id?: string
           workspace_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "memberships_person_id_workspace_id_fkey"
+            columns: ["person_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id", "workspace_id"]
+          },
           {
             foreignKeyName: "memberships_workspace_id_fkey"
             columns: ["workspace_id"]
@@ -581,6 +633,86 @@ export type Database = {
           },
         ]
       }
+      workspace_access_emails: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          email: string
+          id: string
+          person_id: string | null
+          role: Database["public"]["Enums"]["membership_role"]
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          email: string
+          id?: string
+          person_id?: string | null
+          role?: Database["public"]["Enums"]["membership_role"]
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          email?: string
+          id?: string
+          person_id?: string | null
+          role?: Database["public"]["Enums"]["membership_role"]
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workspace_access_emails_person_id_workspace_id_fkey"
+            columns: ["person_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "workspace_access_emails_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workspace_domains: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          domain: string
+          id: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          domain: string
+          id?: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          domain?: string
+          id?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workspace_domains_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workspaces: {
         Row: {
           created_at: string
@@ -623,6 +755,20 @@ export type Database = {
       can_manage_workspace: { Args: { ws: string }; Returns: boolean }
       can_read_workspace: { Args: { ws: string }; Returns: boolean }
       is_agency_admin: { Args: never; Returns: boolean }
+      is_free_mail_domain: { Args: { domain: string }; Returns: boolean }
+      qualifies_for_domain: {
+        Args: { domain: string; uid: string }
+        Returns: boolean
+      }
+      reconcile_access: { Args: { uid: string }; Returns: undefined }
+      resolve_my_access: {
+        Args: never
+        Returns: {
+          role: Database["public"]["Enums"]["membership_role"]
+          source: string
+          workspace_id: string
+        }[]
+      }
       save_fields: {
         Args: { base: Json; changes: Json; key: Json; target: string }
         Returns: Json
@@ -636,6 +782,20 @@ export type Database = {
           target: string
         }
         Returns: Json
+      }
+      workspace_members: {
+        Args: { ws: string }
+        Returns: {
+          active: boolean
+          created_at: string
+          email: string
+          last_sign_in_at: string
+          membership_id: string
+          person_id: string
+          role: Database["public"]["Enums"]["membership_role"]
+          source: string
+          user_id: string
+        }[]
       }
       workspace_role: {
         Args: { ws: string }

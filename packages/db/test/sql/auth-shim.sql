@@ -2,10 +2,21 @@
 -- be tested against plain Postgres. Mirrors Supabase's definitions of
 -- auth.uid() and auth.jwt(). Test-only: never run against a Supabase project.
 
-do $$ begin
-  if not exists (select from pg_roles where rolname = 'anon') then create role anon nologin; end if;
-  if not exists (select from pg_roles where rolname = 'authenticated') then create role authenticated nologin; end if;
-  if not exists (select from pg_roles where rolname = 'service_role') then create role service_role nologin bypassrls; end if;
+-- Roles are cluster-wide and test files run in parallel, so tolerate another
+-- file creating the same role at the same moment.
+do $$
+declare
+  r text;
+begin
+  foreach r in array array['anon', 'authenticated', 'service_role'] loop
+    begin
+      if not exists (select from pg_roles where rolname = r) then
+        execute format('create role %I nologin%s', r, case when r = 'service_role' then ' bypassrls' else '' end);
+      end if;
+    exception when unique_violation or duplicate_object then
+      null;
+    end;
+  end loop;
 end $$;
 
 create schema auth;

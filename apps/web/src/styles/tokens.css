@@ -19,8 +19,14 @@
   --crit-soft: #fbe1e0;
   --warn-soft: #fdf0d1;
   --good-soft: #d8f3e8;
+  /* Work items in playback, and those heading to a lost end. */
+  --token: #2a78d6;
+  --token-lost: #9aa09a;
   --radius: 6px;
   --shadow: 0 1px 2px rgba(20, 24, 30, 0.06), 0 4px 14px rgba(20, 24, 30, 0.05);
+  /* Motion: durations only; every animation stops under prefers-reduced-motion. */
+  --motion-fast: 150ms;
+  --motion-pulse: 1600ms;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -43,6 +49,8 @@
     --crit-soft: #4a2424;
     --warn-soft: #45360f;
     --good-soft: #153f30;
+    --token: #5598e7;
+    --token-lost: #6a726d;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.3);
     color-scheme: dark;
   }
@@ -67,6 +75,8 @@
   --crit-soft: #4a2424;
   --warn-soft: #45360f;
   --good-soft: #153f30;
+  --token: #5598e7;
+  --token-lost: #6a726d;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.3);
   color-scheme: dark;
 }

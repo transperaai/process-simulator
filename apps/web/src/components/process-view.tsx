@@ -6,7 +6,8 @@ import type { EngineModel } from "@transpera-flow/engine";
 import { PASTE_OFFSET, copySteps, deleteSelection, duplicateSteps, pasteSteps, type StepClipboard } from "@/lib/editor/commands";
 import type { Conflict, ProcessEditor } from "@/lib/editor/editor";
 import { liveStore } from "@/lib/editor/live-store";
-import type { Scalar } from "@/lib/editor/ops";
+import type { Value } from "@/lib/editor/ops";
+import { isProvenanceField } from "@/lib/editor/provenance";
 import { MemoryStore } from "@/lib/editor/store";
 import { useProcessEditor } from "@/lib/editor/use-editor";
 import { useSimulation } from "@/lib/sim/use-simulation";
@@ -27,14 +28,19 @@ export function ProcessView({
   bundle: initial,
   mode,
   scenarios = [],
+  userId = null,
 }: {
   bundle: ProcessBundle;
   mode: EditMode;
   /** Saved scenarios of the workspace (in memory on the demo). */
   scenarios?: ScenarioRow[];
+  /** The signed-in user, recorded as who entered the values they change. */
+  userId?: string | null;
 }) {
-  const [state, editor] = useProcessEditor(initial, () =>
-    mode === "live" ? liveStore(initial.revision.id) : new MemoryStore(initial),
+  const [state, editor] = useProcessEditor(
+    initial,
+    () => (mode === "live" ? liveStore(initial.revision.id) : new MemoryStore(initial)),
+    () => ({ at: new Date().toISOString(), by: userId }),
   );
   const bundle = state.bundle;
   const editable = mode !== "readonly";
@@ -240,14 +246,17 @@ function SaveProblems({
   conflicts: Conflict[];
   error: string | null;
 }) {
+  // A value's provenance is settled along with the value, so it gets no prompt of its own.
+  conflicts = conflicts.filter((c) => !isProvenanceField(c.field));
   if (!conflicts.length && !error) return null;
   const names = new Map<string, string>([
     ...bundle.steps.map((s) => [s.id, s.name] as const),
     ...bundle.roles.map((r) => [r.id, r.name] as const),
     ...bundle.people.map((p) => [p.id, p.name] as const),
   ]);
-  const show = (field: string, v: Scalar): string => {
+  const show = (field: string, v: Value): string => {
     if (v === null || v === "") return "blank";
+    if (typeof v === "object") return v.source;
     if (field === "probability" || field === "rework_rate") return `${Math.round(Number(v) * 1000) / 10}%`;
     if (field.endsWith("_id")) return names.get(String(v)) ?? "a removed item";
     return String(v);

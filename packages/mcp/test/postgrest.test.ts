@@ -72,6 +72,7 @@ describe.skipIf(!POSTGREST_URL)("MCP over PostgREST (acts as the user under RLS)
     // Supabase's PostgREST login role. It can't log in until the schema is ready.
     await admin.query(`do $$ begin
       if not exists (select from pg_roles where rolname = 'authenticator') then create role authenticator noinherit nologin; end if;
+    exception when duplicate_object or unique_violation then null;
     end $$`);
     await admin.query("grant anon, authenticated, service_role to authenticator");
     for (const f of readdirSync(new URL("migrations/", supabaseDir)).filter((f) => f.endsWith(".sql")).sort()) {

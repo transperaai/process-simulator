@@ -1,0 +1,336 @@
+// Discrete-event Monte Carlo simulation, ported faithfully from the Northbeam
+// prototype's `ProcessSim` (prototype/northbeam-process-simulator.html).
+// Known prototype issues (shared RNG stream, linear-scan event queue, stale
+// ongoing utilisation, empty start) are deliberately preserved here and fixed
+// test-first in later tickets; see docs/PRD.md §6.8.
+
+import type {
+  EngineModel,
+  EngineStep,
+  ReplicationResult,
+  RoleResult,
+  SimulationResult,
+  StepResult,
+  TraceEntity,
+  TraceSegment,
+} from "./model";
+import { expo, lognormal, mulberry32 } from "./random";
+
+/** Minimum share of a role's capacity left for pipeline work. */
+const AVAILABILITY_FLOOR = 0.08;
+/** Coefficient of variation for hands-on time. */
+const WORK_CV = 0.35;
+/** Coefficient of variation for external waits. */
+const WAIT_CV = 0.3;
+const WEEKS_PER_MONTH = 4.33;
+/** Stride between replication seeds. */
+const SEED_STRIDE = 7919;
+
+interface SimEntity extends TraceEntity {
+  seg: TraceSegment | null;
+}
+
+type SimEvent =
+  | { t: number; type: "arrive" }
+  | { t: number; type: "week" }
+  | { t: number; type: "end" | "leave"; e: SimEntity; step: string };
+
+interface StepStat {
+  arrivals: number;
+  qLen: number;
+  qArea: number;
+  qLast: number;
+  qMax: number;
+  waitSum: number;
+  waitN: number;
+  reworks: number;
+}
+
+interface RoleState {
+  count: number;
+  busy: number;
+  busyHours: number;
+}
+
+export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): ReplicationResult {
+  const rng = mulberry32(seed);
+  const H = model.horizonWeeks * model.hoursPerWeek;
+  const steps = new Map<string, EngineStep>(model.steps.map((s) => [s.id, s]));
+  const roles: Record<string, RoleState> = {};
+  for (const id in model.roles) {
+    roles[id] = { count: Math.max(1, model.roles[id]!.count), busy: 0, busyHours: 0 };
+  }
+  const stepStat: Record<string, StepStat> = {};
+  const stepQueue: Record<string, SimEntity[]> = {};
+  for (const s of model.steps) {
+    stepStat[s.id] = { arrivals: 0, qLen: 0, qArea: 0, qLast: 0, qMax: 0, waitSum: 0, waitN: 0, reworks: 0 };
+    stepQueue[s.id] = [];
+  }
+  let active = model.activeClients;
+  const events: SimEvent[] = [];
+  const entities: SimEntity[] = [];
+  let eid = 0;
+  const cycle: number[] = [];
+  let won = 0;
+  let lost = 0;
+
+  const push = (ev: SimEvent) => {
+    events.push(ev);
+  };
+  const pop = (): SimEvent => {
+    let bi = 0;
+    for (let i = 1; i < events.length; i++) if (events[i]!.t < events[bi]!.t) bi = i;
+    const ev = events[bi]!;
+    events[bi] = events[events.length - 1]!;
+    events.pop();
+    return ev;
+  };
+  const availFrac = (rid: string) => {
+    const ong = active * (model.roles[rid]!.ongoing || 0);
+    const cap = roles[rid]!.count * model.hoursPerWeek;
+    return Math.max(AVAILABILITY_FLOOR, 1 - ong / cap);
+  };
+  const setQ = (sid: string, t: number, delta: number) => {
+    const st = stepStat[sid]!;
+    st.qArea += st.qLen * (t - st.qLast);
+    st.qLast = t;
+    st.qLen += delta;
+    if (st.qLen > st.qMax) st.qMax = st.qLen;
+  };
+
+  function enter(e: SimEntity, sid: string, t: number) {
+    if (sid === model.sinks.won) {
+      won++;
+      cycle.push(t - e.t0);
+      e.done = t;
+      e.outcome = "won";
+      active += 1;
+      return;
+    }
+    if (sid === model.sinks.lost) {
+      lost++;
+      e.done = t;
+      e.outcome = "lost";
+      return;
+    }
+    const s = steps.get(sid)!;
+    stepStat[sid]!.arrivals++;
+    const seg: TraceSegment = { step: sid, tQ: t, tS: null, tE: null, tL: null };
+    if (keepTrace) e.trace.push(seg);
+    e.seg = seg;
+    if (!s.role) {
+      startService(e, s, t);
+      return;
+    }
+    stepQueue[sid]!.push(e);
+    setQ(sid, t, 1);
+    tryStart(s.role, t);
+  }
+
+  function tryStart(rid: string, t: number) {
+    const r = roles[rid]!;
+    while (r.busy < r.count) {
+      // Oldest waiting entity across this role's steps (FIFO across steps).
+      let best: SimEntity | null = null;
+      let bestSid: string | null = null;
+      for (const s of model.steps) {
+        const q = stepQueue[s.id]!;
+        if (s.role === rid && q.length) {
+          const c = q[0]!;
+          if (!best || c.seg!.tQ < best.seg!.tQ) {
+            best = c;
+            bestSid = s.id;
+          }
+        }
+      }
+      if (!best || !bestSid) break;
+      stepQueue[bestSid]!.shift();
+      setQ(bestSid, t, -1);
+      stepStat[bestSid]!.waitSum += t - best.seg!.tQ;
+      stepStat[bestSid]!.waitN++;
+      r.busy++;
+      startService(best, steps.get(bestSid)!, t);
+    }
+  }
+
+  function startService(e: SimEntity, s: EngineStep, t: number) {
+    e.seg!.tS = t;
+    let dur = 0;
+    if (s.role) {
+      dur = lognormal(rng, s.work, WORK_CV) / availFrac(s.role);
+      roles[s.role]!.busyHours += dur * availFrac(s.role);
+    }
+    push({ t: t + dur, type: "end", e, step: s.id });
+  }
+
+  function endService(e: SimEntity, s: EngineStep, t: number) {
+    e.seg!.tE = t;
+    if (s.role) roles[s.role]!.busy--;
+    const w = s.wait ? lognormal(rng, s.wait, WAIT_CV) : 0;
+    push({ t: t + w, type: "leave", e, step: s.id });
+    if (s.role) tryStart(s.role, t);
+  }
+
+  function leave(e: SimEntity, s: EngineStep, t: number) {
+    e.seg!.tL = t;
+    if (s.rework && rng() < s.rework) {
+      stepStat[s.id]!.reworks++;
+      enter(e, s.id, t);
+      return;
+    }
+    const u = rng();
+    let acc = 0;
+    let to = s.next[s.next.length - 1]!.to;
+    for (const n of s.next) {
+      acc += n.p;
+      if (u < acc) {
+        to = n.to;
+        break;
+      }
+    }
+    enter(e, to, t);
+  }
+
+  // Arrivals: Poisson process over the horizon.
+  const meanGap = model.hoursPerWeek / model.leadsPerWeek;
+  let ta = expo(rng, meanGap);
+  while (ta < H) {
+    push({ t: ta, type: "arrive" });
+    ta += expo(rng, meanGap);
+  }
+  // Weekly churn ticks.
+  for (let w = 1; w <= model.horizonWeeks; w++) push({ t: w * model.hoursPerWeek, type: "week" });
+
+  while (events.length) {
+    const ev = pop();
+    if (ev.t > H) break;
+    if (ev.type === "arrive") {
+      const e: SimEntity = { id: eid++, t0: ev.t, trace: [], seg: null };
+      entities.push(e);
+      enter(e, model.entry, ev.t);
+    } else if (ev.type === "end") {
+      endService(ev.e, steps.get(ev.step)!, ev.t);
+    } else if (ev.type === "leave") {
+      leave(ev.e, steps.get(ev.step)!, ev.t);
+    } else {
+      active = Math.max(0, active - active * (model.churnMonthly / WEEKS_PER_MONTH));
+    }
+  }
+
+  const stepOut: Record<string, StepResult> = {};
+  for (const s of model.steps) {
+    const st = stepStat[s.id]!;
+    st.qArea += st.qLen * (H - st.qLast);
+    stepOut[s.id] = {
+      arrivals: st.arrivals,
+      avgQueue: st.qArea / H,
+      maxQueue: st.qMax,
+      avgWait: st.waitN ? st.waitSum / st.waitN : 0,
+      reworks: st.reworks,
+      wip: st.qLen,
+    };
+  }
+  const roleOut: Record<string, RoleResult> = {};
+  for (const rid in roles) {
+    const r = model.roles[rid]!;
+    const cap = roles[rid]!.count * H;
+    const ong = model.activeClients * (r.ongoing || 0) * model.horizonWeeks;
+    roleOut[rid] = {
+      pipeline: roles[rid]!.busyHours / cap,
+      ongoing: ong / cap,
+      util: (roles[rid]!.busyHours + ong) / cap,
+      pipelineHours: roles[rid]!.busyHours / model.horizonWeeks,
+      ongoingHours: ong / model.horizonWeeks,
+    };
+  }
+  return {
+    won,
+    lost,
+    cycle,
+    steps: stepOut,
+    roles: roleOut,
+    entities: keepTrace ? entities.map(stripSeg) : null,
+    H,
+    activeEnd: active,
+  };
+}
+
+function stripSeg({ seg: _seg, ...entity }: SimEntity): TraceEntity {
+  return entity;
+}
+
+/** Value at percentile `p` (0–1) using the prototype's nearest-rank rule. */
+export function pct(arr: number[], p: number): number {
+  if (!arr.length) return 0;
+  const a = arr.slice().sort((x, y) => x - y);
+  return a[Math.min(a.length - 1, Math.floor(p * a.length))]!;
+}
+
+export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationResult {
+  const runs: ReplicationResult[] = [];
+  let trace: TraceEntity[] | null = null;
+  for (let i = 0; i < reps; i++) {
+    const r = runOnce(model, seed + i * SEED_STRIDE, i === 0);
+    if (i === 0) trace = r.entities;
+    runs.push(r);
+  }
+  const n = runs.length;
+  const avg = (f: (r: ReplicationResult) => number) => runs.reduce((a, r) => a + f(r), 0) / n;
+  const cycle = runs.flatMap((r) => r.cycle);
+
+  const steps: Record<string, StepResult> = {};
+  for (const s of model.steps) {
+    steps[s.id] = {
+      arrivals: avg((r) => r.steps[s.id]!.arrivals),
+      avgQueue: avg((r) => r.steps[s.id]!.avgQueue),
+      maxQueue: avg((r) => r.steps[s.id]!.maxQueue),
+      avgWait: avg((r) => r.steps[s.id]!.avgWait),
+      reworks: avg((r) => r.steps[s.id]!.reworks),
+      wip: avg((r) => r.steps[s.id]!.wip),
+    };
+  }
+  const roles: Record<string, RoleResult> = {};
+  for (const rid in model.roles) {
+    roles[rid] = {
+      pipeline: avg((r) => r.roles[rid]!.pipeline),
+      ongoing: avg((r) => r.roles[rid]!.ongoing),
+      util: avg((r) => r.roles[rid]!.util),
+      pipelineHours: avg((r) => r.roles[rid]!.pipelineHours),
+      ongoingHours: avg((r) => r.roles[rid]!.ongoingHours),
+    };
+  }
+  const wonArr = runs.map((r) => r.won);
+  const won = avg((r) => r.won);
+  const lost = avg((r) => r.lost);
+  const H = model.horizonWeeks * model.hoursPerWeek;
+  let labour = 0;
+  for (const rid in model.roles) labour += roles[rid]!.pipelineHours * model.horizonWeeks * model.roles[rid]!.cost;
+
+  // Bottleneck: role with highest utilisation; step with the largest average queue.
+  let bnRole: string | null = null;
+  for (const rid in roles) if (!bnRole || roles[rid]!.util > roles[bnRole]!.util) bnRole = rid;
+  let bnStep: string | null = null;
+  for (const s of model.steps) {
+    if (s.role && (!bnStep || steps[s.id]!.avgQueue > steps[bnStep]!.avgQueue)) bnStep = s.id;
+  }
+
+  return {
+    won,
+    wonLow: pct(wonArr, 0.1),
+    wonHigh: pct(wonArr, 0.9),
+    lost,
+    cycleP50: pct(cycle, 0.5),
+    cycleP90: pct(cycle, 0.9),
+    steps,
+    roles,
+    labour,
+    costPerWin: won ? labour / won : 0,
+    mrrAdded: won * model.retainer,
+    bnRole,
+    bnStep,
+    trace,
+    H,
+    reps,
+    wipEnd: model.steps.reduce((a, s) => a + steps[s.id]!.wip, 0),
+  };
+}

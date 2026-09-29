@@ -1,0 +1,135 @@
+import { readFileSync } from "node:fs";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  NORTHBEAM_REVISION_ID,
+  NORTHBEAM_WORKSPACE_ID,
+  northbeamBundle,
+  northbeamStepIds,
+  seedSql,
+  toEngineModel,
+  type ProcessBundle,
+} from "../src";
+import { createTestDb, createUser, type TestDb } from "./harness";
+
+let db: TestDb;
+
+beforeAll(async () => {
+  db = await createTestDb();
+});
+
+afterAll(async () => {
+  await db?.close();
+});
+
+describe("seed", () => {
+  it("seed.sql is up to date with the fixtures", () => {
+    const onDisk = readFileSync(new URL("../supabase/seed.sql", import.meta.url), "utf8");
+    expect(onDisk).toBe(seedSql([northbeamBundle()]));
+  });
+
+  it("round-trips: rows loaded from the database resolve to the same engine model", async () => {
+    const admin = await createUser(db, "admin@example.com", { agency_admin: true });
+    const bundle = await db.as(admin.claims, async (c) => {
+      const one = async (sql: string, params: unknown[]) => (await c.query(sql, params)).rows[0];
+      const many = async (sql: string, params: unknown[]) => (await c.query(sql, params)).rows;
+      const workspace = await one("select id, name, slug, settings from workspaces where id = $1", [NORTHBEAM_WORKSPACE_ID]);
+      const process = await one("select * from processes where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]);
+      return {
+        workspace,
+        process,
+        revision: await one("select * from process_revisions where id = $1", [process.live_revision_id]),
+        roles: await many("select * from roles where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
+        steps: await many("select * from steps where revision_id = $1", [process.live_revision_id]),
+        edges: await many("select * from edges where revision_id = $1", [process.live_revision_id]),
+      } as ProcessBundle;
+    });
+    expect(bundle.process.live_revision_id).toBe(NORTHBEAM_REVISION_ID);
+    expect(toEngineModel(bundle)).toEqual(toEngineModel(northbeamBundle()));
+  });
+});
+
+describe("row-level security", () => {
+  const countVisible = async (c: import("pg").Client) => {
+    const counts: Record<string, number> = {};
+    for (const t of ["workspaces", "roles", "processes", "process_revisions", "steps", "edges"]) {
+      counts[t] = Number((await c.query(`select count(*) from ${t}`)).rows[0].count);
+    }
+    return counts;
+  };
+
+  it("lets an agency admin see every workspace", async () => {
+    const admin = await createUser(db, "agency@example.com", { agency_admin: true });
+    const visible = await db.as(admin.claims, countVisible);
+    expect(visible).toMatchObject({ workspaces: 1, roles: 6, processes: 1, steps: 12, edges: 14 });
+  });
+
+  it("lets a member with an agency_admin membership see the workspace", async () => {
+    const user = await createUser(db, "member-admin@example.com");
+    await db.client.query("insert into memberships (workspace_id, user_id, role) values ($1, $2, 'agency_admin')", [
+      NORTHBEAM_WORKSPACE_ID,
+      user.id,
+    ]);
+    expect(await db.as(user.claims, countVisible)).toMatchObject({ workspaces: 1, steps: 12 });
+  });
+
+  it("hides everything from a signed-in user with no membership", async () => {
+    const stranger = await createUser(db, "stranger@example.com");
+    expect(await db.as(stranger.claims, countVisible)).toEqual({
+      workspaces: 0,
+      roles: 0,
+      processes: 0,
+      process_revisions: 0,
+      steps: 0,
+      edges: 0,
+    });
+  });
+
+  it("does not trust an agency_admin flag outside app_metadata", async () => {
+    const sneaky = await createUser(db, "sneaky@example.com");
+    const claims = { ...sneaky.claims, user_metadata: { agency_admin: true }, agency_admin: true };
+    expect((await db.as(claims, countVisible)).workspaces).toBe(0);
+  });
+
+  it("gives the anon role no access", async () => {
+    await db.client.query("begin");
+    try {
+      await db.client.query("set local role anon");
+      await expect(db.client.query("select * from workspaces")).rejects.toThrow(/permission denied/);
+    } finally {
+      await db.client.query("rollback");
+    }
+  });
+
+  it("lets editors change steps but not viewers", async () => {
+    const editor = await createUser(db, "editor@example.com");
+    const viewer = await createUser(db, "viewer@example.com");
+    await db.client.query(
+      "insert into memberships (workspace_id, user_id, role) values ($1, $2, 'editor'), ($1, $3, 'viewer')",
+      [NORTHBEAM_WORKSPACE_ID, editor.id, viewer.id],
+    );
+    const bump = (c: import("pg").Client) =>
+      c.query("update steps set work_hours = 7 where id = $1 returning id", [northbeamStepIds.audit]).then((r) => r.rowCount);
+    expect(await db.as(editor.claims, bump)).toBe(1);
+    expect(await db.as(viewer.claims, bump)).toBe(0);
+  });
+
+  it("stops non-admins creating workspaces", async () => {
+    const owner = await createUser(db, "owner@example.com");
+    await expect(
+      db.as(owner.claims, (c) => c.query("insert into workspaces (name, slug) values ('X', 'x')")),
+    ).rejects.toThrow(/row-level security/);
+  });
+
+  it("stops an editor of one workspace from writing into another", async () => {
+    const other = (await db.client.query("insert into workspaces (name, slug) values ('Other', 'other') returning id"))
+      .rows[0].id as string;
+    const editor = await createUser(db, "editor2@example.com");
+    await db.client.query("insert into memberships (workspace_id, user_id, role) values ($1, $2, 'editor')", [
+      NORTHBEAM_WORKSPACE_ID,
+      editor.id,
+    ]);
+    await expect(
+      db.as(editor.claims, (c) => c.query("insert into roles (workspace_id, name) values ($1, 'Intruder')", [other])),
+    ).rejects.toThrow(/row-level security/);
+  });
+});

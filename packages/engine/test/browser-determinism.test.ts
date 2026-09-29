@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { northbeamModel, simulate } from "../src";
 import { largeModel } from "./fixtures/large-model";
+import { northbeamWithServices } from "./fixtures/northbeam-services";
 
 // The same model and seed must give byte-identical results in Node and in a
 // browser Web Worker (where the app runs the engine). Uses Chromium from
@@ -57,6 +58,11 @@ describe("determinism across hosts", () => {
   it("Northbeam started from current WIP: Node and a browser worker agree byte for byte", async () => {
     const model = northbeamModel();
     model.steps = model.steps.map((s) => (s.id === "audit" ? { ...s, currentWip: 8 } : s.id === "decision" ? { ...s, currentWip: 5 } : s));
+    expect(await runInWorker(model, 30, 1)).toBe(JSON.stringify(simulate(model, 30, 1)));
+  }, 60_000);
+
+  it("Northbeam with SEO and PPC services: Node and a browser worker agree byte for byte", async () => {
+    const model = northbeamWithServices();
     expect(await runInWorker(model, 30, 1)).toBe(JSON.stringify(simulate(model, 30, 1)));
   }, 60_000);
 

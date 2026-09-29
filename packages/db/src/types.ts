@@ -1,6 +1,9 @@
-// Row shapes for the tables in the walking-skeleton migration. Hand-written for
-// now; replace with `supabase gen types typescript` output once a Supabase
-// project is connected (see docs/supabase-notes.md).
+// Row shapes the app and engine work with. The database shape itself lives in
+// `database.types.ts` (generated: `pnpm --filter @transpera-flow/db gen:types`); these
+// narrow its check-constrained text and jsonb columns, and the checks at the
+// bottom fail the typecheck if they drift from it.
+
+import type { Database } from "./database.types";
 
 export type MembershipRole = "agency_admin" | "owner" | "editor" | "member" | "viewer";
 export type StepKind = "task" | "wait" | "decision" | "subprocess" | "start" | "end";
@@ -135,3 +138,27 @@ export interface ProcessBundle {
   personSkills: PersonSkillRow[];
   personLeave: PersonLeaveRow[];
 }
+
+type TableRow<T extends keyof Database["public"]["Tables"]> = Database["public"]["Tables"][T]["Row"];
+
+/** `true` when every field of `Row` is a column of table `T` with a compatible type. */
+type Matches<Row, T extends keyof Database["public"]["Tables"]> = [Exclude<keyof Row, keyof TableRow<T>>] extends [never]
+  ? Row extends Pick<TableRow<T>, keyof Row & keyof TableRow<T>>
+    ? true
+    : { mismatch: T }
+  : { unknownColumns: Exclude<keyof Row, keyof TableRow<T>> };
+type Assert<T extends true> = T;
+
+export type _SchemaDriftChecks = [
+  // settings is jsonb; WorkspaceSettings is its app-side shape.
+  Assert<Matches<Omit<WorkspaceRow, "settings">, "workspaces">>,
+  Assert<Matches<RoleRow, "roles">>,
+  Assert<Matches<PersonRow, "people">>,
+  Assert<Matches<PersonRoleRow, "person_roles">>,
+  Assert<Matches<PersonSkillRow, "person_skills">>,
+  Assert<Matches<PersonLeaveRow, "person_leave">>,
+  Assert<Matches<ProcessRow, "processes">>,
+  Assert<Matches<ProcessRevisionRow, "process_revisions">>,
+  Assert<Matches<StepRow, "steps">>,
+  Assert<Matches<EdgeRow, "edges">>,
+];

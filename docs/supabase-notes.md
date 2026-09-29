@@ -29,6 +29,23 @@ The Claude Code environment's network policy currently blocks `api.supabase.com`
 and `*.supabase.co`; allow them in the environment's Network access settings so an
 agent can run migrations and checks directly.
 
+## Verified on the live project (29 Sep 2026)
+
+Project `vgsjkpwvxkpqvyazwcyq`, Postgres 17, production at https://transpera-flow.vercel.app.
+
+- [x] Postgres version: `config.toml` set to 17; `supabase link` and `migration list` clean (both migrations applied).
+- [x] `auth.uid()` / `auth.jwt()`: the real functions drive RLS as expected. A stranger's claims see 0 workspaces and 0 people; Austin's claims see 1 workspace and 11 people, with or without the `agency_admin` claim.
+- [x] Grants: `anon` has no table privileges in `public` ("permission denied for table people"); every `public` table has RLS on.
+- [x] API keys: new-style `sb_publishable_…` key in Vercel (Production, Preview, Development).
+- [x] Agency admin: `make-agency-admin.sql` works against the real `auth.users` (`raw_app_meta_data`); after signing in, `/` and `/w/northbeam` load (200).
+- [x] Proxy: session refresh works on Vercel (signed-in navigation across `/`, `/w/northbeam`).
+- [x] Generated types: `packages/db/src/database.types.ts` from `pnpm --filter @transpera-flow/db gen:types`; `types.ts` keeps the narrowed app rows and fails the typecheck if they drift. Not in CI yet (CI can't reach Supabase); regenerate after every migration.
+- [ ] Magic link: works only in the browser that requested it (PKCE code verifier cookie). Opening it elsewhere, e.g. from a phone's mail app, now shows "Sign-in failed: PKCE code verifier not found…" on `/login`. Consider the token-hash email template (`{{ .TokenHash }}` + `verifyOtp`) so links work across browsers before inviting clients.
+- [ ] Preview-deployment sign-in (`https://*-transpera-ai.vercel.app/auth/callback` is in the allow-list; not tried yet).
+- [ ] People view lists everyone on the live project (needs a look in the browser).
+- [ ] Sign-out/in picks up a newly granted `agency_admin` flag (Austin's flag was set before his first session).
+- [ ] Custom SMTP before inviting clients.
+
 ## Things that may need changes
 
 | Area | What we assumed | What to verify on Supabase |

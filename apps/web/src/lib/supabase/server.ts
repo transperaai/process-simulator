@@ -1,3 +1,4 @@
+import type { Database } from "@transpera-flow/db";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { supabaseEnv } from "./env";
@@ -7,7 +8,7 @@ export async function createClient() {
   const env = supabaseEnv();
   if (!env) throw new Error("Supabase is not configured");
   const cookieStore = await cookies();
-  return createServerClient(env.url, env.key, {
+  return createServerClient<Database>(env.url, env.key, {
     cookies: {
       getAll: () => cookieStore.getAll(),
       setAll: (toSet) => {

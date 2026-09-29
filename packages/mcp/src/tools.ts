@@ -1,0 +1,213 @@
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import { listProcesses, loadProcessBundle, ModelError, toEngineModel } from "@transpera-flow/db";
+import { simulate, type EngineModel, type SimulationResult } from "@transpera-flow/engine";
+import { resolveProcess, resolveWorkspace, revisionIdFor, visibleWorkspaces, matchWorkspace, type ToolContext } from "./context";
+import { runTool, ToolError } from "./result";
+
+/** The browser's defaults (apps/web useSimulation): 30 replications, seed 1. */
+export const DEFAULT_REPS = 30;
+export const DEFAULT_SEED = 1;
+const MAX_REPS = 200;
+
+export const TOOL_NAMES = ["list_workspaces", "set_active_workspace", "get_workspace_summary", "get_process", "run_scenario"] as const;
+
+const workspaceArg = z
+  .string()
+  .optional()
+  .describe("Workspace id, slug or name. Defaults to the active workspace (set_active_workspace).");
+const processArg = z.string().optional().describe("Process id or name. Defaults to the workspace's only process.");
+const revisionArg = z.enum(["live", "draft"]).optional().describe("Which revision to use (default live).");
+
+function check<T>(r: { data: T | null; error: unknown }): T {
+  if (r.error) throw r.error;
+  return r.data as T;
+}
+
+/** A run summary: means and 10th–90th percentile ranges, no trace (docs/PRD.md §6.4, §7.1). */
+export function summarizeRun(model: EngineModel, result: SimulationResult) {
+  const roleName = (id: string | null) => (id ? (model.roles[id]?.name ?? id) : null);
+  const stepName = (id: string | null) => (id ? (model.steps.find((s) => s.id === id)?.name ?? id) : null);
+  const personName = (id: string | null) => (id ? (result.resolvedPeople[id]?.name ?? id) : null);
+  return {
+    reps: result.reps,
+    horizon_weeks: model.horizonWeeks,
+    kpi: result.kpi,
+    bottleneck: {
+      role: result.bnRole ? { id: result.bnRole, name: roleName(result.bnRole), util: result.kpi.roles[result.bnRole]?.util ?? null } : null,
+      step: result.bnStep ? { id: result.bnStep, name: stepName(result.bnStep) } : null,
+      person: result.bnPerson
+        ? { id: result.bnPerson, name: personName(result.bnPerson), util: result.kpi.people[result.bnPerson]?.util ?? null }
+        : null,
+    },
+    names: {
+      roles: Object.fromEntries(Object.entries(model.roles).map(([id, r]) => [id, r.name])),
+      people: Object.fromEntries(Object.entries(result.resolvedPeople).map(([id, p]) => [id, p.name])),
+      steps: Object.fromEntries(model.steps.map((s) => [s.id, s.name])),
+    },
+  };
+}
+
+/** An MCP server exposing the v1 read tools, acting as the context's user. */
+export function createMcpServer(ctx: ToolContext): McpServer {
+  const server = new McpServer({ name: "transpera-flow", version: "0.1.0" });
+
+  server.registerTool(
+    "list_workspaces",
+    {
+      title: "List workspaces",
+      description: "Workspaces you can access, and which one is active for this token.",
+      annotations: { readOnlyHint: true },
+    },
+    () =>
+      runTool(async () => {
+        const workspaces = await visibleWorkspaces(ctx.db);
+        return workspaces.map((w) => ({ id: w.id, name: w.name, slug: w.slug, active: w.id === ctx.activeWorkspaceId }));
+      }),
+  );
+
+  server.registerTool(
+    "set_active_workspace",
+    {
+      title: "Set active workspace",
+      description: "Choose the workspace later calls act on (by id, slug or name). Remembered for this API token.",
+      inputSchema: { workspace: z.string().describe("Workspace id, slug or name") },
+      annotations: { idempotentHint: true },
+    },
+    ({ workspace }) =>
+      runTool(async () => {
+        const target = matchWorkspace(await visibleWorkspaces(ctx.db), workspace);
+        const updated = check(
+          await ctx.db.from("api_tokens").update({ active_workspace_id: target.id }).eq("token_hash", ctx.tokenHash).select("id"),
+        );
+        if (!updated?.length) throw new ToolError("token", "Could not update this API token");
+        ctx.activeWorkspaceId = target.id;
+        return { id: target.id, name: target.name, slug: target.slug };
+      }),
+  );
+
+  server.registerTool(
+    "get_workspace_summary",
+    {
+      title: "Workspace summary",
+      description: "Company model overview: settings, processes, roles and people of the active workspace.",
+      inputSchema: { workspace: workspaceArg },
+      annotations: { readOnlyHint: true },
+    },
+    ({ workspace }) =>
+      runTool(async (assumptions) => {
+        const ws = await resolveWorkspace(ctx, workspace, assumptions);
+        const [processes, roles, people] = await Promise.all([
+          listProcesses(ctx.db, ws.id),
+          ctx.db.from("roles").select("id, name, headcount, default_cost_rate").eq("workspace_id", ws.id).order("name"),
+          ctx.db.from("people").select("id, name, fte, capacity_hours_week, active").eq("workspace_id", ws.id).order("name"),
+        ]);
+        const revisionIds = processes.flatMap((p) => [p.live_revision_id, p.draft_revision_id]).filter((id): id is string => !!id);
+        const revisions = revisionIds.length
+          ? check(await ctx.db.from("process_revisions").select("id, number").in("id", revisionIds))
+          : [];
+        const number = (id: string | null) => revisions.find((r) => r.id === id)?.number ?? null;
+        assumptions.push("No runs are stored yet, so there are no baseline KPIs; call run_scenario for current numbers.");
+        return {
+          workspace: { id: ws.id, name: ws.name, slug: ws.slug, settings: ws.settings },
+          processes: processes.map((p) => ({
+            id: p.id,
+            name: p.name,
+            kind: p.kind,
+            entity_name: p.entity_name,
+            description: p.description,
+            live_revision: number(p.live_revision_id),
+            draft_revision: number(p.draft_revision_id),
+          })),
+          roles: check(roles),
+          people: check(people),
+          last_baseline_run: null,
+        };
+      }),
+  );
+
+  server.registerTool(
+    "get_process",
+    {
+      title: "Get process",
+      description: "A process graph (steps, edges, roles) at its live or draft revision.",
+      inputSchema: { process: processArg, revision: revisionArg, workspace: workspaceArg },
+      annotations: { readOnlyHint: true },
+    },
+    ({ process, revision, workspace }) =>
+      runTool(async (assumptions) => {
+        const ws = await resolveWorkspace(ctx, workspace, assumptions);
+        const proc = await resolveProcess(ctx, ws, process, assumptions);
+        if (!revision) assumptions.push("revision defaulted to live.");
+        const bundle = await loadProcessBundle(ctx.db, ws, proc, revisionIdFor(proc, revision ?? "live"));
+        return {
+          process: { ...bundle.process, draft_revision_id: proc.draft_revision_id },
+          revision: bundle.revision,
+          roles: bundle.roles,
+          steps: bundle.steps,
+          edges: bundle.edges,
+        };
+      }),
+  );
+
+  server.registerTool(
+    "run_scenario",
+    {
+      title: "Run scenario",
+      description:
+        "Simulate a process on the server (Monte Carlo) and return means with 10th–90th percentile ranges. Same engine, model and seed as the browser, so the numbers match.",
+      inputSchema: {
+        process: processArg,
+        revision: revisionArg,
+        workspace: workspaceArg,
+        reps: z.number().int().min(1).max(MAX_REPS).optional().describe(`Replications (default ${DEFAULT_REPS})`),
+        seed: z.number().int().min(0).optional().describe(`Random seed (default ${DEFAULT_SEED})`),
+        horizon_weeks: z.number().int().min(1).max(104).optional().describe("Weeks to simulate (default: workspace setting)"),
+        start_date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional()
+          .describe("ISO date the run starts on; people's start/end dates and leave are measured from it (default today)"),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    (args) =>
+      runTool(async (assumptions) => {
+        const ws = await resolveWorkspace(ctx, args.workspace, assumptions);
+        const proc = await resolveProcess(ctx, ws, args.process, assumptions);
+        const revision = args.revision ?? "live";
+        if (!args.revision) assumptions.push("revision defaulted to live.");
+        const reps = args.reps ?? DEFAULT_REPS;
+        if (args.reps === undefined) assumptions.push(`reps defaulted to ${DEFAULT_REPS}.`);
+        const seed = args.seed ?? DEFAULT_SEED;
+        if (args.seed === undefined) assumptions.push(`seed defaulted to ${DEFAULT_SEED}.`);
+        const startDate = args.start_date ?? ctx.today;
+        if (!args.start_date) assumptions.push(`start_date defaulted to today (${ctx.today}).`);
+
+        const bundle = await loadProcessBundle(ctx.db, ws, proc, revisionIdFor(proc, revision));
+        let model: EngineModel;
+        try {
+          model = toEngineModel(bundle, { startDate });
+        } catch (err) {
+          if (err instanceof ModelError) throw new ToolError("invalid_model", `This process can't be simulated yet: ${err.message}`);
+          throw err;
+        }
+        if (args.horizon_weeks !== undefined) model = { ...model, horizonWeeks: args.horizon_weeks };
+        else assumptions.push(`horizon_weeks defaulted to the workspace setting (${model.horizonWeeks}).`);
+
+        const started = performance.now();
+        const result = simulate(model, reps, seed);
+        return {
+          workspace: { id: ws.id, name: ws.name },
+          process: { id: proc.id, name: proc.name },
+          revision: { id: bundle.revision.id, number: bundle.revision.number, status: bundle.revision.status, which: revision },
+          seed,
+          start_date: startDate,
+          duration_ms: Math.round(performance.now() - started),
+          ...summarizeRun(model, result),
+        };
+      }),
+  );
+
+  return server;
+}

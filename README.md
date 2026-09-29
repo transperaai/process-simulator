@@ -11,7 +11,7 @@ Work is tracked as GitHub issues (milestone parents #1–#3). Picking this up? S
 | `apps/web` | Next.js 16 app (App Router, Tailwind v4, React Flow) |
 | `packages/engine` | Simulation engine, shared by the browser (Web Worker) and Node |
 | `packages/db` | Supabase migrations, seed, row types, row → engine model mapping |
-| `packages/mcp` | MCP server tools (placeholder) |
+| `packages/mcp` | MCP server: tools and the `/api/mcp` request handler (see below) |
 | `prototype/` | The original single-file prototype; the engine port is tested against it |
 
 ## Develop
@@ -41,3 +41,25 @@ Database tests create a throwaway database on the Postgres at `DATABASE_URL`
 small stand-in for Supabase auth, the migrations and the seed.
 
 After changing the fixtures, regenerate the seed with `pnpm --filter @transpera-flow/db gen:seed`.
+
+The MCP end-to-end suite (`packages/mcp/test/postgrest.test.ts`) also needs
+PostgREST; it is skipped locally unless `POSTGREST_URL` and
+`POSTGREST_JWT_SECRET` are set. CI runs it (see `.github/workflows/ci.yml`).
+
+## MCP server
+
+`/api/mcp` is a Streamable HTTP MCP endpoint (PRD §7.1). Create a personal
+token under **API tokens** in the app (shown once; only its hash is stored),
+then connect Claude Code:
+
+```sh
+claude mcp add --transport http transpera-flow https://<host>/api/mcp \
+  --header "Authorization: Bearer tf_…"
+```
+
+Tools: `list_workspaces`, `set_active_workspace`, `get_workspace_summary`,
+`get_process`, `run_scenario`. The endpoint acts as the token's user under
+RLS and uses only `NEXT_PUBLIC_SUPABASE_URL` and
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; no extra environment variables. How it
+does that without the service-role key:
+[`docs/adr/0002-mcp-acts-as-user-via-pre-request.md`](docs/adr/0002-mcp-acts-as-user-via-pre-request.md).

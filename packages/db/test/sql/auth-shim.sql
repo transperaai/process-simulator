@@ -27,7 +27,8 @@ create table auth.users (
   email_confirmed_at timestamptz default now(),
   last_sign_in_at timestamptz,
   raw_app_meta_data jsonb not null default '{}',
-  raw_user_meta_data jsonb not null default '{}'
+  raw_user_meta_data jsonb not null default '{}',
+  banned_until timestamptz
 );
 
 -- One row per linked provider account; identity_data is written only by Auth.

@@ -14,6 +14,59 @@ export type Database = {
   }
   public: {
     Tables: {
+      api_tokens: {
+        Row: {
+          active_workspace_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          label: string
+          last_used_at: string | null
+          rate_window_count: number
+          rate_window_start: string | null
+          revoked_at: string | null
+          token_hash: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          active_workspace_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          label: string
+          last_used_at?: string | null
+          rate_window_count?: number
+          rate_window_start?: string | null
+          revoked_at?: string | null
+          token_hash: string
+          updated_at?: string
+          user_id?: string
+        }
+        Update: {
+          active_workspace_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          label?: string
+          last_used_at?: string | null
+          rate_window_count?: number
+          rate_window_start?: string | null
+          revoked_at?: string | null
+          token_hash?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "api_tokens_active_workspace_id_fkey"
+            columns: ["active_workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_log: {
         Row: {
           action: string
@@ -801,6 +854,7 @@ export type Database = {
         Args: { ws: string }
         Returns: Database["public"]["Enums"]["membership_role"]
       }
+      use_api_token: { Args: { token: string }; Returns: Json }
     }
     Enums: {
       membership_role: "agency_admin" | "owner" | "editor" | "member" | "viewer"

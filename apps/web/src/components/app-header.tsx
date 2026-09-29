@@ -9,6 +9,11 @@ export function AppHeader({ workspace, signedIn }: { workspace?: string; signedI
       {workspace && <span className="text-fg-3">{workspace}</span>}
       <span className="flex-1" />
       {signedIn && (
+        <Link href="/settings/tokens" className="rounded-token px-2 py-1 text-fg-2 hover:bg-panel-2">
+          API tokens
+        </Link>
+      )}
+      {signedIn && (
         <form action="/auth/signout" method="post">
           <button type="submit" className="rounded-token px-2 py-1 text-fg-2 hover:bg-panel-2">
             Sign out

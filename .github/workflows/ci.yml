@@ -23,8 +23,23 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      # Supabase's Data API server, for the MCP end-to-end test
+      # (packages/mcp/test/postgrest.test.ts). It keeps retrying until the test
+      # creates its database and lets the authenticator role log in. The JWT
+      # secret only signs test tokens for this throwaway container.
+      postgrest:
+        image: postgrest/postgrest:v14.18
+        env:
+          PGRST_DB_URI: postgres://authenticator:authenticator@postgres:5432/transpera_flow_postgrest
+          PGRST_DB_SCHEMAS: public
+          PGRST_DB_ANON_ROLE: anon
+          PGRST_JWT_SECRET: ci-only-postgrest-jwt-secret-for-throwaway-tests
+        ports:
+          - 3000:3000
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      POSTGREST_URL: http://localhost:3000
+      POSTGREST_JWT_SECRET: ci-only-postgrest-jwt-secret-for-throwaway-tests
       NEXT_TELEMETRY_DISABLED: 1
     steps:
       - uses: actions/checkout@v4

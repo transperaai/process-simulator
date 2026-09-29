@@ -69,10 +69,10 @@ export async function saveField<T extends Exclude<FieldValue, readonly string[]>
 
 export type Scalar = string | number | boolean | null;
 
-export type FieldsOutcome =
+export type FieldsOutcome<V = Scalar> =
   | { status: "saved" }
   /** Fields someone else changed since `base`, with their stored values. The other fields were saved. */
-  | { status: "conflict"; theirs: Record<string, Scalar> }
+  | { status: "conflict"; theirs: Record<string, V> }
   | { status: "not_found" }
   | { status: "error"; message: string };
 
@@ -81,20 +81,20 @@ export type FieldsOutcome =
  * base, as `saveField` does for one. Used where one edit changes fields that
  * must move together, such as a step's kind and outcome.
  */
-export async function saveFields(
+export async function saveFields<V extends Scalar | object = Scalar>(
   target: EditableTable,
   key: Record<string, string>,
-  base: Record<string, Scalar>,
-  changes: Record<string, Scalar>,
-): Promise<FieldsOutcome> {
+  base: Record<string, V>,
+  changes: Record<string, V>,
+): Promise<FieldsOutcome<V>> {
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("save_fields", { target, key, base, changes });
+  const { data, error } = await supabase.rpc("save_fields", { target, key, base: base as Json, changes: changes as Json });
   if (error) return errorOutcome(error);
   const result = data as unknown as FieldsResult;
   if (result.status === "not_found") return { status: "not_found" };
   const conflicts = result.conflicts ?? {};
   if (result.status === "conflict" && Object.keys(conflicts).length) {
-    return { status: "conflict", theirs: conflicts as Record<string, Scalar> };
+    return { status: "conflict", theirs: conflicts as Record<string, V> };
   }
   return { status: "saved" };
 }

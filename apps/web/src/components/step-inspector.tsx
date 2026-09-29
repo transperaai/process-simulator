@@ -4,12 +4,15 @@
 // on its own through the process editor, so each change is undoable and
 // re-runs the simulation.
 
+import { useEffect, useRef } from "react";
 import { triangularRange, type Distribution, type ProcessBundle, type StepKind, type StepRow } from "@transpera-flow/db";
 import { NumberField, SelectField, TextField, type SelectOption } from "@/components/fields";
 import {
   KIND_LABELS,
   OUTCOME_LABELS,
   STEP_KINDS,
+  kindProblem,
+  reworkTargets,
   setDistribution,
   setRangePoint,
   setStepKind,
@@ -70,16 +73,27 @@ export function StepInspector({
   bundle,
   step,
   editor,
+  autoFocus = false,
+  onFocused,
   onClose,
   onDelete,
 }: {
   bundle: ProcessBundle;
   step: StepRow;
   editor: ProcessEditor;
+  /** Put focus in the first field (asked for from the step's menu). */
+  autoFocus?: boolean;
+  onFocused?: () => void;
   onClose: () => void;
   onDelete: () => void;
 }) {
   const id = step.id;
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!autoFocus) return;
+    ref.current?.querySelector<HTMLElement>("input, select, textarea")?.focus();
+    onFocused?.();
+  }, [autoFocus, onFocused]);
   /** A saver that runs an edit; the editor saves it and reports conflicts itself. */
   const via =
     <T extends Scalar>(build: (b: ProcessBundle, value: T) => Edit | null): Saver<T> =>
@@ -90,7 +104,9 @@ export function StepInspector({
   const field = <T extends Scalar>(name: string) => via<T>((b, v) => updateStep(b, id, { [name]: v }));
   const working = step.kind !== "start" && step.kind !== "end";
 
-  const kindOptions: SelectOption[] = [...STEP_KINDS, ...(step.kind === "subprocess" ? (["subprocess"] as const) : [])].map((k) => ({
+  const kindOptions: SelectOption[] = [...STEP_KINDS, ...(step.kind === "subprocess" ? (["subprocess"] as const) : [])]
+    .filter((k) => !kindProblem(bundle, id, k))
+    .map((k) => ({
     value: k,
     label: KIND_LABELS[k],
   }));
@@ -103,14 +119,18 @@ export function StepInspector({
       return { value: p.id, label: roles.length ? `${p.name} (${roles.join(", ")})` : p.name };
     })
     .sort((a, b) => a.label.localeCompare(b.label));
-  const reworkOptions = bundle.steps
-    .filter((s) => s.id !== id && s.kind !== "start" && s.kind !== "end")
-    .map((s) => ({ value: s.id, label: s.name }))
-    .sort((a, b) => a.label.localeCompare(b.label));
+  const reworkOptions = reworkTargets(bundle, id).map((s) => ({ value: s.id, label: s.name }));
 
   return (
     <aside
+      ref={ref}
       aria-label={`Step: ${step.name}`}
+      onKeyDown={(e) => {
+        // Escape outside a field closes the inspector and goes back to the step on the map.
+        if (e.key !== "Escape" || (e.target as Element).closest("input, select, textarea")) return;
+        onClose();
+        document.querySelector<HTMLElement>(`.react-flow__node[data-id="${id}"]`)?.focus();
+      }}
       className="flex max-h-[34rem] flex-col gap-3 overflow-y-auto rounded-token border border-line bg-panel p-3 shadow-token"
     >
       <div className="flex items-baseline justify-between gap-2">

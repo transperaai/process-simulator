@@ -10,7 +10,7 @@ import {
   type StepOutcome,
   type StepRow,
 } from "@transpera-flow/db";
-import { pick, readField, type Edit, type Patch, type RowChange, type Scalar } from "./ops";
+import { pick, readField, type Edit, type Op, type Patch, type RowChange, type Scalar } from "./ops";
 
 /** Kinds the palette offers. `subprocess` arrives with sub-processes. */
 export const STEP_KINDS = ["task", "wait", "decision", "start", "end"] as const satisfies readonly StepKind[];
@@ -144,12 +144,67 @@ export function updateStep(bundle: ProcessBundle, id: string, patch: Patch): Edi
   return updateRow(bundle, "steps", id, patch, `Changed ${stepName(bundle, id)}`);
 }
 
-/** Change a step's kind; end steps get an outcome and lose it when they stop being ends. */
+/** Why a step can't become `kind`, or null if it can. */
+export function kindProblem(bundle: ProcessBundle, id: string, kind: StepKind): string | null {
+  if (kind === "start" && bundle.steps.some((s) => s.kind === "start" && s.id !== id)) {
+    return "The process already has a start step.";
+  }
+  return null;
+}
+
+/**
+ * Change a step's kind. End steps get an outcome and lose it when they stop
+ * being ends (the table's `(kind = 'end') = (outcome is not null)`). A new end
+ * step loses its outgoing connections and a new start step its incoming ones,
+ * in the same edit, so one undo brings them back.
+ */
 export function setStepKind(bundle: ProcessBundle, id: string, kind: StepKind): Edit | null {
   const step = bundle.steps.find((s) => s.id === id);
-  if (!step) return null;
+  if (!step || kindProblem(bundle, id, kind)) return null;
   const outcome = kind === "end" ? (step.outcome ?? nextOutcome(bundle)) : null;
-  return updateStep(bundle, id, { kind, outcome });
+  const update = updateStep(bundle, id, { kind, outcome });
+  if (!update) return null;
+  const dropped = bundle.edges.filter((e) => (kind === "end" && e.from_step_id === id) || (kind === "start" && e.to_step_id === id));
+  // Rework only goes back to working steps.
+  const refs: RowChange[] =
+    kind === "start" || kind === "end"
+      ? bundle.steps
+          .filter((s) => s.rework_to_step_id === id)
+          .map((s) => ({ table: "steps", id: s.id, before: { rework_to_step_id: id }, after: { rework_to_step_id: null } }))
+      : [];
+  return {
+    label: `Made ${step.name} ${kind === "start" ? "the start step" : `${kind === "end" ? "an" : "a"} ${KIND_LABELS[kind].toLowerCase()} step`}`,
+    ops: [
+      { kind: "update", changes: [...(update.ops[0] as Extract<Op, { kind: "update" }>).changes, ...refs] },
+      ...(dropped.length ? [{ kind: "remove" as const, steps: [], edges: dropped }] : []),
+    ],
+  };
+}
+
+/** Send a step's rework back to another working step, or (null) repeat the step itself. */
+export function setReworkTarget(bundle: ProcessBundle, id: string, target: string | null): Edit | null {
+  const step = bundle.steps.find((s) => s.id === id);
+  if (!step) return null;
+  if (target !== null && !reworkTargets(bundle, id).some((s) => s.id === target)) return null;
+  const edit = updateStep(bundle, id, { rework_to_step_id: target });
+  const label = target ? `Sent ${step.name}'s rework back to ${stepName(bundle, target)}` : `Made ${step.name}'s rework repeat the step`;
+  return edit && { ...edit, label };
+}
+
+/** Steps a step's rework can go back to: any other working step, by name. */
+export function reworkTargets(bundle: ProcessBundle, id: string): StepRow[] {
+  return bundle.steps
+    .filter((s) => s.id !== id && s.kind !== "start" && s.kind !== "end")
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Pin a step to one person, or (null) let anyone in its role work it. */
+export function pinPerson(bundle: ProcessBundle, id: string, personId: string | null): Edit | null {
+  const step = bundle.steps.find((s) => s.id === id);
+  const person = personId === null ? null : bundle.people.find((p) => p.id === personId);
+  if (!step || person === undefined) return null;
+  const edit = updateStep(bundle, id, { person_id: personId });
+  return edit && { ...edit, label: person ? `Pinned ${step.name} to ${person.name}` : `Unpinned ${step.name}` };
 }
 
 export type Phase = "work" | "wait";
@@ -200,6 +255,110 @@ export function setRangePoint(
     [`${phase}_params.max`]: round(range.max),
     [`${phase}_hours`]: round((range.min + range.mode + range.max) / 3),
   });
+}
+
+/**
+ * Set a duration's mean, as the node's inline editor does. A triangular range
+ * is scaled to the new mean (keeping its shape), since the engine samples the
+ * range rather than the mean.
+ */
+export function setMeanHours(bundle: ProcessBundle, id: string, phase: Phase, hours: number): Edit | null {
+  const step = bundle.steps.find((s) => s.id === id);
+  if (!step || !(hours >= 0) || !Number.isFinite(hours)) return null;
+  if (step[`${phase}_dist`] !== "triangular") return updateStep(bundle, id, { [`${phase}_hours`]: round(hours) });
+  const range = triangularRange(step[`${phase}_params`], Number(step[`${phase}_hours`]));
+  const mean = (range.min + range.mode + range.max) / 3;
+  const scale = (v: number) => round(mean > 0 ? (v * hours) / mean : hours);
+  const [min, mode, max] = [scale(range.min), scale(range.mode), scale(range.max)];
+  return updateStep(bundle, id, {
+    [`${phase}_params.min`]: min,
+    [`${phase}_params.mode`]: mode,
+    [`${phase}_params.max`]: max,
+    [`${phase}_hours`]: round((min + mode + max) / 3),
+  });
+}
+
+/**
+ * Steps as copied, with the connections among them: what paste and duplicate
+ * work from. A snapshot, so pasting still works after the originals change.
+ */
+export interface StepClipboard {
+  steps: StepRow[];
+  edges: EdgeRow[];
+}
+
+/** How far each paste or duplicate lands from what it copies. */
+export const PASTE_OFFSET = 40;
+
+/**
+ * Copy steps and the connections between them. The start step is left out: a
+ * process has exactly one.
+ */
+export function copySteps(bundle: ProcessBundle, ids: readonly string[]): StepClipboard | null {
+  const wanted = new Set(ids);
+  const steps = bundle.steps.filter((s) => wanted.has(s.id) && s.kind !== "start");
+  if (!steps.length) return null;
+  const kept = new Set(steps.map((s) => s.id));
+  const edges = bundle.edges.filter((e) => kept.has(e.from_step_id) && kept.has(e.to_step_id));
+  return structuredClone({ steps, edges });
+}
+
+const COPY_SUFFIX = " (copy)";
+
+/**
+ * Paste copied steps as new steps, `offset` away. Every pasted step and edge
+ * gets a new id; existing rows are untouched. Connections among the copied
+ * steps are copied and point at the new steps; connections to steps that
+ * weren't copied are not. A rework target among the copied steps points at its
+ * copy; one outside them is kept if that step still exists.
+ */
+export function pasteSteps(
+  bundle: ProcessBundle,
+  clip: StepClipboard,
+  offset: { x: number; y: number },
+  verb: "Pasted" | "Duplicated" = "Pasted",
+): { edit: Edit; ids: string[] } | null {
+  if (!clip.steps.length) return null;
+  const { revision } = bundle;
+  const owner = { revision_id: revision.id, workspace_id: revision.workspace_id, process_id: revision.process_id };
+  const newIds = new Map(clip.steps.map((s) => [s.id, newId()]));
+  const existing = new Set(bundle.steps.map((s) => s.id));
+  const steps = clip.steps.map((s): StepRow => {
+    // A copy replaces nothing (PRD §4.1, stable ids); the rest of the row is copied as is.
+    const row: StepRow & { replaced_by?: unknown } = { ...s };
+    delete row.replaced_by;
+    const rework = s.rework_to_step_id;
+    return {
+      ...row,
+      ...owner,
+      id: newIds.get(s.id)!,
+      name: s.name.endsWith(COPY_SUFFIX) ? s.name : `${s.name.slice(0, 200 - COPY_SUFFIX.length)}${COPY_SUFFIX}`,
+      work_params: { ...s.work_params },
+      wait_params: { ...s.wait_params },
+      rework_to_step_id: rework === null ? null : (newIds.get(rework) ?? (existing.has(rework) ? rework : null)),
+      // Nothing is sitting at a step that didn't exist a moment ago.
+      current_wip: null,
+      x: Math.round(Number(s.x) + offset.x),
+      y: Math.round(Number(s.y) + offset.y),
+    };
+  });
+  const edges = clip.edges
+    .filter((e) => newIds.has(e.from_step_id) && newIds.has(e.to_step_id))
+    .map((e): EdgeRow => ({
+      ...e,
+      ...owner,
+      id: newId(),
+      from_step_id: newIds.get(e.from_step_id)!,
+      to_step_id: newIds.get(e.to_step_id)!,
+    }));
+  const label = steps.length === 1 ? `${verb} ${clip.steps[0]!.name}` : `${verb} ${steps.length} steps`;
+  return { edit: { label, ops: [{ kind: "insert", steps, edges }] }, ids: steps.map((s) => s.id) };
+}
+
+/** Duplicate steps (and the connections among them) next to the originals. */
+export function duplicateSteps(bundle: ProcessBundle, ids: readonly string[]): { edit: Edit; ids: string[] } | null {
+  const clip = copySteps(bundle, ids);
+  return clip && pasteSteps(bundle, clip, { x: PASTE_OFFSET, y: PASTE_OFFSET }, "Duplicated");
 }
 
 /** Why an edge from `from` to `to` isn't allowed, or null if it is. `except` is an edge being rerouted. */

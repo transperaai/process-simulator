@@ -29,3 +29,16 @@ export {
   type ScenarioPatch,
 } from "./scenario";
 export { compareHeadline, compareRuns, type Comparison, type Delta, type Headline, type HeadlineInput } from "./compare";
+export {
+  DEFAULT_ISSUE_THRESHOLDS,
+  DETECTORS,
+  ISSUE_SEVERITIES,
+  ISSUE_TYPES,
+  detectIssues,
+  type DetectedIssue,
+  type Detector,
+  type IssueSeverity,
+  type IssueThresholds,
+  type IssueType,
+  type SuggestedFix,
+} from "./issues";

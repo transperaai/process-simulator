@@ -70,6 +70,10 @@ interface StepStat {
   waitSum: number;
   waitN: number;
   reworks: number;
+  /** Queue area over the second half of the measured window. */
+  qAreaLate: number;
+  departures: number;
+  slaBreaches: number;
 }
 
 /** A step's run-time state: its statistics, queue, who can work it, and its random streams. */
@@ -274,7 +278,19 @@ export function runOnce(
     const waitDist = s.waitDist ?? DEFAULT_WAIT_DIST;
     stepStates.set(s.id, {
       s,
-      stat: { arrivals: 0, qLen: 0, qArea: 0, qLast: 0, qMax: 0, waitSum: 0, waitN: 0, reworks: 0 },
+      stat: {
+        arrivals: 0,
+        qLen: 0,
+        qArea: 0,
+        qLast: 0,
+        qMax: 0,
+        waitSum: 0,
+        waitN: 0,
+        reworks: 0,
+        qAreaLate: 0,
+        departures: 0,
+        slaBreaches: 0,
+      },
       queue: [],
       people: [],
       staffed: Boolean(s.role || s.person),
@@ -367,8 +383,15 @@ export function runOnce(
     return false;
   };
 
-  const setQ = (st: StepStat, t: number, delta: number) => {
+  /** Start of the measured window's second half, for queue growth. */
+  const half = H / 2;
+  /** Add the queue area since the last change, and the part of it in the second half. */
+  const addArea = (st: StepStat, t: number) => {
     st.qArea += st.qLen * (t - st.qLast);
+    if (t > half) st.qAreaLate += st.qLen * (t - Math.max(st.qLast, half));
+  };
+  const setQ = (st: StepStat, t: number, delta: number) => {
+    addArea(st, t);
     st.qLast = t;
     st.qLen += delta;
     if (st.qLen > st.qMax) st.qMax = st.qLen;
@@ -510,6 +533,8 @@ export function runOnce(
   function leave(e: SimEntity, st: StepState, t: number) {
     e.seg!.tL = t;
     const s = st.s;
+    st.stat.departures++;
+    if (s.sla !== undefined && t - e.seg!.tQ > s.sla) st.stat.slaBreaches++;
     if (s.rework && st.rework() < s.rework) {
       st.stat.reworks++;
       enter(e, s.id, t);
@@ -547,7 +572,18 @@ export function runOnce(
     cycle.length = 0;
     active = model.activeClients;
     for (const { stat } of stepList) {
-      Object.assign(stat, { arrivals: 0, qArea: 0, qLast: 0, qMax: stat.qLen, waitSum: 0, waitN: 0, reworks: 0 });
+      Object.assign(stat, {
+        arrivals: 0,
+        qArea: 0,
+        qLast: 0,
+        qMax: stat.qLen,
+        waitSum: 0,
+        waitN: 0,
+        reworks: 0,
+        qAreaLate: 0,
+        departures: 0,
+        slaBreaches: 0,
+      });
     }
     for (const rid in roleBusyHours) roleBusyHours[rid] = 0;
     for (const p of people) {
@@ -637,7 +673,8 @@ export function runOnce(
   const stepOut: Record<string, StepResult> = {};
   for (const s of model.steps) {
     const st = stepStates.get(s.id)!.stat;
-    st.qArea += st.qLen * (H - st.qLast);
+    addArea(st, H);
+    const halfWeeks = model.horizonWeeks / 2;
     stepOut[s.id] = {
       arrivals: st.arrivals,
       avgQueue: st.qArea / H,
@@ -645,6 +682,9 @@ export function runOnce(
       avgWait: st.waitN ? st.waitSum / st.waitN : 0,
       reworks: st.reworks,
       wip: st.qLen,
+      queueGrowth: halfWeeks > 0 ? ((st.qAreaLate - (st.qArea - st.qAreaLate)) / half) / halfWeeks : 0,
+      departures: st.departures,
+      slaBreaches: st.slaBreaches,
     };
   }
   // Ongoing load is reported from the starting client count, as in the
@@ -808,6 +848,9 @@ export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationRes
       avgWait: avg((r) => r.steps[s.id]!.avgWait),
       reworks: avg((r) => r.steps[s.id]!.reworks),
       wip: avg((r) => r.steps[s.id]!.wip),
+      queueGrowth: avg((r) => r.steps[s.id]!.queueGrowth),
+      departures: avg((r) => r.steps[s.id]!.departures),
+      slaBreaches: avg((r) => r.steps[s.id]!.slaBreaches),
     };
   }
   const roles: Record<string, RoleResult> = {};

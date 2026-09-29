@@ -113,6 +113,12 @@ export interface EngineStep {
    * Entering WIP at any step starts the run from it instead of a warm-up.
    */
   currentWip?: number;
+  /**
+   * Target hours for one visit to the step, from queueing to leaving it
+   * (queue, hands-on time and external wait). Visits over it are counted as
+   * SLA breaches; it doesn't change how the step is worked.
+   */
+  sla?: number;
   next: EngineEdge[];
 }
 
@@ -194,6 +200,16 @@ export interface StepResult {
   reworks: number;
   /** Items still queued at the horizon. */
   wip: number;
+  /**
+   * How fast the queue grows, in items per week: the average queue over the
+   * second half of the measured window minus that over the first half,
+   * divided by the half's length in weeks. Near 0 for a stable queue.
+   */
+  queueGrowth: number;
+  /** Visits that left the step in the measured window. */
+  departures: number;
+  /** Of those, visits that took longer than the step's `sla` (0 when it has none). */
+  slaBreaches: number;
 }
 
 export interface RoleResult {

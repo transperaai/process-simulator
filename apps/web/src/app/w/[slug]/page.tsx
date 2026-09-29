@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { ProcessView } from "@/components/process-view";
-import { canEditWorkspace, canManageWorkspace } from "@/lib/access-data";
+import { canEditWorkspace, canManageWorkspace, currentUserId } from "@/lib/access-data";
 import { loadProcessForEditing } from "@/lib/data";
 
 export default async function WorkspacePage(props: PageProps<"/w/[slug]">) {
@@ -10,7 +10,11 @@ export default async function WorkspacePage(props: PageProps<"/w/[slug]">) {
   const process = await loadProcessForEditing(slug);
   if (!process) notFound();
   const { live, draft } = process;
-  const [canEdit, canManage] = await Promise.all([canEditWorkspace(live.workspace.id), canManageWorkspace(live.workspace.id)]);
+  const [canEdit, canManage, userId] = await Promise.all([
+    canEditWorkspace(live.workspace.id),
+    canManageWorkspace(live.workspace.id),
+    currentUserId(),
+  ]);
   return (
     <main className="mx-auto w-full max-w-7xl px-4 pb-8">
       <AppHeader workspace={live.workspace.name} signedIn />
@@ -25,7 +29,7 @@ export default async function WorkspacePage(props: PageProps<"/w/[slug]">) {
           </Link>
         )}
       </div>
-      <ProcessView live={live} draft={draft} mode={canEdit ? "live" : "readonly"} />
+      <ProcessView live={live} draft={draft} mode={canEdit ? "live" : "readonly"} userId={userId} />
     </main>
   );
 }

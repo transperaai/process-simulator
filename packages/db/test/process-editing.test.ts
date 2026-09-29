@@ -103,6 +103,47 @@ describe("editing a process on the canvas", () => {
     });
   });
 
+  it("saves current WIP with its provenance as one compare-and-set, keyed per column in the provenance jsonb", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      await openDraft(c);
+      const entered = { source: "entered", at: "2026-09-29T10:00:00.000Z", by: users.editor!.id };
+      // What the editor sends: the value and `provenance.current_wip`, each with the base it last saw.
+      const saved = await saveFields(
+        c,
+        "steps",
+        ids.audit,
+        { current_wip: null, "provenance.current_wip": null },
+        { current_wip: 7, "provenance.current_wip": entered },
+      );
+      expect(saved.status).toBe("saved");
+      const row = (await c.query("select current_wip, provenance from steps where revision_id = $1 and id = $2", [rev, ids.audit])).rows[0];
+      expect(row).toEqual({ current_wip: 7, provenance: { current_wip: entered } });
+
+      // Another column's provenance merges into the same jsonb.
+      const work = { source: "entered", at: "2026-09-29T11:00:00.000Z", by: users.editor!.id };
+      expect((await saveFields(c, "steps", ids.audit, { "provenance.work_hours": null }, { "provenance.work_hours": work })).status).toBe("saved");
+
+      // Someone who loaded before the first save conflicts on both, and learns the stored entry.
+      const stale = await saveFields(
+        c,
+        "steps",
+        ids.audit,
+        { current_wip: null, "provenance.current_wip": null },
+        { current_wip: 3, "provenance.current_wip": { ...entered, at: "2026-09-29T12:00:00.000Z" } },
+      );
+      expect(stale.status).toBe("conflict");
+      expect(stale.conflicts).toEqual({ current_wip: 7, "provenance.current_wip": entered });
+
+      // Undo: both go back to what they were.
+      expect(
+        (await saveFields(c, "steps", ids.audit, { current_wip: 7, "provenance.current_wip": entered }, { current_wip: null, "provenance.current_wip": null }))
+          .status,
+      ).toBe("saved");
+      const undone = (await c.query("select current_wip, provenance from steps where revision_id = $1 and id = $2", [rev, ids.audit])).rows[0];
+      expect(undone).toEqual({ current_wip: null, provenance: { current_wip: null, work_hours: work } });
+    });
+  });
+
   it("rejects an end step without an outcome", async () => {
     await db.as(users.editor!.claims, async (c) => {
       await openDraft(c);

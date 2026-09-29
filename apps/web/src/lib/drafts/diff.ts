@@ -6,7 +6,8 @@
 
 import type { EdgeRow, ProcessBundle, StepRow } from "@transpera-flow/db";
 import { sameScalar } from "@/lib/editor/commands";
-import { readField, type Scalar, type Table } from "@/lib/editor/ops";
+import { readField, type Table, type Value } from "@/lib/editor/ops";
+import { isProvenanceField } from "@/lib/editor/provenance";
 import { EDGE_FIELDS, STEP_FIELDS } from "@/lib/editor/validate";
 
 export type ChangeKind = "added" | "removed" | "changed";
@@ -14,8 +15,8 @@ export type ChangeKind = "added" | "removed" | "changed";
 /** One field going from its live value to its draft value. */
 export interface FieldChange {
   field: string;
-  live: Scalar;
-  draft: Scalar;
+  live: Value;
+  draft: Value;
 }
 
 interface RowChange<Row> {
@@ -48,8 +49,11 @@ export interface DraftDiff {
   list: Change[];
 }
 
-/** Fields compared on steps: what the editor edits, apart from position. */
-export const STEP_DIFF_FIELDS = Object.keys(STEP_FIELDS).filter((f) => f !== "x" && f !== "y");
+/**
+ * Fields compared on steps: what the editor edits, apart from position and
+ * provenance (a value's provenance goes with the value, lib/editor/provenance.ts).
+ */
+export const STEP_DIFF_FIELDS = Object.keys(STEP_FIELDS).filter((f) => f !== "x" && f !== "y" && !isProvenanceField(f));
 export const EDGE_DIFF_FIELDS = Object.keys(EDGE_FIELDS);
 
 function changedFields(live: object, draft: object, fields: readonly string[]): FieldChange[] {
@@ -123,7 +127,7 @@ export function changeOf(diff: DraftDiff, table: Table, id: string): Change | un
 }
 
 /** A field's live value, when the draft changed it. */
-export function liveValue(diff: DraftDiff, table: Table, id: string, field: string): { value: Scalar } | null {
+export function liveValue(diff: DraftDiff, table: Table, id: string, field: string): { value: Value } | null {
   const change = changeOf(diff, table, id);
   const f = change?.kind === "changed" ? change.fields.find((c) => c.field === field) : undefined;
   return f ? { value: f.live } : null;

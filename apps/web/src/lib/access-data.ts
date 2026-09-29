@@ -72,6 +72,14 @@ export async function loadAccessSettings(slug: string): Promise<AccessSettings |
   };
 }
 
+/** The signed-in user's id, or null. */
+export async function currentUserId(): Promise<string | null> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+  const sub = data?.claims?.sub;
+  return typeof sub === "string" ? sub : null;
+}
+
 /** Whether the signed-in user can edit the workspace's processes and people (RLS helper). */
 export async function canEditWorkspace(workspaceId: string): Promise<boolean> {
   const supabase = await createClient();

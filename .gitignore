@@ -1,0 +1,13 @@
+node_modules/
+.next/
+out/
+dist/
+coverage/
+*.tsbuildinfo
+.env*
+!.env.example
+.DS_Store
+.vercel
+test-results/
+playwright-report/
+packages/db/supabase/.temp/

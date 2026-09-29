@@ -1,0 +1,41 @@
+// The one place numbers become text, so every screen rounds and labels the same way.
+import type { Stat } from "@flowsim/engine";
+
+const WORKING_DAYS_PER_WEEK = 5;
+const LOCALE = "en-GB";
+
+export function formatNumber(value: number, digits = 1): string {
+  return value.toLocaleString(LOCALE, { minimumFractionDigits: 0, maximumFractionDigits: digits });
+}
+
+export function formatPercent(share: number): string {
+  return `${Math.round(share * 100)}%`;
+}
+
+/** Working hours to working days, given the workspace's hours per week. */
+export function formatDays(hours: number, hoursPerWeek: number): string {
+  const days = hours / (hoursPerWeek / WORKING_DAYS_PER_WEEK);
+  return `${formatNumber(days, days < 10 ? 1 : 0)} d`;
+}
+
+export function formatHours(hours: number): string {
+  return `${formatNumber(hours, 1)} h`;
+}
+
+/** Money, compacted above 10,000 (e.g. £27k, £1.2m). */
+export function formatCurrency(value: number, currency: string): string {
+  const compact = Math.abs(value) >= 10_000;
+  return value.toLocaleString(LOCALE, {
+    style: "currency",
+    currency,
+    notation: compact ? "compact" : "standard",
+    maximumFractionDigits: compact ? 1 : 0,
+  });
+}
+
+/** "range 5–10" for the 10th–90th percentile band, using the metric's own formatter. */
+export function formatRange(stat: Stat, format: (v: number) => string): string {
+  const low = format(stat.p10);
+  const high = format(stat.p90);
+  return low === high ? `range ${low}` : `range ${low}–${high}`;
+}

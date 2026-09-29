@@ -1,0 +1,72 @@
+/* Design tokens (docs/PRD.md §8.1), starting from the prototype. Components use
+   these via Tailwind theme names; no raw hex in components. */
+:root {
+  --bg: #f3f4f2;
+  --panel: #ffffff;
+  --panel-2: #e9ebe7;
+  --line: #d5d8d2;
+  --line-2: #c2c6bf;
+  --fg: #15181a;
+  --fg-2: #4d5451;
+  --fg-3: #6b736d;
+  --accent: #1c5cab;
+  --accent-soft: #dbe7f7;
+  --accent-fg: #ffffff;
+  --good: #1baf7a;
+  --warn: #eda100;
+  --serious: #eb6834;
+  --crit: #e34948;
+  --crit-soft: #fbe1e0;
+  --warn-soft: #fdf0d1;
+  --good-soft: #d8f3e8;
+  --radius: 6px;
+  --shadow: 0 1px 2px rgba(20, 24, 30, 0.06), 0 4px 14px rgba(20, 24, 30, 0.05);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151716;
+    --panel: #1e211f;
+    --panel-2: #272b29;
+    --line: #343936;
+    --line-2: #454b47;
+    --fg: #eceeea;
+    --fg-2: #b5bbb6;
+    --fg-3: #959c97;
+    --accent: #5598e7;
+    --accent-soft: #1f3350;
+    --accent-fg: #0b1220;
+    --good: #199e70;
+    --warn: #c98500;
+    --serious: #d95926;
+    --crit: #e66767;
+    --crit-soft: #4a2424;
+    --warn-soft: #45360f;
+    --good-soft: #153f30;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.3);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #151716;
+  --panel: #1e211f;
+  --panel-2: #272b29;
+  --line: #343936;
+  --line-2: #454b47;
+  --fg: #eceeea;
+  --fg-2: #b5bbb6;
+  --fg-3: #959c97;
+  --accent: #5598e7;
+  --accent-soft: #1f3350;
+  --accent-fg: #0b1220;
+  --good: #199e70;
+  --warn: #c98500;
+  --serious: #d95926;
+  --crit: #e66767;
+  --crit-soft: #4a2424;
+  --warn-soft: #45360f;
+  --good-soft: #153f30;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.3);
+  color-scheme: dark;
+}

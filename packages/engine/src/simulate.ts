@@ -1,8 +1,9 @@
 // Discrete-event Monte Carlo simulation, ported from the Northbeam
 // prototype's `ProcessSim` (prototype/northbeam-process-simulator.html).
 // Fixed so far (docs/PRD.md §6.8): separate random streams per purpose, a
-// binary-heap event queue, dispatch to named people, and a start from current
-// WIP or a discarded warm-up instead of an empty business. Still as in the
+// binary-heap event queue, dispatch to named people, a start from current
+// WIP or a discarded warm-up instead of an empty business, and revenue priced
+// per service and booked once per entity at its first win. Still as in the
 // prototype, and fixed in a later ticket: stale ongoing utilisation.
 //
 // Time runs from -warmup to H; everything reported is measured over [0, H].
@@ -10,14 +11,19 @@
 import { EventQueue } from "./event-queue";
 import type {
   Distribution,
+  EngineEdge,
+  EngineEnd,
   EngineModel,
   EnginePerson,
+  EngineService,
   EngineStep,
   InitialState,
   Kpis,
+  Outcome,
   PersonResult,
   ReplicationResult,
   RoleResult,
+  ServiceCounts,
   Stat,
   SimulationResult,
   StepResult,
@@ -42,6 +48,8 @@ const PILOT_SEED = 1;
 
 interface SimEntity extends TraceEntity {
   seg: TraceSegment | null;
+  /** Index of its service in the run's service list. */
+  svc: number;
 }
 
 type SimEvent =
@@ -76,6 +84,77 @@ interface StepState {
   wait: (() => number) | null;
   rework: Rng;
   route: Rng;
+  /** Edges to choose from per service index, when any edge is condition-tagged; null otherwise. */
+  routes: Route[] | null;
+}
+
+/** The edges an entity picks from at a step, and their total probability. */
+interface Route {
+  next: EngineEdge[];
+  total: number;
+}
+
+/** A service as a run uses it. */
+interface ServiceState {
+  /** Null for the implicit retainer of a model without services. */
+  id: string | null;
+  s: EngineService;
+  entry: string;
+  /** Expected value of one client: price × tenure (retainer), price (one-off), nothing (hourly). */
+  value: number;
+  counts: ServiceCounts;
+}
+
+/**
+ * The model's services, or one implicit retainer at `model.retainer` when it
+ * has none, so such a model's revenue is `won × retainer` as before.
+ */
+function resolveServices(model: EngineModel): ServiceState[] {
+  const given = Object.entries(model.services ?? {});
+  const churn = model.churnMonthly;
+  const entries: [string | null, EngineService][] = given.length
+    ? given
+    : [
+        [
+          null,
+          {
+            name: "Retainer",
+            pricingModel: "retainer",
+            price: model.retainer,
+            margin: 0,
+            tenureMonths: churn > 0 ? 1 / churn : 0,
+            churnMonthly: churn,
+            mixShare: 1,
+            pathTags: [],
+          },
+        ],
+      ];
+  return entries.map(([id, s]) => ({
+    id,
+    s,
+    entry: s.entry ?? model.entry,
+    value: s.pricingModel === "retainer" ? s.price * s.tenureMonths : s.pricingModel === "one_off" ? s.price : 0,
+    counts: { arrivals: 0, won: 0, lost: 0 },
+  }));
+}
+
+/**
+ * Which of a step's edges an entity on this service picks from. Tagged edges
+ * take precedence: the entity follows the edges tagged with one of its
+ * service's path tags; if none match, the untagged edges; if the step has no
+ * untagged edges either, all of them. Probabilities are renormalised within
+ * the chosen edges (all of them: as entered). So `seo` and `ppc` tagged edges
+ * split entities by service, and a `fast-track` tagged edge next to untagged
+ * ones diverts only entities carrying that tag while the rest split between
+ * the untagged edges in proportion to their probabilities.
+ */
+function routeFor(edges: EngineEdge[], tags: string[]): Route {
+  const sum = (next: EngineEdge[]) => next.reduce((a, n) => a + n.p, 0);
+  const tagged = edges.filter((n) => n.tag !== undefined && tags.includes(n.tag));
+  if (tagged.length) return { next: tagged, total: sum(tagged) };
+  const untagged = edges.filter((n) => n.tag === undefined);
+  if (untagged.length) return { next: untagged, total: sum(untagged) };
+  return { next: edges, total: 1 };
 }
 
 /** Repeated duration draws with the given mean (same values as `sampleDuration`). */
@@ -170,6 +249,24 @@ export function runOnce(
   const W = start.kind === "warmup" ? start.hours : 0;
   const floor = model.availabilityFloor ?? DEFAULT_AVAILABILITY_FLOOR;
   const peopleModel = resolvePeople(model);
+  const services = resolveServices(model);
+  const hasServices = services[0]!.id !== null;
+  for (const sv of services) {
+    if (!(sv.s.mixShare >= 0)) throw new Error(`Service '${sv.s.name}' needs a mix share of 0 or more`);
+  }
+  const mixTotal = services.reduce((a, sv) => a + sv.s.mixShare, 0);
+  if (!(mixTotal > 0)) throw new Error("The services' mix shares must add up to more than 0");
+  /** Draw an arrival's service from the mix; always the implicit one when the model has none. */
+  const drawService = (rng: Rng) => {
+    if (!hasServices) return 0;
+    const u = rng() * mixTotal;
+    let acc = 0;
+    for (let i = 0; i < services.length - 1; i++) {
+      acc += services[i]!.s.mixShare;
+      if (u < acc) return i;
+    }
+    return services.length - 1;
+  };
 
   const stepStates = new Map<string, StepState>();
   for (const s of model.steps) {
@@ -185,7 +282,20 @@ export function runOnce(
         s.wait || waitDist.kind === "triangular" ? durationSampler(streams.get(`wait:${s.id}`), s.wait, waitDist) : null,
       rework: streams.get(`rework:${s.id}`),
       route: streams.get(`route:${s.id}`),
+      routes:
+        hasServices && s.next.some((n) => n.tag !== undefined)
+          ? services.map((sv) => routeFor(s.next, sv.s.pathTags))
+          : null,
     });
+  }
+  // End steps: the two sinks, then any further ones (which may override them).
+  const ends = new Map<string, EngineEnd>([
+    [model.sinks.won, { outcome: "won" }],
+    [model.sinks.lost, { outcome: "lost" }],
+    ...Object.entries(model.ends ?? {}),
+  ]);
+  for (const sv of services) {
+    if (!stepStates.has(sv.entry)) throw new Error(`Service '${sv.s.name}' enters at unknown step '${sv.entry}'`);
   }
   const stepList = [...stepStates.values()];
 
@@ -226,6 +336,8 @@ export function runOnce(
   const cycle: number[] = [];
   let won = 0;
   let lost = 0;
+  let done = 0;
+  let billed = 0;
 
   const push = (ev: SimEvent) => events.push(ev);
 
@@ -262,25 +374,68 @@ export function runOnce(
   };
 
   function enter(e: SimEntity, sid: string, t: number) {
-    if (sid === model.sinks.won) {
-      e.done = t;
-      e.outcome = "won";
-      // The warm-up runs at the starting client count; its wins are discarded.
-      if (t < 0) return;
+    const st = stepStates.get(sid);
+    if (st) {
+      st.stat.arrivals++;
+      queueAt(e, st, t, t);
+      return;
+    }
+    const end = ends.get(sid);
+    if (!end) throw new Error(`Edge to unknown step '${sid}'`);
+    if (!end.handoff) e.done = t;
+    reachEnd(e, end.outcome, t);
+    if (end.handoff) enter(e, end.handoff, t);
+  }
+
+  /**
+   * Record an outcome. A win sticks and is booked once, at the first `won`
+   * end, priced by the entity's service (docs/PRD.md §6.4 revenue rules): a
+   * won entity handed on to a downstream process books nothing more, and
+   * isn't counted as lost or done if it ends there.
+   */
+  function reachEnd(e: SimEntity, outcome: Outcome, t: number) {
+    if (e.outcome === "won" || e.outcome === outcome) return;
+    e.outcome = outcome;
+    // The warm-up runs at the starting client count; its outcomes are discarded.
+    if (t < 0) return;
+    const sv = services[e.svc]!;
+    if (outcome === "won") {
       won++;
+      sv.counts.won++;
       cycle.push(t - e.t0);
-      active += 1;
-      return;
+      // A one-off job doesn't become an ongoing client.
+      if (sv.s.pricingModel !== "one_off") active += 1;
+      if (sv.s.pricingModel === "retainer") {
+        billed += (sv.s.price / WEEKS_PER_MONTH) * weeksBilled(t, sv.s.churnMonthly);
+      } else if (sv.s.pricingModel === "one_off") {
+        billed += sv.s.price;
+      }
+    } else if (outcome === "lost") {
+      lost++;
+      sv.counts.lost++;
+    } else {
+      done++;
+      cycle.push(t - e.t0);
     }
-    if (sid === model.sinks.lost) {
-      if (t >= 0) lost++;
-      e.done = t;
-      e.outcome = "lost";
-      return;
-    }
-    const st = stepStates.get(sid)!;
-    st.stat.arrivals++;
-    queueAt(e, st, t, t);
+  }
+
+  /**
+   * Expected weeks a client won at `t` is billed before the horizon: its
+   * survival steps down at each weekly churn tick by the same factor the
+   * engine applies to active clients.
+   */
+  function weeksBilled(t: number, churnMonthly: number): number {
+    const hpw = model.hoursPerWeek;
+    const first = (Math.floor(t / hpw) + 1) * hpw;
+    if (first >= H) return (H - t) / hpw;
+    // Ticks at `first`, a week later, ..., `last`: the n - 1 whole weeks
+    // between them bill keep^1..keep^(n-1), the stub after `last` keep^n.
+    const last = Math.ceil(H / hpw - 1) * hpw;
+    const n = Math.round((last - first) / hpw) + 1;
+    const keep = Math.max(0, 1 - churnMonthly / WEEKS_PER_MONTH);
+    const keepN = powInt(keep, n);
+    const whole = keep === 1 ? n - 1 : (keep - keepN) / (1 - keep);
+    return (first - t) / hpw + whole + (keepN * (H - last)) / hpw;
   }
 
   /** Put an entity at a step (queued since `tQ`); the longest-idle eligible free person takes it. */
@@ -359,10 +514,16 @@ export function runOnce(
       enter(e, s.id, t);
       return;
     }
-    const u = st.route();
+    let u = st.route();
+    let next = s.next;
+    if (st.routes) {
+      const r = st.routes[e.svc]!;
+      next = r.next;
+      u *= r.total;
+    }
     let acc = 0;
-    let to = s.next[s.next.length - 1]!.to;
-    for (const n of s.next) {
+    let to = next[next.length - 1]!.to;
+    for (const n of next) {
       acc += n.p;
       if (u < acc) {
         to = n.to;
@@ -379,6 +540,9 @@ export function runOnce(
   function startMeasuring() {
     won = 0;
     lost = 0;
+    done = 0;
+    billed = 0;
+    for (const sv of services) sv.counts = { arrivals: 0, won: 0, lost: 0 };
     cycle.length = 0;
     active = model.activeClients;
     for (const { stat } of stepList) {
@@ -403,6 +567,7 @@ export function runOnce(
    * with none). Oldest first, so they are served before anything newer.
    */
   function seedWip() {
+    const mix = streams.get("mix:wip");
     const items: { st: StepState; tQ: number }[] = [];
     for (const st of stepList) {
       const rng = streams.get(`wip:${st.s.id}`);
@@ -411,7 +576,7 @@ export function runOnce(
     }
     items.sort((a, b) => a.tQ - b.tQ);
     for (const { st, tQ } of items) {
-      const e: SimEntity = { id: eid++, t0: tQ, trace: [], seg: null };
+      const e: SimEntity = { id: eid++, t0: tQ, trace: [], seg: null, svc: drawService(mix) };
       entities.push(e);
       queueAt(e, st, tQ, 0);
     }
@@ -430,6 +595,10 @@ export function runOnce(
     arrivalTimes.reverse();
   }
   const arrivals = streams.get("arrivals");
+  // Each arrival's service comes from the mix, on its own streams (warm-up and
+  // measured window apart, as for the arrival times).
+  const mixWarmup = streams.get("mix:warmup");
+  const mix = streams.get("mix");
   for (let ta = expo(arrivals, meanGap); ta < H; ta += expo(arrivals, meanGap)) arrivalTimes.push(ta);
   let nextArrival = 0;
   const scheduleArrival = () => {
@@ -446,9 +615,11 @@ export function runOnce(
     if (ev.t > H) break;
     if (ev.type === "arrive") {
       scheduleArrival();
-      const e: SimEntity = { id: eid++, t0: ev.t, trace: [], seg: null };
+      const sv = drawService(ev.t < 0 ? mixWarmup : mix);
+      const e: SimEntity = { id: eid++, t0: ev.t, trace: [], seg: null, svc: sv };
       entities.push(e);
-      enter(e, model.entry, ev.t);
+      if (ev.t >= 0) services[sv]!.counts.arrivals++;
+      enter(e, services[sv]!.entry, ev.t);
     } else if (ev.type === "end") {
       endService(ev.e, ev.st, ev.p, ev.t);
     } else if (ev.type === "leave") {
@@ -503,22 +674,47 @@ export function runOnce(
       completed: p.completed,
     };
   }
+  // Revenue from the per-service counts (docs/PRD.md §13).
+  let newMrr = 0;
+  let ltvAdded = 0;
+  let lostRevenue = 0;
+  const serviceOut: Record<string, ServiceCounts> = {};
+  for (const sv of services) {
+    const { won: w, lost: l } = sv.counts;
+    if (sv.s.pricingModel === "retainer") newMrr += w * sv.s.price;
+    ltvAdded += w * sv.value;
+    lostRevenue += l * sv.value;
+    if (sv.id !== null) serviceOut[sv.id] = sv.counts;
+  }
+  const toTrace = ({ seg: _seg, svc, ...entity }: SimEntity): TraceEntity => {
+    const id = services[svc]!.id;
+    return id !== null ? { ...entity, service: id } : entity;
+  };
   return {
     won,
     lost,
+    done,
+    newMrr,
+    billed,
+    ltvAdded,
+    lostRevenue,
+    services: serviceOut,
     cycle,
     steps: stepOut,
     roles: roleOut,
     people: peopleOut,
-    entities: keepTrace ? entities.map(stripSeg) : null,
+    entities: keepTrace ? entities.map(toTrace) : null,
     H,
     warmupHours: W,
     activeEnd: active,
   };
 }
 
-function stripSeg({ seg: _seg, ...entity }: SimEntity): TraceEntity {
-  return entity;
+/** x^n for a whole n ≥ 0 by repeated squaring (plain multiplication, so identical in every JS engine). */
+function powInt(x: number, n: number): number {
+  let result = 1;
+  for (let b = x, k = n; k > 0; k >>= 1, b *= b) if (k & 1) result *= b;
+  return result;
 }
 
 /** Value at percentile `p` (0–1) using the prototype's nearest-rank rule. */
@@ -557,12 +753,24 @@ function kpis(model: EngineModel, runs: ReplicationResult[], cycle: number[]): K
       ongoing: stat(runs.map((r) => r.people[pid]!.ongoing)),
     };
   }
+  const services: Kpis["services"] = {};
+  for (const sid in runs[0]?.services ?? {}) {
+    services[sid] = {
+      arrivals: stat(runs.map((r) => r.services[sid]!.arrivals)),
+      won: stat(runs.map((r) => r.services[sid]!.won)),
+      lost: stat(runs.map((r) => r.services[sid]!.lost)),
+    };
+  }
   return {
     won: stat(runs.map((r) => r.won)),
     lost: stat(runs.map((r) => r.lost)),
+    done: stat(runs.map((r) => r.done)),
     labour: stat(labour),
     costPerWin: stat(runs.flatMap((r, i) => (r.won ? [labour[i]! / r.won] : []))),
-    mrrAdded: stat(runs.map((r) => r.won * model.retainer)),
+    mrrAdded: stat(runs.map((r) => r.newMrr)),
+    billed: stat(runs.map((r) => r.billed)),
+    ltvAdded: stat(runs.map((r) => r.ltvAdded)),
+    lostRevenue: stat(runs.map((r) => r.lostRevenue)),
     wipEnd: stat(runs.map((r) => Object.values(r.steps).reduce((a, st) => a + st.wip, 0))),
     cycle: {
       mean: cycle.length ? cycle.reduce((a, b) => a + b, 0) / cycle.length : 0,
@@ -571,6 +779,7 @@ function kpis(model: EngineModel, runs: ReplicationResult[], cycle: number[]): K
     },
     roles,
     people,
+    services,
   };
 }
 
@@ -637,8 +846,9 @@ export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationRes
     if (s.role && (!bnStep || steps[s.id]!.avgQueue > steps[bnStep]!.avgQueue)) bnStep = s.id;
   }
 
+  const kpi = kpis(model, runs, cycle);
   return {
-    kpi: kpis(model, runs, cycle),
+    kpi,
     won,
     wonLow: pct(wonArr, 0.1),
     wonHigh: pct(wonArr, 0.9),
@@ -651,7 +861,7 @@ export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationRes
     resolvedPeople,
     labour,
     costPerWin: won ? labour / won : 0,
-    mrrAdded: won * model.retainer,
+    mrrAdded: kpi.mrrAdded.mean,
     bnRole,
     bnStep,
     bnPerson,

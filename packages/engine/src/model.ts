@@ -1,6 +1,6 @@
-// Engine input and output shapes. This is the prototype's model, kept as-is for
-// the walking skeleton; later tickets replace role head-counts with named
-// people, add services, clients and servicing (docs/PRD.md §6).
+// Engine input and output shapes. This is the prototype's model, extended so
+// far with named people, services and end-step outcomes; later tickets add
+// clients and servicing (docs/PRD.md §6).
 
 /** Times are in working hours. */
 export interface EngineRole {
@@ -37,10 +37,58 @@ export interface EnginePerson {
 }
 
 export interface EngineEdge {
-  /** Target step id, or one of the sink ids. */
+  /** Target step id, or an end id (a sink or a key of `ends`). */
   to: string;
   /** Branch probability; a step's edges sum to 1. */
   p: number;
+  /**
+   * Condition tag (docs/PRD.md §6.3.6): tagged edges take precedence for
+   * entities whose service carries the tag; the others split between the
+   * untagged edges (see `routeFor` in simulate.ts). Ignored when the model
+   * has no services.
+   */
+  tag?: string;
+}
+
+/** What reaching an end step means (docs/PRD.md §6.4, decision D8). */
+export type Outcome = "won" | "lost" | "done";
+
+/**
+ * An end step beyond the two `sinks`. With `handoff`, the entity carries on
+ * at that step: this is how a pipeline's `won` end chains into a downstream
+ * process (onboarding, delivery) once processes are flattened into one model.
+ */
+export interface EngineEnd {
+  outcome: Outcome;
+  /** Step the entity continues at, e.g. the entry of a downstream process. */
+  handoff?: string;
+}
+
+/**
+ * How a service is priced. Only retainers add MRR; hourly services bill
+ * through servicing work, which the engine does not simulate yet, so for now
+ * they add nothing to the revenue KPIs.
+ */
+export type PricingModel = "retainer" | "one_off" | "hourly";
+
+/** Something the business sells (docs/PRD.md §5 `services`). */
+export interface EngineService {
+  name: string;
+  pricingModel: PricingModel;
+  /** Monthly fee for a retainer; the whole fee for a one-off; the rate for hourly. */
+  price: number;
+  /** Gross margin as a share of price (0–1); carried for reporting, not used by the KPIs yet. */
+  margin: number;
+  /** Expected tenure of a retainer client, in months (LTV and lost revenue). */
+  tenureMonths: number;
+  /** Base monthly churn of a client on this service; billed-in-horizon is net of it. */
+  churnMonthly: number;
+  /** Relative share of arrivals; shares are normalised over the model's services. */
+  mixShare: number;
+  /** Step this service's arrivals enter at; defaults to the model's `entry`. */
+  entry?: string;
+  /** Condition tags this service's entities follow (see `EngineEdge.tag`). */
+  pathTags: string[];
 }
 
 export interface EngineStep {
@@ -74,8 +122,18 @@ export interface EngineModel {
   leadsPerWeek: number;
   activeClients: number;
   churnMonthly: number;
-  /** Monthly retainer price per won client. */
+  /**
+   * Monthly retainer price per won client. Used only when the model has no
+   * `services`: then every entity is on one implicit retainer at this price,
+   * churning at `churnMonthly`, with an expected tenure of 1 / `churnMonthly`
+   * months (none, so no LTV, when churn is 0).
+   */
   retainer: number;
+  /**
+   * Services by id. Each arrival is tagged with one, drawn from the mix, and
+   * is routed and priced by it. Omitted or empty: the implicit retainer above.
+   */
+  services?: Record<string, EngineService>;
   roles: Record<string, EngineRole>;
   /** Named people. When omitted, each role gets `count` anonymous people. */
   people?: Record<string, EnginePerson>;
@@ -89,7 +147,10 @@ export interface EngineModel {
    */
   warmupWeeks?: number;
   entry: string;
+  /** The terminal `won` and `lost` end steps' ids. */
   sinks: { won: string; lost: string };
+  /** Further end steps by id: more `won`/`lost` ends, `done` ends, and hand-offs. */
+  ends?: Record<string, EngineEnd>;
   steps: EngineStep[];
 }
 
@@ -117,8 +178,12 @@ export interface TraceEntity {
   id: number;
   t0: number;
   trace: TraceSegment[];
+  /** When it reached a terminal end step. */
   done?: number;
-  outcome?: "won" | "lost";
+  /** A win sticks: once won, later ends downstream don't change it. */
+  outcome?: Outcome;
+  /** Its service id, when the model has services. */
+  service?: string;
 }
 
 export interface StepResult {
@@ -153,9 +218,28 @@ export interface PersonResult {
   completed: number;
 }
 
-export interface ReplicationResult {
+/** Per-service counts in one replication. */
+export interface ServiceCounts {
+  arrivals: number;
   won: number;
   lost: number;
+}
+
+export interface ReplicationResult {
+  /** Entities reaching their first `won` end. */
+  won: number;
+  /** Entities reaching a `lost` end without having been won. */
+  lost: number;
+  /** Entities reaching a `done` end without having been won. */
+  done: number;
+  /** Revenue KPIs (docs/PRD.md §13); see `Kpis`. */
+  newMrr: number;
+  billed: number;
+  ltvAdded: number;
+  lostRevenue: number;
+  /** By service id; empty when the model has no services. */
+  services: Record<string, ServiceCounts>;
+  /** Cycle times of won and done entities. */
   cycle: number[];
   steps: Record<string, StepResult>;
   roles: Record<string, RoleResult>;
@@ -182,15 +266,31 @@ export interface Stat {
 export interface Kpis {
   won: Stat;
   lost: Stat;
+  done: Stat;
   labour: Stat;
   /** Over replications that won at least one item. */
   costPerWin: Stat;
+  /** New MRR: Σ over entities reaching their first `won` end of their service's price (retainers only). */
   mrrAdded: Stat;
+  /**
+   * Revenue billed in the horizon: Σ over clients won in the measured window
+   * of weeks active before the horizon × weekly price (monthly / 4.33), net of
+   * the service's churn (the weekly decay the engine applies to active
+   * clients); a one-off bills its price when won. The starting clients are not
+   * included until the engine has a client roster (docs/PRD.md decision D13).
+   */
+  billed: Stat;
+  /** LTV added: Σ over new wins of price × expected tenure (retainers) or price (one-off). */
+  ltvAdded: Stat;
+  /** Lost revenue: Σ over lost entities of their service's expected value (as for LTV). */
+  lostRevenue: Stat;
   wipEnd: Stat;
   /** Over every completed item in every replication. */
   cycle: { mean: number; p50: number; p90: number };
   roles: Record<string, { util: Stat; pipeline: Stat; ongoing: Stat }>;
   people: Record<string, { util: Stat; pipeline: Stat; ongoing: Stat }>;
+  /** By service id; empty when the model has no services. */
+  services: Record<string, { arrivals: Stat; won: Stat; lost: Stat }>;
 }
 
 export interface SimulationResult {
@@ -209,6 +309,7 @@ export interface SimulationResult {
   resolvedPeople: Record<string, EnginePerson>;
   labour: number;
   costPerWin: number;
+  /** Mean new MRR (`kpi.mrrAdded.mean`). */
   mrrAdded: number;
   bnRole: string | null;
   bnStep: string | null;

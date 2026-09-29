@@ -3,16 +3,18 @@ import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { ProcessView } from "@/components/process-view";
 import { canEditWorkspace, canManageWorkspace, currentUserId } from "@/lib/access-data";
-import { loadLiveProcess, loadWorkspaceScenarios } from "@/lib/data";
+import { loadLiveProcess, loadWorkspaceIssues, loadWorkspaceScenarios } from "@/lib/data";
 
 export default async function WorkspacePage(props: PageProps<"/w/[slug]">) {
   const { slug } = await props.params;
+  const { fix } = await props.searchParams;
   const bundle = await loadLiveProcess(slug);
   if (!bundle) notFound();
-  const [canEdit, canManage, scenarios, userId] = await Promise.all([
+  const [canEdit, canManage, scenarios, issues, userId] = await Promise.all([
     canEditWorkspace(bundle.workspace.id),
     canManageWorkspace(bundle.workspace.id),
     loadWorkspaceScenarios(bundle.workspace.id),
+    loadWorkspaceIssues(bundle.workspace.id),
     currentUserId(),
   ]);
   return (
@@ -20,6 +22,9 @@ export default async function WorkspacePage(props: PageProps<"/w/[slug]">) {
       <AppHeader workspace={bundle.workspace.name} signedIn />
       <div className="mt-4 mb-3 flex items-baseline gap-4">
         <h1 className="text-xl font-bold">{bundle.process.name}</h1>
+        <Link href={`/w/${slug}/issues`} className="text-fg-2 hover:underline">
+          Issues
+        </Link>
         <Link href={`/w/${slug}/settings`} className="text-fg-2 hover:underline">
           People &amp; settings
         </Link>
@@ -33,6 +38,9 @@ export default async function WorkspacePage(props: PageProps<"/w/[slug]">) {
         bundle={bundle}
         mode={canEdit ? "live" : "readonly"}
         scenarios={scenarios}
+        issues={issues}
+        initialFix={typeof fix === "string" ? fix : null}
+        registerHref={`/w/${slug}/issues`}
         userId={userId}
       />
     </main>

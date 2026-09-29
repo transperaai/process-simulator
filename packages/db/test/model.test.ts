@@ -102,6 +102,16 @@ describe("toEngineModel", () => {
     expect(() => toEngineModel(c)).toThrow(/back to the start step/);
   });
 
+  it("maps a step's SLA for breach counting, and leaves it out when blank", () => {
+    const b = northbeamBundle();
+    b.steps = b.steps.map((s) => (s.id === northbeamStepIds.audit ? { ...s, sla_hours: 24 } : s));
+    const steps = new Map(toEngineModel(b, { startDate: START }).steps.map((s) => [s.id, s]));
+    expect(steps.get(northbeamStepIds.audit)!.sla).toBe(24);
+    expect(steps.get(northbeamStepIds.qualify)!).not.toHaveProperty("sla");
+    const r = simulate(toEngineModel(b, { startDate: START }), 3, 1);
+    expect(r.steps[northbeamStepIds.audit]!.slaBreaches).toBeGreaterThan(0);
+  });
+
   it("maps entered current WIP, 0 included, and leaves unentered WIP out", () => {
     const b = northbeamBundle();
     b.steps = b.steps.map((s) =>

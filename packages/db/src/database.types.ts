@@ -205,6 +205,121 @@ export type Database = {
           },
         ]
       }
+      issues: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          detected_key: string | null
+          evidence: string | null
+          evidence_metrics: Json
+          evidence_sources: Json
+          id: string
+          owner_person_id: string | null
+          person_id: string | null
+          process_id: string | null
+          resolved_at: string | null
+          role_id: string | null
+          scenario_id: string | null
+          severity: string
+          source: string
+          status: string
+          step_id: string | null
+          title: string
+          type: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          detected_key?: string | null
+          evidence?: string | null
+          evidence_metrics?: Json
+          evidence_sources?: Json
+          id?: string
+          owner_person_id?: string | null
+          person_id?: string | null
+          process_id?: string | null
+          resolved_at?: string | null
+          role_id?: string | null
+          scenario_id?: string | null
+          severity?: string
+          source?: string
+          status?: string
+          step_id?: string | null
+          title: string
+          type: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          detected_key?: string | null
+          evidence?: string | null
+          evidence_metrics?: Json
+          evidence_sources?: Json
+          id?: string
+          owner_person_id?: string | null
+          person_id?: string | null
+          process_id?: string | null
+          resolved_at?: string | null
+          role_id?: string | null
+          scenario_id?: string | null
+          severity?: string
+          source?: string
+          status?: string
+          step_id?: string | null
+          title?: string
+          type?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "issues_owner_person_id_workspace_id_fkey"
+            columns: ["owner_person_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "issues_person_id_workspace_id_fkey"
+            columns: ["person_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "issues_process_id_workspace_id_fkey"
+            columns: ["process_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "issues_role_id_workspace_id_fkey"
+            columns: ["role_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "roles"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "issues_scenario_id_workspace_id_fkey"
+            columns: ["scenario_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "scenarios"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "issues_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_sources: {
         Row: {
           conversion_to_qualified: number

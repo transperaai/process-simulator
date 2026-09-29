@@ -1,6 +1,7 @@
 import type {
   DemandSettingsRow,
   EdgeRow,
+  IssueRow,
   LeadSourceRow,
   PersonRoleRow,
   PersonRow,
@@ -343,5 +344,75 @@ export function northbeamScenarios(): ScenarioRow[] {
       { path: "demand.leads_per_week", op: "multiply", value: 0.7 },
       { path: "demand.churn_monthly", op: "multiply", value: 1.5 },
     ]),
+  ];
+}
+
+/**
+ * Northbeam's register as the audit left it (after the prototype's findings):
+ * two audit findings logged by hand, one linked to its fix, and the detected
+ * single point of failure at audits promoted to a tracked issue, so each run
+ * lists it once, as tracked.
+ */
+export function northbeamIssues(): IssueRow[] {
+  const at = "2026-09-29T09:00:00Z";
+  const base = {
+    workspace_id: ws,
+    process_id: proc,
+    role_id: null,
+    person_id: null,
+    evidence_metrics: {},
+    owner_person_id: null,
+    scenario_id: null,
+    detected_key: null,
+    resolved_at: null,
+    created_at: at,
+    updated_at: at,
+  } satisfies Partial<IssueRow>;
+  const scenario = (n: number) => northbeamScenarios()[n - 1]!.id;
+  const person = (name: string) => northbeamPersonIds[name]!;
+  return [
+    {
+      ...base,
+      id: id("8", 1),
+      step_id: northbeamStepIds.audit,
+      role_id: northbeamRoleIds.strat,
+      type: "manual",
+      severity: "serious",
+      title: "Every proposal is built by hand",
+      evidence: "Audit interview, 12 Sep: 5–8 hours per proposal, and 15% go back for rework after sales review.",
+      owner_person_id: person("Rosa Diaz"),
+      status: "open",
+      scenario_id: scenario(2),
+      source: "manual",
+    },
+    {
+      ...base,
+      id: id("8", 2),
+      step_id: northbeamStepIds.audit,
+      role_id: northbeamRoleIds.strat,
+      person_id: person("Maya Collins"),
+      type: "spof",
+      severity: "serious",
+      title: "Only Maya Collins can do Audit & proposal",
+      evidence: "Detected: nobody else can pick up audits when Maya is away. Proposals stalled for 9 days in July.",
+      owner_person_id: person("Rosa Diaz"),
+      status: "in_progress",
+      scenario_id: scenario(1),
+      source: "promoted",
+      detected_key: `spof:step:${northbeamStepIds.audit}`,
+    },
+    {
+      ...base,
+      id: id("8", 3),
+      step_id: northbeamStepIds.qualify,
+      role_id: northbeamRoleIds.sales,
+      type: "idea",
+      severity: "info",
+      title: "Lead scoring could skip unqualified discovery calls",
+      evidence: "45% of leads drop out at qualification but still get a 4-hour response.",
+      owner_person_id: person("Priya Shah"),
+      status: "open",
+      source: "manual",
+    },
   ];
 }

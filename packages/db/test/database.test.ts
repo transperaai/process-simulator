@@ -5,6 +5,7 @@ import {
   NORTHBEAM_WORKSPACE_ID,
   northbeamAccess,
   northbeamBundle,
+  northbeamIssues,
   northbeamScenarios,
   northbeamStepIds,
   seedSql,
@@ -32,7 +33,7 @@ describe("seed", () => {
 
   it("seed.sql is up to date with the fixtures", () => {
     const onDisk = readFileSync(new URL("../supabase/seed.sql", import.meta.url), "utf8");
-    expect(onDisk).toBe(seedSql([northbeamBundle()], [northbeamAccess()], northbeamScenarios()));
+    expect(onDisk).toBe(seedSql([northbeamBundle()], [northbeamAccess()], northbeamScenarios(), northbeamIssues()));
   });
 
   it("round-trips: rows loaded from the database resolve to the same engine model", async () => {

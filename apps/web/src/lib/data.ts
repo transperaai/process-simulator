@@ -2,11 +2,14 @@ import "server-only";
 import {
   DEMAND_SETTINGS_COLUMNS,
   LEAD_SOURCE_COLUMNS,
+  listProcesses,
+  loadIssues,
   loadLiveProcessBySlug,
   loadScenarios,
   SEASONALITY_COLUMNS,
   SERVICE_COLUMNS,
   type DemandSettingsRow,
+  type IssueRow,
   type LeadSourceRow,
   type PersonLeaveRow,
   type PersonRoleRow,
@@ -34,6 +37,16 @@ export async function listWorkspaces(): Promise<Pick<WorkspaceRow, "id" | "name"
 /** The workspace's first process at its live revision, or null if not visible. */
 export async function loadLiveProcess(slug: string): Promise<ProcessBundle | null> {
   return loadLiveProcessBySlug(await createClient(), slug);
+}
+
+/** The workspace's tracked issues, newest first (RLS: everyone in the workspace can read them). */
+export async function loadWorkspaceIssues(workspaceId: string): Promise<IssueRow[]> {
+  return loadIssues(await createClient(), workspaceId);
+}
+
+/** The workspace's processes, by id and name, for the register's process filter. */
+export async function loadProcessNames(workspaceId: string): Promise<{ id: string; name: string }[]> {
+  return (await listProcesses(await createClient(), workspaceId)).map((p) => ({ id: p.id, name: p.name }));
 }
 
 /** The workspace's saved scenarios, oldest first (RLS: everyone in the workspace can read them). */

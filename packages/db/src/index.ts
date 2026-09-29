@@ -20,6 +20,7 @@ export {
   northbeamAccess,
   northbeamBundle,
   northbeamLeadSourceIds,
+  northbeamIssues,
   northbeamPersonIds,
   northbeamRoleIds,
   northbeamScenarios,
@@ -28,8 +29,10 @@ export {
 } from "./fixtures/northbeam";
 export {
   DEMAND_SETTINGS_COLUMNS,
+  ISSUE_COLUMNS,
   LEAD_SOURCE_COLUMNS,
   listProcesses,
+  loadIssues,
   loadLiveProcessBySlug,
   loadProcessBundle,
   loadScenarios,

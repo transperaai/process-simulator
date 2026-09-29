@@ -106,6 +106,8 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
         ...optional("waitDist", engineDistribution(step.wait_dist, step.wait_params, Number(step.wait_hours))),
         // Entered WIP (0 included) makes the run start from it instead of a warm-up.
         ...(step.current_wip != null ? { currentWip: Number(step.current_wip) } : {}),
+        // An SLA only counts breaches (detected issues); it doesn't change the run.
+        ...(step.sla_hours != null ? { sla: Number(step.sla_hours) } : {}),
         next,
       };
     });

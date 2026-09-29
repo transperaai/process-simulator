@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ModelError, toEngineModel, type ProcessBundle, type ScenarioRow } from "@transpera-flow/db";
+import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow } from "@transpera-flow/db";
 import type { EngineModel } from "@transpera-flow/engine";
 import { PASTE_OFFSET, copySteps, deleteSelection, duplicateSteps, pasteSteps, type StepClipboard } from "@/lib/editor/commands";
 import type { Conflict, ProcessEditor } from "@/lib/editor/editor";
@@ -14,6 +14,7 @@ import { useSimulation } from "@/lib/sim/use-simulation";
 import { ConflictPrompt } from "./fields";
 import { KpiStrip } from "./kpi-strip";
 import { NO_SELECTION, ProcessCanvas, type CanvasCommands, type Selection } from "./process-canvas";
+import { useProcessIssues } from "./process-issues";
 import { ScenarioPanel } from "./scenario-panel";
 import { FIELD_LABELS, StepInspector } from "./step-inspector";
 import { UtilisationBars } from "./utilisation-bars";
@@ -28,12 +29,21 @@ export function ProcessView({
   bundle: initial,
   mode,
   scenarios = [],
+  issues = [],
+  initialFix = null,
+  registerHref,
   userId = null,
 }: {
   bundle: ProcessBundle;
   mode: EditMode;
   /** Saved scenarios of the workspace (in memory on the demo). */
   scenarios?: ScenarioRow[];
+  /** Tracked issues of the workspace (in memory on the demo). */
+  issues?: IssueRow[];
+  /** An issue whose fix to run once the first run is in (`?fix=`). */
+  initialFix?: string | null;
+  /** The full issues register, if the workspace has one to link to. */
+  registerHref?: string;
   /** The signed-in user, recorded as who entered the values they change. */
   userId?: string | null;
 }) {
@@ -173,6 +183,17 @@ export function ProcessView({
   }, [editable, editor, selected, commands, bundle.steps]);
 
   const shownModel = model ?? lastModel;
+  const issuesUi = useProcessIssues({
+    bundle,
+    model: shownModel,
+    result,
+    running: sim.status === "running",
+    mode,
+    initialIssues: issues,
+    initialScenarios: scenarios,
+    initialFix,
+    registerHref,
+  });
 
   return (
     <div className="flex flex-col gap-3">
@@ -217,9 +238,10 @@ export function ProcessView({
             }}
           />
         ) : shownModel ? (
-          <UtilisationBars model={shownModel} result={result} />
+          issuesUi.rail(<UtilisationBars model={shownModel} result={result} />)
         ) : null}
       </div>
+      {issuesUi.badges}
       {shownModel && (
         <ScenarioPanel
           model={shownModel}
@@ -228,6 +250,8 @@ export function ProcessView({
           workspaceId={bundle.workspace.id}
           initialScenarios={scenarios}
           mode={mode}
+          fix={issuesUi.fix}
+          onScenariosChange={issuesUi.onScenariosChange}
         />
       )}
     </div>

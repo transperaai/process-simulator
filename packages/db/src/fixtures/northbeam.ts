@@ -18,6 +18,9 @@ import type {
 // fixed so the seed is reproducible, and they sort in the prototype's order so
 // the resolved engine model matches the engine's northbeamWithServices()
 // exactly (and, without the services, its golden northbeamModel()).
+// Each table has its own id prefix: 4 issues, 5 scenarios, 6 lead sources,
+// 7 access, 8 services, 9 people, a workspace, b roles, c process, d revision,
+// e steps, f edges.
 
 const id = (prefix: string, n: number) => `${prefix}0000000-0000-4000-8000-${n.toString(16).padStart(12, "0")}`;
 
@@ -326,7 +329,7 @@ export function northbeamAccess(): WorkspaceAccess {
  */
 export function northbeamScenarios(): ScenarioRow[] {
   const scenario = (n: number, name: string, description: string, patch: ScenarioRow["patch"]): ScenarioRow => ({
-    id: id("6", n),
+    id: id("5", n),
     workspace_id: ws,
     name,
     description,
@@ -374,7 +377,7 @@ export function northbeamIssues(): IssueRow[] {
   return [
     {
       ...base,
-      id: id("8", 1),
+      id: id("4", 1),
       step_id: northbeamStepIds.audit,
       role_id: northbeamRoleIds.strat,
       type: "manual",
@@ -388,7 +391,7 @@ export function northbeamIssues(): IssueRow[] {
     },
     {
       ...base,
-      id: id("8", 2),
+      id: id("4", 2),
       step_id: northbeamStepIds.audit,
       role_id: northbeamRoleIds.strat,
       person_id: person("Maya Collins"),
@@ -404,7 +407,7 @@ export function northbeamIssues(): IssueRow[] {
     },
     {
       ...base,
-      id: id("8", 3),
+      id: id("4", 3),
       step_id: northbeamStepIds.qualify,
       role_id: northbeamRoleIds.sales,
       type: "idea",

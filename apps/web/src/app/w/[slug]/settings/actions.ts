@@ -24,6 +24,8 @@ const number: Check = (v) => typeof v === "number" && Number.isFinite(v);
 const optionalNumber: Check = (v) => v === null || number(v);
 const optionalDate: Check = (v) => v === null || isDate(v);
 const boolean: Check = (v) => typeof v === "boolean";
+/** A stored value to compare against: any number (the database may hold one outside what the form offers). */
+const isFiniteNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
 const PERSON_FIELDS = {
   name: text,
@@ -276,7 +278,7 @@ export async function saveSeasonality(
   base: number | null,
   value: number | null,
 ): Promise<SaveOutcome<number | null>> {
-  if (!isId(workspaceId) || !isMonth(month) || !isMultiplier(base) || !isMultiplier(value)) return invalid;
+  if (!isId(workspaceId) || !isMonth(month) || !isFiniteNumber(base) || !isMultiplier(value)) return invalid;
   if (!(await signedIn())) return signedOut;
   const supabase = await createClient();
   const outcome = await saveOrInsert(
@@ -302,7 +304,7 @@ export async function resetSeasonality(workspaceId: string): Promise<ActionResul
 
 /** Monthly growth in demand, as a fraction (0.02 is +2% a month). */
 export async function saveGrowth(workspaceId: string, base: number | null, value: number | null): Promise<SaveOutcome<number | null>> {
-  if (!isId(workspaceId) || !isGrowth(base) || !isGrowth(value)) return invalid;
+  if (!isId(workspaceId) || !isFiniteNumber(base) || !isGrowth(value)) return invalid;
   if (!(await signedIn())) return signedOut;
   const supabase = await createClient();
   const outcome = await saveOrInsert(

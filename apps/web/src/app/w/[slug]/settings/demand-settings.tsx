@@ -236,7 +236,8 @@ function Seasonality({ data }: { data: WorkspaceSettingsData }) {
   const workspaceId = data.workspace.id;
   const curve = seasonalityCurve(seasonality);
   const rowFor = new Map(seasonality.map((r) => [r.month, r]));
-  const peak = Math.max(1, ...curve);
+  // Headroom above a normal month, so a flat curve reads as flat rather than full.
+  const peak = Math.max(1.5, ...curve);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string>();
   return (
@@ -307,7 +308,7 @@ function Growth({ data }: { data: WorkspaceSettingsData }) {
   return (
     <div>
       <h3 className="mb-2 font-semibold">Growth</h3>
-      <div className="max-w-xs">
+      <div className="max-w-sm">
         <NumberField
           label="Monthly growth in leads"
           value={demand ? Number(demand.growth_monthly) : 0}

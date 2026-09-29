@@ -1,4 +1,16 @@
-import type { EdgeRow, PersonRoleRow, PersonRow, ProcessBundle, RoleRow, ServiceRow, StepRow, WorkspaceAccess } from "../types";
+import type {
+  DemandSettingsRow,
+  EdgeRow,
+  LeadSourceRow,
+  PersonRoleRow,
+  PersonRow,
+  ProcessBundle,
+  Provenance,
+  RoleRow,
+  ServiceRow,
+  StepRow,
+  WorkspaceAccess,
+} from "../types";
 
 // Northbeam Digital, the prototype's sample agency, as database rows. Ids are
 // fixed so the seed is reproducible, and they sort in the prototype's order so
@@ -157,6 +169,42 @@ function services(): ServiceRow[] {
   ];
 }
 
+/** Ids sort in the order below. */
+export const northbeamLeadSourceIds = {
+  website: id("6", 1),
+  ads: id("6", 2),
+  referrals: id("6", 3),
+} as const;
+
+/** The sample figures are estimates, as an audit's first pass would be. */
+const ESTIMATE: Provenance = { source: "estimated", at: "2026-09-29T00:00:00Z", note: "Northbeam sample data" };
+
+/**
+ * Lead sources whose qualified leads add up to the 7 a week Northbeam has
+ * always simulated: 8 × 25% + 4 × 50% + 3 × 100% = 2 + 2 + 3 (exact in
+ * binary floating point, so the rate is exactly 7). No seasonality and no
+ * growth, so arrivals are unchanged.
+ */
+function leadSources(): LeadSourceRow[] {
+  const source = (key: keyof typeof northbeamLeadSourceIds, name: string, volume: number, conversion: number): LeadSourceRow => ({
+    id: northbeamLeadSourceIds[key],
+    workspace_id: ws,
+    name,
+    volume_week: volume,
+    conversion_to_qualified: conversion,
+    provenance: { volume_week: ESTIMATE, conversion_to_qualified: ESTIMATE },
+  });
+  return [
+    source("website", "Website enquiries", 8, 0.25),
+    source("ads", "Google Ads", 4, 0.5),
+    source("referrals", "Client referrals", 3, 1),
+  ];
+}
+
+function demandSettings(): DemandSettingsRow {
+  return { workspace_id: ws, growth_monthly: 0, provenance: { growth_monthly: ESTIMATE } };
+}
+
 export function northbeamBundle(): ProcessBundle {
   edgeN = 0;
   return {
@@ -245,6 +293,9 @@ export function northbeamBundle(): ProcessBundle {
     personSkills: [],
     personLeave: [],
     services: services(),
+    leadSources: leadSources(),
+    seasonality: [],
+    demand: demandSettings(),
   };
 }
 

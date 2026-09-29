@@ -1,12 +1,14 @@
-import type {
-  Distribution as EngineDistribution,
-  EngineEnd,
-  EngineModel,
-  EnginePerson,
-  EngineService,
-  EngineStep,
+import {
+  isFlatDemand,
+  type EngineDemand,
+  type Distribution as EngineDistribution,
+  type EngineEnd,
+  type EngineModel,
+  type EnginePerson,
+  type EngineService,
+  type EngineStep,
 } from "@transpera-flow/engine";
-import type { DistParams, Distribution, ProcessBundle, StepRow } from "./types";
+import type { DistParams, Distribution, LeadSourceRow, ProcessBundle, SeasonalityRow, StepRow } from "./types";
 
 const WORKING_DAYS_PER_WEEK = 5;
 const DAY_MS = 86_400_000;
@@ -44,6 +46,9 @@ export class ModelError extends Error {}
  * - Services (see `engineServices`) and, only when there are some, the edges'
  *   condition tags. A process with no services maps exactly as it did before
  *   services existed.
+ * - Arrivals (see `arrivalsPerWeek` and `engineDemand`): the lead sources'
+ *   qualified leads split by the services mix, with seasonality and growth
+ *   placed in the calendar from the start date. Flat demand is left out.
  * - Steps and roles are ordered by id so the result, and therefore the
  *   simulation, doesn't depend on database row order.
  */
@@ -115,12 +120,15 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
     };
   }
 
-  const people = resolvePeopleRows(bundle, working, options.startDate ?? new Date().toISOString().slice(0, 10));
+  const startDate = options.startDate ?? new Date().toISOString().slice(0, 10);
+  const people = resolvePeopleRows(bundle, working, startDate);
+  const demand = engineDemand(bundle, startDate);
 
   return {
     horizonWeeks: s.horizon_weeks,
     hoursPerWeek: s.hours_per_week,
-    leadsPerWeek: s.leads_per_week,
+    leadsPerWeek: arrivalsPerWeek(bundle, services),
+    ...(demand ? { demand } : {}),
     activeClients: s.active_clients,
     churnMonthly: s.churn_monthly,
     retainer: s.retainer,
@@ -166,6 +174,61 @@ function engineServices(bundle: ProcessBundle): Record<string, EngineService> | 
     };
   }
   return services;
+}
+
+/**
+ * Qualified leads a week from the lead sources: Σ volume × conversion
+ * (docs/PRD.md §6.2), summed in id order so the result doesn't depend on row
+ * order. Null when there are none.
+ */
+export function qualifiedLeadsPerWeek(
+  sources: readonly Pick<LeadSourceRow, "id" | "volume_week" | "conversion_to_qualified">[],
+): number | null {
+  if (!sources.length) return null;
+  return [...sources].sort(byIdAsc).reduce((sum, src) => sum + Number(src.volume_week) * Number(src.conversion_to_qualified), 0);
+}
+
+/** The seasonality curve: twelve multipliers, January first. A month with no row is 1. */
+export function seasonalityCurve(rows: readonly Pick<SeasonalityRow, "month" | "multiplier">[]): number[] {
+  const curve = new Array<number>(12).fill(1);
+  for (const row of rows) if (row.month >= 1 && row.month <= 12) curve[row.month - 1] = Number(row.multiplier);
+  return curve;
+}
+
+/**
+ * This process's arrivals a week (docs/PRD.md §6.2): the lead sources'
+ * qualified leads (or, with none, the interim `settings.leads_per_week`),
+ * times the share of the active services' mix that enters this process.
+ * The share is exactly 1 when every active service enters here, as in a
+ * single-pipeline workspace, and 0 when none does.
+ */
+function arrivalsPerWeek(bundle: ProcessBundle, here: Record<string, EngineService> | undefined): number {
+  const total = qualifiedLeadsPerWeek(bundle.leadSources ?? []) ?? bundle.workspace.settings.leads_per_week;
+  const mix = (shares: number[]) => shares.reduce((sum, m) => sum + m, 0);
+  const all = mix(bundle.services.filter((sv) => sv.active).sort(byIdAsc).map((sv) => Number(sv.mix_share)));
+  // No mix to split by: every arrival is this process's.
+  if (!(all > 0)) return total;
+  const mine = here ? mix(Object.values(here).map((sv) => sv.mixShare)) : 0;
+  return mine === all ? total : (total * mine) / all;
+}
+
+/**
+ * Seasonality and growth for the engine, with the start date placed in the
+ * calendar (1 September is month 8; the 16th of a 30-day month is half a
+ * month further on). Undefined when flat with no growth, so such a
+ * workspace simulates exactly as before demand settings existed.
+ */
+function engineDemand(bundle: ProcessBundle, startDate: string): EngineDemand | undefined {
+  const seasonality = seasonalityCurve(bundle.seasonality ?? []);
+  const growth = Number(bundle.demand?.growth_monthly ?? 0);
+  const [year, month, day] = startDate.split("-").map(Number) as [number, number, number];
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const demand: EngineDemand = {
+    ...(seasonality.some((m) => m !== 1) ? { seasonality } : {}),
+    ...(growth ? { growthMonthly: growth } : {}),
+    startMonth: month - 1 + (day - 1) / daysInMonth,
+  };
+  return isFlatDemand(demand) ? undefined : demand;
 }
 
 /**

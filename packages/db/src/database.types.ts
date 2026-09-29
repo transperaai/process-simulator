@@ -103,6 +103,41 @@ export type Database = {
         }
         Relationships: []
       }
+      demand_settings: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          growth_monthly: number
+          provenance: Json
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          growth_monthly?: number
+          provenance?: Json
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          growth_monthly?: number
+          provenance?: Json
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "demand_settings_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: true
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       edges: {
         Row: {
           condition_tag: string | null
@@ -167,6 +202,50 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "process_revisions"
             referencedColumns: ["id", "workspace_id"]
+          },
+        ]
+      }
+      lead_sources: {
+        Row: {
+          conversion_to_qualified: number
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          provenance: Json
+          updated_at: string
+          volume_week: number
+          workspace_id: string
+        }
+        Insert: {
+          conversion_to_qualified?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          provenance?: Json
+          updated_at?: string
+          volume_week?: number
+          workspace_id: string
+        }
+        Update: {
+          conversion_to_qualified?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          provenance?: Json
+          updated_at?: string
+          volume_week?: number
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_sources_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -555,6 +634,47 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "roles_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      seasonality: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          month: number
+          multiplier: number
+          provenance: Json
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          month: number
+          multiplier?: number
+          provenance?: Json
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          month?: number
+          multiplier?: number
+          provenance?: Json
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "seasonality_workspace_id_fkey"
             columns: ["workspace_id"]
             isOneToOne: false
             referencedRelation: "workspaces"

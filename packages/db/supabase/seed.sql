@@ -46,6 +46,15 @@ insert into public.services (id, workspace_id, name, pricing_model, price, margi
   ('80000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'SEO retainer', 'retainer', 3500, 0.45, 18, 0.03, 0.55, 'c0000000-0000-4000-8000-000000000001', array['seo']::text[], true),
   ('80000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'PPC management', 'retainer', 4200, 0.4, 12, 0.04, 0.45, 'c0000000-0000-4000-8000-000000000001', array['ppc']::text[], true);
 
+insert into public.lead_sources (id, workspace_id, name, volume_week, conversion_to_qualified, provenance) values
+  ('60000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'Website enquiries', 8, 0.25, '{"volume_week":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"},"conversion_to_qualified":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"}}'),
+  ('60000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'Google Ads', 4, 0.5, '{"volume_week":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"},"conversion_to_qualified":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"}}'),
+  ('60000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'Client referrals', 3, 1, '{"volume_week":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"},"conversion_to_qualified":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"}}');
+
+
+insert into public.demand_settings (workspace_id, growth_monthly, provenance) values
+  ('a0000000-0000-4000-8000-000000000001', 0, '{"growth_monthly":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"}}');
+
 insert into public.process_revisions (id, workspace_id, process_id, number, status, published_at) values
   ('d0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 1, 'published', '2026-09-29T00:00:00Z');
 

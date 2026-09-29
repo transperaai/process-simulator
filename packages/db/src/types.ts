@@ -23,7 +23,7 @@ export interface WorkspaceSettings {
   hours_per_week: number;
   horizon_weeks: number;
   currency: string;
-  /** Interim demand fields until lead sources, services and clients land. */
+  /** Arrivals a week while the workspace has no lead sources; the other three are interim until services and clients land. */
   leads_per_week: number;
   active_clients: number;
   churn_monthly: number;
@@ -170,6 +170,62 @@ export interface ServiceRow {
   active: boolean;
 }
 
+/** Where a parameter's value came from (docs/PRD.md §3 Parameter provenance). */
+export type ProvenanceSource = "estimated" | "entered" | "measured";
+
+/**
+ * One value's provenance (the §5 `provenance jsonb` shape). A type alias, not
+ * an interface, so it stays assignable to the jsonb column.
+ */
+export type Provenance = {
+  source: ProvenanceSource;
+  /** When it was set (ISO timestamp). */
+  at?: string;
+  /** User who set it. */
+  by?: string;
+  /** Dataset a measured value came from. */
+  dataset_id?: string;
+  note?: string;
+};
+
+/**
+ * Provenance per value column, as stored in a row's `provenance` jsonb
+ * (e.g. `{volume_week: {...}, conversion_to_qualified: {...}}`). The
+ * database stamps `entered` when a person changes a value; a value with no
+ * entry is an estimate.
+ */
+export type ProvenanceMap = { [column: string]: Provenance | undefined };
+
+/** Where qualified leads come from (docs/PRD.md §5 `lead_sources`). */
+export interface LeadSourceRow {
+  id: string;
+  workspace_id: string;
+  name: string;
+  /** Leads a week. */
+  volume_week: number;
+  /** Share that become qualified leads (0–1). */
+  conversion_to_qualified: number;
+  provenance: ProvenanceMap;
+}
+
+/** One month of the seasonality curve. A month with no row has a multiplier of 1. */
+export interface SeasonalityRow {
+  id: string;
+  workspace_id: string;
+  /** 1 = January. */
+  month: number;
+  multiplier: number;
+  provenance: ProvenanceMap;
+}
+
+/** The workspace's growth assumption; no row means no growth. */
+export interface DemandSettingsRow {
+  workspace_id: string;
+  /** Compound change in the arrival rate per month (0.02 is +2%). */
+  growth_monthly: number;
+  provenance: ProvenanceMap;
+}
+
 /** Everything needed to render and simulate one process revision. */
 export interface ProcessBundle {
   workspace: WorkspaceRow;
@@ -185,6 +241,14 @@ export interface ProcessBundle {
   personLeave: PersonLeaveRow[];
   /** The workspace's services. When none apply, every win is priced at the workspace's interim `retainer`. */
   services: ServiceRow[];
+  /**
+   * The workspace's demand model (issue #13). With no lead sources, the
+   * interim `settings.leads_per_week` is the arrival rate; with no
+   * seasonality rows or demand settings, it is constant.
+   */
+  leadSources?: LeadSourceRow[];
+  seasonality?: SeasonalityRow[];
+  demand?: DemandSettingsRow | null;
 }
 
 /** An allowed email domain: managed Google accounts on it join as `member`. */
@@ -232,6 +296,9 @@ export type _SchemaDriftChecks = [
   Assert<Matches<StepRow, "steps">>,
   Assert<Matches<EdgeRow, "edges">>,
   Assert<Matches<ServiceRow, "services">>,
+  Assert<Matches<LeadSourceRow, "lead_sources">>,
+  Assert<Matches<SeasonalityRow, "seasonality">>,
+  Assert<Matches<DemandSettingsRow, "demand_settings">>,
   Assert<Matches<WorkspaceDomainRow, "workspace_domains">>,
   Assert<Matches<AccessEmailRow, "workspace_access_emails">>,
 ];

@@ -31,6 +31,9 @@ export function seedSql(bundles: ProcessBundle[], access: WorkspaceAccess[] = []
     const { live_revision_id, ...process } = b.process;
     out.push(insert("processes", [process]));
     out.push(insert("services", b.services.map((r) => ({ ...r }))));
+    out.push(insert("lead_sources", (b.leadSources ?? []).map((r) => ({ ...r }))));
+    out.push(insert("seasonality", (b.seasonality ?? []).map((r) => ({ ...r }))));
+    out.push(insert("demand_settings", b.demand ? [{ ...b.demand }] : []));
     out.push(insert("process_revisions", [{ ...b.revision, published_at: b.revision.status === "published" ? "2026-09-29T00:00:00Z" : null }]));
     out.push(insert("steps", b.steps.map((s) => ({ ...s }))));
     out.push(insert("edges", b.edges.map((e) => ({ ...e }))));

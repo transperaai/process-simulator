@@ -32,10 +32,16 @@ export function randn(rng: Rng): number {
 
 /** Lognormal sample with the given mean and coefficient of variation. */
 export function lognormal(rng: Rng, mean: number, cv: number): number {
-  if (mean <= 0) return 0;
+  return lognormalSampler(rng, mean, cv)();
+}
+
+/** Repeated lognormal draws, with the parameters' logs computed once. Same values as `lognormal`. */
+export function lognormalSampler(rng: Rng, mean: number, cv: number): () => number {
+  if (mean <= 0) return () => 0;
   const s2 = log(1 + cv * cv);
   const mu = log(mean) - s2 / 2;
-  return exp(mu + Math.sqrt(s2) * randn(rng));
+  const sigma = Math.sqrt(s2);
+  return () => exp(mu + sigma * randn(rng));
 }
 
 /** Exponential sample with the given mean. */

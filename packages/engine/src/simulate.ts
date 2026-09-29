@@ -24,7 +24,7 @@ import type {
   TraceEntity,
   TraceSegment,
 } from "./model";
-import { expo, lognormal, Streams, triangular, type Rng } from "./random";
+import { expo, lognormal, lognormalSampler, Streams, triangular, type Rng } from "./random";
 
 /** Minimum share of a person's time left for pipeline work, unless the model sets one. */
 export const DEFAULT_AVAILABILITY_FLOOR = 0.08;
@@ -48,8 +48,9 @@ type SimEvent =
   | { t: number; type: "arrive" }
   | { t: number; type: "week" }
   | { t: number; type: "measure" }
-  | { t: number; type: "back"; person: string }
-  | { t: number; type: "end" | "leave"; e: SimEntity; step: string };
+  | { t: number; type: "back"; p: PersonState }
+  | { t: number; type: "end"; e: SimEntity; st: StepState; p: PersonState | null }
+  | { t: number; type: "leave"; e: SimEntity; st: StepState };
 
 interface StepStat {
   arrivals: number;
@@ -60,6 +61,27 @@ interface StepStat {
   waitSum: number;
   waitN: number;
   reworks: number;
+}
+
+/** A step's run-time state: its statistics, queue, who can work it, and its random streams. */
+interface StepState {
+  s: EngineStep;
+  stat: StepStat;
+  queue: SimEntity[];
+  /** Eligible people; unstaffed for pure waits and decisions. */
+  people: PersonState[];
+  staffed: boolean;
+  work: () => number;
+  /** Null when the step has no external wait. */
+  wait: (() => number) | null;
+  rework: Rng;
+  route: Rng;
+}
+
+/** Repeated duration draws with the given mean (same values as `sampleDuration`). */
+function durationSampler(rng: Rng, mean: number, dist: Distribution): () => number {
+  if (dist.kind === "lognormal") return lognormalSampler(rng, mean, dist.cv);
+  return () => sampleDuration(rng, mean, dist);
 }
 
 /** Sample a duration with the given mean. */
@@ -98,7 +120,11 @@ interface PersonState {
   freeSince: number;
   busyHours: number;
   completed: number;
-  steps: EngineStep[];
+  steps: StepState[];
+  leave: [number, number][] | null;
+  /** Pipeline share of the week, cached for the client count it was computed at. */
+  frac: number;
+  fracAt: number;
   /** The service in progress, so hands-on time straddling the end of the warm-up can be split. */
   cur: { start: number; end: number; handsOn: number; role: string | null } | null;
 }
@@ -143,8 +169,25 @@ export function runOnce(
   const H = model.horizonWeeks * model.hoursPerWeek;
   const W = start.kind === "warmup" ? start.hours : 0;
   const floor = model.availabilityFloor ?? DEFAULT_AVAILABILITY_FLOOR;
-  const steps = new Map<string, EngineStep>(model.steps.map((s) => [s.id, s]));
   const peopleModel = resolvePeople(model);
+
+  const stepStates = new Map<string, StepState>();
+  for (const s of model.steps) {
+    const waitDist = s.waitDist ?? DEFAULT_WAIT_DIST;
+    stepStates.set(s.id, {
+      s,
+      stat: { arrivals: 0, qLen: 0, qArea: 0, qLast: 0, qMax: 0, waitSum: 0, waitN: 0, reworks: 0 },
+      queue: [],
+      people: [],
+      staffed: Boolean(s.role || s.person),
+      work: durationSampler(streams.get(`work:${s.id}`), s.work, s.workDist ?? DEFAULT_WORK_DIST),
+      wait:
+        s.wait || waitDist.kind === "triangular" ? durationSampler(streams.get(`wait:${s.id}`), s.wait, waitDist) : null,
+      rework: streams.get(`rework:${s.id}`),
+      route: streams.get(`route:${s.id}`),
+    });
+  }
+  const stepList = [...stepStates.values()];
 
   // Who can do what.
   const canDo = (pid: string, p: EnginePerson, s: EngineStep) =>
@@ -156,43 +199,26 @@ export function runOnce(
     freeSince: 0,
     busyHours: 0,
     completed: 0,
-    steps: model.steps.filter((s) => canDo(id, person, s)),
+    steps: stepList.filter((st) => canDo(id, person, st.s)),
+    leave: person.leave?.length ? person.leave : null,
+    frac: 0,
+    fracAt: NaN,
     cur: null,
   }));
-  const peopleById = new Map(people.map((p) => [p.id, p]));
-  const stepPeople: Record<string, PersonState[]> = {};
-  for (const s of model.steps) stepPeople[s.id] = people.filter((p) => p.steps.includes(s));
+  for (const st of stepList) st.people = people.filter((p) => p.steps.includes(st));
 
   // Capacity per role: each person's capacity split evenly across their roles.
   const roleCapacity: Record<string, number> = {};
-  const roleMembers: Record<string, PersonState[]> = {};
-  for (const rid in model.roles) {
-    roleCapacity[rid] = 0;
-    roleMembers[rid] = [];
-  }
+  for (const rid in model.roles) roleCapacity[rid] = 0;
   for (const p of people) {
     for (const rid of p.person.roles) {
       if (!(rid in roleCapacity)) continue;
       roleCapacity[rid]! += p.person.capacity / p.person.roles.length;
-      roleMembers[rid]!.push(p);
     }
   }
   const roleBusyHours: Record<string, number> = {};
   for (const rid in model.roles) roleBusyHours[rid] = 0;
 
-  const stepStat: Record<string, StepStat> = {};
-  const stepQueue: Record<string, SimEntity[]> = {};
-  const stepRng: Record<string, { work: Rng; wait: Rng; rework: Rng; route: Rng }> = {};
-  for (const s of model.steps) {
-    stepStat[s.id] = { arrivals: 0, qLen: 0, qArea: 0, qLast: 0, qMax: 0, waitSum: 0, waitN: 0, reworks: 0 };
-    stepQueue[s.id] = [];
-    stepRng[s.id] = {
-      work: streams.get(`work:${s.id}`),
-      wait: streams.get(`wait:${s.id}`),
-      rework: streams.get(`rework:${s.id}`),
-      route: streams.get(`route:${s.id}`),
-    };
-  }
   let active = model.activeClients;
   const events = new EventQueue<SimEvent>();
   let entities: SimEntity[] = [];
@@ -214,13 +240,21 @@ export function runOnce(
     }
     return hours;
   };
-  /** Share of a working week this person has for pipeline work. */
-  const availFrac = (p: PersonState) =>
-    Math.max(floor, (p.person.capacity - ongoingHours(p, active)) / model.hoursPerWeek);
-  const onLeave = (p: PersonState, t: number) => p.person.leave?.some(([a, b]) => t >= a && t < b) ?? false;
+  /** Share of a working week this person has for pipeline work (recomputed when the client count moves). */
+  const availFrac = (p: PersonState) => {
+    if (p.fracAt !== active) {
+      p.frac = Math.max(floor, (p.person.capacity - ongoingHours(p, active)) / model.hoursPerWeek);
+      p.fracAt = active;
+    }
+    return p.frac;
+  };
+  const onLeave = (p: PersonState, t: number) => {
+    if (!p.leave) return false;
+    for (const [a, b] of p.leave) if (t >= a && t < b) return true;
+    return false;
+  };
 
-  const setQ = (sid: string, t: number, delta: number) => {
-    const st = stepStat[sid]!;
+  const setQ = (st: StepStat, t: number, delta: number) => {
     st.qArea += st.qLen * (t - st.qLast);
     st.qLast = t;
     st.qLen += delta;
@@ -244,20 +278,24 @@ export function runOnce(
       e.outcome = "lost";
       return;
     }
-    const s = steps.get(sid)!;
-    stepStat[sid]!.arrivals++;
-    const seg: TraceSegment = { step: sid, person: null, tQ: t, tS: null, tE: null, tL: null };
+    const st = stepStates.get(sid)!;
+    st.stat.arrivals++;
+    queueAt(e, st, t, t);
+  }
+
+  /** Put an entity at a step (queued since `tQ`); the longest-idle eligible free person takes it. */
+  function queueAt(e: SimEntity, st: StepState, tQ: number, t: number) {
+    const seg: TraceSegment = { step: st.s.id, person: null, tQ, tS: null, tE: null, tL: null };
     if (keepTrace) e.trace.push(seg);
     e.seg = seg;
-    if (!s.role && !s.person) {
-      startService(e, s, null, t);
+    if (!st.staffed) {
+      startService(e, st, null, t);
       return;
     }
-    stepQueue[sid]!.push(e);
-    setQ(sid, t, 1);
-    // Give it to the longest-idle eligible person, if anyone is free.
+    st.queue.push(e);
+    setQ(st.stat, t, 1);
     let pick: PersonState | null = null;
-    for (const p of stepPeople[sid]!) {
+    for (const p of st.people) {
       if (!p.busy && !onLeave(p, t) && (!pick || p.freeSince < pick.freeSince)) pick = p;
     }
     if (pick) takeNext(pick, t);
@@ -267,60 +305,61 @@ export function runOnce(
   function takeNext(p: PersonState, t: number) {
     if (p.busy || onLeave(p, t)) return;
     let best: SimEntity | null = null;
-    let bestStep: EngineStep | null = null;
-    for (const s of p.steps) {
-      const c = stepQueue[s.id]![0];
+    let bestStep: StepState | null = null;
+    for (const st of p.steps) {
+      const c = st.queue[0];
       if (c && (!best || c.seg!.tQ < best.seg!.tQ)) {
         best = c;
-        bestStep = s;
+        bestStep = st;
       }
     }
     if (!best || !bestStep) return;
-    stepQueue[bestStep.id]!.shift();
-    setQ(bestStep.id, t, -1);
-    stepStat[bestStep.id]!.waitSum += t - best.seg!.tQ;
-    stepStat[bestStep.id]!.waitN++;
+    bestStep.queue.shift();
+    const stat = bestStep.stat;
+    setQ(stat, t, -1);
+    stat.waitSum += t - best.seg!.tQ;
+    stat.waitN++;
     startService(best, bestStep, p, t);
   }
 
-  function startService(e: SimEntity, s: EngineStep, p: PersonState | null, t: number) {
+  function startService(e: SimEntity, st: StepState, p: PersonState | null, t: number) {
     e.seg!.tS = t;
     e.seg!.person = p?.id ?? null;
     let dur = 0;
     if (p) {
       p.busy = true;
       const frac = availFrac(p);
-      const handsOn = sampleDuration(stepRng[s.id]!.work, s.work, s.workDist ?? DEFAULT_WORK_DIST);
+      const handsOn = st.work();
       dur = handsOn / frac;
       p.busyHours += handsOn;
-      if (s.role && s.role in roleBusyHours) roleBusyHours[s.role]! += handsOn;
-      p.cur = { start: t, end: t + dur, handsOn, role: s.role };
+      const role = st.s.role;
+      if (role && role in roleBusyHours) roleBusyHours[role]! += handsOn;
+      p.cur = { start: t, end: t + dur, handsOn, role };
     }
-    push({ t: t + dur, type: "end", e, step: s.id });
+    push({ t: t + dur, type: "end", e, st, p });
   }
 
-  function endService(e: SimEntity, s: EngineStep, t: number) {
+  function endService(e: SimEntity, st: StepState, p: PersonState | null, t: number) {
     e.seg!.tE = t;
-    const p = e.seg!.person ? peopleById.get(e.seg!.person)! : null;
     if (p) {
       p.busy = false;
       p.freeSince = t;
       p.completed++;
     }
-    const waitDist = s.waitDist ?? DEFAULT_WAIT_DIST;
-    const w = s.wait || waitDist.kind === "triangular" ? sampleDuration(stepRng[s.id]!.wait, s.wait, waitDist) : 0;
-    push({ t: t + w, type: "leave", e, step: s.id });
+    const w = st.wait ? st.wait() : 0;
+    push({ t: t + w, type: "leave", e, st });
     if (p) takeNext(p, t);
   }
 
-  function leave(e: SimEntity, s: EngineStep, t: number) {
+  function leave(e: SimEntity, st: StepState, t: number) {
     e.seg!.tL = t;
-    if (s.rework && stepRng[s.id]!.rework() < s.rework) {
-      stepStat[s.id]!.reworks++;
+    const s = st.s;
+    if (s.rework && st.rework() < s.rework) {
+      st.stat.reworks++;
       enter(e, s.id, t);
       return;
     }
-    const u = stepRng[s.id]!.route();
+    const u = st.route();
     let acc = 0;
     let to = s.next[s.next.length - 1]!.to;
     for (const n of s.next) {
@@ -342,9 +381,8 @@ export function runOnce(
     lost = 0;
     cycle.length = 0;
     active = model.activeClients;
-    for (const s of model.steps) {
-      const st = stepStat[s.id]!;
-      stepStat[s.id] = { ...st, arrivals: 0, qArea: 0, qLast: 0, qMax: st.qLen, waitSum: 0, waitN: 0, reworks: 0 };
+    for (const { stat } of stepList) {
+      Object.assign(stat, { arrivals: 0, qArea: 0, qLast: 0, qMax: stat.qLen, waitSum: 0, waitN: 0, reworks: 0 });
     }
     for (const rid in roleBusyHours) roleBusyHours[rid] = 0;
     for (const p of people) {
@@ -365,62 +403,58 @@ export function runOnce(
    * with none). Oldest first, so they are served before anything newer.
    */
   function seedWip() {
-    const items: { s: EngineStep; tQ: number }[] = [];
-    for (const s of model.steps) {
-      const rng = streams.get(`wip:${s.id}`);
-      const span = s.wait > 0 ? s.wait : s.work;
-      for (let i = 0; i < wipCount(s); i++) items.push({ s, tQ: 0 - rng() * span });
+    const items: { st: StepState; tQ: number }[] = [];
+    for (const st of stepList) {
+      const rng = streams.get(`wip:${st.s.id}`);
+      const span = st.s.wait > 0 ? st.s.wait : st.s.work;
+      for (let i = 0; i < wipCount(st.s); i++) items.push({ st, tQ: 0 - rng() * span });
     }
     items.sort((a, b) => a.tQ - b.tQ);
-    for (const { s, tQ } of items) {
+    for (const { st, tQ } of items) {
       const e: SimEntity = { id: eid++, t0: tQ, trace: [], seg: null };
       entities.push(e);
-      const seg: TraceSegment = { step: s.id, person: null, tQ, tS: null, tE: null, tL: null };
-      if (keepTrace) e.trace.push(seg);
-      e.seg = seg;
-      if (!s.role && !s.person) {
-        startService(e, s, null, 0);
-      } else {
-        stepQueue[s.id]!.push(e);
-        setQ(s.id, 0, 1);
-      }
+      queueAt(e, st, tQ, 0);
     }
-    for (const p of people) takeNext(p, 0);
   }
 
   // Arrivals: Poisson process over the horizon. The warm-up's arrivals come
   // from their own stream, drawn backwards from t = 0, so the measured
-  // window's arrivals are the same whatever the warm-up length.
-  const arrivals = streams.get("arrivals");
+  // window's arrivals are the same whatever the warm-up length. Only the next
+  // arrival sits in the event queue, which keeps the heap small.
+  const arrivalTimes: number[] = [];
   const meanGap = model.hoursPerWeek / model.leadsPerWeek;
   if (W > 0) {
     push({ t: 0, type: "measure" });
     const early = streams.get("arrivals:warmup");
-    for (let tb = -expo(early, meanGap); tb >= -W; tb -= expo(early, meanGap)) push({ t: tb, type: "arrive" });
+    for (let tb = -expo(early, meanGap); tb >= -W; tb -= expo(early, meanGap)) arrivalTimes.push(tb);
+    arrivalTimes.reverse();
   }
-  let ta = expo(arrivals, meanGap);
-  while (ta < H) {
-    push({ t: ta, type: "arrive" });
-    ta += expo(arrivals, meanGap);
-  }
+  const arrivals = streams.get("arrivals");
+  for (let ta = expo(arrivals, meanGap); ta < H; ta += expo(arrivals, meanGap)) arrivalTimes.push(ta);
+  let nextArrival = 0;
+  const scheduleArrival = () => {
+    if (nextArrival < arrivalTimes.length) push({ t: arrivalTimes[nextArrival++]!, type: "arrive" });
+  };
+  scheduleArrival();
   // Weekly churn ticks.
   for (let w = 1; w <= model.horizonWeeks; w++) push({ t: w * model.hoursPerWeek, type: "week" });
   // People coming back from leave pick up waiting work.
-  for (const p of people) for (const [, end] of p.person.leave ?? []) if (end < H) push({ t: end, type: "back", person: p.id });
+  for (const p of people) for (const [, end] of p.leave ?? []) if (end < H) push({ t: end, type: "back", p });
   if (start.kind === "wip") seedWip();
 
   for (let ev = events.pop(); ev; ev = events.pop()) {
     if (ev.t > H) break;
     if (ev.type === "arrive") {
+      scheduleArrival();
       const e: SimEntity = { id: eid++, t0: ev.t, trace: [], seg: null };
       entities.push(e);
       enter(e, model.entry, ev.t);
     } else if (ev.type === "end") {
-      endService(ev.e, steps.get(ev.step)!, ev.t);
+      endService(ev.e, ev.st, ev.p, ev.t);
     } else if (ev.type === "leave") {
-      leave(ev.e, steps.get(ev.step)!, ev.t);
+      leave(ev.e, ev.st, ev.t);
     } else if (ev.type === "back") {
-      takeNext(peopleById.get(ev.person)!, ev.t);
+      takeNext(ev.p, ev.t);
     } else if (ev.type === "measure") {
       startMeasuring();
     } else {
@@ -430,7 +464,7 @@ export function runOnce(
 
   const stepOut: Record<string, StepResult> = {};
   for (const s of model.steps) {
-    const st = stepStat[s.id]!;
+    const st = stepStates.get(s.id)!.stat;
     st.qArea += st.qLen * (H - st.qLast);
     stepOut[s.id] = {
       arrivals: st.arrivals,

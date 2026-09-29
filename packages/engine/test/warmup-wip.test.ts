@@ -142,8 +142,8 @@ describe("current WIP", () => {
     // WIP arrived before the run: it is queued, not counted as new arrivals.
     expect(r.steps.build!.arrivals).toBe(3);
     expect(r.steps.brief!.arrivals).toBe(0);
-    // All six are queued at t = 0 before the developer takes the oldest.
-    expect(r.steps.build!.maxQueue).toBe(6);
+    // The developer takes the oldest at t = 0; the other five queue.
+    expect(r.steps.build!.maxQueue).toBe(5);
     expect(r.steps.build!.wip).toBe(0);
   });
 

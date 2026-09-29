@@ -20,6 +20,9 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         </p>
       ) : null}
       <LoginForm />
+      <a href="/privacy" className="text-xs text-fg-3 underline">
+        Privacy policy
+      </a>
     </main>
   );
 }

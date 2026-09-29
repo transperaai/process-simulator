@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseEnv } from "@/lib/supabase/env";
 
-const PUBLIC_PATHS = ["/login", "/auth", "/demo"];
+const PUBLIC_PATHS = ["/login", "/auth", "/demo", "/privacy"];
 
 /** Refreshes the Supabase session on every request and guards signed-in pages. */
 export async function proxy(request: NextRequest) {

@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { readdirSync, readFileSync } from "node:fs";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { NORTHBEAM_PROCESS_ID, NORTHBEAM_WORKSPACE_ID, northbeamBundle, toEngineModel } from "@transpera-flow/db";
@@ -9,21 +8,17 @@ import { call, connect, post, signJwt } from "./helpers";
 
 // End to end, as in production: MCP client → handleMcpRequest → supabase-js →
 // PostgREST (with the pre-request hook) → Postgres with every migration, RLS
-// and the seed. CI runs PostgREST as a service pointed at DATABASE_NAME (see
-// .github/workflows/ci.yml); locally this suite is skipped unless
-// POSTGREST_URL is set.
+// and the seed. CI prepares the database with test/postgrest-db.ts, then
+// starts PostgREST against it (.github/workflows/ci.yml); locally this suite
+// is skipped unless POSTGREST_URL is set.
 
 const POSTGREST_URL = process.env.POSTGREST_URL;
 const JWT_SECRET = process.env.POSTGREST_JWT_SECRET ?? "";
 const ADMIN_URL = process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/postgres";
 const DATABASE_NAME = "transpera_flow_postgrest";
-const AUTHENTICATOR_PASSWORD = "authenticator"; // test-only role in a throwaway CI database
 const SUPABASE_URL = "https://project.supabase.test";
 
 if (process.env.CI && !POSTGREST_URL) throw new Error("CI must run the PostgREST end-to-end suite: set POSTGREST_URL");
-
-const supabaseDir = new URL("../../db/supabase/", import.meta.url);
-const shim = new URL("../../db/test/sql/auth-shim.sql", import.meta.url);
 
 let admin: pg.Client;
 let options: McpHandlerOptions;
@@ -58,27 +53,11 @@ let otherWorkspaceId: string;
 
 describe.skipIf(!POSTGREST_URL)("MCP over PostgREST (acts as the user under RLS)", () => {
   beforeAll(async () => {
-    const root = new pg.Client({ connectionString: ADMIN_URL });
-    await root.connect();
-    await root.query(`drop database if exists ${DATABASE_NAME} with (force)`);
-    await root.query(`create database ${DATABASE_NAME}`);
-    await root.end();
-
+    // postgrest-db.ts prepared this database before PostgREST started.
     const url = new URL(ADMIN_URL);
     url.pathname = `/${DATABASE_NAME}`;
     admin = new pg.Client({ connectionString: url.toString() });
     await admin.connect();
-    await admin.query(readFileSync(shim, "utf8"));
-    // Supabase's PostgREST login role. It can't log in until the schema is ready.
-    await admin.query(`do $$ begin
-      if not exists (select from pg_roles where rolname = 'authenticator') then create role authenticator noinherit nologin; end if;
-    exception when duplicate_object or unique_violation then null;
-    end $$`);
-    await admin.query("grant anon, authenticated, service_role to authenticator");
-    for (const f of readdirSync(new URL("migrations/", supabaseDir)).filter((f) => f.endsWith(".sql")).sort()) {
-      await admin.query(readFileSync(new URL(`migrations/${f}`, supabaseDir), "utf8"));
-    }
-    await admin.query(readFileSync(new URL("seed.sql", supabaseDir), "utf8"));
 
     memberId = await createUser("member@example.com");
     const strangerId = await createUser("stranger@example.com");
@@ -88,15 +67,10 @@ describe.skipIf(!POSTGREST_URL)("MCP over PostgREST (acts as the user under RLS)
     memberToken = await issueToken(memberId);
     strangerToken = await issueToken(strangerId);
 
-    // The migration registered the pre-request hook on authenticator; let PostgREST in.
-    await admin.query(`alter role authenticator login password '${AUTHENTICATOR_PASSWORD}'`);
-    await admin.query("notify pgrst, 'reload config'");
-    await admin.query("notify pgrst, 'reload schema'");
-
     options = { supabaseUrl: SUPABASE_URL, supabaseKey: anonKey(), fetch: toPostgrest };
 
     // Wait for PostgREST to connect, load the schema and the hook.
-    const deadline = Date.now() + 110_000;
+    const deadline = Date.now() + 60_000;
     let last = "";
     for (;;) {
       try {

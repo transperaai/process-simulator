@@ -44,7 +44,9 @@ After changing the fixtures, regenerate the seed with `pnpm --filter @transpera-
 
 The MCP end-to-end suite (`packages/mcp/test/postgrest.test.ts`) also needs
 PostgREST; it is skipped locally unless `POSTGREST_URL` and
-`POSTGREST_JWT_SECRET` are set. CI runs it (see `.github/workflows/ci.yml`).
+`POSTGREST_JWT_SECRET` are set. CI prepares its database with
+`packages/mcp/test/postgrest-db.ts` and then starts PostgREST (see
+`.github/workflows/ci.yml`).
 
 ## MCP server
 

@@ -153,7 +153,12 @@ grant execute on function private.api_token_pre_request() to anon, authenticated
 -- PostgREST test), not in the plain-Postgres test databases.
 do $$
 begin
-  if exists (select from pg_roles where rolname = 'authenticator') then
+  if exists (select from pg_roles where rolname = 'authenticator')
+     and not exists (
+       select from pg_db_role_setting s join pg_roles r on r.oid = s.setrole
+       where r.rolname = 'authenticator' and s.setdatabase = 0
+         and 'pgrst.db_pre_request=private.api_token_pre_request' = any (s.setconfig)
+     ) then
     alter role authenticator set pgrst.db_pre_request = 'private.api_token_pre_request';
   end if;
 end;

@@ -9,8 +9,10 @@ import type {
   Distribution,
   EngineModel,
   EngineStep,
+  Kpis,
   ReplicationResult,
   RoleResult,
+  Stat,
   SimulationResult,
   StepResult,
   TraceEntity,
@@ -280,6 +282,43 @@ export function pct(arr: number[], p: number): number {
   return a[Math.min(a.length - 1, Math.floor(p * a.length))]!;
 }
 
+/** Mean and 10th–90th percentile band of a set of values. */
+export function stat(values: number[]): Stat {
+  if (!values.length) return { mean: 0, p10: 0, p90: 0 };
+  return { mean: values.reduce((a, b) => a + b, 0) / values.length, p10: pct(values, 0.1), p90: pct(values, 0.9) };
+}
+
+function kpis(model: EngineModel, runs: ReplicationResult[], cycle: number[]): Kpis {
+  const labourOf = (r: ReplicationResult) => {
+    let total = 0;
+    for (const rid in model.roles) total += r.roles[rid]!.pipelineHours * model.horizonWeeks * model.roles[rid]!.cost;
+    return total;
+  };
+  const labour = runs.map(labourOf);
+  const roles: Kpis["roles"] = {};
+  for (const rid in model.roles) {
+    roles[rid] = {
+      util: stat(runs.map((r) => r.roles[rid]!.util)),
+      pipeline: stat(runs.map((r) => r.roles[rid]!.pipeline)),
+      ongoing: stat(runs.map((r) => r.roles[rid]!.ongoing)),
+    };
+  }
+  return {
+    won: stat(runs.map((r) => r.won)),
+    lost: stat(runs.map((r) => r.lost)),
+    labour: stat(labour),
+    costPerWin: stat(runs.flatMap((r, i) => (r.won ? [labour[i]! / r.won] : []))),
+    mrrAdded: stat(runs.map((r) => r.won * model.retainer)),
+    wipEnd: stat(runs.map((r) => Object.values(r.steps).reduce((a, st) => a + st.wip, 0))),
+    cycle: {
+      mean: cycle.length ? cycle.reduce((a, b) => a + b, 0) / cycle.length : 0,
+      p50: pct(cycle, 0.5),
+      p90: pct(cycle, 0.9),
+    },
+    roles,
+  };
+}
+
 export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationResult {
   const runs: ReplicationResult[] = [];
   let trace: TraceEntity[] | null = null;
@@ -329,6 +368,7 @@ export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationRes
   }
 
   return {
+    kpi: kpis(model, runs, cycle),
     won,
     wonLow: pct(wonArr, 0.1),
     wonHigh: pct(wonArr, 0.9),

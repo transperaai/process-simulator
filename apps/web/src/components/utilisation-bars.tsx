@@ -1,7 +1,8 @@
 import type { EngineModel, SimulationResult } from "@flowsim/engine";
-import { formatPercent } from "@/lib/format";
+import { formatPercent, formatRange } from "@/lib/format";
 
 const THRESHOLD = 0.85;
+const pctWidth = (share: number) => `${Math.max(0, Math.min(100, share * 100))}%`;
 
 export function UtilisationBars({ model, result }: { model: EngineModel; result: SimulationResult | null }) {
   return (
@@ -11,35 +12,45 @@ export function UtilisationBars({ model, result }: { model: EngineModel; result:
       </h2>
       <ul className="flex flex-col gap-2">
         {Object.entries(model.roles).map(([id, role]) => {
-          const r = result?.roles[id];
-          const util = r?.util ?? 0;
+          const band = result?.kpi.roles[id];
+          const util = band?.util.mean ?? 0;
+          const ongoing = band?.ongoing.mean ?? 0;
+          const hot = util > THRESHOLD;
           return (
-            <li key={id} className="grid grid-cols-[9.5rem_1fr_3rem] items-center gap-2">
+            <li
+              key={id}
+              className="grid grid-cols-[9.5rem_1fr_3rem] items-center gap-2"
+              aria-label={band ? `${role.name}: ${formatPercent(util)} utilised, ${formatRange(band.util, formatPercent)}` : role.name}
+            >
               <span className="truncate">
                 {role.name} <span className="text-fg-3">× {role.count}</span>
               </span>
-              <span className="relative h-3 overflow-hidden rounded-sm bg-panel-2" aria-hidden>
-                <span
-                  className="absolute inset-y-0 left-0 bg-fg-3/50"
-                  style={{ width: `${Math.min(100, (r?.ongoing ?? 0) * 100)}%` }}
-                />
-                <span
-                  className={`absolute inset-y-0 ${util > THRESHOLD ? "bg-crit" : "bg-accent"}`}
-                  style={{
-                    left: `${Math.min(100, (r?.ongoing ?? 0) * 100)}%`,
-                    width: `${Math.max(0, Math.min(100, util * 100) - Math.min(100, (r?.ongoing ?? 0) * 100))}%`,
-                  }}
-                />
-                <span className="absolute inset-y-0 w-px bg-fg" style={{ left: `${THRESHOLD * 100}%` }} />
+              <span className="relative h-4" aria-hidden>
+                <span className="absolute inset-x-0 top-0.5 h-3 overflow-hidden rounded-sm bg-panel-2">
+                  <span className="absolute inset-y-0 left-0 bg-fg-3/50" style={{ width: pctWidth(ongoing) }} />
+                  <span
+                    className={`absolute inset-y-0 ${hot ? "bg-crit" : "bg-accent"}`}
+                    style={{ left: pctWidth(ongoing), width: pctWidth(Math.min(1, util) - Math.min(1, ongoing)) }}
+                  />
+                </span>
+                {band && (
+                  <span
+                    className="absolute top-[7px] h-[2px] bg-fg"
+                    style={{ left: pctWidth(band.util.p10), width: pctWidth(band.util.p90 - band.util.p10) }}
+                  />
+                )}
+                <span className="absolute inset-y-0 w-px bg-fg" style={{ left: pctWidth(THRESHOLD) }} />
               </span>
-              <span className={`text-right tabular-nums ${util > THRESHOLD ? "font-semibold text-crit" : ""}`}>
-                {r ? formatPercent(util) : "–"}
+              <span className={`text-right tabular-nums ${hot ? "font-semibold text-crit" : ""}`}>
+                {band ? formatPercent(util) : "–"}
               </span>
             </li>
           );
         })}
       </ul>
-      <p className="mt-2 text-xs text-fg-3">Grey: ongoing client work · colour: pipeline · line: 85% ceiling</p>
+      <p className="mt-2 text-xs text-fg-3">
+        Grey: ongoing client work · colour: pipeline · dark line: 10th–90th percentile range · tick: 85% ceiling
+      </p>
     </section>
   );
 }

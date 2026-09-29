@@ -29,7 +29,13 @@ export function ProcessView({ bundle }: { bundle: ProcessBundle }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <KpiStrip model={resolved.model} result={result} status={sim.status} durationMs={sim.run?.durationMs} />
+      <KpiStrip
+        model={resolved.model}
+        currency={bundle.workspace.settings.currency}
+        result={result}
+        status={sim.status}
+        durationMs={sim.run?.durationMs}
+      />
       <div className="grid gap-3 lg:grid-cols-[1fr_22rem]">
         <ProcessCanvas bundle={bundle} result={result} />
         <UtilisationBars model={resolved.model} result={result} />

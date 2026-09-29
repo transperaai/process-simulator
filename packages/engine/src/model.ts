@@ -111,7 +111,30 @@ export interface ReplicationResult {
   activeEnd: number;
 }
 
+/** A metric across replications: the mean and the 10th–90th percentile band. */
+export interface Stat {
+  mean: number;
+  p10: number;
+  p90: number;
+}
+
+/** Headline metrics with their spread across replications (docs/PRD.md §6.4). */
+export interface Kpis {
+  won: Stat;
+  lost: Stat;
+  labour: Stat;
+  /** Over replications that won at least one item. */
+  costPerWin: Stat;
+  mrrAdded: Stat;
+  wipEnd: Stat;
+  /** Over every completed item in every replication. */
+  cycle: { mean: number; p50: number; p90: number };
+  roles: Record<string, { util: Stat; pipeline: Stat; ongoing: Stat }>;
+}
+
 export interface SimulationResult {
+  /** Means and ranges; the flat fields below are the prototype's shape, kept for compatibility. */
+  kpi: Kpis;
   won: number;
   wonLow: number;
   wonHigh: number;

@@ -40,7 +40,7 @@ describe("toEngineModel", () => {
     expect(Object.keys(people!)).toHaveLength(11);
   });
 
-  it("simulates to the prototype's headline result: strategist is the ~91% bottleneck", () => {
+  it("simulates to the same headline result as the engine fixture: strategist is the bottleneck", () => {
     // Random streams are keyed by step id, so uuid-keyed rows and the
     // prototype's name-keyed model draw different (equally valid) samples;
     // exact equality of the models is covered above.
@@ -71,6 +71,19 @@ describe("toEngineModel", () => {
     const b = northbeamBundle();
     b.edges = b.edges.filter((e) => e.from_step_id !== northbeamStepIds.audit);
     expect(() => toEngineModel(b)).toThrow(/no outgoing edge/);
+  });
+
+  it("maps entered current WIP, 0 included, and leaves unentered WIP out", () => {
+    const b = northbeamBundle();
+    b.steps = b.steps.map((s) =>
+      s.id === northbeamStepIds.audit ? { ...s, current_wip: 4 } : s.id === northbeamStepIds.onboard ? { ...s, current_wip: 0 } : s,
+    );
+    const steps = new Map(toEngineModel(b, { startDate: START }).steps.map((s) => [s.id, s]));
+    expect(steps.get(northbeamStepIds.audit)!.currentWip).toBe(4);
+    expect(steps.get(northbeamStepIds.onboard)!.currentWip).toBe(0);
+    expect(steps.get(northbeamStepIds.qualify)!).not.toHaveProperty("currentWip");
+    expect(simulate(toEngineModel(b, { startDate: START }), 3, 1).initialState).toEqual({ kind: "wip", items: 4 });
+    expect(simulate(toEngineModel(northbeamBundle(), { startDate: START }), 3, 1).initialState.kind).toBe("warmup");
   });
 });
 

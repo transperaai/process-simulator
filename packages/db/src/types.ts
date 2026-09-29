@@ -108,6 +108,8 @@ export interface StepRow {
   wait_dist: Distribution;
   rework_rate: number;
   tool: string | null;
+  /** Items sitting at this step now; null when not entered (docs/PRD.md §6.3.1). */
+  current_wip: number | null;
   x: number;
   y: number;
 }

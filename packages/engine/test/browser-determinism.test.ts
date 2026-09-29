@@ -49,8 +49,14 @@ async function runInWorker(model: unknown, reps: number, seed: number): Promise<
 }
 
 describe("determinism across hosts", () => {
-  it("Northbeam: Node and a browser worker agree byte for byte", async () => {
+  it("Northbeam (automatic warm-up): Node and a browser worker agree byte for byte", async () => {
     const model = northbeamModel();
+    expect(await runInWorker(model, 30, 1)).toBe(JSON.stringify(simulate(model, 30, 1)));
+  }, 60_000);
+
+  it("Northbeam started from current WIP: Node and a browser worker agree byte for byte", async () => {
+    const model = northbeamModel();
+    model.steps = model.steps.map((s) => (s.id === "audit" ? { ...s, currentWip: 8 } : s.id === "decision" ? { ...s, currentWip: 5 } : s));
     expect(await runInWorker(model, 30, 1)).toBe(JSON.stringify(simulate(model, 30, 1)));
   }, 60_000);
 

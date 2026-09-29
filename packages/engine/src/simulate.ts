@@ -1,8 +1,11 @@
 // Discrete-event Monte Carlo simulation, ported from the Northbeam
 // prototype's `ProcessSim` (prototype/northbeam-process-simulator.html).
 // Fixed so far (docs/PRD.md §6.8): separate random streams per purpose, a
-// binary-heap event queue, and dispatch to named people. Still as in the
-// prototype, and fixed in later tickets: stale ongoing utilisation, empty start.
+// binary-heap event queue, dispatch to named people, and a start from current
+// WIP or a discarded warm-up instead of an empty business. Still as in the
+// prototype, and fixed in a later ticket: stale ongoing utilisation.
+//
+// Time runs from -warmup to H; everything reported is measured over [0, H].
 
 import { EventQueue } from "./event-queue";
 import type {
@@ -10,6 +13,7 @@ import type {
   EngineModel,
   EnginePerson,
   EngineStep,
+  InitialState,
   Kpis,
   PersonResult,
   ReplicationResult,
@@ -29,6 +33,12 @@ const DEFAULT_WAIT_DIST: Distribution = { kind: "lognormal", cv: 0.3 };
 const WEEKS_PER_MONTH = 4.33;
 /** Stride between replication seeds. */
 const SEED_STRIDE = 7919;
+/** Automatic warm-up: at least this many weeks (docs/PRD.md §6.3.1)... */
+const DEFAULT_WARMUP_WEEKS = 4;
+/** ...or twice the pilot run's P90 cycle time if longer, up to this cap. */
+const MAX_WARMUP_WEEKS = 52;
+/** Seed of the pilot run that sizes the automatic warm-up; fixed, so the warm-up is a property of the model. */
+const PILOT_SEED = 1;
 
 interface SimEntity extends TraceEntity {
   seg: TraceSegment | null;
@@ -37,6 +47,7 @@ interface SimEntity extends TraceEntity {
 type SimEvent =
   | { t: number; type: "arrive" }
   | { t: number; type: "week" }
+  | { t: number; type: "measure" }
   | { t: number; type: "back"; person: string }
   | { t: number; type: "end" | "leave"; e: SimEntity; step: string };
 
@@ -88,11 +99,49 @@ interface PersonState {
   busyHours: number;
   completed: number;
   steps: EngineStep[];
+  /** The service in progress, so hands-on time straddling the end of the warm-up can be split. */
+  cur: { start: number; end: number; handsOn: number; role: string | null } | null;
 }
 
-export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): ReplicationResult {
+/** True when any step has current WIP entered (0 counts: "nothing here right now"). */
+function hasWip(model: EngineModel): boolean {
+  return model.steps.some((s) => s.currentWip != null);
+}
+
+/**
+ * How a run starts (docs/PRD.md §6.3.1): from entered WIP if any step has it;
+ * otherwise after a warm-up of `warmupWeeks`, or an automatic one (4 weeks,
+ * extended to 2x the P90 cycle time of a pilot run from empty, capped at 52
+ * weeks; the cap too when nothing completes in the pilot).
+ */
+export function initialState(model: EngineModel): InitialState {
+  if (hasWip(model)) {
+    return { kind: "wip", items: model.steps.reduce((a, s) => a + wipCount(s), 0) };
+  }
+  const hours =
+    model.warmupWeeks !== undefined ? Math.max(0, model.warmupWeeks) * model.hoursPerWeek : autoWarmupHours(model);
+  return hours > 0 ? { kind: "warmup", hours } : { kind: "empty" };
+}
+
+/** A pilot run from empty over the model's horizon; if nothing completes in it, the cap. */
+function autoWarmupHours(model: EngineModel): number {
+  const cap = MAX_WARMUP_WEEKS * model.hoursPerWeek;
+  const pilot = runOnce(model, PILOT_SEED, false, { kind: "empty" });
+  if (!pilot.cycle.length) return cap;
+  return Math.min(cap, Math.max(DEFAULT_WARMUP_WEEKS * model.hoursPerWeek, 2 * pct(pilot.cycle, 0.9)));
+}
+
+const wipCount = (s: EngineStep) => Math.max(0, Math.floor(s.currentWip ?? 0));
+
+export function runOnce(
+  model: EngineModel,
+  seed: number,
+  keepTrace: boolean,
+  start: InitialState = initialState(model),
+): ReplicationResult {
   const streams = new Streams(seed);
   const H = model.horizonWeeks * model.hoursPerWeek;
+  const W = start.kind === "warmup" ? start.hours : 0;
   const floor = model.availabilityFloor ?? DEFAULT_AVAILABILITY_FLOOR;
   const steps = new Map<string, EngineStep>(model.steps.map((s) => [s.id, s]));
   const peopleModel = resolvePeople(model);
@@ -108,6 +157,7 @@ export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): R
     busyHours: 0,
     completed: 0,
     steps: model.steps.filter((s) => canDo(id, person, s)),
+    cur: null,
   }));
   const peopleById = new Map(people.map((p) => [p.id, p]));
   const stepPeople: Record<string, PersonState[]> = {};
@@ -145,7 +195,7 @@ export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): R
   }
   let active = model.activeClients;
   const events = new EventQueue<SimEvent>();
-  const entities: SimEntity[] = [];
+  let entities: SimEntity[] = [];
   let eid = 0;
   const cycle: number[] = [];
   let won = 0;
@@ -179,15 +229,17 @@ export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): R
 
   function enter(e: SimEntity, sid: string, t: number) {
     if (sid === model.sinks.won) {
-      won++;
-      cycle.push(t - e.t0);
       e.done = t;
       e.outcome = "won";
+      // The warm-up runs at the starting client count; its wins are discarded.
+      if (t < 0) return;
+      won++;
+      cycle.push(t - e.t0);
       active += 1;
       return;
     }
     if (sid === model.sinks.lost) {
-      lost++;
+      if (t >= 0) lost++;
       e.done = t;
       e.outcome = "lost";
       return;
@@ -242,6 +294,7 @@ export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): R
       dur = handsOn / frac;
       p.busyHours += handsOn;
       if (s.role && s.role in roleBusyHours) roleBusyHours[s.role]! += handsOn;
+      p.cur = { start: t, end: t + dur, handsOn, role: s.role };
     }
     push({ t: t + dur, type: "end", e, step: s.id });
   }
@@ -280,9 +333,71 @@ export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): R
     enter(e, to, t);
   }
 
-  // Arrivals: Poisson process over the horizon.
+  /**
+   * End of the warm-up: discard everything measured so far. Work in progress
+   * carries over; hands-on time of a service in progress is split pro rata.
+   */
+  function startMeasuring() {
+    won = 0;
+    lost = 0;
+    cycle.length = 0;
+    active = model.activeClients;
+    for (const s of model.steps) {
+      const st = stepStat[s.id]!;
+      stepStat[s.id] = { ...st, arrivals: 0, qArea: 0, qLast: 0, qMax: st.qLen, waitSum: 0, waitN: 0, reworks: 0 };
+    }
+    for (const rid in roleBusyHours) roleBusyHours[rid] = 0;
+    for (const p of people) {
+      p.busyHours = 0;
+      p.completed = 0;
+      const c = p.cur;
+      if (!p.busy || !c || c.end <= 0 || c.end <= c.start) continue;
+      const share = (c.handsOn * c.end) / (c.end - c.start);
+      p.busyHours += share;
+      if (c.role && c.role in roleBusyHours) roleBusyHours[c.role]! += share;
+    }
+    entities = entities.filter((e) => e.done === undefined);
+  }
+
+  /**
+   * Starting WIP: each item queued at its step with an age drawn uniformly
+   * over the step's expected wait (its mean wait, or its work time for steps
+   * with none). Oldest first, so they are served before anything newer.
+   */
+  function seedWip() {
+    const items: { s: EngineStep; tQ: number }[] = [];
+    for (const s of model.steps) {
+      const rng = streams.get(`wip:${s.id}`);
+      const span = s.wait > 0 ? s.wait : s.work;
+      for (let i = 0; i < wipCount(s); i++) items.push({ s, tQ: 0 - rng() * span });
+    }
+    items.sort((a, b) => a.tQ - b.tQ);
+    for (const { s, tQ } of items) {
+      const e: SimEntity = { id: eid++, t0: tQ, trace: [], seg: null };
+      entities.push(e);
+      const seg: TraceSegment = { step: s.id, person: null, tQ, tS: null, tE: null, tL: null };
+      if (keepTrace) e.trace.push(seg);
+      e.seg = seg;
+      if (!s.role && !s.person) {
+        startService(e, s, null, 0);
+      } else {
+        stepQueue[s.id]!.push(e);
+        setQ(s.id, 0, 1);
+      }
+    }
+    for (const p of people) takeNext(p, 0);
+  }
+
+  // Arrivals: Poisson process over the horizon. The warm-up's arrivals come
+  // from their own stream, drawn backwards from t = 0, so the measured
+  // window's arrivals are the same whatever the warm-up length.
   const arrivals = streams.get("arrivals");
   const meanGap = model.hoursPerWeek / model.leadsPerWeek;
+  if (W > 0) {
+    push({ t: 0, type: "measure" });
+    const early = streams.get("arrivals:warmup");
+    for (let tb = -expo(early, meanGap); tb >= -W; tb -= expo(early, meanGap)) push({ t: tb, type: "arrive" });
+  }
   let ta = expo(arrivals, meanGap);
   while (ta < H) {
     push({ t: ta, type: "arrive" });
@@ -292,6 +407,7 @@ export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): R
   for (let w = 1; w <= model.horizonWeeks; w++) push({ t: w * model.hoursPerWeek, type: "week" });
   // People coming back from leave pick up waiting work.
   for (const p of people) for (const [, end] of p.person.leave ?? []) if (end < H) push({ t: end, type: "back", person: p.id });
+  if (start.kind === "wip") seedWip();
 
   for (let ev = events.pop(); ev; ev = events.pop()) {
     if (ev.t > H) break;
@@ -305,6 +421,8 @@ export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): R
       leave(ev.e, steps.get(ev.step)!, ev.t);
     } else if (ev.type === "back") {
       takeNext(peopleById.get(ev.person)!, ev.t);
+    } else if (ev.type === "measure") {
+      startMeasuring();
     } else {
       active = Math.max(0, active - active * (model.churnMonthly / WEEKS_PER_MONTH));
     }
@@ -360,6 +478,7 @@ export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): R
     people: peopleOut,
     entities: keepTrace ? entities.map(stripSeg) : null,
     H,
+    warmupHours: W,
     activeEnd: active,
   };
 }
@@ -424,8 +543,9 @@ function kpis(model: EngineModel, runs: ReplicationResult[], cycle: number[]): K
 export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationResult {
   const runs: ReplicationResult[] = [];
   let trace: TraceEntity[] | null = null;
+  const start = initialState(model);
   for (let i = 0; i < reps; i++) {
-    const r = runOnce(model, seed + i * SEED_STRIDE, i === 0);
+    const r = runOnce(model, seed + i * SEED_STRIDE, i === 0, start);
     if (i === 0) trace = r.entities;
     runs.push(r);
   }
@@ -505,5 +625,6 @@ export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationRes
     H,
     reps,
     wipEnd: model.steps.reduce((a, s) => a + steps[s.id]!.wip, 0),
+    initialState: start,
   };
 }

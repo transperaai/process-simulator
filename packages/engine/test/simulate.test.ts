@@ -12,6 +12,13 @@ describe("simulate (Northbeam)", () => {
     expect(simulate(northbeamModel(), 30, 1).won).not.toBe(simulate(northbeamModel(), 30, 2).won);
   });
 
+  it("starts after an automatic warm-up sized from a pilot run", () => {
+    const res = simulate(northbeamModel(), 5, 1);
+    expect(res.initialState.kind).toBe("warmup");
+    // 2x the pilot's P90 cycle time (~8 weeks) beats the 4-week minimum.
+    expect(res.initialState.kind === "warmup" && res.initialState.hours).toBeGreaterThan(4 * 40);
+  });
+
   it("finds the strategist as the bottleneck role", () => {
     const res = simulate(northbeamModel(), 30, 1);
     expect(res.bnRole).toBe("strat");

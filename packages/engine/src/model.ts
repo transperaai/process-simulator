@@ -60,6 +60,11 @@ export interface EngineStep {
   workDist?: Distribution;
   /** Defaults to lognormal with CV 0.3. */
   waitDist?: Distribution;
+  /**
+   * Items sitting at this step when the run starts (docs/PRD.md §6.3.1).
+   * Entering WIP at any step starts the run from it instead of a warm-up.
+   */
+  currentWip?: number;
   next: EngineEdge[];
 }
 
@@ -76,10 +81,26 @@ export interface EngineModel {
   people?: Record<string, EnginePerson>;
   /** Minimum share of a person's time left for pipeline work (default 0.08). */
   availabilityFloor?: number;
+  /**
+   * Warm-up run before measuring, in weeks, discarded from every reported
+   * metric. Omitted means automatic: 4 weeks, or 2x the P90 cycle time of a
+   * pilot run if longer (capped at 52 weeks). 0 starts from an empty business.
+   * Ignored when any step has `currentWip`: the run starts from that instead.
+   */
+  warmupWeeks?: number;
   entry: string;
   sinks: { won: string; lost: string };
   steps: EngineStep[];
 }
+
+/**
+ * How a run started (docs/PRD.md §6.3.1): from entered work in progress, after
+ * a discarded warm-up, or from an empty business (warm-up switched off).
+ */
+export type InitialState =
+  | { kind: "wip"; items: number }
+  | { kind: "warmup"; hours: number }
+  | { kind: "empty" };
 
 /** One visit of an entity to a step: queued, started, ended service, left. */
 export interface TraceSegment {
@@ -139,8 +160,14 @@ export interface ReplicationResult {
   steps: Record<string, StepResult>;
   roles: Record<string, RoleResult>;
   people: Record<string, PersonResult>;
+  /**
+   * Entities in the measured window (replication 0 only). Those that entered
+   * during the warm-up or as starting WIP have negative times.
+   */
   entities: TraceEntity[] | null;
   H: number;
+  /** Warm-up simulated before t = 0 and discarded. */
+  warmupHours: number;
   activeEnd: number;
 }
 
@@ -192,4 +219,6 @@ export interface SimulationResult {
   H: number;
   reps: number;
   wipEnd: number;
+  /** Whether the run started from entered WIP, a warm-up, or empty. */
+  initialState: InitialState;
 }

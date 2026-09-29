@@ -1,23 +1,17 @@
 "use server";
 
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
-export interface LoginState {
-  status: "idle" | "sent" | "error";
-  message?: string;
-}
-
-export async function sendMagicLink(_prev: LoginState, form: FormData): Promise<LoginState> {
-  const email = String(form.get("email") ?? "").trim();
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { status: "error", message: "Enter a valid email address." };
-
+/** Google sign-in: hand off to Google, which returns to /auth/callback. */
+export async function signInWithGoogle(): Promise<void> {
   const origin = (await headers()).get("origin") ?? "";
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: `${origin}/auth/callback`, shouldCreateUser: true },
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: `${origin}/auth/callback` },
   });
-  if (error) return { status: "error", message: error.message };
-  return { status: "sent", message: `Check ${email} for a sign-in link.` };
+  if (error || !data.url) redirect(`/login?error=${encodeURIComponent(error?.message ?? "Google sign-in is unavailable.")}`);
+  redirect(data.url);
 }

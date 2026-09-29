@@ -11,7 +11,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "gen:seed": "node --experimental-strip-types scripts/gen-seed.ts",
-    "gen:bootstrap": "node --experimental-strip-types scripts/gen-bootstrap.ts"
+    "gen:bootstrap": "node --experimental-strip-types scripts/gen-bootstrap.ts",
+    "gen:types": "supabase gen types typescript --linked --workdir . --schema public > src/database.types.ts"
   },
   "dependencies": {
     "@transpera-flow/engine": "workspace:*"

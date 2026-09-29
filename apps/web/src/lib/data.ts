@@ -1,5 +1,5 @@
 import "server-only";
-import type { ProcessBundle, WorkspaceRow } from "@transpera-flow/db";
+import type { ProcessBundle, ProcessRevisionRow, ProcessRow, StepRow, WorkspaceRow, WorkspaceSettings } from "@transpera-flow/db";
 import { createClient } from "./supabase/server";
 
 /** Workspaces the signed-in user can see (RLS decides). */
@@ -46,16 +46,17 @@ export async function loadLiveProcess(slug: string): Promise<ProcessBundle | nul
   ]);
   for (const r of [revision, roles, steps, edges, people, personRoles, personSkills, personLeave]) if (r.error) throw r.error;
 
+  // The casts narrow text columns that check constraints already limit, and the settings jsonb.
   return {
-    workspace,
-    process,
-    revision: revision.data,
+    workspace: { ...workspace, settings: workspace.settings as unknown as WorkspaceSettings },
+    process: process as ProcessRow,
+    revision: revision.data as ProcessRevisionRow,
     roles: roles.data ?? [],
-    steps: steps.data ?? [],
+    steps: (steps.data ?? []) as StepRow[],
     edges: edges.data ?? [],
     people: people.data ?? [],
     personRoles: personRoles.data ?? [],
     personSkills: personSkills.data ?? [],
     personLeave: personLeave.data ?? [],
-  } as ProcessBundle;
+  };
 }

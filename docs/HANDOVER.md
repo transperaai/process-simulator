@@ -99,6 +99,11 @@ pnpm lint && pnpm typecheck && pnpm test
 
 ## Steps for the next session
 
+> **Done 29 Sep 2026 (second session, on Austin's Mac):** steps 1–6 and 8. `main` now exists
+> (PR #45) and is the default branch and Vercel's production branch; production is
+> https://transpera-flow.vercel.app. Step 7 is partly done: see the checklist in
+> `docs/supabase-notes.md`. Supabase tokens were rotated.
+
 1. **Link Supabase** (from the repo root):
    ```sh
    npx supabase link --project-ref vgsjkpwvxkpqvyazwcyq --workdir packages/db

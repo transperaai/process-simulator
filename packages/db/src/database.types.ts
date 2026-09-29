@@ -1,0 +1,763 @@
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
+
+export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.5"
+  }
+  public: {
+    Tables: {
+      edges: {
+        Row: {
+          condition_tag: string | null
+          created_at: string
+          created_by: string | null
+          from_step_id: string
+          id: string
+          label: string | null
+          probability: number
+          process_id: string
+          revision_id: string
+          to_step_id: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          condition_tag?: string | null
+          created_at?: string
+          created_by?: string | null
+          from_step_id: string
+          id?: string
+          label?: string | null
+          probability?: number
+          process_id: string
+          revision_id: string
+          to_step_id: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          condition_tag?: string | null
+          created_at?: string
+          created_by?: string | null
+          from_step_id?: string
+          id?: string
+          label?: string | null
+          probability?: number
+          process_id?: string
+          revision_id?: string
+          to_step_id?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "edges_revision_id_from_step_id_fkey"
+            columns: ["revision_id", "from_step_id"]
+            isOneToOne: false
+            referencedRelation: "steps"
+            referencedColumns: ["revision_id", "id"]
+          },
+          {
+            foreignKeyName: "edges_revision_id_to_step_id_fkey"
+            columns: ["revision_id", "to_step_id"]
+            isOneToOne: false
+            referencedRelation: "steps"
+            referencedColumns: ["revision_id", "id"]
+          },
+          {
+            foreignKeyName: "edges_revision_id_workspace_id_fkey"
+            columns: ["revision_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "process_revisions"
+            referencedColumns: ["id", "workspace_id"]
+          },
+        ]
+      }
+      memberships: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          role: Database["public"]["Enums"]["membership_role"]
+          updated_at: string
+          user_id: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          role: Database["public"]["Enums"]["membership_role"]
+          updated_at?: string
+          user_id: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          role?: Database["public"]["Enums"]["membership_role"]
+          updated_at?: string
+          user_id?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "memberships_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      people: {
+        Row: {
+          active: boolean
+          capacity_hours_week: number | null
+          cost_rate: number | null
+          created_at: string
+          created_by: string | null
+          email: string | null
+          end_date: string | null
+          fte: number
+          id: string
+          name: string
+          notes: string | null
+          start_date: string | null
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          active?: boolean
+          capacity_hours_week?: number | null
+          cost_rate?: number | null
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          end_date?: string | null
+          fte?: number
+          id?: string
+          name: string
+          notes?: string | null
+          start_date?: string | null
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          active?: boolean
+          capacity_hours_week?: number | null
+          cost_rate?: number | null
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          end_date?: string | null
+          fte?: number
+          id?: string
+          name?: string
+          notes?: string | null
+          start_date?: string | null
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "people_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      person_leave: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          end_date: string
+          id: string
+          note: string | null
+          person_id: string
+          start_date: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          end_date: string
+          id?: string
+          note?: string | null
+          person_id: string
+          start_date: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          end_date?: string
+          id?: string
+          note?: string | null
+          person_id?: string
+          start_date?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "person_leave_person_id_workspace_id_fkey"
+            columns: ["person_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id", "workspace_id"]
+          },
+        ]
+      }
+      person_roles: {
+        Row: {
+          created_at: string
+          person_id: string
+          role_id: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          person_id: string
+          role_id: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          person_id?: string
+          role_id?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "person_roles_person_id_workspace_id_fkey"
+            columns: ["person_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "person_roles_role_id_workspace_id_fkey"
+            columns: ["role_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "roles"
+            referencedColumns: ["id", "workspace_id"]
+          },
+        ]
+      }
+      person_skills: {
+        Row: {
+          created_at: string
+          efficiency: number
+          person_id: string
+          provenance: Json
+          step_id: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          efficiency?: number
+          person_id: string
+          provenance?: Json
+          step_id: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          efficiency?: number
+          person_id?: string
+          provenance?: Json
+          step_id?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "person_skills_person_id_workspace_id_fkey"
+            columns: ["person_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id", "workspace_id"]
+          },
+        ]
+      }
+      process_revisions: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          layout: Json
+          number: number
+          process_id: string
+          published_at: string | null
+          published_by: string | null
+          status: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          layout?: Json
+          number: number
+          process_id: string
+          published_at?: string | null
+          published_by?: string | null
+          status?: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          layout?: Json
+          number?: number
+          process_id?: string
+          published_at?: string | null
+          published_by?: string | null
+          status?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "process_revisions_process_id_workspace_id_fkey"
+            columns: ["process_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id", "workspace_id"]
+          },
+        ]
+      }
+      processes: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          draft_revision_id: string | null
+          entity_name: string
+          id: string
+          kind: string
+          live_revision_id: string | null
+          name: string
+          source: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          draft_revision_id?: string | null
+          entity_name?: string
+          id?: string
+          kind?: string
+          live_revision_id?: string | null
+          name: string
+          source?: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          draft_revision_id?: string | null
+          entity_name?: string
+          id?: string
+          kind?: string
+          live_revision_id?: string | null
+          name?: string
+          source?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "processes_draft_revision_id_fkey"
+            columns: ["draft_revision_id"]
+            isOneToOne: false
+            referencedRelation: "process_revisions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "processes_live_revision_id_fkey"
+            columns: ["live_revision_id"]
+            isOneToOne: false
+            referencedRelation: "process_revisions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "processes_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      roles: {
+        Row: {
+          color: string | null
+          created_at: string
+          created_by: string | null
+          default_cost_rate: number
+          headcount: number
+          id: string
+          name: string
+          ongoing_hours_per_client_week: number
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          created_by?: string | null
+          default_cost_rate?: number
+          headcount?: number
+          id?: string
+          name: string
+          ongoing_hours_per_client_week?: number
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          created_by?: string | null
+          default_cost_rate?: number
+          headcount?: number
+          id?: string
+          name?: string
+          ongoing_hours_per_client_week?: number
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "roles_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      steps: {
+        Row: {
+          assumption: boolean
+          conflict: boolean
+          cost_override: number | null
+          created_at: string
+          created_by: string | null
+          current_wip: number | null
+          id: string
+          kind: string
+          name: string
+          notes: string | null
+          outcome: string | null
+          person_id: string | null
+          process_id: string
+          provenance: Json
+          replaced_by: string[]
+          revision_id: string
+          rework_rate: number
+          rework_to_step_id: string | null
+          role_id: string | null
+          sla_hours: number | null
+          tool: string | null
+          updated_at: string
+          wait_dist: string
+          wait_hours: number
+          wait_params: Json
+          work_dist: string
+          work_hours: number
+          work_params: Json
+          workspace_id: string
+          x: number
+          y: number
+        }
+        Insert: {
+          assumption?: boolean
+          conflict?: boolean
+          cost_override?: number | null
+          created_at?: string
+          created_by?: string | null
+          current_wip?: number | null
+          id?: string
+          kind?: string
+          name: string
+          notes?: string | null
+          outcome?: string | null
+          person_id?: string | null
+          process_id: string
+          provenance?: Json
+          replaced_by?: string[]
+          revision_id: string
+          rework_rate?: number
+          rework_to_step_id?: string | null
+          role_id?: string | null
+          sla_hours?: number | null
+          tool?: string | null
+          updated_at?: string
+          wait_dist?: string
+          wait_hours?: number
+          wait_params?: Json
+          work_dist?: string
+          work_hours?: number
+          work_params?: Json
+          workspace_id: string
+          x?: number
+          y?: number
+        }
+        Update: {
+          assumption?: boolean
+          conflict?: boolean
+          cost_override?: number | null
+          created_at?: string
+          created_by?: string | null
+          current_wip?: number | null
+          id?: string
+          kind?: string
+          name?: string
+          notes?: string | null
+          outcome?: string | null
+          person_id?: string | null
+          process_id?: string
+          provenance?: Json
+          replaced_by?: string[]
+          revision_id?: string
+          rework_rate?: number
+          rework_to_step_id?: string | null
+          role_id?: string | null
+          sla_hours?: number | null
+          tool?: string | null
+          updated_at?: string
+          wait_dist?: string
+          wait_hours?: number
+          wait_params?: Json
+          work_dist?: string
+          work_hours?: number
+          work_params?: Json
+          workspace_id?: string
+          x?: number
+          y?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "steps_person_id_workspace_id_fkey"
+            columns: ["person_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "steps_revision_id_workspace_id_fkey"
+            columns: ["revision_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "process_revisions"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "steps_role_id_workspace_id_fkey"
+            columns: ["role_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "roles"
+            referencedColumns: ["id", "workspace_id"]
+          },
+        ]
+      }
+      workspaces: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          plan: string
+          settings: Json
+          slug: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          plan?: string
+          settings?: Json
+          slug: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          plan?: string
+          settings?: Json
+          slug?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      can_edit_workspace: { Args: { ws: string }; Returns: boolean }
+      can_manage_workspace: { Args: { ws: string }; Returns: boolean }
+      can_read_workspace: { Args: { ws: string }; Returns: boolean }
+      is_agency_admin: { Args: never; Returns: boolean }
+      workspace_role: {
+        Args: { ws: string }
+        Returns: Database["public"]["Enums"]["membership_role"]
+      }
+    }
+    Enums: {
+      membership_role: "agency_admin" | "owner" | "editor" | "member" | "viewer"
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
+}
+
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+
+export type Tables<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never) = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+      Row: infer R
+    }
+    ? R
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
+    : never
+
+export type TablesInsert<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never) = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Insert: infer I
+    }
+    ? I
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
+    : never
+
+export type TablesUpdate<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never) = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Update: infer U
+    }
+    ? U
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
+    : never
+
+export type Enums<
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never) = never,
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
+
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never) = never,
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
+
+export const Constants = {
+  public: {
+    Enums: {
+      membership_role: ["agency_admin", "owner", "editor", "member", "viewer"],
+    },
+  },
+} as const

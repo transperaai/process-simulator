@@ -1,12 +1,14 @@
 import "server-only";
 import {
   loadLiveProcessBySlug,
+  loadScenarios,
   type PersonLeaveRow,
   type PersonRoleRow,
   type PersonRow,
   type PersonSkillRow,
   type ProcessBundle,
   type RoleRow,
+  type ScenarioRow,
   type StepRow,
   type WorkspaceRow,
   type WorkspaceSettings,
@@ -24,6 +26,11 @@ export async function listWorkspaces(): Promise<Pick<WorkspaceRow, "id" | "name"
 /** The workspace's first process at its live revision, or null if not visible. */
 export async function loadLiveProcess(slug: string): Promise<ProcessBundle | null> {
   return loadLiveProcessBySlug(await createClient(), slug);
+}
+
+/** The workspace's saved scenarios, oldest first (RLS: everyone in the workspace can read them). */
+export async function loadWorkspaceScenarios(workspaceId: string): Promise<ScenarioRow[]> {
+  return loadScenarios(await createClient(), workspaceId);
 }
 
 export interface PersonDetail extends PersonRow {

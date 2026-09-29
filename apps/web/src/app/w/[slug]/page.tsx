@@ -3,13 +3,17 @@ import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { ProcessView } from "@/components/process-view";
 import { canEditWorkspace, canManageWorkspace } from "@/lib/access-data";
-import { loadLiveProcess } from "@/lib/data";
+import { loadLiveProcess, loadWorkspaceScenarios } from "@/lib/data";
 
 export default async function WorkspacePage(props: PageProps<"/w/[slug]">) {
   const { slug } = await props.params;
   const bundle = await loadLiveProcess(slug);
   if (!bundle) notFound();
-  const [canEdit, canManage] = await Promise.all([canEditWorkspace(bundle.workspace.id), canManageWorkspace(bundle.workspace.id)]);
+  const [canEdit, canManage, scenarios] = await Promise.all([
+    canEditWorkspace(bundle.workspace.id),
+    canManageWorkspace(bundle.workspace.id),
+    loadWorkspaceScenarios(bundle.workspace.id),
+  ]);
   return (
     <main className="mx-auto w-full max-w-7xl px-4 pb-8">
       <AppHeader workspace={bundle.workspace.name} signedIn />
@@ -24,7 +28,7 @@ export default async function WorkspacePage(props: PageProps<"/w/[slug]">) {
           </Link>
         )}
       </div>
-      <ProcessView bundle={bundle} mode={canEdit ? "live" : "readonly"} />
+      <ProcessView bundle={bundle} mode={canEdit ? "live" : "readonly"} scenarios={scenarios} />
     </main>
   );
 }

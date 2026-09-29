@@ -1,4 +1,4 @@
-import type { EdgeRow, PersonRoleRow, PersonRow, ProcessBundle, RoleRow, StepRow, WorkspaceAccess } from "../types";
+import type { EdgeRow, PersonRoleRow, PersonRow, ProcessBundle, RoleRow, ScenarioRow, StepRow, WorkspaceAccess } from "../types";
 
 // Northbeam Digital, the prototype's sample agency, as database rows. Ids are
 // fixed so the seed is reproducible, and they sort in the prototype's order so
@@ -224,4 +224,34 @@ export function northbeamAccess(): WorkspaceAccess {
       { id: id("7", 4), workspace_id: ws, email: "sam.patel.seo@example.com", role: "member", person_id: person("Sam Patel") },
     ],
   };
+}
+
+/**
+ * Northbeam's scenario library: the four every workspace starts with (hire,
+ * automate a step, more leads, downturn; see the scenarios migration), aimed
+ * at Northbeam's own bottleneck. The seed replaces the generic versions the
+ * workspace trigger created with these.
+ */
+export function northbeamScenarios(): ScenarioRow[] {
+  const scenario = (n: number, name: string, description: string, patch: ScenarioRow["patch"]): ScenarioRow => ({
+    id: id("6", n),
+    workspace_id: ws,
+    name,
+    description,
+    patch,
+    parent_scenario_id: null,
+  });
+  return [
+    scenario(1, "Hire a strategist", "A second full-time strategist to share audits, proposals and kickoffs.", [
+      { path: `roles.${northbeamRoleIds.strat}.headcount`, op: "add", value: 1 },
+    ]),
+    scenario(2, "Automate proposals", "Templates and SEMrush exports cut hands-on time on audits and proposals by 60%.", [
+      { path: `steps.${northbeamStepIds.audit}.work_hours`, op: "multiply", value: 0.4 },
+    ]),
+    scenario(3, "More leads", "25% more leads every week.", [{ path: "demand.leads_per_week", op: "multiply", value: 1.25 }]),
+    scenario(4, "Downturn", "30% fewer leads a week, and client churn up by half.", [
+      { path: "demand.leads_per_week", op: "multiply", value: 0.7 },
+      { path: "demand.churn_monthly", op: "multiply", value: 1.5 },
+    ]),
+  ];
 }

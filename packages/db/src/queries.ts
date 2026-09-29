@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "./database.types";
-import type { ProcessBundle, ProcessRevisionRow, ProcessRow, StepRow, WorkspaceRow, WorkspaceSettings } from "./types";
+import type { ProcessBundle, ProcessRevisionRow, ProcessRow, ScenarioRow, StepRow, WorkspaceRow, WorkspaceSettings } from "./types";
 
 // Reads shared by the web app (signed-in session) and the MCP server (API
 // token). Both pass a client that acts as the user, so RLS decides what is
@@ -70,4 +70,13 @@ export async function loadLiveProcessBySlug(db: Db, slug: string): Promise<Proce
   if (!process) return null;
   const { draft_revision_id: _draft, ...row } = process;
   return loadProcessBundle(db, workspace, row, process.live_revision_id as string);
+}
+
+export const SCENARIO_COLUMNS = "id, workspace_id, name, description, patch, parent_scenario_id" as const;
+
+/** A workspace's saved scenarios, oldest first. */
+export async function loadScenarios(db: Db, workspaceId: string): Promise<ScenarioRow[]> {
+  const r = await db.from("scenarios").select(SCENARIO_COLUMNS).eq("workspace_id", workspaceId).order("created_at").order("name");
+  // The database checks patch's shape (private.is_scenario_patch).
+  return rows(r) as unknown as ScenarioRow[];
 }

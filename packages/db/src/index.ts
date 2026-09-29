@@ -19,6 +19,7 @@ export {
   northbeamBundle,
   northbeamPersonIds,
   northbeamRoleIds,
+  northbeamScenarios,
   northbeamStepIds,
 } from "./fixtures/northbeam";
-export { listProcesses, loadLiveProcessBySlug, loadProcessBundle, type Db } from "./queries";
+export { SCENARIO_COLUMNS, listProcesses, loadLiveProcessBySlug, loadProcessBundle, loadScenarios, type Db } from "./queries";

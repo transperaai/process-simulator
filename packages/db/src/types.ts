@@ -3,6 +3,7 @@
 // narrow its check-constrained text and jsonb columns, and the checks at the
 // bottom fail the typecheck if they drift from it.
 
+import type { ScenarioPatch } from "@transpera-flow/engine";
 import type { Database } from "./database.types";
 
 export type MembershipRole = "agency_admin" | "owner" | "editor" | "member" | "viewer";
@@ -156,6 +157,19 @@ export interface ProcessBundle {
   personLeave: PersonLeaveRow[];
 }
 
+/**
+ * A saved scenario: patches applied in order on top of the baseline model
+ * (docs/PRD.md §5; the grammar is in packages/engine/src/scenario.ts).
+ */
+export interface ScenarioRow {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description: string | null;
+  patch: ScenarioPatch[];
+  parent_scenario_id: string | null;
+}
+
 /** An allowed email domain: managed Google accounts on it join as `member`. */
 export interface WorkspaceDomainRow {
   id: string;
@@ -202,4 +216,6 @@ export type _SchemaDriftChecks = [
   Assert<Matches<EdgeRow, "edges">>,
   Assert<Matches<WorkspaceDomainRow, "workspace_domains">>,
   Assert<Matches<AccessEmailRow, "workspace_access_emails">>,
+  // patch is jsonb; ScenarioPatch[] is its checked shape.
+  Assert<Matches<Omit<ScenarioRow, "patch">, "scenarios">>,
 ];

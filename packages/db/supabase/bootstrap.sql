@@ -3,6 +3,7 @@
 begin;
 create schema if not exists supabase_migrations;
 create table if not exists supabase_migrations.schema_migrations (version text primary key, statements text[], name text);
+alter table supabase_migrations.schema_migrations enable row level security;
 
 -- 20260929000000_init.sql
 -- Walking skeleton schema (docs/PRD.md §5, §10): workspaces, memberships and

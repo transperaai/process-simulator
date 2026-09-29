@@ -14,6 +14,8 @@ export function bootstrapSql(supabaseDir: URL): string {
     "begin;",
     "create schema if not exists supabase_migrations;",
     "create table if not exists supabase_migrations.schema_migrations (version text primary key, statements text[], name text);",
+    // Not exposed via the API, but enabling RLS keeps the SQL editor's safety check quiet.
+    "alter table supabase_migrations.schema_migrations enable row level security;",
   ];
   for (const f of files) {
     const sql = readFileSync(new URL(`migrations/${f}`, supabaseDir), "utf8");

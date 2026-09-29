@@ -55,9 +55,11 @@ describe("seed", () => {
           "select id, person_id, workspace_id, start_date::text, end_date::text from person_leave where workspace_id = $1",
           [NORTHBEAM_WORKSPACE_ID],
         ),
+        services: await many("select * from services where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
       } as ProcessBundle;
     });
     expect(bundle.process.live_revision_id).toBe(NORTHBEAM_REVISION_ID);
+    expect(bundle.services).toHaveLength(2);
     const opts = { startDate: "2026-10-05" };
     expect(toEngineModel(bundle, opts)).toEqual(toEngineModel(northbeamBundle(), opts));
   });

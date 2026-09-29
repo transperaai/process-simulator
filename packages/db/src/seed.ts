@@ -6,6 +6,8 @@ function literal(v: Value): string {
   if (v === null) return "null";
   if (typeof v === "number") return Number.isFinite(v) ? String(v) : "null";
   if (typeof v === "boolean") return v ? "true" : "false";
+  // Arrays of strings are text[] columns (e.g. services.path_tags); other objects are jsonb.
+  if (Array.isArray(v) && v.every((x) => typeof x === "string")) return `array[${v.map(literal).join(", ")}]::text[]`;
   const text = typeof v === "object" ? JSON.stringify(v) : v;
   return `'${text.replace(/'/g, "''")}'`;
 }
@@ -28,6 +30,7 @@ export function seedSql(bundles: ProcessBundle[], access: WorkspaceAccess[] = []
     out.push(insert("person_roles", b.personRoles.map((r) => ({ ...r }))));
     const { live_revision_id, ...process } = b.process;
     out.push(insert("processes", [process]));
+    out.push(insert("services", b.services.map((r) => ({ ...r }))));
     out.push(insert("process_revisions", [{ ...b.revision, published_at: b.revision.status === "published" ? "2026-09-29T00:00:00Z" : null }]));
     out.push(insert("steps", b.steps.map((s) => ({ ...s }))));
     out.push(insert("edges", b.edges.map((e) => ({ ...e }))));

@@ -562,6 +562,81 @@ export type Database = {
           },
         ]
       }
+      services: {
+        Row: {
+          active: boolean
+          churn_health_sensitivity: number
+          churn_monthly_base: number
+          created_at: string
+          created_by: string | null
+          entry_process_id: string | null
+          fallback_ongoing_load: Json
+          id: string
+          margin: number
+          mix_share: number
+          name: string
+          path_tags: string[]
+          price: number
+          pricing_model: string
+          tenure_months: number
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          active?: boolean
+          churn_health_sensitivity?: number
+          churn_monthly_base?: number
+          created_at?: string
+          created_by?: string | null
+          entry_process_id?: string | null
+          fallback_ongoing_load?: Json
+          id?: string
+          margin?: number
+          mix_share?: number
+          name: string
+          path_tags?: string[]
+          price?: number
+          pricing_model?: string
+          tenure_months?: number
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          active?: boolean
+          churn_health_sensitivity?: number
+          churn_monthly_base?: number
+          created_at?: string
+          created_by?: string | null
+          entry_process_id?: string | null
+          fallback_ongoing_load?: Json
+          id?: string
+          margin?: number
+          mix_share?: number
+          name?: string
+          path_tags?: string[]
+          price?: number
+          pricing_model?: string
+          tenure_months?: number
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "services_entry_process_id_workspace_id_fkey"
+            columns: ["entry_process_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "services_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       steps: {
         Row: {
           assumption: boolean

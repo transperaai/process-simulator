@@ -2,9 +2,8 @@ import { build } from "esbuild";
 import { chromium, type Browser } from "playwright-core";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { northbeamModel, simulate } from "../src";
+import { northbeamModel, northbeamWithServices, simulate } from "../src";
 import { largeModel } from "./fixtures/large-model";
-import { northbeamWithServices } from "./fixtures/northbeam-services";
 
 // The same model and seed must give byte-identical results in Node and in a
 // browser Web Worker (where the app runs the engine). Uses Chromium from

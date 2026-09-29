@@ -20,7 +20,10 @@ import { formatNumber } from "@/lib/format";
 import { CompareView } from "./compare-view";
 import { LeverPanel } from "./lever-panel";
 import type { EditMode } from "./process-view";
+import { RobustnessCheck } from "./robustness-check";
 import { ScenarioLibrary } from "./scenario-library";
+
+const NO_STEPS: readonly { id: string; provenance?: unknown }[] = [];
 
 export function ScenarioPanel({
   model,
@@ -31,6 +34,7 @@ export function ScenarioPanel({
   mode,
   fix = null,
   onScenariosChange,
+  steps = NO_STEPS,
 }: {
   /** The baseline model (the process as it is now). */
   model: EngineModel;
@@ -45,6 +49,8 @@ export function ScenarioPanel({
   fix?: FixRequest | null;
   /** Told the saved scenarios whenever they change, so issues can link and run them. */
   onScenariosChange?: (scenarios: ScenarioRow[]) => void;
+  /** Step rows, for the robustness check: their provenance says which values are estimated. */
+  steps?: readonly { id: string; provenance?: unknown }[];
 }) {
   const canEdit = mode !== "readonly";
   const [store] = useState<ScenarioStore>(() => (mode === "live" ? liveScenarioStore(workspaceId) : new MemoryScenarioStore(workspaceId)));
@@ -190,6 +196,17 @@ export function ScenarioPanel({
           horizonWeeks={model.horizonWeeks}
           running={Boolean(scenarioModel) && sim.status === "running"}
           notes={notes}
+          robustness={
+            <RobustnessCheck
+              model={model}
+              scenario={patches}
+              steps={steps}
+              subject={subject.subject}
+              plural={subject.plural}
+              roleNames={roleNames}
+              currency={currency}
+            />
+          }
         />
         <ScenarioLibrary
           scenarios={scenarios}

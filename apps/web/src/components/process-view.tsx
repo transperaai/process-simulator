@@ -252,6 +252,7 @@ export function ProcessView({
           mode={mode}
           fix={issuesUi.fix}
           onScenariosChange={issuesUi.onScenariosChange}
+          steps={bundle.steps}
         />
       )}
     </div>

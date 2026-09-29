@@ -35,20 +35,59 @@ the CLIs use his logins and network.
 - [ ] Never commit tokens. `.env*` is git-ignored; keep secrets in `apps/web/.env.local`
       and Vercel's env settings only.
 
-## Option B: run Claude Code on your own computer
+## Option B: run Claude Code on your own computer (Mac)
 
-One-time setup in a terminal:
+`claude remote-control` runs in the folder you start it in; it doesn't clone
+anything by itself. Either clone first (steps below), or start it in an empty
+projects folder and let the session clone the repo (see the kick-off message).
+
+**1. Install the tools** (skip any you already have):
 
 ```sh
-git clone https://github.com/transperaai/process-simulator.git
+# Homebrew, if missing: https://brew.sh
+brew install git node@22 gh
+brew install --cask claude-code      # Claude Code, includes `claude remote-control`
+# If the cask isn't available: curl -fsSL https://claude.ai/install.sh | bash
+```
+
+**2. Log in:**
+
+```sh
+gh auth login          # GitHub: HTTPS, "log in with a web browser"
+claude                 # first run signs in to your Claude account; /exit afterwards
+```
+
+**3. Get the repo and set it up:**
+
+```sh
+mkdir -p ~/Code && cd ~/Code
+gh repo clone transperaai/process-simulator
 cd process-simulator
 git checkout claude/charming-cannon-2jmd09
 corepack enable            # gives you pnpm 10 (Node 22 required)
 pnpm install
 npx supabase login         # opens the browser
 npx vercel login
+```
+
+**4. Start the session** from inside `process-simulator`:
+
+```sh
 claude remote-control      # or open this folder in the Claude Desktop app
 ```
+
+It appears in the Claude Code app (phone too) and runs on the Mac with its logins
+and network.
+
+**5. Kick-off message** for the new session:
+
+> Read `docs/HANDOVER.md` and `CLAUDE.md`, then work through "Steps for the next
+> session" one at a time. If the current folder isn't a clone of
+> `transperaai/process-simulator`, clone it first with
+> `gh repo clone transperaai/process-simulator`, `cd` into it, check out
+> `claude/charming-cannon-2jmd09`, and run `corepack enable && pnpm install`.
+> The Supabase and Vercel CLIs are logged in on this machine (if not, walk me
+> through `npx supabase login` and `npx vercel login`). Ask me before merging to `main`.
 
 For the full test suite locally you also need Postgres 16 and Chromium:
 

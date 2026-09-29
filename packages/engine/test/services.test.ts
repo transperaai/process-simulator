@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   northbeamModel,
+  northbeamWithServices,
   runOnce,
   simulate,
   type EngineEdge,
@@ -8,7 +9,6 @@ import {
   type EngineService,
   type EngineStep,
 } from "../src";
-import { northbeamWithServices } from "./fixtures/northbeam-services";
 
 // Services, end-step outcomes and revenue (docs/PRD.md §6.4 revenue rules,
 // §13 metric definitions, decision D8).

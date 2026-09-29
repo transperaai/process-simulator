@@ -9,6 +9,7 @@ export type MembershipRole = "agency_admin" | "owner" | "editor" | "member" | "v
 export type StepKind = "task" | "wait" | "decision" | "subprocess" | "start" | "end";
 export type StepOutcome = "won" | "lost" | "done";
 export type Distribution = "constant" | "triangular" | "lognormal";
+export type PricingModel = "retainer" | "one_off" | "hourly";
 
 /**
  * A step duration's distribution parameters (`work_params`, `wait_params`).
@@ -141,6 +142,34 @@ export interface EdgeRow {
   label: string | null;
 }
 
+/**
+ * Something the business sells (docs/PRD.md §5). Each arrival at a process is
+ * tagged with one of the active services entering it, drawn from the mix, and
+ * is priced and routed by it (§6.4 revenue rules, decision D8).
+ */
+export interface ServiceRow {
+  id: string;
+  workspace_id: string;
+  name: string;
+  pricing_model: PricingModel;
+  /** Monthly fee (retainer), whole fee (one-off) or hourly rate. */
+  price: number;
+  /** Gross margin as a share of price (0–1). */
+  margin: number;
+  /** Expected tenure of a retainer client, in months. */
+  tenure_months: number;
+  /** Base monthly churn (0–1). */
+  churn_monthly_base: number;
+  /** Relative share of arrivals. */
+  mix_share: number;
+  /** Process its arrivals enter; null means the workspace's pipeline (whichever process is simulated). */
+  entry_process_id: string | null;
+  /** Condition tags its entities follow (`edges.condition_tag`). */
+  path_tags: string[];
+  /** Inactive services are left out of simulations. */
+  active: boolean;
+}
+
 /** Everything needed to render and simulate one process revision. */
 export interface ProcessBundle {
   workspace: WorkspaceRow;
@@ -154,6 +183,8 @@ export interface ProcessBundle {
   personRoles: PersonRoleRow[];
   personSkills: PersonSkillRow[];
   personLeave: PersonLeaveRow[];
+  /** The workspace's services. When none apply, every win is priced at the workspace's interim `retainer`. */
+  services: ServiceRow[];
 }
 
 /** An allowed email domain: managed Google accounts on it join as `member`. */
@@ -200,6 +231,7 @@ export type _SchemaDriftChecks = [
   Assert<Matches<ProcessRevisionRow, "process_revisions">>,
   Assert<Matches<StepRow, "steps">>,
   Assert<Matches<EdgeRow, "edges">>,
+  Assert<Matches<ServiceRow, "services">>,
   Assert<Matches<WorkspaceDomainRow, "workspace_domains">>,
   Assert<Matches<AccessEmailRow, "workspace_access_emails">>,
 ];

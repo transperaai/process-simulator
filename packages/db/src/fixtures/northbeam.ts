@@ -1,8 +1,9 @@
-import type { EdgeRow, PersonRoleRow, PersonRow, ProcessBundle, RoleRow, StepRow, WorkspaceAccess } from "../types";
+import type { EdgeRow, PersonRoleRow, PersonRow, ProcessBundle, RoleRow, ServiceRow, StepRow, WorkspaceAccess } from "../types";
 
 // Northbeam Digital, the prototype's sample agency, as database rows. Ids are
 // fixed so the seed is reproducible, and they sort in the prototype's order so
-// the resolved engine model matches the engine's northbeamModel() exactly.
+// the resolved engine model matches the engine's northbeamWithServices()
+// exactly (and, without the services, its golden northbeamModel()).
 
 const id = (prefix: string, n: number) => `${prefix}0000000-0000-4000-8000-${n.toString(16).padStart(12, "0")}`;
 
@@ -108,7 +109,7 @@ const step = (
 });
 
 let edgeN = 0;
-const edge = (from: StepKey, to: StepKey, probability: number): EdgeRow => ({
+const edge = (from: StepKey, to: StepKey, probability: number, tag: string | null = null): EdgeRow => ({
   id: id("f", ++edgeN),
   revision_id: rev,
   workspace_id: ws,
@@ -116,9 +117,45 @@ const edge = (from: StepKey, to: StepKey, probability: number): EdgeRow => ({
   from_step_id: northbeamStepIds[from],
   to_step_id: northbeamStepIds[to],
   probability,
-  condition_tag: null,
+  condition_tag: tag,
   label: null,
 });
+
+/** Ids sort in the engine fixture's order (seo, ppc). */
+export const northbeamServiceIds = {
+  seo: id("8", 1),
+  ppc: id("8", 2),
+} as const;
+
+/** SEO and PPC retainers, as in the engine's northbeamWithServices(). */
+function services(): ServiceRow[] {
+  const service = (
+    key: keyof typeof northbeamServiceIds,
+    name: string,
+    price: number,
+    margin: number,
+    tenure: number,
+    churn: number,
+    mix: number,
+  ): ServiceRow => ({
+    id: northbeamServiceIds[key],
+    workspace_id: ws,
+    name,
+    pricing_model: "retainer",
+    price,
+    margin,
+    tenure_months: tenure,
+    churn_monthly_base: churn,
+    mix_share: mix,
+    entry_process_id: proc,
+    path_tags: [key],
+    active: true,
+  });
+  return [
+    service("seo", "SEO retainer", 3500, 0.45, 18, 0.03, 0.55),
+    service("ppc", "PPC management", 4200, 0.4, 12, 0.04, 0.45),
+  ];
+}
 
 export function northbeamBundle(): ProcessBundle {
   edgeN = 0;
@@ -179,8 +216,8 @@ export function northbeamBundle(): ProcessBundle {
       edge("decision", "onboard", 0.32),
       edge("decision", "lost", 0.68),
       edge("onboard", "kickoff", 1),
-      edge("kickoff", "seo", 0.55),
-      edge("kickoff", "ppc", 0.45),
+      edge("kickoff", "seo", 0.55, "seo"),
+      edge("kickoff", "ppc", 0.45, "ppc"),
       edge("seo", "live", 1),
       edge("ppc", "live", 1),
       edge("live", "won", 1),
@@ -207,6 +244,7 @@ export function northbeamBundle(): ProcessBundle {
     ),
     personSkills: [],
     personLeave: [],
+    services: services(),
   };
 }
 

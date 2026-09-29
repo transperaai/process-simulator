@@ -1,4 +1,11 @@
-import type { Distribution as EngineDistribution, EngineModel, EnginePerson, EngineStep } from "@transpera-flow/engine";
+import type {
+  Distribution as EngineDistribution,
+  EngineEnd,
+  EngineModel,
+  EnginePerson,
+  EngineService,
+  EngineStep,
+} from "@transpera-flow/engine";
 import type { DistParams, Distribution, ProcessBundle, StepRow } from "./types";
 
 const WORKING_DAYS_PER_WEEK = 5;
@@ -31,7 +38,12 @@ export class ModelError extends Error {}
  *
  * - The single `start` step marks the entry: its one outgoing edge points at
  *   the first real step.
- * - `end` steps become the engine's sinks by outcome (`won`, `lost`).
+ * - `end` steps by outcome: the first `won` and first `lost` (by id) become
+ *   the engine's sinks; any further `won`/`lost` ends and every `done` end go
+ *   to `ends`.
+ * - Services (see `engineServices`) and, only when there are some, the edges'
+ *   condition tags. A process with no services maps exactly as it did before
+ *   services existed.
  * - Steps and roles are ordered by id so the result, and therefore the
  *   simulation, doesn't depend on database row order.
  */
@@ -46,22 +58,26 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
   if (startEdges.length !== 1) throw new ModelError("The start step needs exactly one outgoing edge");
   const entry = startEdges[0]!.to_step_id;
 
-  /** An edge may lead to a working step or a won/lost end; anything else would strand items in the engine. */
+  /** An edge may lead to a working step or an end step (any outcome); anything else would strand items in the engine. */
   const checkTarget = (from: string, to: string) => {
     const target = byId.get(to);
     if (!target) throw new ModelError(`Edge from '${from}' points at a missing step`);
     if (target.kind === "start") throw new ModelError(`Edge from '${from}' leads back to the start step`);
-    if (target.kind === "end" && target.outcome !== "won" && target.outcome !== "lost") {
-      throw new ModelError(`End step '${target.name}' ends as '${target.outcome}'; only won and lost ends can be simulated`);
-    }
   };
   checkTarget(starts[0]!.name, entry);
 
-  const sinkFor = (outcome: "won" | "lost") => {
-    const ends = steps.filter((step) => step.kind === "end" && step.outcome === outcome);
-    if (ends.length > 1) throw new ModelError(`At most one '${outcome}' end step is supported, found ${ends.length}`);
-    return ends[0]?.id ?? `__${outcome}__`;
-  };
+  const endSteps = steps.filter((step) => step.kind === "end").sort(byIdAsc);
+  const sinkFor = (outcome: "won" | "lost") => endSteps.find((step) => step.outcome === outcome)?.id ?? `__${outcome}__`;
+  const sinks = { won: sinkFor("won"), lost: sinkFor("lost") };
+  const ends: Record<string, EngineEnd> = {};
+  for (const step of endSteps) {
+    // The database requires an outcome on every end step; "done" is the harmless reading of a missing one.
+    if (step.id !== sinks.won && step.id !== sinks.lost) ends[step.id] = { outcome: step.outcome ?? "done" };
+  }
+
+  const services = engineServices(bundle);
+  // Tags route only entities whose service carries them, so without services they are left out.
+  const tagOf = (tag: string | null) => (services && tag?.trim() ? { tag: tag.trim() } : {});
 
   const working = steps
     .filter((step) => step.kind !== "start" && step.kind !== "end")
@@ -70,7 +86,7 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
       const next = edges
         .filter((e) => e.from_step_id === step.id)
         .sort(byIdAsc)
-        .map((e) => ({ to: e.to_step_id, p: Number(e.probability) }));
+        .map((e) => ({ to: e.to_step_id, p: Number(e.probability), ...tagOf(e.condition_tag) }));
       if (!next.length) throw new ModelError(`Step '${step.name}' has no outgoing edge`);
       for (const n of next) checkTarget(step.name, n.to);
       return {
@@ -109,12 +125,47 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
     churnMonthly: s.churn_monthly,
     retainer: s.retainer,
     roles: engineRoles,
+    ...(services ? { services } : {}),
     ...(people ? { people } : {}),
     ...(s.availability_floor !== undefined ? { availabilityFloor: s.availability_floor } : {}),
     entry,
-    sinks: { won: sinkFor("won"), lost: sinkFor("lost") },
+    sinks,
+    ...(Object.keys(ends).length ? { ends } : {}),
     steps: working,
   };
+}
+
+/**
+ * The engine's services for this process: the workspace's active services
+ * whose arrivals enter it. PRD §5 gives a service an `entry_process_id`, not a
+ * step. A service entering this process, or with none set (meaning the
+ * workspace's pipeline), enters at the process's own entry step, which is the
+ * engine's default, so `entry` is left out. Services entering another process
+ * don't arrive here. Undefined when none apply: then the interim `retainer`
+ * prices every win, as before services existed.
+ */
+function engineServices(bundle: ProcessBundle): Record<string, EngineService> | undefined {
+  const here = bundle.services
+    .filter((sv) => sv.active && (sv.entry_process_id === null || sv.entry_process_id === bundle.process.id))
+    .sort(byIdAsc);
+  if (!here.length) return undefined;
+  if (!(here.reduce((sum, sv) => sum + Number(sv.mix_share), 0) > 0)) {
+    throw new ModelError("The services' mix shares add up to 0; give at least one service a share");
+  }
+  const services: Record<string, EngineService> = {};
+  for (const sv of here) {
+    services[sv.id] = {
+      name: sv.name,
+      pricingModel: sv.pricing_model,
+      price: Number(sv.price),
+      margin: Number(sv.margin),
+      tenureMonths: Number(sv.tenure_months),
+      churnMonthly: Number(sv.churn_monthly_base),
+      mixShare: Number(sv.mix_share),
+      pathTags: sv.path_tags.map((t) => t.trim()).filter(Boolean),
+    };
+  }
+  return services;
 }
 
 /**

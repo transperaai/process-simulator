@@ -7,6 +7,7 @@
 import { useEffect, useRef } from "react";
 import { triangularRange, type Distribution, type ProcessBundle, type StepKind, type StepRow } from "@transpera-flow/db";
 import { NumberField, SelectField, TextField, type SelectOption } from "@/components/fields";
+import { ProvenanceBadge } from "@/components/provenance-badge";
 import {
   KIND_LABELS,
   OUTCOME_LABELS,
@@ -204,6 +205,7 @@ export function StepInspector({
                 step={1}
                 placeholder="Not entered"
                 save={wholeNumber(field("current_wip"))}
+                hint={step.current_wip !== null && <ProvenanceBadge step={step} column="current_wip" />}
               />
             </div>
             <p className="text-xs text-fg-3">

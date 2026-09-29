@@ -1,5 +1,5 @@
 // The one place numbers become text, so every screen rounds and labels the same way.
-import type { Stat } from "@transpera-flow/engine";
+import type { InitialState, Stat } from "@transpera-flow/engine";
 
 const WORKING_DAYS_PER_WEEK = 5;
 const LOCALE = "en-GB";
@@ -31,6 +31,18 @@ export function formatCurrency(value: number, currency: string): string {
     notation: compact ? "compact" : "standard",
     maximumFractionDigits: compact ? 1 : 0,
   });
+}
+
+/** How a run started (PRD §6.3.1), for the results' footnote. */
+export function formatInitialState(start: InitialState, hoursPerWeek: number): string {
+  switch (start.kind) {
+    case "wip":
+      return `Started from entered WIP (${formatNumber(start.items, 0)} ${start.items === 1 ? "item" : "items"})`;
+    case "warmup":
+      return `Started after a ${formatNumber(start.hours / hoursPerWeek, 1)}-week warm-up, excluded from results`;
+    case "empty":
+      return "Started empty (no WIP entered, no warm-up)";
+  }
 }
 
 /** "range 5–10" for the 10th–90th percentile band, using the metric's own formatter. */

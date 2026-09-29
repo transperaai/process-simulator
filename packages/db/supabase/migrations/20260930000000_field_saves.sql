@@ -148,7 +148,8 @@ begin
     raise exception 'save_links: base and next must be arrays' using errcode = '22023';
   end if;
   -- Deletes of rows RLS hides would silently do nothing, so check up front.
-  if not public.can_edit_workspace((owner ->> 'workspace_id')::uuid) then
+  -- coalesce: the helper returns null, not false, for users with no membership.
+  if not coalesce(public.can_edit_workspace((owner ->> 'workspace_id')::uuid), false) then
     return jsonb_build_object('status', 'not_found');
   end if;
 

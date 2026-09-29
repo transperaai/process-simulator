@@ -17,9 +17,19 @@ export {
   NORTHBEAM_WORKSPACE_ID,
   northbeamAccess,
   northbeamBundle,
+  northbeamIssues,
   northbeamPersonIds,
   northbeamRoleIds,
   northbeamScenarios,
   northbeamStepIds,
 } from "./fixtures/northbeam";
-export { SCENARIO_COLUMNS, listProcesses, loadLiveProcessBySlug, loadProcessBundle, loadScenarios, type Db } from "./queries";
+export {
+  ISSUE_COLUMNS,
+  SCENARIO_COLUMNS,
+  listProcesses,
+  loadIssues,
+  loadLiveProcessBySlug,
+  loadProcessBundle,
+  loadScenarios,
+  type Db,
+} from "./queries";

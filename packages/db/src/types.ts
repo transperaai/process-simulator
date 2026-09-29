@@ -3,7 +3,7 @@
 // narrow its check-constrained text and jsonb columns, and the checks at the
 // bottom fail the typecheck if they drift from it.
 
-import type { ScenarioPatch } from "@transpera-flow/engine";
+import type { IssueSeverity, IssueType, ScenarioPatch } from "@transpera-flow/engine";
 import type { Database } from "./database.types";
 
 export type MembershipRole = "agency_admin" | "owner" | "editor" | "member" | "viewer";
@@ -122,7 +122,7 @@ export interface StepRow {
   rework_to_step_id: string | null;
   tool: string | null;
   notes: string | null;
-  /** Target hours for the step; not simulated yet. */
+  /** Target hours for one visit to the step (queue + hands-on + wait); visits over it are SLA breaches. */
   sla_hours: number | null;
   /** Items sitting at this step now; null when not entered (docs/PRD.md §6.3.1). */
   current_wip: number | null;
@@ -168,6 +168,41 @@ export interface ScenarioRow {
   description: string | null;
   patch: ScenarioPatch[];
   parent_scenario_id: string | null;
+}
+
+export type IssueStatus = "open" | "in_progress" | "done" | "dismissed";
+/** Logged by hand, detected by a stored run (reserved), or promoted from a detection. */
+export type IssueSource = "manual" | "detected" | "promoted";
+
+/**
+ * A tracked issue in the register (docs/PRD.md §5 `issues`). Detected issues
+ * aren't stored: they come from each run (engine `detectIssues`); promoting
+ * one stores it with its `detected_key`.
+ */
+export interface IssueRow {
+  id: string;
+  workspace_id: string;
+  process_id: string | null;
+  /** A step's stable id (no foreign key: steps are keyed by revision). */
+  step_id: string | null;
+  role_id: string | null;
+  person_id: string | null;
+  type: IssueType;
+  severity: IssueSeverity;
+  title: string;
+  evidence: string | null;
+  /** Numbers behind the finding, e.g. a promoted detection's metrics. */
+  evidence_metrics: Record<string, number>;
+  owner_person_id: string | null;
+  status: IssueStatus;
+  /** The saved scenario "Run the fix" applies. */
+  scenario_id: string | null;
+  source: IssueSource;
+  detected_key: string | null;
+  /** Set by the database when the status becomes done or dismissed. */
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 /** An allowed email domain: managed Google accounts on it join as `member`. */
@@ -218,4 +253,6 @@ export type _SchemaDriftChecks = [
   Assert<Matches<AccessEmailRow, "workspace_access_emails">>,
   // patch is jsonb; ScenarioPatch[] is its checked shape.
   Assert<Matches<Omit<ScenarioRow, "patch">, "scenarios">>,
+  // evidence_metrics is jsonb; Record<string, number> is its app-side shape.
+  Assert<Matches<Omit<IssueRow, "evidence_metrics">, "issues">>,
 ];

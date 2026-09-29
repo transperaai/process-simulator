@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "./database.types";
-import type { ProcessBundle, ProcessRevisionRow, ProcessRow, ScenarioRow, StepRow, WorkspaceRow, WorkspaceSettings } from "./types";
+import type { IssueRow, ProcessBundle, ProcessRevisionRow, ProcessRow, ScenarioRow, StepRow, WorkspaceRow, WorkspaceSettings } from "./types";
 
 // Reads shared by the web app (signed-in session) and the MCP server (API
 // token). Both pass a client that acts as the user, so RLS decides what is
@@ -79,4 +79,14 @@ export async function loadScenarios(db: Db, workspaceId: string): Promise<Scenar
   const r = await db.from("scenarios").select(SCENARIO_COLUMNS).eq("workspace_id", workspaceId).order("created_at").order("name");
   // The database checks patch's shape (private.is_scenario_patch).
   return rows(r) as unknown as ScenarioRow[];
+}
+
+export const ISSUE_COLUMNS =
+  "id, workspace_id, process_id, step_id, role_id, person_id, type, severity, title, evidence, evidence_metrics, owner_person_id, status, scenario_id, source, detected_key, resolved_at, created_at, updated_at" as const;
+
+/** A workspace's tracked issues (manual and promoted), newest first. */
+export async function loadIssues(db: Db, workspaceId: string): Promise<IssueRow[]> {
+  const r = await db.from("issues").select(ISSUE_COLUMNS).eq("workspace_id", workspaceId).order("created_at", { ascending: false }).order("id");
+  // Check constraints limit type, severity, status and source to IssueRow's unions.
+  return rows(r) as unknown as IssueRow[];
 }

@@ -4,7 +4,7 @@
 // headline with ranges, a KPI delta table, and utilisation per role and per
 // person side by side. Every sentence comes from compareHeadline's templates.
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { Comparison, Delta, EnginePerson, Headline, Stat } from "@transpera-flow/engine";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 
@@ -183,6 +183,7 @@ export function CompareView({
   horizonWeeks,
   running,
   notes,
+  robustness,
 }: {
   comparison: Comparison | null;
   headline: Headline | null;
@@ -195,6 +196,8 @@ export function CompareView({
   running: boolean;
   /** Scenarios left out and values brought into range. */
   notes: string[];
+  /** The robustness check, shown under a comparison (issue #20). */
+  robustness?: ReactNode;
 }) {
   const whole = (v: number) => formatNumber(v, 1);
   const days = (h: number) => `${formatNumber(h / (hoursPerWeek / 5), 1)} d`;
@@ -238,6 +241,7 @@ export function CompareView({
             taken replication by replication.
           </p>
           <UtilisationCompare comparison={comparison} roleNames={roleNames} people={people} />
+          {robustness}
         </>
       )}
     </section>

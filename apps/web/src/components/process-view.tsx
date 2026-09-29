@@ -222,6 +222,7 @@ export function ProcessView({
           workspaceId={bundle.workspace.id}
           initialScenarios={scenarios}
           mode={mode}
+          steps={bundle.steps}
         />
       )}
     </div>

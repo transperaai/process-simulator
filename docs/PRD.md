@@ -98,6 +98,7 @@ v1 scope is **not cut** (decision D3). It is delivered in three milestones (§11
 
 **Process editor (canvas)**
 - Drag-and-drop node canvas: add step, connect steps (drag from port to port), branch with probabilities, delete, reroute, group into swimlanes by role.
+- **On-canvas node editing**: add steps from a palette or by double-clicking empty canvas; rename inline by double-clicking a node; edit key values (role/person, hands-on time, wait) inline on the node; node context menu (edit, duplicate, delete, change kind, pin to person, set rework target); click an edge to edit its probability or condition tag inline; multi-select move/duplicate/delete; copy/paste within a process; undo/redo for every edit.
 - Step inspector: name, role or named person, hands-on time (mean + distribution: constant, triangular, lognormal), wait time, rework rate and rework target, tool, notes, attachments, SLA target, **current WIP** (items sitting here now), **outcome** on end steps, evidence citations.
 - Sub-processes: a step can expand into another process (company map → individual processes).
 - **Draft mode for all changes** (§7.1b): every process has a live version and at most one draft. All edits (canvas, MCP, JSON import) go into the draft. The draft is shown as a diff against live (added steps dashed, removed struck through, changed values old → new, each with evidence). Draft vs live can be simulated and compared. Publish requires all assumptions and conflicts resolved or explicitly accepted as estimates.

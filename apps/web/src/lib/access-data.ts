@@ -80,6 +80,18 @@ export async function currentUserId(): Promise<string | null> {
   return typeof sub === "string" ? sub : null;
 }
 
+/** The signed-in user as others see them in presence (issue #10): id, a display name and email. */
+export async function currentViewer(): Promise<{ userId: string; name: string; email: string | null } | null> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+  const claims = data?.claims;
+  if (!claims || typeof claims.sub !== "string") return null;
+  const email = typeof claims.email === "string" && claims.email ? claims.email : null;
+  const meta = (claims.user_metadata ?? {}) as Record<string, unknown>;
+  const given = [meta.full_name, meta.name].find((v): v is string => typeof v === "string" && v.trim() !== "");
+  return { userId: claims.sub, name: given?.trim() ?? email?.split("@")[0] ?? "Someone", email };
+}
+
 /** Whether the signed-in user can edit the workspace's processes and people (RLS helper). */
 export async function canEditWorkspace(workspaceId: string): Promise<boolean> {
   const supabase = await createClient();

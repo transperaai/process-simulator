@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ModelError, toEngineModel, type ProcessBundle } from "@transpera-flow/db";
 import type { EngineModel } from "@transpera-flow/engine";
-import { deleteSelection } from "@/lib/editor/commands";
+import { PASTE_OFFSET, copySteps, deleteSelection, duplicateSteps, pasteSteps, type StepClipboard } from "@/lib/editor/commands";
 import type { Conflict, ProcessEditor } from "@/lib/editor/editor";
 import { liveStore } from "@/lib/editor/live-store";
 import type { Scalar } from "@/lib/editor/ops";
@@ -12,7 +12,7 @@ import { useProcessEditor } from "@/lib/editor/use-editor";
 import { useSimulation } from "@/lib/sim/use-simulation";
 import { ConflictPrompt } from "./fields";
 import { KpiStrip } from "./kpi-strip";
-import { NO_SELECTION, ProcessCanvas, type Selection } from "./process-canvas";
+import { NO_SELECTION, ProcessCanvas, type CanvasCommands, type Selection } from "./process-canvas";
 import { FIELD_LABELS, StepInspector } from "./step-inspector";
 import { UtilisationBars } from "./utilisation-bars";
 
@@ -55,12 +55,59 @@ export function ProcessView({ bundle: initial, mode }: { bundle: ProcessBundle; 
   }, [bundle, selection]);
   const inspected = selected.steps.length === 1 && !selected.edges.length ? bundle.steps.find((s) => s.id === selected.steps[0]) : undefined;
 
+  // Copied steps, and how many times they've been pasted (each paste lands further along).
+  const clipboard = useRef<{ clip: StepClipboard; pastes: number } | null>(null);
+  // A step whose inspector should take focus once it shows ("Edit in the inspector").
+  const [inspectFocus, setInspectFocus] = useState<string | null>(null);
+
+  const commands = useMemo<CanvasCommands>(
+    () => ({
+      duplicate: (ids) => {
+        let made: string[] = [];
+        editor.run((b) => {
+          const r = duplicateSteps(b, ids);
+          made = r?.ids ?? [];
+          return r?.edit ?? null;
+        });
+        if (made.length) setSelection({ steps: made, edges: [] });
+      },
+      copy: (ids) => {
+        const clip = copySteps(editor.getState().bundle, ids);
+        if (clip) clipboard.current = { clip, pastes: 0 };
+      },
+      remove: (ids) => {
+        if (editor.run((b) => deleteSelection(b, ids, []))) setSelection(NO_SELECTION);
+      },
+      inspect: (id) => {
+        setSelection({ steps: [id], edges: [] });
+        setInspectFocus(id);
+      },
+    }),
+    [editor],
+  );
+
   useEffect(() => {
     if (!editable) return;
+    const paste = () => {
+      const held = clipboard.current;
+      if (!held) return;
+      const n = held.pastes + 1;
+      let made: string[] = [];
+      editor.run((b) => {
+        const r = pasteSteps(b, held.clip, { x: PASTE_OFFSET * n, y: PASTE_OFFSET * n });
+        made = r?.ids ?? [];
+        return r?.edit ?? null;
+      });
+      if (!made.length) return;
+      held.pastes = n;
+      setSelection({ steps: made, edges: [] });
+    };
     const onKey = (e: KeyboardEvent) => {
-      const target = e.target instanceof HTMLElement ? e.target : null;
-      // Text fields keep their own undo and delete keys.
+      const target = e.target instanceof Element ? e.target : null;
+      // Text fields keep their own undo, copy and delete keys.
       if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+      // Map keys work from the map (not its buttons or menu) or from nowhere in particular.
+      const onMap = !target || target === document.body || (!!target.closest("[data-process-map]") && !target.closest("button, summary"));
       const mod = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
       if (mod && key === "z") {
@@ -70,20 +117,44 @@ export function ProcessView({ bundle: initial, mode }: { bundle: ProcessBundle; 
       } else if (mod && key === "y") {
         e.preventDefault();
         editor.redo();
+      } else if (!onMap) {
+        return;
       } else if ((e.key === "Delete" || e.key === "Backspace") && !mod) {
-        // Only from the map itself (or nowhere in particular), not from a button.
-        if (target && target !== document.body && (!target.closest(".react-flow") || target.closest("button"))) return;
-        if (editor.run((b) => deleteSelection(b, selected.steps, selected.edges))) {
+        let { steps, edges } = selected;
+        // Nothing selected: delete the step or connection that has focus.
+        const focused = target?.closest(".react-flow__node, .react-flow__edge");
+        const id = focused?.getAttribute("data-id");
+        if (!steps.length && !edges.length && focused && id) {
+          if (focused.classList.contains("react-flow__node")) steps = [id];
+          else edges = [id];
+        }
+        if (editor.run((b) => deleteSelection(b, steps, edges))) {
           e.preventDefault();
           setSelection(NO_SELECTION);
+          // What had focus is gone; keep it on the map.
+          requestAnimationFrame(() => {
+            if (document.activeElement === document.body) document.querySelector<HTMLElement>("[data-process-map]")?.focus();
+          });
         }
-      } else if (e.key === "Escape" && target?.closest(".react-flow")) {
+      } else if (mod && key === "c" && selected.steps.length && !window.getSelection()?.toString()) {
+        e.preventDefault();
+        commands.copy(selected.steps);
+      } else if (mod && key === "v" && clipboard.current) {
+        e.preventDefault();
+        paste();
+      } else if (mod && key === "d" && selected.steps.length) {
+        e.preventDefault();
+        commands.duplicate(selected.steps);
+      } else if (mod && key === "a" && target?.closest("[data-process-map]")) {
+        e.preventDefault();
+        setSelection({ steps: bundle.steps.map((s) => s.id), edges: [] });
+      } else if (e.key === "Escape" && target?.closest("[data-process-map]")) {
         setSelection(NO_SELECTION);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [editable, editor, selected]);
+  }, [editable, editor, selected, commands, bundle.steps]);
 
   const shownModel = model ?? lastModel;
 
@@ -113,6 +184,7 @@ export function ProcessView({ bundle: initial, mode }: { bundle: ProcessBundle; 
           editorState={editable ? state : null}
           selection={selected}
           onSelectionChange={setSelection}
+          commands={editable ? commands : null}
         />
         {inspected && editable ? (
           <StepInspector
@@ -120,6 +192,8 @@ export function ProcessView({ bundle: initial, mode }: { bundle: ProcessBundle; 
             bundle={bundle}
             step={inspected}
             editor={editor}
+            autoFocus={inspectFocus === inspected.id}
+            onFocused={() => setInspectFocus(null)}
             onClose={() => setSelection(NO_SELECTION)}
             onDelete={() => {
               editor.run((b) => deleteSelection(b, [inspected.id], []));

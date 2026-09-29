@@ -1,5 +1,5 @@
 // Engine input and output shapes. This is the prototype's model, extended so
-// far with named people, services and end-step outcomes; later tickets add
+// far with named people, services, end-step outcomes and seasonal demand; later tickets add
 // clients and servicing (docs/PRD.md §6).
 
 /** Times are in working hours. */
@@ -113,13 +113,47 @@ export interface EngineStep {
    * Entering WIP at any step starts the run from it instead of a warm-up.
    */
   currentWip?: number;
+  /**
+   * Target hours for one visit to the step, from queueing to leaving it
+   * (queue, hands-on time and external wait). Visits over it are counted as
+   * SLA breaches; it doesn't change how the step is worked.
+   */
+  sla?: number;
   next: EngineEdge[];
+}
+
+/**
+ * How demand moves with the calendar (docs/PRD.md §6.3.2). The arrival rate
+ * in a calendar month is `leadsPerWeek × seasonality[month] × (1 +
+ * growthMonthly)^k`, where k counts calendar months from the one the run
+ * starts in (negative during a warm-up). Months are 52/12 weeks long, so
+ * twelve of them make a 52-week year.
+ */
+export interface EngineDemand {
+  /** Twelve multipliers on the rate, January first. Omitted: 1 in every month. */
+  seasonality?: number[];
+  /** Compound change in the rate per calendar month (0.02 is +2% a month). Omitted: 0. */
+  growthMonthly?: number;
+  /**
+   * Where t = 0 falls in the calendar, in months since 1 January: 0 is
+   * 1 January, 8 is 1 September, 8.5 is mid-September. Omitted: 0.
+   */
+  startMonth?: number;
 }
 
 export interface EngineModel {
   horizonWeeks: number;
   hoursPerWeek: number;
+  /**
+   * Mean arrivals per week: qualified leads into this process (docs/PRD.md
+   * §6.2: lead sources' volume × conversion, split by the services mix).
+   */
   leadsPerWeek: number;
+  /**
+   * Seasonality and growth on top of `leadsPerWeek`. Omitted, or flat with no
+   * growth: a constant rate, simulated exactly as before this field existed.
+   */
+  demand?: EngineDemand;
   activeClients: number;
   churnMonthly: number;
   /**
@@ -194,6 +228,16 @@ export interface StepResult {
   reworks: number;
   /** Items still queued at the horizon. */
   wip: number;
+  /**
+   * How fast the queue grows, in items per week: the average queue over the
+   * second half of the measured window minus that over the first half,
+   * divided by the half's length in weeks. Near 0 for a stable queue.
+   */
+  queueGrowth: number;
+  /** Visits that left the step in the measured window. */
+  departures: number;
+  /** Of those, visits that took longer than the step's `sla` (0 when it has none). */
+  slaBreaches: number;
 }
 
 export interface RoleResult {
@@ -293,9 +337,29 @@ export interface Kpis {
   services: Record<string, { arrivals: Stat; won: Stat; lost: Stat }>;
 }
 
+/**
+ * Headline metrics per replication, in replication order. Replication i of
+ * every run with the same seed uses the same random streams, so two runs'
+ * samples pair up for a delta's range (common random numbers; see compare.ts).
+ */
+export interface ReplicationSamples {
+  won: number[];
+  lost: number[];
+  mrrAdded: number[];
+  billed: number[];
+  labour: number[];
+  wipEnd: number[];
+  /** Mean cycle time of the replication's completed items (0 when none completed). */
+  cycleMean: number[];
+}
+
 export interface SimulationResult {
   /** Means and ranges; the flat fields below are the prototype's shape, kept for compatibility. */
   kpi: Kpis;
+  /** Per-replication values behind `kpi`, for paired comparisons. */
+  samples: ReplicationSamples;
+  /** The seed the run started from. */
+  seed: number;
   won: number;
   wonLow: number;
   wonHigh: number;

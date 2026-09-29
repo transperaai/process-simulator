@@ -67,6 +67,8 @@ export const STEP_FIELDS = {
   current_wip: optionalCount,
   x: coordinate,
   y: coordinate,
+  // Confirming an estimate clears it (issue #9).
+  assumption: (v) => typeof v === "boolean",
   ...Object.fromEntries(PROVENANCE_COLUMNS.map((col) => [`provenance.${col}`, optionalProvenance])),
 } as const satisfies Record<string, Check>;
 
@@ -129,7 +131,8 @@ export function parseNewStep(v: unknown): NewStep | null {
   if (!isObject(v) || !isId(v.id)) return null;
   const out: Record<string, unknown> = { id: v.id };
   for (const [field, check] of Object.entries(STEP_FIELDS)) {
-    if (field.includes(".")) continue;
+    // Params keys come with their column; the flags with the restored columns below.
+    if (field.includes(".") || field === "assumption") continue;
     const value = v[field] === undefined ? null : v[field];
     if (!check(value)) return null;
     out[field] = typeof value === "string" && field !== "name" ? value.trim() || null : value;

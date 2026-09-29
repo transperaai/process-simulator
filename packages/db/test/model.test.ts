@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { northbeamModel, simulate, type EngineModel } from "@transpera-flow/engine";
+import { northbeamModel, northbeamWithServices, simulate, type EngineModel } from "@transpera-flow/engine";
 import {
   ModelError,
   northbeamBundle,
   northbeamPersonIds,
   northbeamRoleIds,
+  northbeamServiceIds,
   northbeamStepIds,
   toEngineModel,
   workingDaysBetween,
+  type ProcessBundle,
+  type ServiceRow,
+  type StepRow,
 } from "../src";
 
 /** Swap fixture uuids back to the prototype's readable keys. */
@@ -15,10 +19,12 @@ function withKeys(model: EngineModel): EngineModel {
   const names = new Map<string, string>([
     ...Object.entries(northbeamStepIds).map(([k, v]) => [v, k] as const),
     ...Object.entries(northbeamRoleIds).map(([k, v]) => [v, k] as const),
+    ...Object.entries(northbeamServiceIds).map(([k, v]) => [v, k] as const),
   ]);
   const key = (id: string) => names.get(id) ?? id;
   return {
     ...model,
+    ...(model.services ? { services: Object.fromEntries(Object.entries(model.services).map(([id, sv]) => [key(id), sv])) } : {}),
     entry: key(model.entry),
     sinks: { won: key(model.sinks.won), lost: key(model.sinks.lost) },
     roles: Object.fromEntries(Object.entries(model.roles).map(([id, r]) => [key(id), r])),
@@ -33,9 +39,21 @@ function withKeys(model: EngineModel): EngineModel {
 
 const START = "2026-10-05"; // a Monday
 
+/** Northbeam as it was before services: none, and no condition tags. */
+function withoutServices(): ProcessBundle {
+  const b = northbeamBundle();
+  return { ...b, services: [], edges: b.edges.map((e) => ({ ...e, condition_tag: null })) };
+}
+
 describe("toEngineModel", () => {
-  it("resolves the Northbeam rows into exactly the prototype model (plus named people)", () => {
+  it("resolves the Northbeam rows into exactly the engine's Northbeam with services (plus named people)", () => {
     const { people, ...model } = withKeys(toEngineModel(northbeamBundle(), { startDate: START }));
+    expect(model).toEqual(northbeamWithServices());
+    expect(Object.keys(people!)).toHaveLength(11);
+  });
+
+  it("resolves Northbeam without services into exactly the golden prototype model", () => {
+    const { people, ...model } = withKeys(toEngineModel(withoutServices(), { startDate: START }));
     expect(model).toEqual(northbeamModel());
     expect(Object.keys(people!)).toHaveLength(11);
   });
@@ -49,6 +67,11 @@ describe("toEngineModel", () => {
     expect(res.bnRole).toBe(northbeamRoleIds.strat);
     expect(res.roles[northbeamRoleIds.strat]!.util).toBeCloseTo(reference.roles.strat!.util, 2);
     expect(Math.abs(res.won - reference.won) / reference.won).toBeLessThan(0.1);
+    // Services price wins at a mix-weighted 3,815 a month against the interim 3,800 retainer.
+    expect(Math.abs(res.mrrAdded - reference.mrrAdded) / reference.mrrAdded).toBeLessThan(0.1);
+    const svc = res.kpi.services;
+    expect(Object.keys(svc).sort()).toEqual([northbeamServiceIds.seo, northbeamServiceIds.ppc].sort());
+    expect(svc[northbeamServiceIds.seo]!.won.mean + svc[northbeamServiceIds.ppc]!.won.mean).toBeCloseTo(res.kpi.won.mean, 6);
   });
 
   it("does not depend on row order", () => {
@@ -73,13 +96,20 @@ describe("toEngineModel", () => {
     expect(() => toEngineModel(b)).toThrow(/no outgoing edge/);
   });
 
-  it("rejects edges into the start step or an end the engine can't finish at", () => {
-    const b = northbeamBundle();
-    b.steps = b.steps.map((s) => (s.id === northbeamStepIds.lost ? { ...s, outcome: "done" } : s));
-    expect(() => toEngineModel(b)).toThrow(/ends as 'done'/);
+  it("rejects edges into the start step", () => {
     const c = northbeamBundle();
     c.edges = c.edges.map((e) => (e.to_step_id === northbeamStepIds.won ? { ...e, to_step_id: northbeamStepIds.start } : e));
     expect(() => toEngineModel(c)).toThrow(/back to the start step/);
+  });
+
+  it("maps a step's SLA for breach counting, and leaves it out when blank", () => {
+    const b = northbeamBundle();
+    b.steps = b.steps.map((s) => (s.id === northbeamStepIds.audit ? { ...s, sla_hours: 24 } : s));
+    const steps = new Map(toEngineModel(b, { startDate: START }).steps.map((s) => [s.id, s]));
+    expect(steps.get(northbeamStepIds.audit)!.sla).toBe(24);
+    expect(steps.get(northbeamStepIds.qualify)!).not.toHaveProperty("sla");
+    const r = simulate(toEngineModel(b, { startDate: START }), 3, 1);
+    expect(r.steps[northbeamStepIds.audit]!.slaBreaches).toBeGreaterThan(0);
   });
 
   it("maps entered current WIP, 0 included, and leaves unentered WIP out", () => {
@@ -113,6 +143,171 @@ describe("toEngineModel", () => {
     expect(steps.get(northbeamStepIds.qualify)!).not.toHaveProperty("workDist");
     expect(steps.get(northbeamStepIds.qualify)!).not.toHaveProperty("waitDist");
     expect(simulate(toEngineModel(b, { startDate: START }), 3, 1).kpi.won.mean).toBeGreaterThan(0);
+  });
+});
+
+/** An end step row in `b`'s revision. */
+function endStep(b: ProcessBundle, id: string, name: string, outcome: StepRow["outcome"]): StepRow {
+  const lost = b.steps.find((s) => s.id === northbeamStepIds.lost)!;
+  return { ...lost, id, name, outcome };
+}
+
+describe("end steps", () => {
+  const DONE = "e0000000-0000-4000-8000-0000000000d1";
+  const WON2 = "e0000000-0000-4000-8000-0000000000d2";
+  const LOST2 = "e0000000-0000-4000-8000-0000000000d3";
+
+  it("simulates edges into a 'done' end", () => {
+    const b = northbeamBundle();
+    b.steps = b.steps.map((s) => (s.id === northbeamStepIds.lost ? { ...s, outcome: "done" } : s));
+    const model = toEngineModel(b, { startDate: START });
+    // No lost end is left, so the lost sink is a placeholder and the old lost end is a 'done' end.
+    expect(model.sinks).toEqual({ won: northbeamStepIds.won, lost: "__lost__" });
+    expect(model.ends).toEqual({ [northbeamStepIds.lost]: { outcome: "done" } });
+    const res = simulate(model, 5, 1);
+    expect(res.kpi.done.mean).toBeGreaterThan(0);
+    expect(res.kpi.lost.mean).toBe(0);
+    expect(res.kpi.lostRevenue.mean).toBe(0);
+  });
+
+  it("keeps the first won and lost ends (by id) as sinks and maps extra ends to `ends`", () => {
+    const b = northbeamBundle();
+    b.steps = [
+      ...b.steps,
+      endStep(b, DONE, "Referred on", "done"),
+      endStep(b, WON2, "Won (fast)", "won"),
+      endStep(b, LOST2, "Lost (late)", "lost"),
+    ];
+    const edge = b.edges.find((e) => e.from_step_id === northbeamStepIds.qualify && e.to_step_id === northbeamStepIds.lost)!;
+    b.edges = b.edges.map((e) => (e.id === edge.id ? { ...e, probability: 0.15 } : e));
+    b.edges.push(
+      { ...edge, id: "f0000000-0000-4000-8000-0000000000d1", to_step_id: DONE, probability: 0.1 },
+      { ...edge, id: "f0000000-0000-4000-8000-0000000000d2", to_step_id: WON2, probability: 0.1 },
+      { ...edge, id: "f0000000-0000-4000-8000-0000000000d3", to_step_id: LOST2, probability: 0.1 },
+    );
+    const model = toEngineModel(b, { startDate: START });
+    expect(model.sinks).toEqual({ won: northbeamStepIds.won, lost: northbeamStepIds.lost });
+    expect(model.ends).toEqual({
+      [DONE]: { outcome: "done" },
+      [WON2]: { outcome: "won" },
+      [LOST2]: { outcome: "lost" },
+    });
+    const res = simulate(model, 5, 1);
+    expect(res.kpi.done.mean).toBeGreaterThan(0);
+    // Fast wins straight from qualify (0.7 a week) outnumber the whole pipeline's.
+    const before = simulate(toEngineModel(northbeamBundle(), { startDate: START }), 5, 1);
+    expect(res.kpi.won.mean).toBeGreaterThan(before.kpi.won.mean);
+  });
+
+  it("orders sinks by id, not row order", () => {
+    const b = northbeamBundle();
+    // An id sorting before the seeded won end becomes the sink; the seeded one moves to `ends`.
+    const early = "e0000000-0000-4000-8000-000000000000";
+    b.steps = [...b.steps, endStep(b, early, "Won early", "won")];
+    const model = toEngineModel(b, { startDate: START });
+    expect(model.sinks.won).toBe(early);
+    expect(model.ends).toEqual({ [northbeamStepIds.won]: { outcome: "won" } });
+    b.steps.reverse();
+    expect(toEngineModel(b, { startDate: START })).toEqual(model);
+  });
+
+  it("adds no `ends` when the process has one won and one lost end", () => {
+    expect(toEngineModel(northbeamBundle(), { startDate: START })).not.toHaveProperty("ends");
+  });
+});
+
+describe("services", () => {
+  const seo = northbeamServiceIds.seo;
+  const ppc = northbeamServiceIds.ppc;
+  const kickoffEdges = (m: EngineModel) => m.steps.find((s) => s.id === northbeamStepIds.kickoff)!.next;
+  const patch = (b: ProcessBundle, id: string, change: Partial<ServiceRow>) => {
+    b.services = b.services.map((sv) => (sv.id === id ? { ...sv, ...change } : sv));
+    return b;
+  };
+
+  it("maps each service's pricing, tenure, churn, mix and path tags", () => {
+    const model = toEngineModel(northbeamBundle(), { startDate: START });
+    expect(model.services).toEqual({
+      [seo]: {
+        name: "SEO retainer",
+        pricingModel: "retainer",
+        price: 3500,
+        margin: 0.45,
+        tenureMonths: 18,
+        churnMonthly: 0.03,
+        mixShare: 0.55,
+        pathTags: ["seo"],
+      },
+      [ppc]: {
+        name: "PPC management",
+        pricingModel: "retainer",
+        price: 4200,
+        margin: 0.4,
+        tenureMonths: 12,
+        churnMonthly: 0.04,
+        mixShare: 0.45,
+        pathTags: ["ppc"],
+      },
+    });
+    // Entering this process means entering at its entry step: the engine's default.
+    expect(Object.values(model.services!).every((sv) => !("entry" in sv))).toBe(true);
+  });
+
+  it("maps numeric columns that arrive as strings (Postgres numeric) and trims tags", () => {
+    const b = patch(northbeamBundle(), seo, {
+      price: "3500.00" as unknown as number,
+      mix_share: "0.55" as unknown as number,
+      path_tags: [" seo ", ""],
+    });
+    const sv = toEngineModel(b, { startDate: START }).services![seo]!;
+    expect(sv.price).toBe(3500);
+    expect(sv.mixShare).toBe(0.55);
+    expect(sv.pathTags).toEqual(["seo"]);
+  });
+
+  it("maps edge condition tags when there are services, and routes each service down its own branch", () => {
+    const model = toEngineModel(northbeamBundle(), { startDate: START });
+    expect(kickoffEdges(model)).toEqual([
+      { to: northbeamStepIds.seo, p: 0.55, tag: "seo" },
+      { to: northbeamStepIds.ppc, p: 0.45, tag: "ppc" },
+    ]);
+    const res = simulate(model, 5, 1);
+    const kicked = res.trace!.filter((e) => e.trace.some((s) => s.step === northbeamStepIds.kickoff && s.tL !== null));
+    expect(kicked.length).toBeGreaterThan(3);
+    for (const e of kicked) {
+      const after = e.trace[e.trace.findIndex((s) => s.step === northbeamStepIds.kickoff && s.tL !== null) + 1];
+      if (after) expect(after.step).toBe(e.service === seo ? northbeamStepIds.seo : northbeamStepIds.ppc);
+    }
+  });
+
+  it("leaves tags out, and prices wins at the interim retainer, when there are no services", () => {
+    const b = northbeamBundle();
+    b.services = [];
+    const model = toEngineModel(b, { startDate: START });
+    expect(model).not.toHaveProperty("services");
+    expect(kickoffEdges(model).every((e) => !("tag" in e))).toBe(true);
+    expect(model).toEqual(toEngineModel(withoutServices(), { startDate: START }));
+  });
+
+  it("leaves out inactive services and services entering another process", () => {
+    const other = "c0000000-0000-4000-8000-0000000000ff";
+    const b = patch(patch(northbeamBundle(), seo, { active: false }), ppc, { entry_process_id: other });
+    // The only active service's leads go to the other process, so none arrive here (issue #13).
+    expect(toEngineModel(b, { startDate: START })).toEqual({ ...toEngineModel(withoutServices(), { startDate: START }), leadsPerWeek: 0 });
+    const c = patch(northbeamBundle(), ppc, { entry_process_id: null });
+    expect(Object.keys(toEngineModel(c, { startDate: START }).services!)).toEqual([seo, ppc]);
+  });
+
+  it("rejects a mix that adds up to nothing", () => {
+    const b = patch(patch(northbeamBundle(), seo, { mix_share: 0 }), ppc, { mix_share: 0 });
+    expect(() => toEngineModel(b)).toThrow(ModelError);
+    expect(() => toEngineModel(b)).toThrow(/mix shares add up to 0/);
+  });
+
+  it("does not depend on service row order", () => {
+    const b = northbeamBundle();
+    b.services.reverse();
+    expect(toEngineModel(b, { startDate: START })).toEqual(toEngineModel(northbeamBundle(), { startDate: START }));
   });
 });
 

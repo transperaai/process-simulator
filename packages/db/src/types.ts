@@ -3,12 +3,14 @@
 // narrow its check-constrained text and jsonb columns, and the checks at the
 // bottom fail the typecheck if they drift from it.
 
+import type { IssueSeverity, IssueType, ScenarioPatch } from "@transpera-flow/engine";
 import type { Database } from "./database.types";
 
 export type MembershipRole = "agency_admin" | "owner" | "editor" | "member" | "viewer";
 export type StepKind = "task" | "wait" | "decision" | "subprocess" | "start" | "end";
 export type StepOutcome = "won" | "lost" | "done";
 export type Distribution = "constant" | "triangular" | "lognormal";
+export type PricingModel = "retainer" | "one_off" | "hourly";
 
 /**
  * A step duration's distribution parameters (`work_params`, `wait_params`).
@@ -22,7 +24,7 @@ export interface WorkspaceSettings {
   hours_per_week: number;
   horizon_weeks: number;
   currency: string;
-  /** Interim demand fields until lead sources, services and clients land. */
+  /** Arrivals a week while the workspace has no lead sources; the other three are interim until services and clients land. */
   leads_per_week: number;
   active_clients: number;
   churn_monthly: number;
@@ -121,12 +123,18 @@ export interface StepRow {
   rework_to_step_id: string | null;
   tool: string | null;
   notes: string | null;
-  /** Target hours for the step; not simulated yet. */
+  /** Target hours for one visit to the step (queue + hands-on + wait); visits over it are SLA breaches. */
   sla_hours: number | null;
   /** Items sitting at this step now; null when not entered (docs/PRD.md §6.3.1). */
   current_wip: number | null;
   x: number;
   y: number;
+  /**
+   * The step's values are estimates nobody has confirmed yet (e.g. filled in
+   * by the MCP server). Publishing a draft with any is refused unless they are
+   * accepted as estimates (docs/PRD.md §7.1b).
+   */
+  assumption: boolean;
 }
 
 export interface EdgeRow {
@@ -139,6 +147,90 @@ export interface EdgeRow {
   probability: number;
   condition_tag: string | null;
   label: string | null;
+}
+
+/**
+ * Something the business sells (docs/PRD.md §5). Each arrival at a process is
+ * tagged with one of the active services entering it, drawn from the mix, and
+ * is priced and routed by it (§6.4 revenue rules, decision D8).
+ */
+export interface ServiceRow {
+  id: string;
+  workspace_id: string;
+  name: string;
+  pricing_model: PricingModel;
+  /** Monthly fee (retainer), whole fee (one-off) or hourly rate. */
+  price: number;
+  /** Gross margin as a share of price (0–1). */
+  margin: number;
+  /** Expected tenure of a retainer client, in months. */
+  tenure_months: number;
+  /** Base monthly churn (0–1). */
+  churn_monthly_base: number;
+  /** Relative share of arrivals. */
+  mix_share: number;
+  /** Process its arrivals enter; null means the workspace's pipeline (whichever process is simulated). */
+  entry_process_id: string | null;
+  /** Condition tags its entities follow (`edges.condition_tag`). */
+  path_tags: string[];
+  /** Inactive services are left out of simulations. */
+  active: boolean;
+}
+
+/** Where a parameter's value came from (docs/PRD.md §3 Parameter provenance). */
+export type ProvenanceSource = "estimated" | "entered" | "measured";
+
+/**
+ * One value's provenance (the §5 `provenance jsonb` shape). A type alias, not
+ * an interface, so it stays assignable to the jsonb column.
+ */
+export type Provenance = {
+  source: ProvenanceSource;
+  /** When it was set (ISO timestamp). */
+  at?: string;
+  /** User who set it. */
+  by?: string;
+  /** Dataset a measured value came from. */
+  dataset_id?: string;
+  note?: string;
+};
+
+/**
+ * Provenance per value column, as stored in a row's `provenance` jsonb
+ * (e.g. `{volume_week: {...}, conversion_to_qualified: {...}}`). The
+ * database stamps `entered` when a person changes a value; a value with no
+ * entry is an estimate.
+ */
+export type ProvenanceMap = { [column: string]: Provenance | undefined };
+
+/** Where qualified leads come from (docs/PRD.md §5 `lead_sources`). */
+export interface LeadSourceRow {
+  id: string;
+  workspace_id: string;
+  name: string;
+  /** Leads a week. */
+  volume_week: number;
+  /** Share that become qualified leads (0–1). */
+  conversion_to_qualified: number;
+  provenance: ProvenanceMap;
+}
+
+/** One month of the seasonality curve. A month with no row has a multiplier of 1. */
+export interface SeasonalityRow {
+  id: string;
+  workspace_id: string;
+  /** 1 = January. */
+  month: number;
+  multiplier: number;
+  provenance: ProvenanceMap;
+}
+
+/** The workspace's growth assumption; no row means no growth. */
+export interface DemandSettingsRow {
+  workspace_id: string;
+  /** Compound change in the arrival rate per month (0.02 is +2%). */
+  growth_monthly: number;
+  provenance: ProvenanceMap;
 }
 
 /** Everything needed to render and simulate one process revision. */
@@ -154,6 +246,64 @@ export interface ProcessBundle {
   personRoles: PersonRoleRow[];
   personSkills: PersonSkillRow[];
   personLeave: PersonLeaveRow[];
+  /** The workspace's services. When none apply, every win is priced at the workspace's interim `retainer`. */
+  services: ServiceRow[];
+  /**
+   * The workspace's demand model (issue #13). With no lead sources, the
+   * interim `settings.leads_per_week` is the arrival rate; with no
+   * seasonality rows or demand settings, it is constant.
+   */
+  leadSources?: LeadSourceRow[];
+  seasonality?: SeasonalityRow[];
+  demand?: DemandSettingsRow | null;
+}
+
+/**
+ * A saved scenario: patches applied in order on top of the baseline model
+ * (docs/PRD.md §5; the grammar is in packages/engine/src/scenario.ts).
+ */
+export interface ScenarioRow {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description: string | null;
+  patch: ScenarioPatch[];
+  parent_scenario_id: string | null;
+}
+
+export type IssueStatus = "open" | "in_progress" | "done" | "dismissed";
+/** Logged by hand, detected by a stored run (reserved), or promoted from a detection. */
+export type IssueSource = "manual" | "detected" | "promoted";
+
+/**
+ * A tracked issue in the register (docs/PRD.md §5 `issues`). Detected issues
+ * aren't stored: they come from each run (engine `detectIssues`); promoting
+ * one stores it with its `detected_key`.
+ */
+export interface IssueRow {
+  id: string;
+  workspace_id: string;
+  process_id: string | null;
+  /** A step's stable id (no foreign key: steps are keyed by revision). */
+  step_id: string | null;
+  role_id: string | null;
+  person_id: string | null;
+  type: IssueType;
+  severity: IssueSeverity;
+  title: string;
+  evidence: string | null;
+  /** Numbers behind the finding, e.g. a promoted detection's metrics. */
+  evidence_metrics: Record<string, number>;
+  owner_person_id: string | null;
+  status: IssueStatus;
+  /** The saved scenario "Run the fix" applies. */
+  scenario_id: string | null;
+  source: IssueSource;
+  detected_key: string | null;
+  /** Set by the database when the status becomes done or dismissed. */
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 /** An allowed email domain: managed Google accounts on it join as `member`. */
@@ -200,6 +350,14 @@ export type _SchemaDriftChecks = [
   Assert<Matches<ProcessRevisionRow, "process_revisions">>,
   Assert<Matches<StepRow, "steps">>,
   Assert<Matches<EdgeRow, "edges">>,
+  Assert<Matches<ServiceRow, "services">>,
+  Assert<Matches<LeadSourceRow, "lead_sources">>,
+  Assert<Matches<SeasonalityRow, "seasonality">>,
+  Assert<Matches<DemandSettingsRow, "demand_settings">>,
   Assert<Matches<WorkspaceDomainRow, "workspace_domains">>,
   Assert<Matches<AccessEmailRow, "workspace_access_emails">>,
+  // patch is jsonb; ScenarioPatch[] is its checked shape.
+  Assert<Matches<Omit<ScenarioRow, "patch">, "scenarios">>,
+  // evidence_metrics is jsonb; Record<string, number> is its app-side shape.
+  Assert<Matches<Omit<IssueRow, "evidence_metrics">, "issues">>,
 ];

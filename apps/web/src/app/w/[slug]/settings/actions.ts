@@ -3,6 +3,8 @@
 import { refresh } from "next/cache";
 import type { SaveOutcome } from "@/lib/fields/field-controller";
 import { saveField, saveLinks } from "@/lib/fields/server";
+import { isGrowth, isMonth, isMultiplier, parseLeadSourceField, parseNewLeadSource, type LeadSourceField } from "@/lib/demand";
+import { isTagList, parseNewService, parseServiceField, type ServiceField } from "@/lib/services";
 import { createClient } from "@/lib/supabase/server";
 
 // Writes from the workspace settings page. Every write runs as the signed-in
@@ -22,6 +24,8 @@ const number: Check = (v) => typeof v === "number" && Number.isFinite(v);
 const optionalNumber: Check = (v) => v === null || number(v);
 const optionalDate: Check = (v) => v === null || isDate(v);
 const boolean: Check = (v) => typeof v === "boolean";
+/** A stored value to compare against: any number (the database may hold one outside what the form offers). */
+const isFiniteNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
 const PERSON_FIELDS = {
   name: text,
@@ -148,4 +152,168 @@ export async function removeLeave(leaveId: string): Promise<ActionResult> {
   if (!data.length) return { error: "That leave was already removed, or you can't edit it." };
   refresh();
   return {};
+}
+
+// Services (issue #12). Owners and editors manage them; RLS enforces that.
+
+export async function saveServiceField(
+  serviceId: string,
+  field: ServiceField,
+  base: Scalar,
+  value: Scalar,
+): Promise<SaveOutcome<Scalar>> {
+  const parsed = parseServiceField(serviceId, field, base, value);
+  if (!parsed) return invalid;
+  if (!(await signedIn())) return signedOut;
+  return saveField("services", { id: parsed.serviceId }, parsed.field, parsed.base, parsed.value);
+}
+
+/** A service's path tags, saved as one list. */
+export async function saveServiceTags(serviceId: string, base: string[], next: string[]): Promise<SaveOutcome<string[]>> {
+  if (!isId(serviceId) || !isTagList(base) || !isTagList(next)) return invalid;
+  if (!(await signedIn())) return signedOut;
+  return saveField<string[]>("services", { id: serviceId }, "path_tags", base, next);
+}
+
+export async function createService(workspaceId: string, _prev: ActionResult, form: FormData): Promise<ActionResult> {
+  if (!isId(workspaceId)) return { error: "Couldn't save. Try again." };
+  const service = parseNewService(form);
+  if ("error" in service) return service;
+  const supabase = await createClient();
+  // The first service takes every arrival; later ones start at a share of 0,
+  // so adding one doesn't change the simulation until its share is set.
+  const { count, error: countError } = await supabase
+    .from("services")
+    .select("id", { count: "exact", head: true })
+    .eq("workspace_id", workspaceId);
+  if (countError) return failure(countError);
+  const { error } = await supabase.from("services").insert({ workspace_id: workspaceId, ...service, mix_share: count ? 0 : 1 });
+  if (error) return failure(error);
+  refresh();
+  return {};
+}
+
+export async function removeService(serviceId: string): Promise<ActionResult> {
+  if (!isId(serviceId)) return { error: "Couldn't remove it. Try again." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("services").delete().eq("id", serviceId).select("id");
+  if (error) return failure(error);
+  if (!data.length) return { error: "That service was already removed, or you can't edit it." };
+  refresh();
+  return {};
+}
+
+// Demand (issue #13): lead sources, seasonality and growth. Owners and editors
+// manage them; RLS enforces that. Changing a value makes its provenance
+// `entered` (a database trigger), and each save refreshes the page so the
+// totals and provenance shown catch up.
+
+export async function saveLeadSourceField(
+  sourceId: string,
+  field: LeadSourceField,
+  base: Scalar,
+  value: Scalar,
+): Promise<SaveOutcome<Scalar>> {
+  const parsed = parseLeadSourceField(sourceId, field, base, value);
+  if (!parsed) return invalid;
+  if (!(await signedIn())) return signedOut;
+  const outcome = await saveField("lead_sources", { id: parsed.sourceId }, parsed.field, parsed.base, parsed.value);
+  if (outcome.status === "saved") refresh();
+  return outcome;
+}
+
+export async function createLeadSource(workspaceId: string, _prev: ActionResult, form: FormData): Promise<ActionResult> {
+  if (!isId(workspaceId)) return { error: "Couldn't save. Try again." };
+  const source = parseNewLeadSource(form);
+  if ("error" in source) return source;
+  const supabase = await createClient();
+  const { error } = await supabase.from("lead_sources").insert({ workspace_id: workspaceId, ...source });
+  if (error) return failure(error);
+  refresh();
+  return {};
+}
+
+export async function removeLeadSource(sourceId: string): Promise<ActionResult> {
+  if (!isId(sourceId)) return { error: "Couldn't remove it. Try again." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("lead_sources").delete().eq("id", sourceId).select("id");
+  if (error) return failure(error);
+  if (!data.length) return { error: "That lead source was already removed, or you can't edit it." };
+  refresh();
+  return {};
+}
+
+/**
+ * Save a value held in a row that may not exist yet: a month of the
+ * seasonality curve (no row means 1) or the growth (no row means 0). With no
+ * row the stored value is that default, so compare-and-set still holds: a
+ * base equal to it inserts the row, any other base is a conflict (someone
+ * reset it). An insert that loses a race to another one saves against it.
+ */
+async function saveOrInsert(
+  save: () => Promise<SaveOutcome<number>>,
+  insert: () => PromiseLike<{ error: { code?: string } | null }>,
+  fallback: number,
+  base: number,
+  value: number,
+): Promise<SaveOutcome<number>> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const outcome = await save();
+    if (outcome.status !== "not_found") return outcome;
+    if (base !== fallback) return { status: "conflict", theirs: fallback };
+    const { error } = await insert();
+    if (!error) return { status: "saved", value };
+    // A viewer, or a workspace the user can't edit: as for an update.
+    if (error.code === "42501") return { status: "not_found" };
+    // 23505: another insert got there first; loop to save against it.
+    if (error.code !== "23505") return { status: "error", message: "Couldn't save. Try again." };
+  }
+  return { status: "error", message: "Couldn't save. Try again." };
+}
+
+/** One month's seasonality multiplier (1 = January). */
+export async function saveSeasonality(
+  workspaceId: string,
+  month: number,
+  base: number | null,
+  value: number | null,
+): Promise<SaveOutcome<number | null>> {
+  if (!isId(workspaceId) || !isMonth(month) || !isFiniteNumber(base) || !isMultiplier(value)) return invalid;
+  if (!(await signedIn())) return signedOut;
+  const supabase = await createClient();
+  const outcome = await saveOrInsert(
+    () => saveField<number>("seasonality", { workspace_id: workspaceId, month: String(month) }, "multiplier", base, value),
+    () => supabase.from("seasonality").insert({ workspace_id: workspaceId, month, multiplier: value }),
+    1,
+    base,
+    value,
+  );
+  if (outcome.status === "saved") refresh();
+  return outcome;
+}
+
+/** Remove the seasonality curve: every month back to 1. */
+export async function resetSeasonality(workspaceId: string): Promise<ActionResult> {
+  if (!isId(workspaceId)) return { error: "Couldn't reset it. Try again." };
+  const supabase = await createClient();
+  const { error } = await supabase.from("seasonality").delete().eq("workspace_id", workspaceId);
+  if (error) return failure(error);
+  refresh();
+  return {};
+}
+
+/** Monthly growth in demand, as a fraction (0.02 is +2% a month). */
+export async function saveGrowth(workspaceId: string, base: number | null, value: number | null): Promise<SaveOutcome<number | null>> {
+  if (!isId(workspaceId) || !isFiniteNumber(base) || !isGrowth(value)) return invalid;
+  if (!(await signedIn())) return signedOut;
+  const supabase = await createClient();
+  const outcome = await saveOrInsert(
+    () => saveField<number>("demand_settings", { workspace_id: workspaceId }, "growth_monthly", base, value),
+    () => supabase.from("demand_settings").insert({ workspace_id: workspaceId, growth_monthly: value }),
+    0,
+    base,
+    value,
+  );
+  if (outcome.status === "saved") refresh();
+  return outcome;
 }

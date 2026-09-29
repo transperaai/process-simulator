@@ -1,47 +1,43 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ModelError, toEngineModel, type ProcessBundle } from "@transpera-flow/db";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow } from "@transpera-flow/db";
 import type { EngineModel } from "@transpera-flow/engine";
+import { discardChange, revertField } from "@/lib/drafts/discard";
+import { EMPTY_DIFF, diffBundles, unresolvedSteps } from "@/lib/drafts/diff";
+import { useDraftSession } from "@/lib/drafts/use-draft-session";
 import { PASTE_OFFSET, copySteps, deleteSelection, duplicateSteps, pasteSteps, type StepClipboard } from "@/lib/editor/commands";
+import { describeValue, fieldLabel, namesOf } from "@/lib/editor/describe";
 import type { Conflict, ProcessEditor } from "@/lib/editor/editor";
-import { liveStore } from "@/lib/editor/live-store";
-import type { Value } from "@/lib/editor/ops";
+import type { Table, Value } from "@/lib/editor/ops";
 import { isProvenanceField } from "@/lib/editor/provenance";
-import { MemoryStore } from "@/lib/editor/store";
-import { useProcessEditor } from "@/lib/editor/use-editor";
+import { connect } from "@/lib/realtime/connect";
+import type { RealtimeSync } from "@/lib/realtime/sync";
+import type { View, Viewer } from "@/lib/realtime/transport";
+import { useRealtime } from "@/lib/realtime/use-realtime";
 import { useSimulation } from "@/lib/sim/use-simulation";
+import { ChangesPanel, DraftBar, DraftCompare, type DraftView } from "./draft-panels";
 import { ConflictPrompt } from "./fields";
 import { KpiStrip } from "./kpi-strip";
+import { PresenceBar } from "./presence-bar";
 import { NO_SELECTION, ProcessCanvas, type CanvasCommands, type Selection } from "./process-canvas";
-import { FIELD_LABELS, StepInspector } from "./step-inspector";
+import { useProcessIssues } from "./process-issues";
+import { ScenarioPanel } from "./scenario-panel";
+import { StepInspector } from "./step-inspector";
 import { UtilisationBars } from "./utilisation-bars";
 
 /**
  * How edits are saved: `live` to the database as the signed-in user, `demo`
- * in memory (lost on reload), `readonly` not at all (viewers).
+ * in memory (lost on reload), `readonly` not at all (viewers). Either way
+ * edits go into the process's draft, never the live revision (issue #9).
  */
 export type EditMode = "live" | "demo" | "readonly";
 
-export function ProcessView({
-  bundle: initial,
-  mode,
-  userId = null,
-}: {
-  bundle: ProcessBundle;
-  mode: EditMode;
-  /** The signed-in user, recorded as who entered the values they change. */
-  userId?: string | null;
-}) {
-  const [state, editor] = useProcessEditor(
-    initial,
-    () => (mode === "live" ? liveStore(initial.revision.id) : new MemoryStore(initial)),
-    () => ({ at: new Date().toISOString(), by: userId }),
-  );
-  const bundle = state.bundle;
-  const editable = mode !== "readonly";
-  const [selection, setSelection] = useState<Selection>(NO_SELECTION);
+/** Who you are on the public demo, where nobody signs in. */
+const DEMO_VIEWER: Viewer = { userId: "demo-you", name: "You", email: null };
 
+/** A bundle's engine model, the same object while the model is unchanged (moving a step doesn't change it). */
+function useEngineModel(bundle: ProcessBundle): { model: EngineModel | null; error: string | null } {
   const resolved = useMemo(() => {
     try {
       return { model: toEngineModel(bundle), error: null };
@@ -50,14 +46,84 @@ export function ProcessView({
       throw err;
     }
   }, [bundle]);
-  // Only a change to the model itself re-runs the simulation (moving a step doesn't).
   const modelKey = resolved.model ? JSON.stringify(resolved.model) : null;
   const model = useMemo(() => (modelKey ? (JSON.parse(modelKey) as EngineModel) : null), [modelKey]);
+  return { model, error: resolved.error };
+}
+
+export function ProcessView({
+  live: initialLive,
+  draft: initialDraft,
+  mode,
+  scenarios = [],
+  issues = [],
+  initialFix = null,
+  registerHref,
+  userId = null,
+  viewer = null,
+}: {
+  live: ProcessBundle;
+  draft: ProcessBundle | null;
+  mode: EditMode;
+  /** Saved scenarios of the workspace (in memory on the demo). */
+  scenarios?: ScenarioRow[];
+  /** Tracked issues of the workspace (in memory on the demo). */
+  issues?: IssueRow[];
+  /** An issue whose fix to run once the first run is in (`?fix=`). */
+  initialFix?: string | null;
+  /** The full issues register, if the workspace has one to link to. */
+  registerHref?: string;
+  /** The signed-in user, recorded as who entered the values they change. */
+  userId?: string | null;
+  /** The signed-in user as others see them in presence (issue #10). */
+  viewer?: Viewer | null;
+}) {
+  // Saves, catch-up reads and Realtime: the database and Supabase, or memory on the demo.
+  const [connection] = useState(() => connect(mode, initialLive));
+  const [session, drafts, state] = useDraftSession(
+    initialLive,
+    initialDraft,
+    () => connection.backend,
+    () => ({ at: new Date().toISOString(), by: userId }),
+  );
+  const editor = session.editor;
+  const canEdit = mode !== "readonly";
+  const hasDraft = drafts.draft !== null || drafts.opening;
+  // Editors see the draft by default; everyone else the live model.
+  const [view, setView] = useState<DraftView>(canEdit ? "draft" : "live");
+  const showingLive = hasDraft && view === "live";
+  const working = state.bundle;
+  const live = drafts.live;
+  const bundle = showingLive ? live : working;
+  const editable = canEdit && !showingLive;
+  const [selection, setSelection] = useState<Selection>(NO_SELECTION);
+  const [compare, setCompare] = useState(false);
+  const me = viewer ?? (mode === "demo" ? DEMO_VIEWER : null);
+  const presenceView: View = hasDraft && !showingLive ? "draft" : "live";
+  const [sync, realtime] = useRealtime(session, connection.transport, me, presenceView);
+
+  const diff = useMemo(() => (hasDraft ? diffBundles(live, working) : EMPTY_DIFF), [hasDraft, live, working]);
+  const names = useMemo(() => namesOf(working, live), [working, live]);
+
+  const workingModel = useEngineModel(working);
+  const liveModel = useEngineModel(live);
+  const resolved = showingLive ? liveModel : workingModel;
+  const model = resolved.model;
   // While an edit leaves the process unsimulatable, keep showing the last results.
-  const [lastModel, setLastModel] = useState(model);
-  if (model && model !== lastModel) setLastModel(model);
-  const sim = useSimulation(model);
+  const [lastModel, setLastModel] = useState(workingModel.model);
+  if (workingModel.model && workingModel.model !== lastModel) setLastModel(workingModel.model);
+  // The draft (or, with no draft, live as the editor holds it) runs always; live runs too when shown or compared.
+  const draftSim = useSimulation(workingModel.model);
+  const liveSim = useSimulation(hasDraft && (showingLive || compare) ? liveModel.model : null);
+  const sim = showingLive ? liveSim : draftSim;
   const result = sim.run?.result ?? null;
+
+  const restore = useCallback(
+    (table: Table, id: string) => {
+      editor.run((b) => discardChange(session.getState().live, b, table, id));
+    },
+    [editor, session],
+  );
 
   // Selection can outlive what it points at (after a delete or an undo).
   const selected = useMemo(() => {
@@ -168,10 +234,69 @@ export function ProcessView({
     return () => window.removeEventListener("keydown", onKey);
   }, [editable, editor, selected, commands, bundle.steps]);
 
-  const shownModel = model ?? lastModel;
+  const shownModel = showingLive ? model : (model ?? lastModel);
+  const unresolved = useMemo(() => unresolvedSteps(working), [working]);
+  const blocked = state.saving
+    ? "Wait for your edits to save."
+    : state.conflicts.length
+      ? "Settle the conflicting edits first (keep mine / keep theirs)."
+      : workingModel.error
+        ? `The draft can't be simulated: ${workingModel.error}.`
+        : null;
+
+  // Issues, levers and scenarios follow the model on screen (the draft, or live when shown).
+  const issuesUi = useProcessIssues({
+    bundle,
+    model: shownModel,
+    result,
+    running: sim.status === "running",
+    mode,
+    initialIssues: issues,
+    initialScenarios: scenarios,
+    initialFix,
+    registerHref,
+  });
+
+  const select = (table: Table, id: string) => {
+    setView("draft");
+    setSelection(table === "steps" ? { steps: [id], edges: [] } : { steps: [], edges: [id] });
+  };
 
   return (
     <div className="flex flex-col gap-3">
+      <PresenceBar
+        sync={sync}
+        state={realtime}
+        me={me}
+        processName={live.process.name}
+        colleague={connection.colleague}
+        selectedStep={selected.steps.length === 1 ? selected.steps[0]! : null}
+      />
+      <DraftBar
+        session={session}
+        drafts={drafts}
+        canEdit={canEdit}
+        view={showingLive ? "live" : "draft"}
+        onView={(v) => {
+          setView(v);
+          setSelection(NO_SELECTION);
+        }}
+        changes={diff.list.length}
+        blocked={blocked}
+        unresolved={unresolved}
+        compare={compare}
+        onCompare={setCompare}
+        onReview={(id) => select("steps", id)}
+      />
+      {compare && hasDraft && (
+        <DraftCompare
+          live={liveModel.model ? { model: liveModel.model, result: liveSim.run?.result ?? null } : null}
+          draft={workingModel.model ? { model: workingModel.model, result: draftSim.run?.result ?? null } : null}
+          currency={working.workspace.settings.currency}
+          liveNumber={live.revision.number}
+          draftNumber={drafts.draft?.number ?? live.revision.number + 1}
+        />
+      )}
       {shownModel ? (
         <KpiStrip
           model={shownModel}
@@ -187,7 +312,7 @@ export function ProcessView({
           {shownModel && result ? " The figures above are from before this change." : ""}
         </p>
       )}
-      {editable && <SaveProblems editor={editor} bundle={bundle} conflicts={state.conflicts} error={state.error} />}
+      {editable && <SaveProblems editor={editor} bundle={bundle} conflicts={state.conflicts} error={state.error} sync={sync} />}
       <div className="grid gap-3 lg:grid-cols-[1fr_22rem]">
         <ProcessCanvas
           bundle={bundle}
@@ -197,6 +322,9 @@ export function ProcessView({
           selection={selected}
           onSelectionChange={setSelection}
           commands={editable ? commands : null}
+          diff={showingLive || !hasDraft ? null : diff}
+          onRestore={editable ? restore : null}
+          savedLabel={hasDraft ? "Saved to draft" : "Saved"}
         />
         {inspected && editable ? (
           <StepInspector
@@ -211,11 +339,40 @@ export function ProcessView({
               editor.run((b) => deleteSelection(b, [inspected.id], []));
               setSelection(NO_SELECTION);
             }}
+            draft={
+              hasDraft
+                ? {
+                    change: diff.steps.get(inspected.id),
+                    names,
+                    onRevert: (field) => editor.run((b) => revertField(session.getState().live, b, "steps", inspected.id, field)),
+                    onDiscard: () => editor.run((b) => discardChange(session.getState().live, b, "steps", inspected.id)),
+                  }
+                : null
+            }
           />
-        ) : shownModel ? (
-          <UtilisationBars model={shownModel} result={result} />
-        ) : null}
+        ) : (
+          <div className="flex flex-col gap-3">
+            {!showingLive && (
+              <ChangesPanel diff={diff} live={live} bundle={working} editor={editable ? editor : null} names={names} onSelect={select} />
+            )}
+            {shownModel && issuesUi.rail(<UtilisationBars model={shownModel} result={result} />)}
+          </div>
+        )}
       </div>
+      {issuesUi.badges}
+      {shownModel && (
+        <ScenarioPanel
+          model={shownModel}
+          baseline={sim.run}
+          currency={bundle.workspace.settings.currency}
+          workspaceId={bundle.workspace.id}
+          initialScenarios={scenarios}
+          mode={mode}
+          fix={issuesUi.fix}
+          onScenariosChange={issuesUi.onScenariosChange}
+          steps={bundle.steps}
+        />
+      )}
     </div>
   );
 }
@@ -226,29 +383,22 @@ function SaveProblems({
   bundle,
   conflicts,
   error,
+  sync,
 }: {
   editor: ProcessEditor;
   bundle: ProcessBundle;
   conflicts: Conflict[];
   error: string | null;
+  /** Names who made the other change, when their note has arrived. */
+  sync: RealtimeSync | null;
 }) {
   // A value's provenance is settled along with the value, so it gets no prompt of its own.
   conflicts = conflicts.filter((c) => !isProvenanceField(c.field));
   if (!conflicts.length && !error) return null;
-  const names = new Map<string, string>([
-    ...bundle.steps.map((s) => [s.id, s.name] as const),
-    ...bundle.roles.map((r) => [r.id, r.name] as const),
-    ...bundle.people.map((p) => [p.id, p.name] as const),
-  ]);
-  const show = (field: string, v: Value): string => {
-    if (v === null || v === "") return "blank";
-    if (typeof v === "object") return v.source;
-    if (field === "probability" || field === "rework_rate") return `${Math.round(Number(v) * 1000) / 10}%`;
-    if (field.endsWith("_id")) return names.get(String(v)) ?? "a removed item";
-    return String(v);
-  };
+  const names = namesOf(bundle);
+  const show = (field: string, v: Value): string => describeValue(field, v, names);
   const subject = (c: Conflict) => {
-    const label = FIELD_LABELS[c.field] ?? c.field;
+    const label = fieldLabel(c.field);
     if (c.table === "steps") return `${names.get(c.id) ?? "a step"}'s ${label}`;
     const edge = bundle.edges.find((e) => e.id === c.id);
     return edge ? `the ${label} of ${names.get(edge.from_step_id)} → ${names.get(edge.to_step_id)}` : `a connection's ${label}`;
@@ -259,6 +409,7 @@ function SaveProblems({
         <ConflictPrompt
           key={`${c.table}:${c.id}:${c.field}`}
           subject={subject(c)}
+          by={sync?.who(c.table, c.id, c.field, c.theirs) ?? null}
           theirs={show(c.field, c.theirs)}
           mine={show(c.field, c.mine)}
           onKeepMine={() => void editor.keepMine(c)}

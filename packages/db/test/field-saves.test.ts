@@ -161,6 +161,34 @@ describe("save_fields", () => {
     }
   });
 
+  it("keeps every editable table in the allow-list once all migrations have run", async () => {
+    // Several migrations redefine save_fields; the last one applied wins, so its
+    // list must be the union. Keep in sync with `EditableTable` in apps/web.
+    const editable = [
+      "workspaces",
+      "roles",
+      "people",
+      "person_leave",
+      "processes",
+      "steps",
+      "edges",
+      "services",
+      "lead_sources",
+      "seasonality",
+      "demand_settings",
+      "issues",
+    ];
+    for (const target of editable) {
+      const outcome = await db
+        .as(users.editor!.claims, (c) => saveFields(c, target, { id: priya }, { nope: 1 }, { nope: 2 }))
+        .then(
+          () => "ok",
+          (e: Error) => e.message,
+        );
+      expect(outcome, target).not.toMatch(/not editable/);
+    }
+  });
+
   it("enforces the table's check constraints", async () => {
     await expect(
       db.as(users.editor!.claims, (c) => saveFields(c, "people", { id: priya }, { fte: 1 }, { fte: 3 })),

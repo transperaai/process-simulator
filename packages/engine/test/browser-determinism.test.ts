@@ -2,9 +2,8 @@ import { build } from "esbuild";
 import { chromium, type Browser } from "playwright-core";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { northbeamModel, simulate } from "../src";
+import { northbeamModel, northbeamWithServices, simulate } from "../src";
 import { largeModel } from "./fixtures/large-model";
-import { northbeamWithServices } from "./fixtures/northbeam-services";
 
 // The same model and seed must give byte-identical results in Node and in a
 // browser Web Worker (where the app runs the engine). Uses Chromium from
@@ -63,6 +62,14 @@ describe("determinism across hosts", () => {
 
   it("Northbeam with SEO and PPC services: Node and a browser worker agree byte for byte", async () => {
     const model = northbeamWithServices();
+    expect(await runInWorker(model, 30, 1)).toBe(JSON.stringify(simulate(model, 30, 1)));
+  }, 60_000);
+
+  it("Northbeam with seasonality and growth: Node and a browser worker agree byte for byte", async () => {
+    const model = {
+      ...northbeamWithServices(),
+      demand: { seasonality: [1.3, 1.2, 1.1, 1, 0.9, 0.8, 0.6, 0.7, 1.1, 1.2, 1.1, 0.5], growthMonthly: 0.03, startMonth: 8.93 },
+    };
     expect(await runInWorker(model, 30, 1)).toBe(JSON.stringify(simulate(model, 30, 1)));
   }, 60_000);
 

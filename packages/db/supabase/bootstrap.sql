@@ -2267,6 +2267,2522 @@ revoke all on function public.use_api_token(text) from public;
 grant execute on function public.use_api_token(text) to anon, authenticated;
 ']);
 
+-- 20261001000000_services.sql
+-- Services: what the business sells, how each is priced, and which path its
+-- clients follow (docs/PRD.md §5 `services`, §6.4 revenue rules, decision D8;
+-- issue #12). Strictly additive: one new table, and `save_fields` redefined
+-- with `services` added to its allow-list (nothing else in it changes).
+--
+-- Rollback (run as one transaction):
+--
+--   begin;
+--   drop table public.services;
+--   -- Restore save_fields' previous allow-list: re-run the `create function
+--   -- public.save_fields ... $$;` block from 20260930000000_field_saves.sql
+--   -- with `create function` changed to `create or replace function`. (Or
+--   -- leave it: with the table gone, a save to 'services' just errors.)
+--   delete from supabase_migrations.schema_migrations where version = '20261001000000';
+--   commit;
+
+create table public.services (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  name text not null check (length(btrim(name)) > 0),
+  pricing_model text not null default 'retainer' check (pricing_model in ('retainer', 'one_off', 'hourly')),
+  -- Monthly fee (retainer), whole fee (one-off) or hourly rate, in the workspace currency.
+  price numeric not null default 0 check (price >= 0),
+  -- Gross margin as a share of price.
+  margin numeric not null default 0 check (margin >= 0 and margin <= 1),
+  -- Expected tenure of a retainer client, in months.
+  tenure_months numeric not null default 12 check (tenure_months >= 0),
+  churn_monthly_base numeric not null default 0 check (churn_monthly_base >= 0 and churn_monthly_base <= 1),
+  -- How strongly poor client health raises churn (§6.3.5). Not simulated yet.
+  churn_health_sensitivity numeric not null default 3 check (churn_health_sensitivity >= 0),
+  -- Relative share of arrivals; normalised over the active services entering a process.
+  mix_share numeric not null default 1 check (mix_share >= 0),
+  -- Process this service's arrivals enter; null means the workspace's pipeline.
+  entry_process_id uuid,
+  -- Condition tags this service's entities follow (edges.condition_tag).
+  path_tags text[] not null default '{}',
+  -- {role_id: hours_per_month} when no servicing process is mapped (§6.3.4). Not simulated yet.
+  fallback_ongoing_load jsonb not null default '{}' check (jsonb_typeof(fallback_ongoing_load) = 'object'),
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  created_by uuid references auth.users (id) on delete set null default auth.uid(),
+  unique (id, workspace_id),
+  -- Only entry_process_id is cleared when the process goes (a column list needs Postgres 15+).
+  foreign key (entry_process_id, workspace_id) references public.processes (id, workspace_id) on delete set null (entry_process_id)
+);
+
+create index on public.services (workspace_id);
+create index on public.services (entry_process_id);
+
+create trigger set_updated_at before update on public.services for each row execute function public.set_updated_at();
+
+alter table public.services enable row level security;
+
+create policy "read services" on public.services for select to authenticated
+  using (public.can_read_workspace(workspace_id));
+create policy "insert services" on public.services for insert to authenticated
+  with check (public.can_edit_workspace(workspace_id));
+create policy "update services" on public.services for update to authenticated
+  using (public.can_edit_workspace(workspace_id)) with check (public.can_edit_workspace(workspace_id));
+create policy "delete services" on public.services for delete to authenticated
+  using (public.can_edit_workspace(workspace_id));
+
+grant select, insert, update, delete on public.services to authenticated;
+revoke all on public.services from anon;
+
+-- save_fields, exactly as in 20260930000000_field_saves.sql except that
+-- `services` joins the allow-list. `create or replace` keeps its grants.
+create or replace function public.save_fields(target text, key jsonb, base jsonb, changes jsonb) returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  -- Tables whose rows are edited field by field. Keep in sync with `EditableTable` in the app.
+  editable constant text[] := array['workspaces', 'roles', 'people', 'person_leave', 'processes', 'steps', 'edges', 'services'];
+  fixed constant text[] := array['id', 'workspace_id', 'created_at', 'updated_at', 'created_by'];
+  key_match text;
+  stored jsonb;
+  typed_base jsonb;
+  typed_changes jsonb;
+  patch jsonb := '{}';
+  conflicts jsonb := '{}';
+  field text;
+  col text;
+  sub text;
+  seen jsonb;
+  mine jsonb;
+  theirs jsonb;
+  set_cols text;
+  from_cols text;
+begin
+  if target is null or not (target = any (editable)) then
+    raise exception 'save_fields: table % is not editable', target using errcode = '42501';
+  end if;
+  if jsonb_typeof(key) is distinct from 'object' or key = '{}' then
+    raise exception 'save_fields: key must be a non-empty object' using errcode = '22023';
+  end if;
+  if jsonb_typeof(changes) is distinct from 'object' or changes = '{}' then
+    raise exception 'save_fields: changes must be a non-empty object' using errcode = '22023';
+  end if;
+  if jsonb_typeof(base) is distinct from 'object' then
+    raise exception 'save_fields: base must be an object' using errcode = '22023';
+  end if;
+
+  select string_agg(format('t.%1$I = k.%1$I', kc.name), ' and ') into key_match from jsonb_object_keys(key) as kc(name);
+
+  -- Lock the row. RLS applies: a row the user may not update is not found.
+  execute format(
+    'select to_jsonb(t) from public.%1$I t, jsonb_populate_record(null::public.%1$I, $1) k where %2$s for update of t',
+    target, key_match)
+  into stored using key;
+  if stored is null then
+    return jsonb_build_object('status', 'not_found');
+  end if;
+
+  -- Round-trip top-level values through the column types so "1.50" and 1.5, or
+  -- two spellings of a date, compare equal.
+  execute format('select to_jsonb(jsonb_populate_record(null::public.%I, $1))', target) into typed_base using base;
+  execute format('select to_jsonb(jsonb_populate_record(null::public.%I, $1))', target) into typed_changes using changes;
+
+  for field in select jsonb_object_keys(changes) loop
+    -- A field is a column, or `column.key` for one key of a jsonb column (e.g. settings.availability_floor).
+    col := split_part(field, '.', 1);
+    sub := nullif(substr(field, length(col) + 2), '');
+    if col = any (fixed) or key ? col or not stored ? col or position('.' in coalesce(sub, '')) > 0 then
+      raise exception 'save_fields: % cannot be saved', field using errcode = '42501';
+    end if;
+    if not base ? field then
+      raise exception 'save_fields: no base value for %', field using errcode = '22023';
+    end if;
+
+    if sub is null then
+      seen := typed_base -> col;
+      mine := typed_changes -> col;
+      theirs := stored -> col;
+    else
+      if jsonb_typeof(stored -> col) not in ('object', 'null') then
+        raise exception 'save_fields: % is not a json object', col using errcode = '42501';
+      end if;
+      seen := coalesce(base -> field, 'null');
+      mine := coalesce(changes -> field, 'null');
+      theirs := coalesce(stored -> col -> sub, 'null');
+    end if;
+
+    if theirs is distinct from seen and theirs is distinct from mine then
+      conflicts := conflicts || jsonb_build_object(field, theirs);
+    elsif theirs is distinct from mine then
+      if sub is null then
+        patch := patch || jsonb_build_object(col, mine);
+      else
+        patch := patch || jsonb_build_object(col,
+          coalesce(patch -> col, nullif(stored -> col, 'null'), '{}') || jsonb_build_object(sub, mine));
+      end if;
+    end if;
+  end loop;
+
+  if patch <> '{}' then
+    select string_agg(quote_ident(pc.name), ', '), string_agg('p.' || quote_ident(pc.name), ', ')
+      into set_cols, from_cols from jsonb_object_keys(patch) as pc(name);
+    execute format(
+      'update public.%1$I t set (%3$s) = (select %4$s from jsonb_populate_record(null::public.%1$I, $2) p)
+       from jsonb_populate_record(null::public.%1$I, $1) k where %2$s returning to_jsonb(t)',
+      target, key_match, set_cols, from_cols)
+    into stored using key, patch;
+  end if;
+
+  return jsonb_build_object(
+    'status', case when conflicts = '{}' then 'saved' else 'conflict' end,
+    'row', stored,
+    'conflicts', conflicts);
+end;
+$$;
+
+insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261001000000', 'services', array['-- Services: what the business sells, how each is priced, and which path its
+-- clients follow (docs/PRD.md §5 `services`, §6.4 revenue rules, decision D8;
+-- issue #12). Strictly additive: one new table, and `save_fields` redefined
+-- with `services` added to its allow-list (nothing else in it changes).
+--
+-- Rollback (run as one transaction):
+--
+--   begin;
+--   drop table public.services;
+--   -- Restore save_fields'' previous allow-list: re-run the `create function
+--   -- public.save_fields ... $$;` block from 20260930000000_field_saves.sql
+--   -- with `create function` changed to `create or replace function`. (Or
+--   -- leave it: with the table gone, a save to ''services'' just errors.)
+--   delete from supabase_migrations.schema_migrations where version = ''20261001000000'';
+--   commit;
+
+create table public.services (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  name text not null check (length(btrim(name)) > 0),
+  pricing_model text not null default ''retainer'' check (pricing_model in (''retainer'', ''one_off'', ''hourly'')),
+  -- Monthly fee (retainer), whole fee (one-off) or hourly rate, in the workspace currency.
+  price numeric not null default 0 check (price >= 0),
+  -- Gross margin as a share of price.
+  margin numeric not null default 0 check (margin >= 0 and margin <= 1),
+  -- Expected tenure of a retainer client, in months.
+  tenure_months numeric not null default 12 check (tenure_months >= 0),
+  churn_monthly_base numeric not null default 0 check (churn_monthly_base >= 0 and churn_monthly_base <= 1),
+  -- How strongly poor client health raises churn (§6.3.5). Not simulated yet.
+  churn_health_sensitivity numeric not null default 3 check (churn_health_sensitivity >= 0),
+  -- Relative share of arrivals; normalised over the active services entering a process.
+  mix_share numeric not null default 1 check (mix_share >= 0),
+  -- Process this service''s arrivals enter; null means the workspace''s pipeline.
+  entry_process_id uuid,
+  -- Condition tags this service''s entities follow (edges.condition_tag).
+  path_tags text[] not null default ''{}'',
+  -- {role_id: hours_per_month} when no servicing process is mapped (§6.3.4). Not simulated yet.
+  fallback_ongoing_load jsonb not null default ''{}'' check (jsonb_typeof(fallback_ongoing_load) = ''object''),
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  created_by uuid references auth.users (id) on delete set null default auth.uid(),
+  unique (id, workspace_id),
+  -- Only entry_process_id is cleared when the process goes (a column list needs Postgres 15+).
+  foreign key (entry_process_id, workspace_id) references public.processes (id, workspace_id) on delete set null (entry_process_id)
+);
+
+create index on public.services (workspace_id);
+create index on public.services (entry_process_id);
+
+create trigger set_updated_at before update on public.services for each row execute function public.set_updated_at();
+
+alter table public.services enable row level security;
+
+create policy "read services" on public.services for select to authenticated
+  using (public.can_read_workspace(workspace_id));
+create policy "insert services" on public.services for insert to authenticated
+  with check (public.can_edit_workspace(workspace_id));
+create policy "update services" on public.services for update to authenticated
+  using (public.can_edit_workspace(workspace_id)) with check (public.can_edit_workspace(workspace_id));
+create policy "delete services" on public.services for delete to authenticated
+  using (public.can_edit_workspace(workspace_id));
+
+grant select, insert, update, delete on public.services to authenticated;
+revoke all on public.services from anon;
+
+-- save_fields, exactly as in 20260930000000_field_saves.sql except that
+-- `services` joins the allow-list. `create or replace` keeps its grants.
+create or replace function public.save_fields(target text, key jsonb, base jsonb, changes jsonb) returns jsonb
+language plpgsql
+security invoker
+set search_path = ''''
+as $$
+declare
+  -- Tables whose rows are edited field by field. Keep in sync with `EditableTable` in the app.
+  editable constant text[] := array[''workspaces'', ''roles'', ''people'', ''person_leave'', ''processes'', ''steps'', ''edges'', ''services''];
+  fixed constant text[] := array[''id'', ''workspace_id'', ''created_at'', ''updated_at'', ''created_by''];
+  key_match text;
+  stored jsonb;
+  typed_base jsonb;
+  typed_changes jsonb;
+  patch jsonb := ''{}'';
+  conflicts jsonb := ''{}'';
+  field text;
+  col text;
+  sub text;
+  seen jsonb;
+  mine jsonb;
+  theirs jsonb;
+  set_cols text;
+  from_cols text;
+begin
+  if target is null or not (target = any (editable)) then
+    raise exception ''save_fields: table % is not editable'', target using errcode = ''42501'';
+  end if;
+  if jsonb_typeof(key) is distinct from ''object'' or key = ''{}'' then
+    raise exception ''save_fields: key must be a non-empty object'' using errcode = ''22023'';
+  end if;
+  if jsonb_typeof(changes) is distinct from ''object'' or changes = ''{}'' then
+    raise exception ''save_fields: changes must be a non-empty object'' using errcode = ''22023'';
+  end if;
+  if jsonb_typeof(base) is distinct from ''object'' then
+    raise exception ''save_fields: base must be an object'' using errcode = ''22023'';
+  end if;
+
+  select string_agg(format(''t.%1$I = k.%1$I'', kc.name), '' and '') into key_match from jsonb_object_keys(key) as kc(name);
+
+  -- Lock the row. RLS applies: a row the user may not update is not found.
+  execute format(
+    ''select to_jsonb(t) from public.%1$I t, jsonb_populate_record(null::public.%1$I, $1) k where %2$s for update of t'',
+    target, key_match)
+  into stored using key;
+  if stored is null then
+    return jsonb_build_object(''status'', ''not_found'');
+  end if;
+
+  -- Round-trip top-level values through the column types so "1.50" and 1.5, or
+  -- two spellings of a date, compare equal.
+  execute format(''select to_jsonb(jsonb_populate_record(null::public.%I, $1))'', target) into typed_base using base;
+  execute format(''select to_jsonb(jsonb_populate_record(null::public.%I, $1))'', target) into typed_changes using changes;
+
+  for field in select jsonb_object_keys(changes) loop
+    -- A field is a column, or `column.key` for one key of a jsonb column (e.g. settings.availability_floor).
+    col := split_part(field, ''.'', 1);
+    sub := nullif(substr(field, length(col) + 2), '''');
+    if col = any (fixed) or key ? col or not stored ? col or position(''.'' in coalesce(sub, '''')) > 0 then
+      raise exception ''save_fields: % cannot be saved'', field using errcode = ''42501'';
+    end if;
+    if not base ? field then
+      raise exception ''save_fields: no base value for %'', field using errcode = ''22023'';
+    end if;
+
+    if sub is null then
+      seen := typed_base -> col;
+      mine := typed_changes -> col;
+      theirs := stored -> col;
+    else
+      if jsonb_typeof(stored -> col) not in (''object'', ''null'') then
+        raise exception ''save_fields: % is not a json object'', col using errcode = ''42501'';
+      end if;
+      seen := coalesce(base -> field, ''null'');
+      mine := coalesce(changes -> field, ''null'');
+      theirs := coalesce(stored -> col -> sub, ''null'');
+    end if;
+
+    if theirs is distinct from seen and theirs is distinct from mine then
+      conflicts := conflicts || jsonb_build_object(field, theirs);
+    elsif theirs is distinct from mine then
+      if sub is null then
+        patch := patch || jsonb_build_object(col, mine);
+      else
+        patch := patch || jsonb_build_object(col,
+          coalesce(patch -> col, nullif(stored -> col, ''null''), ''{}'') || jsonb_build_object(sub, mine));
+      end if;
+    end if;
+  end loop;
+
+  if patch <> ''{}'' then
+    select string_agg(quote_ident(pc.name), '', ''), string_agg(''p.'' || quote_ident(pc.name), '', '')
+      into set_cols, from_cols from jsonb_object_keys(patch) as pc(name);
+    execute format(
+      ''update public.%1$I t set (%3$s) = (select %4$s from jsonb_populate_record(null::public.%1$I, $2) p)
+       from jsonb_populate_record(null::public.%1$I, $1) k where %2$s returning to_jsonb(t)'',
+      target, key_match, set_cols, from_cols)
+    into stored using key, patch;
+  end if;
+
+  return jsonb_build_object(
+    ''status'', case when conflicts = ''{}'' then ''saved'' else ''conflict'' end,
+    ''row'', stored,
+    ''conflicts'', conflicts);
+end;
+$$;
+']);
+
+-- 20261002000000_scenarios.sql
+-- Scenarios: named sets of parameter patches on top of the baseline
+-- (docs/PRD.md §3, §4.1 "Levers and scenarios", §5; decision D10; issue #15).
+--
+-- A patch is {path, op, value}: `op` is set | multiply | add, `value` a
+-- number, and `path` addresses the model in the stored rows' vocabulary
+-- (`steps.<step_id>.work_hours`, `people.<person_id>.fte`,
+-- `roles.<role_id>.headcount`, `demand.leads_per_week`, `finances.retainer`,
+-- ...). The grammar lives in packages/engine/src/scenario.ts; the check below
+-- enforces the same shape so nothing malformed is stored. Whether a path's
+-- target still exists is decided when the scenario is applied to a model, and
+-- a missing one is reported there ("needs attention"), never dropped.
+--
+-- Every workspace gets a small library (hire, automate a step, more leads,
+-- downturn) when it is created, from a trigger on `workspaces`: workspaces are
+-- created in SQL (seed, SQL editor, a future admin screen), so the database is
+-- the one place that sees every new workspace. The library uses selectors
+-- (`roles.@busiest`, `steps.@heaviest`) that resolve against the model when
+-- applied, because a new workspace has no roles or steps to name yet.
+--
+-- Strictly additive: one new table, three functions in `private`, one trigger.
+--
+-- Rollback (run in this order):
+--   drop trigger if exists seed_scenario_library on public.workspaces;
+--   drop table if exists public.scenarios;
+--   drop function if exists private.seed_scenario_library();
+--   drop function if exists private.scenario_library();
+--   drop function if exists private.is_scenario_patch(jsonb);
+--   delete from supabase_migrations.schema_migrations where version = '20261002000000';
+
+-- ---------------------------------------------------------------------------
+-- Patch shape
+-- ---------------------------------------------------------------------------
+
+-- True when `patch` is an array of at most 200 {path, op, value} objects with
+-- exactly those keys, a known op, a numeric value and a path in the grammar.
+-- Mirrors parsePatches() in packages/engine/src/scenario.ts (tested against it).
+create function private.is_scenario_patch(patch jsonb) returns boolean
+language sql immutable
+set search_path = ''
+as $$
+  select jsonb_typeof(patch) = 'array'
+    and jsonb_array_length(patch) <= 200
+    and not exists (
+      select 1
+      from jsonb_array_elements(patch) as e(p)
+      where case
+        when jsonb_typeof(p) <> 'object' then true
+        else (select array_agg(k order by k) from jsonb_object_keys(p) as k) is distinct from array['op', 'path', 'value']
+          or jsonb_typeof(p -> 'path') <> 'string'
+          or jsonb_typeof(p -> 'op') <> 'string'
+          or jsonb_typeof(p -> 'value') <> 'number'
+          or (p ->> 'op') not in ('set', 'multiply', 'add')
+          or (p ->> 'path') !~ ('^(demand\.(leads_per_week|active_clients|churn_monthly)'
+                                || '|finances\.retainer'
+                                || '|services\.[^.[:space:]]{1,100}\.(price|mix_share)'
+                                || '|roles\.[^.[:space:]]{1,100}\.(headcount|cost_rate|ongoing_hours)'
+                                || '|people\.[^.[:space:]]{1,100}\.fte'
+                                || '|steps\.[^.[:space:]]{1,100}\.(work_hours|wait_hours|rework_rate))$')
+          -- An id starting with @ must be a known selector.
+          or ((p ->> 'path') ~ '^[a-z]+\.@' and (p ->> 'path') !~ '^(roles\.@busiest|steps\.@heaviest)\.')
+      end
+    );
+$$;
+
+revoke all on function private.is_scenario_patch(jsonb) from public, anon;
+grant execute on function private.is_scenario_patch(jsonb) to authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
+-- Table
+-- ---------------------------------------------------------------------------
+
+create table public.scenarios (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  name text not null constraint scenarios_name_length check (char_length(btrim(name)) between 1 and 120),
+  description text constraint scenarios_description_length check (char_length(description) <= 2000),
+  -- [{path, op: set|multiply|add, value}], applied in order.
+  patch jsonb not null default '[]' constraint scenarios_patch_shape check (private.is_scenario_patch(patch)),
+  -- The scenario this one was duplicated from, if any.
+  parent_scenario_id uuid,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  created_by uuid references auth.users (id) on delete set null default auth.uid(),
+  unique (id, workspace_id),
+  foreign key (parent_scenario_id, workspace_id) references public.scenarios (id, workspace_id) on delete set null (parent_scenario_id)
+);
+
+create index on public.scenarios (workspace_id);
+
+create trigger set_updated_at before update on public.scenarios for each row execute function public.set_updated_at();
+
+-- Everyone in the workspace can read and apply scenarios; editors, owners and
+-- agency admins can save, change and delete them.
+alter table public.scenarios enable row level security;
+
+create policy "read scenarios" on public.scenarios for select to authenticated
+  using (public.can_read_workspace(workspace_id));
+create policy "insert scenarios" on public.scenarios for insert to authenticated
+  with check (public.can_edit_workspace(workspace_id));
+create policy "update scenarios" on public.scenarios for update to authenticated
+  using (public.can_edit_workspace(workspace_id)) with check (public.can_edit_workspace(workspace_id));
+create policy "delete scenarios" on public.scenarios for delete to authenticated
+  using (public.can_edit_workspace(workspace_id));
+
+grant select, insert, update, delete on public.scenarios to authenticated;
+revoke all on public.scenarios from anon;
+
+-- ---------------------------------------------------------------------------
+-- Library for every workspace
+-- ---------------------------------------------------------------------------
+
+-- The library every new workspace starts with.
+create function private.scenario_library() returns table (name text, description text, patch jsonb)
+language sql immutable
+set search_path = ''
+as $$
+  values
+    ('Hire into the busiest role',
+     'One more full-time person in the role with the most work for its capacity.',
+     '[{"path": "roles.@busiest.headcount", "op": "add", "value": 1}]'::jsonb),
+    ('Automate the heaviest step',
+     'Hands-on time down 60% on the step that takes the most hours each week, as automation or templates would.',
+     '[{"path": "steps.@heaviest.work_hours", "op": "multiply", "value": 0.4}]'::jsonb),
+    ('More leads',
+     '25% more leads every week.',
+     '[{"path": "demand.leads_per_week", "op": "multiply", "value": 1.25}]'::jsonb),
+    ('Downturn',
+     '30% fewer leads a week, and client churn up by half.',
+     '[{"path": "demand.leads_per_week", "op": "multiply", "value": 0.7}, {"path": "demand.churn_monthly", "op": "multiply", "value": 1.5}]'::jsonb)
+$$;
+
+-- Security definer so the library is seeded however the workspace is
+-- created; it writes only rows for the new workspace.
+create function private.seed_scenario_library() returns trigger
+language plpgsql security definer
+set search_path = ''
+as $$
+begin
+  insert into public.scenarios (workspace_id, name, description, patch)
+  select new.id, l.name, l.description, l.patch from private.scenario_library() as l;
+  return null;
+end;
+$$;
+
+revoke all on function private.scenario_library() from public, anon;
+revoke all on function private.seed_scenario_library() from public, anon, authenticated;
+
+create trigger seed_scenario_library after insert on public.workspaces
+  for each row execute function private.seed_scenario_library();
+
+-- Workspaces that already exist get the library too.
+insert into public.scenarios (workspace_id, name, description, patch)
+select w.id, l.name, l.description, l.patch
+from public.workspaces as w cross join private.scenario_library() as l;
+
+insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261002000000', 'scenarios', array['-- Scenarios: named sets of parameter patches on top of the baseline
+-- (docs/PRD.md §3, §4.1 "Levers and scenarios", §5; decision D10; issue #15).
+--
+-- A patch is {path, op, value}: `op` is set | multiply | add, `value` a
+-- number, and `path` addresses the model in the stored rows'' vocabulary
+-- (`steps.<step_id>.work_hours`, `people.<person_id>.fte`,
+-- `roles.<role_id>.headcount`, `demand.leads_per_week`, `finances.retainer`,
+-- ...). The grammar lives in packages/engine/src/scenario.ts; the check below
+-- enforces the same shape so nothing malformed is stored. Whether a path''s
+-- target still exists is decided when the scenario is applied to a model, and
+-- a missing one is reported there ("needs attention"), never dropped.
+--
+-- Every workspace gets a small library (hire, automate a step, more leads,
+-- downturn) when it is created, from a trigger on `workspaces`: workspaces are
+-- created in SQL (seed, SQL editor, a future admin screen), so the database is
+-- the one place that sees every new workspace. The library uses selectors
+-- (`roles.@busiest`, `steps.@heaviest`) that resolve against the model when
+-- applied, because a new workspace has no roles or steps to name yet.
+--
+-- Strictly additive: one new table, three functions in `private`, one trigger.
+--
+-- Rollback (run in this order):
+--   drop trigger if exists seed_scenario_library on public.workspaces;
+--   drop table if exists public.scenarios;
+--   drop function if exists private.seed_scenario_library();
+--   drop function if exists private.scenario_library();
+--   drop function if exists private.is_scenario_patch(jsonb);
+--   delete from supabase_migrations.schema_migrations where version = ''20261002000000'';
+
+-- ---------------------------------------------------------------------------
+-- Patch shape
+-- ---------------------------------------------------------------------------
+
+-- True when `patch` is an array of at most 200 {path, op, value} objects with
+-- exactly those keys, a known op, a numeric value and a path in the grammar.
+-- Mirrors parsePatches() in packages/engine/src/scenario.ts (tested against it).
+create function private.is_scenario_patch(patch jsonb) returns boolean
+language sql immutable
+set search_path = ''''
+as $$
+  select jsonb_typeof(patch) = ''array''
+    and jsonb_array_length(patch) <= 200
+    and not exists (
+      select 1
+      from jsonb_array_elements(patch) as e(p)
+      where case
+        when jsonb_typeof(p) <> ''object'' then true
+        else (select array_agg(k order by k) from jsonb_object_keys(p) as k) is distinct from array[''op'', ''path'', ''value'']
+          or jsonb_typeof(p -> ''path'') <> ''string''
+          or jsonb_typeof(p -> ''op'') <> ''string''
+          or jsonb_typeof(p -> ''value'') <> ''number''
+          or (p ->> ''op'') not in (''set'', ''multiply'', ''add'')
+          or (p ->> ''path'') !~ (''^(demand\.(leads_per_week|active_clients|churn_monthly)''
+                                || ''|finances\.retainer''
+                                || ''|services\.[^.[:space:]]{1,100}\.(price|mix_share)''
+                                || ''|roles\.[^.[:space:]]{1,100}\.(headcount|cost_rate|ongoing_hours)''
+                                || ''|people\.[^.[:space:]]{1,100}\.fte''
+                                || ''|steps\.[^.[:space:]]{1,100}\.(work_hours|wait_hours|rework_rate))$'')
+          -- An id starting with @ must be a known selector.
+          or ((p ->> ''path'') ~ ''^[a-z]+\.@'' and (p ->> ''path'') !~ ''^(roles\.@busiest|steps\.@heaviest)\.'')
+      end
+    );
+$$;
+
+revoke all on function private.is_scenario_patch(jsonb) from public, anon;
+grant execute on function private.is_scenario_patch(jsonb) to authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
+-- Table
+-- ---------------------------------------------------------------------------
+
+create table public.scenarios (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  name text not null constraint scenarios_name_length check (char_length(btrim(name)) between 1 and 120),
+  description text constraint scenarios_description_length check (char_length(description) <= 2000),
+  -- [{path, op: set|multiply|add, value}], applied in order.
+  patch jsonb not null default ''[]'' constraint scenarios_patch_shape check (private.is_scenario_patch(patch)),
+  -- The scenario this one was duplicated from, if any.
+  parent_scenario_id uuid,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  created_by uuid references auth.users (id) on delete set null default auth.uid(),
+  unique (id, workspace_id),
+  foreign key (parent_scenario_id, workspace_id) references public.scenarios (id, workspace_id) on delete set null (parent_scenario_id)
+);
+
+create index on public.scenarios (workspace_id);
+
+create trigger set_updated_at before update on public.scenarios for each row execute function public.set_updated_at();
+
+-- Everyone in the workspace can read and apply scenarios; editors, owners and
+-- agency admins can save, change and delete them.
+alter table public.scenarios enable row level security;
+
+create policy "read scenarios" on public.scenarios for select to authenticated
+  using (public.can_read_workspace(workspace_id));
+create policy "insert scenarios" on public.scenarios for insert to authenticated
+  with check (public.can_edit_workspace(workspace_id));
+create policy "update scenarios" on public.scenarios for update to authenticated
+  using (public.can_edit_workspace(workspace_id)) with check (public.can_edit_workspace(workspace_id));
+create policy "delete scenarios" on public.scenarios for delete to authenticated
+  using (public.can_edit_workspace(workspace_id));
+
+grant select, insert, update, delete on public.scenarios to authenticated;
+revoke all on public.scenarios from anon;
+
+-- ---------------------------------------------------------------------------
+-- Library for every workspace
+-- ---------------------------------------------------------------------------
+
+-- The library every new workspace starts with.
+create function private.scenario_library() returns table (name text, description text, patch jsonb)
+language sql immutable
+set search_path = ''''
+as $$
+  values
+    (''Hire into the busiest role'',
+     ''One more full-time person in the role with the most work for its capacity.'',
+     ''[{"path": "roles.@busiest.headcount", "op": "add", "value": 1}]''::jsonb),
+    (''Automate the heaviest step'',
+     ''Hands-on time down 60% on the step that takes the most hours each week, as automation or templates would.'',
+     ''[{"path": "steps.@heaviest.work_hours", "op": "multiply", "value": 0.4}]''::jsonb),
+    (''More leads'',
+     ''25% more leads every week.'',
+     ''[{"path": "demand.leads_per_week", "op": "multiply", "value": 1.25}]''::jsonb),
+    (''Downturn'',
+     ''30% fewer leads a week, and client churn up by half.'',
+     ''[{"path": "demand.leads_per_week", "op": "multiply", "value": 0.7}, {"path": "demand.churn_monthly", "op": "multiply", "value": 1.5}]''::jsonb)
+$$;
+
+-- Security definer so the library is seeded however the workspace is
+-- created; it writes only rows for the new workspace.
+create function private.seed_scenario_library() returns trigger
+language plpgsql security definer
+set search_path = ''''
+as $$
+begin
+  insert into public.scenarios (workspace_id, name, description, patch)
+  select new.id, l.name, l.description, l.patch from private.scenario_library() as l;
+  return null;
+end;
+$$;
+
+revoke all on function private.scenario_library() from public, anon;
+revoke all on function private.seed_scenario_library() from public, anon, authenticated;
+
+create trigger seed_scenario_library after insert on public.workspaces
+  for each row execute function private.seed_scenario_library();
+
+-- Workspaces that already exist get the library too.
+insert into public.scenarios (workspace_id, name, description, patch)
+select w.id, l.name, l.description, l.patch
+from public.workspaces as w cross join private.scenario_library() as l;
+']);
+
+-- 20261004000000_demand.sql
+-- Demand: lead sources, a 12-month seasonality curve and a monthly growth
+-- assumption, which model resolution turns into each process's arrival rate
+-- (docs/PRD.md §4.1 Company model, §5, §6.2, §6.3.2; issue #13). Every value
+-- carries provenance (estimated, entered or measured) in its row's
+-- `provenance` jsonb, keyed by column. Strictly additive: three new tables, a
+-- trigger function that stamps provenance, and `save_fields` redefined with
+-- the three tables added to its allow-list (nothing else in it changes).
+--
+-- Rollback (run as one transaction):
+--
+--   begin;
+--   drop table public.lead_sources, public.seasonality, public.demand_settings;
+--   drop function public.stamp_provenance();
+--   -- Restore save_fields' previous allow-list: re-run the `create or replace
+--   -- function public.save_fields ... $$;` block from 20261001000000_services.sql.
+--   -- (Or leave it: with the tables gone, a save to them just errors.)
+--   delete from supabase_migrations.schema_migrations where version = '20261004000000';
+--   commit;
+
+-- Provenance of the value columns named in the trigger's arguments, kept in
+-- `provenance` as {column: {source, at, by}} (the §5 provenance shape, one per
+-- value). A person changing a value is entering a fact (decision D19), so:
+--   insert: a value with no provenance given is `entered`;
+--   update: a value that changes while its provenance doesn't becomes
+--           `entered`, now, by the current user.
+-- Writers that know better (the seed's estimates, calibration's `measured`,
+-- an accepted suggestion's evidence) set the provenance in the same statement
+-- and it is kept as given.
+create function public.stamp_provenance() returns trigger
+language plpgsql
+set search_path = ''
+as $$
+declare
+  col text;
+  prov jsonb := coalesce(new.provenance, '{}');
+  new_row jsonb := to_jsonb(new);
+  old_row jsonb;
+  entered jsonb := jsonb_strip_nulls(jsonb_build_object('source', 'entered', 'at', now(), 'by', auth.uid()));
+begin
+  if tg_op = 'UPDATE' then
+    old_row := to_jsonb(old);
+  end if;
+  foreach col in array tg_argv loop
+    if tg_op = 'INSERT' then
+      if not prov ? col then
+        prov := prov || jsonb_build_object(col, entered);
+      end if;
+    elsif new_row -> col is distinct from old_row -> col
+      and prov -> col is not distinct from coalesce(old_row -> 'provenance', '{}') -> col then
+      prov := prov || jsonb_build_object(col, entered);
+    end if;
+  end loop;
+  new.provenance := prov;
+  return new;
+end;
+$$;
+
+-- Where qualified leads come from. The arrival rate is Σ volume_week ×
+-- conversion_to_qualified, split between processes by the services mix.
+create table public.lead_sources (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  name text not null check (length(btrim(name)) > 0),
+  -- Leads a week from this source.
+  volume_week numeric not null default 0 check (volume_week >= 0),
+  -- Share of them that become qualified leads (0–1).
+  conversion_to_qualified numeric not null default 1 check (conversion_to_qualified >= 0 and conversion_to_qualified <= 1),
+  provenance jsonb not null default '{}' check (jsonb_typeof(provenance) = 'object'),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  created_by uuid references auth.users (id) on delete set null default auth.uid()
+);
+
+create index on public.lead_sources (workspace_id);
+
+-- The seasonality curve: a multiplier on the arrival rate per calendar month.
+-- A month with no row is 1 (no seasonal effect).
+create table public.seasonality (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  -- 1 = January.
+  month int not null check (month between 1 and 12),
+  multiplier numeric not null default 1 check (multiplier >= 0 and multiplier <= 100),
+  provenance jsonb not null default '{}' check (jsonb_typeof(provenance) = 'object'),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  created_by uuid references auth.users (id) on delete set null default auth.uid(),
+  unique (workspace_id, month)
+);
+
+-- One row per workspace; none means no growth. (The PRD's horizon_weeks stays
+-- in workspaces.settings, where the simulation already reads it.)
+create table public.demand_settings (
+  workspace_id uuid primary key references public.workspaces (id) on delete cascade,
+  -- Compound change in the arrival rate per month (0.02 is +2% a month).
+  growth_monthly numeric not null default 0 check (growth_monthly > -1 and growth_monthly <= 10),
+  provenance jsonb not null default '{}' check (jsonb_typeof(provenance) = 'object'),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  created_by uuid references auth.users (id) on delete set null default auth.uid()
+);
+
+create trigger set_updated_at before update on public.lead_sources for each row execute function public.set_updated_at();
+create trigger set_updated_at before update on public.seasonality for each row execute function public.set_updated_at();
+create trigger set_updated_at before update on public.demand_settings for each row execute function public.set_updated_at();
+
+create trigger stamp_provenance before insert or update on public.lead_sources
+  for each row execute function public.stamp_provenance('volume_week', 'conversion_to_qualified');
+create trigger stamp_provenance before insert or update on public.seasonality
+  for each row execute function public.stamp_provenance('multiplier');
+create trigger stamp_provenance before insert or update on public.demand_settings
+  for each row execute function public.stamp_provenance('growth_monthly');
+
+-- Row-level security: members read, owners and editors write (as for services).
+alter table public.lead_sources enable row level security;
+alter table public.seasonality enable row level security;
+alter table public.demand_settings enable row level security;
+
+create policy "read lead sources" on public.lead_sources for select to authenticated
+  using (public.can_read_workspace(workspace_id));
+create policy "insert lead sources" on public.lead_sources for insert to authenticated
+  with check (public.can_edit_workspace(workspace_id));
+create policy "update lead sources" on public.lead_sources for update to authenticated
+  using (public.can_edit_workspace(workspace_id)) with check (public.can_edit_workspace(workspace_id));
+create policy "delete lead sources" on public.lead_sources for delete to authenticated
+  using (public.can_edit_workspace(workspace_id));
+
+create policy "read seasonality" on public.seasonality for select to authenticated
+  using (public.can_read_workspace(workspace_id));
+create policy "insert seasonality" on public.seasonality for insert to authenticated
+  with check (public.can_edit_workspace(workspace_id));
+create policy "update seasonality" on public.seasonality for update to authenticated
+  using (public.can_edit_workspace(workspace_id)) with check (public.can_edit_workspace(workspace_id));
+create policy "delete seasonality" on public.seasonality for delete to authenticated
+  using (public.can_edit_workspace(workspace_id));
+
+create policy "read demand settings" on public.demand_settings for select to authenticated
+  using (public.can_read_workspace(workspace_id));
+create policy "insert demand settings" on public.demand_settings for insert to authenticated
+  with check (public.can_edit_workspace(workspace_id));
+create policy "update demand settings" on public.demand_settings for update to authenticated
+  using (public.can_edit_workspace(workspace_id)) with check (public.can_edit_workspace(workspace_id));
+create policy "delete demand settings" on public.demand_settings for delete to authenticated
+  using (public.can_edit_workspace(workspace_id));
+
+grant select, insert, update, delete on public.lead_sources, public.seasonality, public.demand_settings to authenticated;
+revoke all on public.lead_sources, public.seasonality, public.demand_settings from anon;
+
+-- save_fields, exactly as in 20261001000000_services.sql except that
+-- `lead_sources`, `seasonality` and `demand_settings` join the allow-list.
+-- `create or replace` keeps its grants.
+create or replace function public.save_fields(target text, key jsonb, base jsonb, changes jsonb) returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  -- Tables whose rows are edited field by field. Keep in sync with `EditableTable` in the app.
+  editable constant text[] := array['workspaces', 'roles', 'people', 'person_leave', 'processes', 'steps', 'edges', 'services',
+    'lead_sources', 'seasonality', 'demand_settings'];
+  fixed constant text[] := array['id', 'workspace_id', 'created_at', 'updated_at', 'created_by'];
+  key_match text;
+  stored jsonb;
+  typed_base jsonb;
+  typed_changes jsonb;
+  patch jsonb := '{}';
+  conflicts jsonb := '{}';
+  field text;
+  col text;
+  sub text;
+  seen jsonb;
+  mine jsonb;
+  theirs jsonb;
+  set_cols text;
+  from_cols text;
+begin
+  if target is null or not (target = any (editable)) then
+    raise exception 'save_fields: table % is not editable', target using errcode = '42501';
+  end if;
+  if jsonb_typeof(key) is distinct from 'object' or key = '{}' then
+    raise exception 'save_fields: key must be a non-empty object' using errcode = '22023';
+  end if;
+  if jsonb_typeof(changes) is distinct from 'object' or changes = '{}' then
+    raise exception 'save_fields: changes must be a non-empty object' using errcode = '22023';
+  end if;
+  if jsonb_typeof(base) is distinct from 'object' then
+    raise exception 'save_fields: base must be an object' using errcode = '22023';
+  end if;
+
+  select string_agg(format('t.%1$I = k.%1$I', kc.name), ' and ') into key_match from jsonb_object_keys(key) as kc(name);
+
+  -- Lock the row. RLS applies: a row the user may not update is not found.
+  execute format(
+    'select to_jsonb(t) from public.%1$I t, jsonb_populate_record(null::public.%1$I, $1) k where %2$s for update of t',
+    target, key_match)
+  into stored using key;
+  if stored is null then
+    return jsonb_build_object('status', 'not_found');
+  end if;
+
+  -- Round-trip top-level values through the column types so "1.50" and 1.5, or
+  -- two spellings of a date, compare equal.
+  execute format('select to_jsonb(jsonb_populate_record(null::public.%I, $1))', target) into typed_base using base;
+  execute format('select to_jsonb(jsonb_populate_record(null::public.%I, $1))', target) into typed_changes using changes;
+
+  for field in select jsonb_object_keys(changes) loop
+    -- A field is a column, or `column.key` for one key of a jsonb column (e.g. settings.availability_floor).
+    col := split_part(field, '.', 1);
+    sub := nullif(substr(field, length(col) + 2), '');
+    if col = any (fixed) or key ? col or not stored ? col or position('.' in coalesce(sub, '')) > 0 then
+      raise exception 'save_fields: % cannot be saved', field using errcode = '42501';
+    end if;
+    if not base ? field then
+      raise exception 'save_fields: no base value for %', field using errcode = '22023';
+    end if;
+
+    if sub is null then
+      seen := typed_base -> col;
+      mine := typed_changes -> col;
+      theirs := stored -> col;
+    else
+      if jsonb_typeof(stored -> col) not in ('object', 'null') then
+        raise exception 'save_fields: % is not a json object', col using errcode = '42501';
+      end if;
+      seen := coalesce(base -> field, 'null');
+      mine := coalesce(changes -> field, 'null');
+      theirs := coalesce(stored -> col -> sub, 'null');
+    end if;
+
+    if theirs is distinct from seen and theirs is distinct from mine then
+      conflicts := conflicts || jsonb_build_object(field, theirs);
+    elsif theirs is distinct from mine then
+      if sub is null then
+        patch := patch || jsonb_build_object(col, mine);
+      else
+        patch := patch || jsonb_build_object(col,
+          coalesce(patch -> col, nullif(stored -> col, 'null'), '{}') || jsonb_build_object(sub, mine));
+      end if;
+    end if;
+  end loop;
+
+  if patch <> '{}' then
+    select string_agg(quote_ident(pc.name), ', '), string_agg('p.' || quote_ident(pc.name), ', ')
+      into set_cols, from_cols from jsonb_object_keys(patch) as pc(name);
+    execute format(
+      'update public.%1$I t set (%3$s) = (select %4$s from jsonb_populate_record(null::public.%1$I, $2) p)
+       from jsonb_populate_record(null::public.%1$I, $1) k where %2$s returning to_jsonb(t)',
+      target, key_match, set_cols, from_cols)
+    into stored using key, patch;
+  end if;
+
+  return jsonb_build_object(
+    'status', case when conflicts = '{}' then 'saved' else 'conflict' end,
+    'row', stored,
+    'conflicts', conflicts);
+end;
+$$;
+
+insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261004000000', 'demand', array['-- Demand: lead sources, a 12-month seasonality curve and a monthly growth
+-- assumption, which model resolution turns into each process''s arrival rate
+-- (docs/PRD.md §4.1 Company model, §5, §6.2, §6.3.2; issue #13). Every value
+-- carries provenance (estimated, entered or measured) in its row''s
+-- `provenance` jsonb, keyed by column. Strictly additive: three new tables, a
+-- trigger function that stamps provenance, and `save_fields` redefined with
+-- the three tables added to its allow-list (nothing else in it changes).
+--
+-- Rollback (run as one transaction):
+--
+--   begin;
+--   drop table public.lead_sources, public.seasonality, public.demand_settings;
+--   drop function public.stamp_provenance();
+--   -- Restore save_fields'' previous allow-list: re-run the `create or replace
+--   -- function public.save_fields ... $$;` block from 20261001000000_services.sql.
+--   -- (Or leave it: with the tables gone, a save to them just errors.)
+--   delete from supabase_migrations.schema_migrations where version = ''20261004000000'';
+--   commit;
+
+-- Provenance of the value columns named in the trigger''s arguments, kept in
+-- `provenance` as {column: {source, at, by}} (the §5 provenance shape, one per
+-- value). A person changing a value is entering a fact (decision D19), so:
+--   insert: a value with no provenance given is `entered`;
+--   update: a value that changes while its provenance doesn''t becomes
+--           `entered`, now, by the current user.
+-- Writers that know better (the seed''s estimates, calibration''s `measured`,
+-- an accepted suggestion''s evidence) set the provenance in the same statement
+-- and it is kept as given.
+create function public.stamp_provenance() returns trigger
+language plpgsql
+set search_path = ''''
+as $$
+declare
+  col text;
+  prov jsonb := coalesce(new.provenance, ''{}'');
+  new_row jsonb := to_jsonb(new);
+  old_row jsonb;
+  entered jsonb := jsonb_strip_nulls(jsonb_build_object(''source'', ''entered'', ''at'', now(), ''by'', auth.uid()));
+begin
+  if tg_op = ''UPDATE'' then
+    old_row := to_jsonb(old);
+  end if;
+  foreach col in array tg_argv loop
+    if tg_op = ''INSERT'' then
+      if not prov ? col then
+        prov := prov || jsonb_build_object(col, entered);
+      end if;
+    elsif new_row -> col is distinct from old_row -> col
+      and prov -> col is not distinct from coalesce(old_row -> ''provenance'', ''{}'') -> col then
+      prov := prov || jsonb_build_object(col, entered);
+    end if;
+  end loop;
+  new.provenance := prov;
+  return new;
+end;
+$$;
+
+-- Where qualified leads come from. The arrival rate is Σ volume_week ×
+-- conversion_to_qualified, split between processes by the services mix.
+create table public.lead_sources (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  name text not null check (length(btrim(name)) > 0),
+  -- Leads a week from this source.
+  volume_week numeric not null default 0 check (volume_week >= 0),
+  -- Share of them that become qualified leads (0–1).
+  conversion_to_qualified numeric not null default 1 check (conversion_to_qualified >= 0 and conversion_to_qualified <= 1),
+  provenance jsonb not null default ''{}'' check (jsonb_typeof(provenance) = ''object''),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  created_by uuid references auth.users (id) on delete set null default auth.uid()
+);
+
+create index on public.lead_sources (workspace_id);
+
+-- The seasonality curve: a multiplier on the arrival rate per calendar month.
+-- A month with no row is 1 (no seasonal effect).
+create table public.seasonality (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  -- 1 = January.
+  month int not null check (month between 1 and 12),
+  multiplier numeric not null default 1 check (multiplier >= 0 and multiplier <= 100),
+  provenance jsonb not null default ''{}'' check (jsonb_typeof(provenance) = ''object''),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  created_by uuid references auth.users (id) on delete set null default auth.uid(),
+  unique (workspace_id, month)
+);
+
+-- One row per workspace; none means no growth. (The PRD''s horizon_weeks stays
+-- in workspaces.settings, where the simulation already reads it.)
+create table public.demand_settings (
+  workspace_id uuid primary key references public.workspaces (id) on delete cascade,
+  -- Compound change in the arrival rate per month (0.02 is +2% a month).
+  growth_monthly numeric not null default 0 check (growth_monthly > -1 and growth_monthly <= 10),
+  provenance jsonb not null default ''{}'' check (jsonb_typeof(provenance) = ''object''),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  created_by uuid references auth.users (id) on delete set null default auth.uid()
+);
+
+create trigger set_updated_at before update on public.lead_sources for each row execute function public.set_updated_at();
+create trigger set_updated_at before update on public.seasonality for each row execute function public.set_updated_at();
+create trigger set_updated_at before update on public.demand_settings for each row execute function public.set_updated_at();
+
+create trigger stamp_provenance before insert or update on public.lead_sources
+  for each row execute function public.stamp_provenance(''volume_week'', ''conversion_to_qualified'');
+create trigger stamp_provenance before insert or update on public.seasonality
+  for each row execute function public.stamp_provenance(''multiplier'');
+create trigger stamp_provenance before insert or update on public.demand_settings
+  for each row execute function public.stamp_provenance(''growth_monthly'');
+
+-- Row-level security: members read, owners and editors write (as for services).
+alter table public.lead_sources enable row level security;
+alter table public.seasonality enable row level security;
+alter table public.demand_settings enable row level security;
+
+create policy "read lead sources" on public.lead_sources for select to authenticated
+  using (public.can_read_workspace(workspace_id));
+create policy "insert lead sources" on public.lead_sources for insert to authenticated
+  with check (public.can_edit_workspace(workspace_id));
+create policy "update lead sources" on public.lead_sources for update to authenticated
+  using (public.can_edit_workspace(workspace_id)) with check (public.can_edit_workspace(workspace_id));
+create policy "delete lead sources" on public.lead_sources for delete to authenticated
+  using (public.can_edit_workspace(workspace_id));
+
+create policy "read seasonality" on public.seasonality for select to authenticated
+  using (public.can_read_workspace(workspace_id));
+create policy "insert seasonality" on public.seasonality for insert to authenticated
+  with check (public.can_edit_workspace(workspace_id));
+create policy "update seasonality" on public.seasonality for update to authenticated
+  using (public.can_edit_workspace(workspace_id)) with check (public.can_edit_workspace(workspace_id));
+create policy "delete seasonality" on public.seasonality for delete to authenticated
+  using (public.can_edit_workspace(workspace_id));
+
+create policy "read demand settings" on public.demand_settings for select to authenticated
+  using (public.can_read_workspace(workspace_id));
+create policy "insert demand settings" on public.demand_settings for insert to authenticated
+  with check (public.can_edit_workspace(workspace_id));
+create policy "update demand settings" on public.demand_settings for update to authenticated
+  using (public.can_edit_workspace(workspace_id)) with check (public.can_edit_workspace(workspace_id));
+create policy "delete demand settings" on public.demand_settings for delete to authenticated
+  using (public.can_edit_workspace(workspace_id));
+
+grant select, insert, update, delete on public.lead_sources, public.seasonality, public.demand_settings to authenticated;
+revoke all on public.lead_sources, public.seasonality, public.demand_settings from anon;
+
+-- save_fields, exactly as in 20261001000000_services.sql except that
+-- `lead_sources`, `seasonality` and `demand_settings` join the allow-list.
+-- `create or replace` keeps its grants.
+create or replace function public.save_fields(target text, key jsonb, base jsonb, changes jsonb) returns jsonb
+language plpgsql
+security invoker
+set search_path = ''''
+as $$
+declare
+  -- Tables whose rows are edited field by field. Keep in sync with `EditableTable` in the app.
+  editable constant text[] := array[''workspaces'', ''roles'', ''people'', ''person_leave'', ''processes'', ''steps'', ''edges'', ''services'',
+    ''lead_sources'', ''seasonality'', ''demand_settings''];
+  fixed constant text[] := array[''id'', ''workspace_id'', ''created_at'', ''updated_at'', ''created_by''];
+  key_match text;
+  stored jsonb;
+  typed_base jsonb;
+  typed_changes jsonb;
+  patch jsonb := ''{}'';
+  conflicts jsonb := ''{}'';
+  field text;
+  col text;
+  sub text;
+  seen jsonb;
+  mine jsonb;
+  theirs jsonb;
+  set_cols text;
+  from_cols text;
+begin
+  if target is null or not (target = any (editable)) then
+    raise exception ''save_fields: table % is not editable'', target using errcode = ''42501'';
+  end if;
+  if jsonb_typeof(key) is distinct from ''object'' or key = ''{}'' then
+    raise exception ''save_fields: key must be a non-empty object'' using errcode = ''22023'';
+  end if;
+  if jsonb_typeof(changes) is distinct from ''object'' or changes = ''{}'' then
+    raise exception ''save_fields: changes must be a non-empty object'' using errcode = ''22023'';
+  end if;
+  if jsonb_typeof(base) is distinct from ''object'' then
+    raise exception ''save_fields: base must be an object'' using errcode = ''22023'';
+  end if;
+
+  select string_agg(format(''t.%1$I = k.%1$I'', kc.name), '' and '') into key_match from jsonb_object_keys(key) as kc(name);
+
+  -- Lock the row. RLS applies: a row the user may not update is not found.
+  execute format(
+    ''select to_jsonb(t) from public.%1$I t, jsonb_populate_record(null::public.%1$I, $1) k where %2$s for update of t'',
+    target, key_match)
+  into stored using key;
+  if stored is null then
+    return jsonb_build_object(''status'', ''not_found'');
+  end if;
+
+  -- Round-trip top-level values through the column types so "1.50" and 1.5, or
+  -- two spellings of a date, compare equal.
+  execute format(''select to_jsonb(jsonb_populate_record(null::public.%I, $1))'', target) into typed_base using base;
+  execute format(''select to_jsonb(jsonb_populate_record(null::public.%I, $1))'', target) into typed_changes using changes;
+
+  for field in select jsonb_object_keys(changes) loop
+    -- A field is a column, or `column.key` for one key of a jsonb column (e.g. settings.availability_floor).
+    col := split_part(field, ''.'', 1);
+    sub := nullif(substr(field, length(col) + 2), '''');
+    if col = any (fixed) or key ? col or not stored ? col or position(''.'' in coalesce(sub, '''')) > 0 then
+      raise exception ''save_fields: % cannot be saved'', field using errcode = ''42501'';
+    end if;
+    if not base ? field then
+      raise exception ''save_fields: no base value for %'', field using errcode = ''22023'';
+    end if;
+
+    if sub is null then
+      seen := typed_base -> col;
+      mine := typed_changes -> col;
+      theirs := stored -> col;
+    else
+      if jsonb_typeof(stored -> col) not in (''object'', ''null'') then
+        raise exception ''save_fields: % is not a json object'', col using errcode = ''42501'';
+      end if;
+      seen := coalesce(base -> field, ''null'');
+      mine := coalesce(changes -> field, ''null'');
+      theirs := coalesce(stored -> col -> sub, ''null'');
+    end if;
+
+    if theirs is distinct from seen and theirs is distinct from mine then
+      conflicts := conflicts || jsonb_build_object(field, theirs);
+    elsif theirs is distinct from mine then
+      if sub is null then
+        patch := patch || jsonb_build_object(col, mine);
+      else
+        patch := patch || jsonb_build_object(col,
+          coalesce(patch -> col, nullif(stored -> col, ''null''), ''{}'') || jsonb_build_object(sub, mine));
+      end if;
+    end if;
+  end loop;
+
+  if patch <> ''{}'' then
+    select string_agg(quote_ident(pc.name), '', ''), string_agg(''p.'' || quote_ident(pc.name), '', '')
+      into set_cols, from_cols from jsonb_object_keys(patch) as pc(name);
+    execute format(
+      ''update public.%1$I t set (%3$s) = (select %4$s from jsonb_populate_record(null::public.%1$I, $2) p)
+       from jsonb_populate_record(null::public.%1$I, $1) k where %2$s returning to_jsonb(t)'',
+      target, key_match, set_cols, from_cols)
+    into stored using key, patch;
+  end if;
+
+  return jsonb_build_object(
+    ''status'', case when conflicts = ''{}'' then ''saved'' else ''conflict'' end,
+    ''row'', stored,
+    ''conflicts'', conflicts);
+end;
+$$;
+']);
+
+-- 20261005000000_issues.sql
+-- Issues register (docs/PRD.md §3 "Issue", §4.1 "Issues register", §5 `issues`; issue #17).
+--
+-- One register for every finding, linked to its fix. Audit findings are logged
+-- by hand (`source = 'manual'`). The engine detects issues on every run
+-- (packages/engine/src/issues.ts); those are regenerated each run and live in
+-- memory, not here, and a user can promote one into a tracked issue
+-- (`source = 'promoted'`), which keeps its `detected_key` so the next run
+-- recognises it instead of listing it twice (one row per key per workspace).
+-- `source = 'detected'` is reserved for runs stored server-side later; nobody
+-- can insert or edit such rows through the API.
+--
+-- `step_id` is a step's stable id (docs/PRD.md §4.1 "Stable step IDs"). Steps
+-- are keyed by (revision_id, id), so it has no foreign key; the issue keeps
+-- pointing at the step across revisions. `role_id` is not in the PRD's column
+-- list: detected capacity issues are about a role, and a promoted one keeps
+-- it. `client_id` waits for the clients table.
+--
+-- Rows are edited one field at a time (docs/adr/0001-per-field-saves.md), so
+-- `save_fields` is redefined below with `issues` added to its allow-list; the
+-- body is otherwise the one from 20260930000000_field_saves.sql, unchanged, and
+-- the list keeps every table the earlier migrations added (services, demand).
+-- `source`, `detected_key` and `resolved_at` can't be changed by an edit: a
+-- trigger keeps the first two fixed and sets `resolved_at` from the status.
+--
+-- Strictly additive: one new table and its trigger function; `save_fields`
+-- gains a table in its allow-list.
+--
+-- Rollback (run in this order):
+--   drop table if exists public.issues;
+--   drop function if exists private.issues_before_write();
+--   -- then restore save_fields' previous allow-list: re-run the
+--   -- `create or replace function public.save_fields` from the latest earlier
+--   -- migration that defines it (20261004000000_demand.sql).
+--   delete from supabase_migrations.schema_migrations where version = '20261005000000';
+
+-- ---------------------------------------------------------------------------
+-- Table
+-- ---------------------------------------------------------------------------
+
+create table public.issues (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  process_id uuid,
+  -- Stable step id (no foreign key: steps are keyed by revision).
+  step_id uuid,
+  role_id uuid,
+  person_id uuid,
+  type text not null constraint issues_type check (type in (
+    'bottleneck', 'spof', 'manual', 'delay', 'failure', 'idea', 'capacity', 'sla',
+    'churn_risk', 'perception_gap', 'broken_scenario')),
+  severity text not null default 'warning' constraint issues_severity check (severity in ('critical', 'serious', 'warning', 'info')),
+  title text not null constraint issues_title_length check (char_length(btrim(title)) between 1 and 200),
+  evidence text constraint issues_evidence_length check (char_length(evidence) <= 5000),
+  -- Numbers behind the finding (a detected issue's metrics when promoted), {name: number}.
+  evidence_metrics jsonb not null default '{}' constraint issues_evidence_metrics_shape check (jsonb_typeof(evidence_metrics) = 'object'),
+  -- Source citations [{source_id, speaker, quote, timestamp}] once sources land.
+  evidence_sources jsonb not null default '[]' constraint issues_evidence_sources_shape check (jsonb_typeof(evidence_sources) = 'array'),
+  owner_person_id uuid,
+  status text not null default 'open' constraint issues_status check (status in ('open', 'in_progress', 'done', 'dismissed')),
+  -- The fix: a saved scenario that "Run the fix" applies.
+  scenario_id uuid,
+  source text not null default 'manual' constraint issues_source check (source in ('manual', 'detected', 'promoted')),
+  -- The engine's stable key for a detected or promoted issue: <detector>:<subject kind>:<id>.
+  detected_key text constraint issues_detected_key_shape check (detected_key ~ '^[a-z_]+:[a-z_]+:[^[:space:]]{1,200}$'),
+  -- When it was last marked done or dismissed; null while open or in progress. Set by the trigger.
+  resolved_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  created_by uuid references auth.users (id) on delete set null default auth.uid(),
+  unique (id, workspace_id),
+  -- Manual issues have no key; detected and promoted ones must.
+  constraint issues_detected_key_source check ((source = 'manual') = (detected_key is null)),
+  foreign key (process_id, workspace_id) references public.processes (id, workspace_id) on delete set null (process_id),
+  foreign key (role_id, workspace_id) references public.roles (id, workspace_id) on delete set null (role_id),
+  foreign key (person_id, workspace_id) references public.people (id, workspace_id) on delete set null (person_id),
+  foreign key (owner_person_id, workspace_id) references public.people (id, workspace_id) on delete set null (owner_person_id),
+  foreign key (scenario_id, workspace_id) references public.scenarios (id, workspace_id) on delete set null (scenario_id)
+);
+
+-- A detection is tracked at most once per workspace: promoting it twice, or
+-- promoting it again on the next run, hits this.
+create unique index issues_workspace_detected_key on public.issues (workspace_id, detected_key) where detected_key is not null;
+create index on public.issues (workspace_id, status);
+
+create trigger set_updated_at before update on public.issues for each row execute function public.set_updated_at();
+
+-- `source` and `detected_key` are fixed once written; `resolved_at` follows the status.
+create function private.issues_before_write() returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if tg_op = 'UPDATE' then
+    if new.source is distinct from old.source or new.detected_key is distinct from old.detected_key then
+      raise exception 'issues: source and detected_key cannot be changed' using errcode = '23514';
+    end if;
+    if new.status in ('done', 'dismissed') then
+      new.resolved_at := case when old.status in ('done', 'dismissed') then old.resolved_at else now() end;
+    else
+      new.resolved_at := null;
+    end if;
+  else
+    new.resolved_at := case when new.status in ('done', 'dismissed') then now() else null end;
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function private.issues_before_write() from public, anon, authenticated;
+
+create trigger issues_before_write before insert or update on public.issues
+  for each row execute function private.issues_before_write();
+
+-- Everyone in the workspace can read the register; editors, owners and agency
+-- admins log, edit, close and delete issues. Rows a stored run detected are
+-- read-only.
+alter table public.issues enable row level security;
+
+create policy "read issues" on public.issues for select to authenticated
+  using (public.can_read_workspace(workspace_id));
+create policy "insert issues" on public.issues for insert to authenticated
+  with check (public.can_edit_workspace(workspace_id) and source <> 'detected');
+create policy "update issues" on public.issues for update to authenticated
+  using (public.can_edit_workspace(workspace_id) and source <> 'detected')
+  with check (public.can_edit_workspace(workspace_id) and source <> 'detected');
+create policy "delete issues" on public.issues for delete to authenticated
+  using (public.can_edit_workspace(workspace_id) and source <> 'detected');
+
+grant select, insert, update, delete on public.issues to authenticated;
+revoke all on public.issues from anon;
+
+-- ---------------------------------------------------------------------------
+-- Per-field saves: `issues` joins save_fields' allow-list
+-- ---------------------------------------------------------------------------
+
+-- Copied from 20261004000000_demand.sql (itself 20260930000000_field_saves.sql
+-- plus 'services' from 20261001000000_services.sql and the three demand
+-- tables); the only change is 'issues' at the end of `editable`. This is the
+-- last migration to redefine save_fields, so its list must be the union of
+-- every earlier one. `create or replace` keeps the grants made there.
+create or replace function public.save_fields(target text, key jsonb, base jsonb, changes jsonb) returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  -- Tables whose rows are edited field by field. Keep in sync with `EditableTable` in the app.
+  editable constant text[] := array['workspaces', 'roles', 'people', 'person_leave', 'processes', 'steps', 'edges', 'services',
+    'lead_sources', 'seasonality', 'demand_settings', 'issues'];
+  fixed constant text[] := array['id', 'workspace_id', 'created_at', 'updated_at', 'created_by'];
+  key_match text;
+  stored jsonb;
+  typed_base jsonb;
+  typed_changes jsonb;
+  patch jsonb := '{}';
+  conflicts jsonb := '{}';
+  field text;
+  col text;
+  sub text;
+  seen jsonb;
+  mine jsonb;
+  theirs jsonb;
+  set_cols text;
+  from_cols text;
+begin
+  if target is null or not (target = any (editable)) then
+    raise exception 'save_fields: table % is not editable', target using errcode = '42501';
+  end if;
+  if jsonb_typeof(key) is distinct from 'object' or key = '{}' then
+    raise exception 'save_fields: key must be a non-empty object' using errcode = '22023';
+  end if;
+  if jsonb_typeof(changes) is distinct from 'object' or changes = '{}' then
+    raise exception 'save_fields: changes must be a non-empty object' using errcode = '22023';
+  end if;
+  if jsonb_typeof(base) is distinct from 'object' then
+    raise exception 'save_fields: base must be an object' using errcode = '22023';
+  end if;
+
+  select string_agg(format('t.%1$I = k.%1$I', kc.name), ' and ') into key_match from jsonb_object_keys(key) as kc(name);
+
+  -- Lock the row. RLS applies: a row the user may not update is not found.
+  execute format(
+    'select to_jsonb(t) from public.%1$I t, jsonb_populate_record(null::public.%1$I, $1) k where %2$s for update of t',
+    target, key_match)
+  into stored using key;
+  if stored is null then
+    return jsonb_build_object('status', 'not_found');
+  end if;
+
+  -- Round-trip top-level values through the column types so "1.50" and 1.5, or
+  -- two spellings of a date, compare equal.
+  execute format('select to_jsonb(jsonb_populate_record(null::public.%I, $1))', target) into typed_base using base;
+  execute format('select to_jsonb(jsonb_populate_record(null::public.%I, $1))', target) into typed_changes using changes;
+
+  for field in select jsonb_object_keys(changes) loop
+    -- A field is a column, or `column.key` for one key of a jsonb column (e.g. settings.availability_floor).
+    col := split_part(field, '.', 1);
+    sub := nullif(substr(field, length(col) + 2), '');
+    if col = any (fixed) or key ? col or not stored ? col or position('.' in coalesce(sub, '')) > 0 then
+      raise exception 'save_fields: % cannot be saved', field using errcode = '42501';
+    end if;
+    if not base ? field then
+      raise exception 'save_fields: no base value for %', field using errcode = '22023';
+    end if;
+
+    if sub is null then
+      seen := typed_base -> col;
+      mine := typed_changes -> col;
+      theirs := stored -> col;
+    else
+      if jsonb_typeof(stored -> col) not in ('object', 'null') then
+        raise exception 'save_fields: % is not a json object', col using errcode = '42501';
+      end if;
+      seen := coalesce(base -> field, 'null');
+      mine := coalesce(changes -> field, 'null');
+      theirs := coalesce(stored -> col -> sub, 'null');
+    end if;
+
+    if theirs is distinct from seen and theirs is distinct from mine then
+      conflicts := conflicts || jsonb_build_object(field, theirs);
+    elsif theirs is distinct from mine then
+      if sub is null then
+        patch := patch || jsonb_build_object(col, mine);
+      else
+        patch := patch || jsonb_build_object(col,
+          coalesce(patch -> col, nullif(stored -> col, 'null'), '{}') || jsonb_build_object(sub, mine));
+      end if;
+    end if;
+  end loop;
+
+  if patch <> '{}' then
+    select string_agg(quote_ident(pc.name), ', '), string_agg('p.' || quote_ident(pc.name), ', ')
+      into set_cols, from_cols from jsonb_object_keys(patch) as pc(name);
+    execute format(
+      'update public.%1$I t set (%3$s) = (select %4$s from jsonb_populate_record(null::public.%1$I, $2) p)
+       from jsonb_populate_record(null::public.%1$I, $1) k where %2$s returning to_jsonb(t)',
+      target, key_match, set_cols, from_cols)
+    into stored using key, patch;
+  end if;
+
+  return jsonb_build_object(
+    'status', case when conflicts = '{}' then 'saved' else 'conflict' end,
+    'row', stored,
+    'conflicts', conflicts);
+end;
+$$;
+
+insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261005000000', 'issues', array['-- Issues register (docs/PRD.md §3 "Issue", §4.1 "Issues register", §5 `issues`; issue #17).
+--
+-- One register for every finding, linked to its fix. Audit findings are logged
+-- by hand (`source = ''manual''`). The engine detects issues on every run
+-- (packages/engine/src/issues.ts); those are regenerated each run and live in
+-- memory, not here, and a user can promote one into a tracked issue
+-- (`source = ''promoted''`), which keeps its `detected_key` so the next run
+-- recognises it instead of listing it twice (one row per key per workspace).
+-- `source = ''detected''` is reserved for runs stored server-side later; nobody
+-- can insert or edit such rows through the API.
+--
+-- `step_id` is a step''s stable id (docs/PRD.md §4.1 "Stable step IDs"). Steps
+-- are keyed by (revision_id, id), so it has no foreign key; the issue keeps
+-- pointing at the step across revisions. `role_id` is not in the PRD''s column
+-- list: detected capacity issues are about a role, and a promoted one keeps
+-- it. `client_id` waits for the clients table.
+--
+-- Rows are edited one field at a time (docs/adr/0001-per-field-saves.md), so
+-- `save_fields` is redefined below with `issues` added to its allow-list; the
+-- body is otherwise the one from 20260930000000_field_saves.sql, unchanged, and
+-- the list keeps every table the earlier migrations added (services, demand).
+-- `source`, `detected_key` and `resolved_at` can''t be changed by an edit: a
+-- trigger keeps the first two fixed and sets `resolved_at` from the status.
+--
+-- Strictly additive: one new table and its trigger function; `save_fields`
+-- gains a table in its allow-list.
+--
+-- Rollback (run in this order):
+--   drop table if exists public.issues;
+--   drop function if exists private.issues_before_write();
+--   -- then restore save_fields'' previous allow-list: re-run the
+--   -- `create or replace function public.save_fields` from the latest earlier
+--   -- migration that defines it (20261004000000_demand.sql).
+--   delete from supabase_migrations.schema_migrations where version = ''20261005000000'';
+
+-- ---------------------------------------------------------------------------
+-- Table
+-- ---------------------------------------------------------------------------
+
+create table public.issues (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  process_id uuid,
+  -- Stable step id (no foreign key: steps are keyed by revision).
+  step_id uuid,
+  role_id uuid,
+  person_id uuid,
+  type text not null constraint issues_type check (type in (
+    ''bottleneck'', ''spof'', ''manual'', ''delay'', ''failure'', ''idea'', ''capacity'', ''sla'',
+    ''churn_risk'', ''perception_gap'', ''broken_scenario'')),
+  severity text not null default ''warning'' constraint issues_severity check (severity in (''critical'', ''serious'', ''warning'', ''info'')),
+  title text not null constraint issues_title_length check (char_length(btrim(title)) between 1 and 200),
+  evidence text constraint issues_evidence_length check (char_length(evidence) <= 5000),
+  -- Numbers behind the finding (a detected issue''s metrics when promoted), {name: number}.
+  evidence_metrics jsonb not null default ''{}'' constraint issues_evidence_metrics_shape check (jsonb_typeof(evidence_metrics) = ''object''),
+  -- Source citations [{source_id, speaker, quote, timestamp}] once sources land.
+  evidence_sources jsonb not null default ''[]'' constraint issues_evidence_sources_shape check (jsonb_typeof(evidence_sources) = ''array''),
+  owner_person_id uuid,
+  status text not null default ''open'' constraint issues_status check (status in (''open'', ''in_progress'', ''done'', ''dismissed'')),
+  -- The fix: a saved scenario that "Run the fix" applies.
+  scenario_id uuid,
+  source text not null default ''manual'' constraint issues_source check (source in (''manual'', ''detected'', ''promoted'')),
+  -- The engine''s stable key for a detected or promoted issue: <detector>:<subject kind>:<id>.
+  detected_key text constraint issues_detected_key_shape check (detected_key ~ ''^[a-z_]+:[a-z_]+:[^[:space:]]{1,200}$''),
+  -- When it was last marked done or dismissed; null while open or in progress. Set by the trigger.
+  resolved_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  created_by uuid references auth.users (id) on delete set null default auth.uid(),
+  unique (id, workspace_id),
+  -- Manual issues have no key; detected and promoted ones must.
+  constraint issues_detected_key_source check ((source = ''manual'') = (detected_key is null)),
+  foreign key (process_id, workspace_id) references public.processes (id, workspace_id) on delete set null (process_id),
+  foreign key (role_id, workspace_id) references public.roles (id, workspace_id) on delete set null (role_id),
+  foreign key (person_id, workspace_id) references public.people (id, workspace_id) on delete set null (person_id),
+  foreign key (owner_person_id, workspace_id) references public.people (id, workspace_id) on delete set null (owner_person_id),
+  foreign key (scenario_id, workspace_id) references public.scenarios (id, workspace_id) on delete set null (scenario_id)
+);
+
+-- A detection is tracked at most once per workspace: promoting it twice, or
+-- promoting it again on the next run, hits this.
+create unique index issues_workspace_detected_key on public.issues (workspace_id, detected_key) where detected_key is not null;
+create index on public.issues (workspace_id, status);
+
+create trigger set_updated_at before update on public.issues for each row execute function public.set_updated_at();
+
+-- `source` and `detected_key` are fixed once written; `resolved_at` follows the status.
+create function private.issues_before_write() returns trigger
+language plpgsql
+set search_path = ''''
+as $$
+begin
+  if tg_op = ''UPDATE'' then
+    if new.source is distinct from old.source or new.detected_key is distinct from old.detected_key then
+      raise exception ''issues: source and detected_key cannot be changed'' using errcode = ''23514'';
+    end if;
+    if new.status in (''done'', ''dismissed'') then
+      new.resolved_at := case when old.status in (''done'', ''dismissed'') then old.resolved_at else now() end;
+    else
+      new.resolved_at := null;
+    end if;
+  else
+    new.resolved_at := case when new.status in (''done'', ''dismissed'') then now() else null end;
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function private.issues_before_write() from public, anon, authenticated;
+
+create trigger issues_before_write before insert or update on public.issues
+  for each row execute function private.issues_before_write();
+
+-- Everyone in the workspace can read the register; editors, owners and agency
+-- admins log, edit, close and delete issues. Rows a stored run detected are
+-- read-only.
+alter table public.issues enable row level security;
+
+create policy "read issues" on public.issues for select to authenticated
+  using (public.can_read_workspace(workspace_id));
+create policy "insert issues" on public.issues for insert to authenticated
+  with check (public.can_edit_workspace(workspace_id) and source <> ''detected'');
+create policy "update issues" on public.issues for update to authenticated
+  using (public.can_edit_workspace(workspace_id) and source <> ''detected'')
+  with check (public.can_edit_workspace(workspace_id) and source <> ''detected'');
+create policy "delete issues" on public.issues for delete to authenticated
+  using (public.can_edit_workspace(workspace_id) and source <> ''detected'');
+
+grant select, insert, update, delete on public.issues to authenticated;
+revoke all on public.issues from anon;
+
+-- ---------------------------------------------------------------------------
+-- Per-field saves: `issues` joins save_fields'' allow-list
+-- ---------------------------------------------------------------------------
+
+-- Copied from 20261004000000_demand.sql (itself 20260930000000_field_saves.sql
+-- plus ''services'' from 20261001000000_services.sql and the three demand
+-- tables); the only change is ''issues'' at the end of `editable`. This is the
+-- last migration to redefine save_fields, so its list must be the union of
+-- every earlier one. `create or replace` keeps the grants made there.
+create or replace function public.save_fields(target text, key jsonb, base jsonb, changes jsonb) returns jsonb
+language plpgsql
+security invoker
+set search_path = ''''
+as $$
+declare
+  -- Tables whose rows are edited field by field. Keep in sync with `EditableTable` in the app.
+  editable constant text[] := array[''workspaces'', ''roles'', ''people'', ''person_leave'', ''processes'', ''steps'', ''edges'', ''services'',
+    ''lead_sources'', ''seasonality'', ''demand_settings'', ''issues''];
+  fixed constant text[] := array[''id'', ''workspace_id'', ''created_at'', ''updated_at'', ''created_by''];
+  key_match text;
+  stored jsonb;
+  typed_base jsonb;
+  typed_changes jsonb;
+  patch jsonb := ''{}'';
+  conflicts jsonb := ''{}'';
+  field text;
+  col text;
+  sub text;
+  seen jsonb;
+  mine jsonb;
+  theirs jsonb;
+  set_cols text;
+  from_cols text;
+begin
+  if target is null or not (target = any (editable)) then
+    raise exception ''save_fields: table % is not editable'', target using errcode = ''42501'';
+  end if;
+  if jsonb_typeof(key) is distinct from ''object'' or key = ''{}'' then
+    raise exception ''save_fields: key must be a non-empty object'' using errcode = ''22023'';
+  end if;
+  if jsonb_typeof(changes) is distinct from ''object'' or changes = ''{}'' then
+    raise exception ''save_fields: changes must be a non-empty object'' using errcode = ''22023'';
+  end if;
+  if jsonb_typeof(base) is distinct from ''object'' then
+    raise exception ''save_fields: base must be an object'' using errcode = ''22023'';
+  end if;
+
+  select string_agg(format(''t.%1$I = k.%1$I'', kc.name), '' and '') into key_match from jsonb_object_keys(key) as kc(name);
+
+  -- Lock the row. RLS applies: a row the user may not update is not found.
+  execute format(
+    ''select to_jsonb(t) from public.%1$I t, jsonb_populate_record(null::public.%1$I, $1) k where %2$s for update of t'',
+    target, key_match)
+  into stored using key;
+  if stored is null then
+    return jsonb_build_object(''status'', ''not_found'');
+  end if;
+
+  -- Round-trip top-level values through the column types so "1.50" and 1.5, or
+  -- two spellings of a date, compare equal.
+  execute format(''select to_jsonb(jsonb_populate_record(null::public.%I, $1))'', target) into typed_base using base;
+  execute format(''select to_jsonb(jsonb_populate_record(null::public.%I, $1))'', target) into typed_changes using changes;
+
+  for field in select jsonb_object_keys(changes) loop
+    -- A field is a column, or `column.key` for one key of a jsonb column (e.g. settings.availability_floor).
+    col := split_part(field, ''.'', 1);
+    sub := nullif(substr(field, length(col) + 2), '''');
+    if col = any (fixed) or key ? col or not stored ? col or position(''.'' in coalesce(sub, '''')) > 0 then
+      raise exception ''save_fields: % cannot be saved'', field using errcode = ''42501'';
+    end if;
+    if not base ? field then
+      raise exception ''save_fields: no base value for %'', field using errcode = ''22023'';
+    end if;
+
+    if sub is null then
+      seen := typed_base -> col;
+      mine := typed_changes -> col;
+      theirs := stored -> col;
+    else
+      if jsonb_typeof(stored -> col) not in (''object'', ''null'') then
+        raise exception ''save_fields: % is not a json object'', col using errcode = ''42501'';
+      end if;
+      seen := coalesce(base -> field, ''null'');
+      mine := coalesce(changes -> field, ''null'');
+      theirs := coalesce(stored -> col -> sub, ''null'');
+    end if;
+
+    if theirs is distinct from seen and theirs is distinct from mine then
+      conflicts := conflicts || jsonb_build_object(field, theirs);
+    elsif theirs is distinct from mine then
+      if sub is null then
+        patch := patch || jsonb_build_object(col, mine);
+      else
+        patch := patch || jsonb_build_object(col,
+          coalesce(patch -> col, nullif(stored -> col, ''null''), ''{}'') || jsonb_build_object(sub, mine));
+      end if;
+    end if;
+  end loop;
+
+  if patch <> ''{}'' then
+    select string_agg(quote_ident(pc.name), '', ''), string_agg(''p.'' || quote_ident(pc.name), '', '')
+      into set_cols, from_cols from jsonb_object_keys(patch) as pc(name);
+    execute format(
+      ''update public.%1$I t set (%3$s) = (select %4$s from jsonb_populate_record(null::public.%1$I, $2) p)
+       from jsonb_populate_record(null::public.%1$I, $1) k where %2$s returning to_jsonb(t)'',
+      target, key_match, set_cols, from_cols)
+    into stored using key, patch;
+  end if;
+
+  return jsonb_build_object(
+    ''status'', case when conflicts = ''{}'' then ''saved'' else ''conflict'' end,
+    ''row'', stored,
+    ''conflicts'', conflicts);
+end;
+$$;
+']);
+
+-- 20261006000000_drafts.sql
+-- Draft mode for processes (issue #9; docs/PRD.md §7.1b, decision D18).
+--
+-- Each process has one live (published) revision and at most one draft. The
+-- first edit to a published process copies its live revision into a new draft
+-- revision with the same step and edge ids (open_draft); every later edit goes
+-- to that draft. Publishing makes the draft live in one transaction
+-- (publish_process); discarding deletes it (discard_draft). Live revisions are
+-- never edited in place, so simulation, the company map, forecasts, reports
+-- and MCP reads of the live revision never see work in progress.
+--
+-- Strictly additive: two partial unique indexes, three RPCs (security
+-- invoker, so RLS decides what the caller may do), a private helper, and two
+-- triggers: one refuses step and edge writes by signed-in users outside a
+-- draft revision, one writes audit_log entries for opening, publishing and
+-- discarding drafts.
+--
+-- Rollback:
+--   drop trigger if exists audit on public.process_revisions;
+--   drop trigger if exists edit_drafts_only on public.steps;
+--   drop trigger if exists edit_drafts_only on public.edges;
+--   drop function if exists public.audit_revision_change();
+--   drop function if exists public.edit_drafts_only();
+--   drop function if exists public.publish_process(uuid, boolean);
+--   drop function if exists public.discard_draft(uuid);
+--   drop function if exists public.open_draft(uuid);
+--   drop function if exists private.revision_changes(uuid, uuid);
+--   drop index if exists public.process_revisions_one_draft;
+--   drop index if exists public.process_revisions_one_published;
+--   delete from supabase_migrations.schema_migrations where version = '20261006000000';
+
+-- ---------------------------------------------------------------------------
+-- At most one draft and one published revision per process
+-- ---------------------------------------------------------------------------
+
+create unique index process_revisions_one_draft on public.process_revisions (process_id) where status = 'draft';
+create unique index process_revisions_one_published on public.process_revisions (process_id) where status = 'published';
+
+-- ---------------------------------------------------------------------------
+-- What changed between two revisions of a process (step and edge ids are
+-- stable across revisions). Internal: used for the audit entry and returned by
+-- publish_process. Bookkeeping columns don't count as changes.
+-- ---------------------------------------------------------------------------
+
+create function private.revision_changes(from_revision uuid, to_revision uuid) returns jsonb
+language sql stable
+set search_path = ''
+as $$
+  with
+    ignored as (select array['revision_id', 'created_at', 'updated_at', 'created_by'] as cols),
+    ls as (select s.id, to_jsonb(s) - (select cols from ignored) as j from public.steps s where s.revision_id = from_revision),
+    ds as (select s.id, to_jsonb(s) - (select cols from ignored) as j from public.steps s where s.revision_id = to_revision),
+    le as (select e.id, to_jsonb(e) - (select cols from ignored) as j from public.edges e where e.revision_id = from_revision),
+    de as (select e.id, to_jsonb(e) - (select cols from ignored) as j from public.edges e where e.revision_id = to_revision)
+  select jsonb_build_object(
+    'steps', jsonb_build_object(
+      'added', coalesce((select jsonb_agg(ds.id order by ds.id) from ds where not exists (select 1 from ls where ls.id = ds.id)), '[]'),
+      'removed', coalesce((select jsonb_agg(ls.id order by ls.id) from ls where not exists (select 1 from ds where ds.id = ls.id)), '[]'),
+      'changed', coalesce((select jsonb_agg(ds.id order by ds.id) from ds join ls on ls.id = ds.id where ds.j <> ls.j), '[]')),
+    'edges', jsonb_build_object(
+      'added', coalesce((select jsonb_agg(de.id order by de.id) from de where not exists (select 1 from le where le.id = de.id)), '[]'),
+      'removed', coalesce((select jsonb_agg(le.id order by le.id) from le where not exists (select 1 from de where de.id = le.id)), '[]'),
+      'changed', coalesce((select jsonb_agg(de.id order by de.id) from de join le on le.id = de.id where de.j <> le.j), '[]')));
+$$;
+
+revoke all on function private.revision_changes(uuid, uuid) from public;
+
+-- ---------------------------------------------------------------------------
+-- open_draft: the process's draft revision, created from live if there is none
+-- ---------------------------------------------------------------------------
+
+-- Returns {status: 'ok', revision_id, number, created} or {status: 'not_found'}
+-- (no such process, or the caller may not edit it). Race-safe: the process row
+-- is locked first, so two editors opening at once end up in the same draft;
+-- the partial unique index is the backstop.
+create function public.open_draft(target_process uuid) returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  proc public.processes;
+  live public.process_revisions;
+  draft public.process_revisions;
+begin
+  -- FOR UPDATE applies the update policy too: a process the caller can't edit is not found.
+  select * into proc from public.processes p where p.id = target_process for update;
+  if proc.id is null then
+    return jsonb_build_object('status', 'not_found');
+  end if;
+
+  select * into draft from public.process_revisions r where r.process_id = proc.id and r.status = 'draft';
+  if draft.id is not null then
+    if proc.draft_revision_id is distinct from draft.id then
+      update public.processes p set draft_revision_id = draft.id where p.id = proc.id;
+    end if;
+    return jsonb_build_object('status', 'ok', 'revision_id', draft.id, 'number', draft.number, 'created', false);
+  end if;
+
+  select * into live from public.process_revisions r where r.id = proc.live_revision_id;
+
+  insert into public.process_revisions (workspace_id, process_id, number, status, layout)
+  values (
+    proc.workspace_id,
+    proc.id,
+    coalesce((select max(r.number) from public.process_revisions r where r.process_id = proc.id), 0) + 1,
+    'draft',
+    coalesce(live.layout, '{}'))
+  returning * into draft;
+
+  if live.id is not null then
+    -- Every column is copied (so columns added later come along), with the
+    -- same ids; steps first, as edges reference them.
+    insert into public.steps
+    select (jsonb_populate_record(null::public.steps,
+      to_jsonb(s) || jsonb_build_object('revision_id', draft.id, 'created_at', now(), 'updated_at', now()))).*
+    from public.steps s where s.revision_id = live.id;
+    insert into public.edges
+    select (jsonb_populate_record(null::public.edges,
+      to_jsonb(e) || jsonb_build_object('revision_id', draft.id, 'created_at', now(), 'updated_at', now()))).*
+    from public.edges e where e.revision_id = live.id;
+  end if;
+
+  update public.processes p set draft_revision_id = draft.id where p.id = proc.id;
+  return jsonb_build_object('status', 'ok', 'revision_id', draft.id, 'number', draft.number, 'created', true);
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- discard_draft: delete the draft (its steps and edges go with it)
+-- ---------------------------------------------------------------------------
+
+-- Returns {status: 'discarded', revision_id}, {status: 'no_draft'} or {status: 'not_found'}.
+create function public.discard_draft(target_process uuid) returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  proc public.processes;
+  draft_id uuid;
+begin
+  select * into proc from public.processes p where p.id = target_process for update;
+  if proc.id is null then
+    return jsonb_build_object('status', 'not_found');
+  end if;
+  select r.id into draft_id from public.process_revisions r where r.process_id = proc.id and r.status = 'draft';
+  if draft_id is null then
+    return jsonb_build_object('status', 'no_draft');
+  end if;
+  update public.processes p set draft_revision_id = null where p.id = proc.id;
+  delete from public.process_revisions r where r.id = draft_id;
+  return jsonb_build_object('status', 'discarded', 'revision_id', draft_id);
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- publish_process: make the draft live
+-- ---------------------------------------------------------------------------
+
+-- Returns one of
+--   {status: 'published', revision_id, number, previous_revision_id, changes}
+--   {status: 'unresolved', steps: [{id, name, assumption, conflict}]}  (nothing written)
+--   {status: 'no_draft'} | {status: 'not_found'}
+-- Publishing is refused while a step of the draft is an assumption or a
+-- conflict, unless accept_estimates is true; the choice is recorded in the
+-- audit entry. The draft's number is already one above every other revision,
+-- so live's number goes up by one. The old live revision becomes superseded.
+create function public.publish_process(target_process uuid, accept_estimates boolean default false) returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  proc public.processes;
+  draft public.process_revisions;
+  unresolved jsonb;
+  next_number integer;
+begin
+  select * into proc from public.processes p where p.id = target_process for update;
+  if proc.id is null then
+    return jsonb_build_object('status', 'not_found');
+  end if;
+  select * into draft from public.process_revisions r where r.process_id = proc.id and r.status = 'draft';
+  if draft.id is null then
+    return jsonb_build_object('status', 'no_draft');
+  end if;
+
+  select jsonb_agg(jsonb_build_object('id', s.id, 'name', s.name, 'assumption', s.assumption, 'conflict', s.conflict) order by s.name, s.id)
+    into unresolved
+  from public.steps s where s.revision_id = draft.id and (s.assumption or s.conflict);
+  if unresolved is not null and not coalesce(accept_estimates, false) then
+    return jsonb_build_object('status', 'unresolved', 'steps', unresolved);
+  end if;
+
+  next_number := coalesce((select max(r.number) from public.process_revisions r where r.process_id = proc.id and r.id <> draft.id), 0) + 1;
+
+  -- Read by the audit trigger (transaction-local).
+  perform set_config('transpera.accept_estimates', case when coalesce(accept_estimates, false) then 'on' else 'off' end, true);
+
+  -- Superseded first (one published revision per process), then the draft,
+  -- then the process: the audit trigger reads the previous live revision from it.
+  update public.process_revisions r set status = 'superseded' where r.process_id = proc.id and r.status = 'published';
+  update public.process_revisions r
+  set status = 'published', number = next_number, published_at = now(), published_by = auth.uid()
+  where r.id = draft.id;
+  update public.processes p set live_revision_id = draft.id, draft_revision_id = null where p.id = proc.id;
+
+  perform set_config('transpera.accept_estimates', '', true);
+
+  return jsonb_build_object(
+    'status', 'published',
+    'revision_id', draft.id,
+    'number', next_number,
+    'previous_revision_id', proc.live_revision_id,
+    'changes', private.revision_changes(proc.live_revision_id, draft.id));
+end;
+$$;
+
+revoke execute on function public.open_draft(uuid) from public, anon;
+revoke execute on function public.discard_draft(uuid) from public, anon;
+revoke execute on function public.publish_process(uuid, boolean) from public, anon;
+grant execute on function public.open_draft(uuid) to authenticated;
+grant execute on function public.discard_draft(uuid) to authenticated;
+grant execute on function public.publish_process(uuid, boolean) to authenticated;
+-- publish_process (security invoker) builds its reply with it.
+grant execute on function private.revision_changes(uuid, uuid) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Signed-in users edit drafts only
+-- ---------------------------------------------------------------------------
+
+-- Steps and edges of published and superseded revisions are fixed for signed-in
+-- users: edits go into the draft. Cascades from deleting a revision or a
+-- process run as the table owner and are not affected, nor are the seed and
+-- migrations.
+create function public.edit_drafts_only() returns trigger
+language plpgsql
+set search_path = ''
+as $$
+declare
+  rev uuid;
+  rev_status text;
+begin
+  if current_user not in ('authenticated', 'anon') then
+    return coalesce(new, old);
+  end if;
+  foreach rev in array array[
+    case when tg_op <> 'INSERT' then old.revision_id end,
+    case when tg_op <> 'DELETE' then new.revision_id end
+  ] loop
+    continue when rev is null;
+    select r.status into rev_status from public.process_revisions r where r.id = rev;
+    if rev_status is not null and rev_status <> 'draft' then
+      raise exception 'Revision % is %: edits go into the process''s draft', rev, rev_status using errcode = '55000';
+    end if;
+  end loop;
+  return coalesce(new, old);
+end;
+$$;
+
+create trigger edit_drafts_only before insert or update or delete on public.steps
+  for each row execute function public.edit_drafts_only();
+create trigger edit_drafts_only before insert or update or delete on public.edges
+  for each row execute function public.edit_drafts_only();
+
+-- ---------------------------------------------------------------------------
+-- Audit: opening, publishing and discarding drafts
+-- ---------------------------------------------------------------------------
+
+create function public.audit_revision_change() returns trigger
+language plpgsql security definer
+set search_path = ''
+as $$
+declare
+  kind text := case
+    when auth.jwt() ? 'api_token_id' then 'mcp'
+    when auth.uid() is not null then 'user'
+    else 'system' end;
+  action text;
+  diff jsonb;
+  previous public.process_revisions;
+  estimates jsonb;
+begin
+  if tg_op = 'INSERT' and new.status = 'draft' then
+    action := 'open_draft';
+    select r.* into previous from public.processes p join public.process_revisions r on r.id = p.live_revision_id
+    where p.id = new.process_id;
+    diff := jsonb_build_object('revision_id', new.id, 'number', new.number,
+      'from_revision_id', previous.id, 'from_number', previous.number);
+  elsif tg_op = 'UPDATE' and old.status = 'draft' and new.status = 'published' then
+    action := 'publish';
+    -- publish_process points the process at the new revision after this runs.
+    select r.* into previous from public.processes p join public.process_revisions r on r.id = p.live_revision_id
+    where p.id = new.process_id and r.id <> new.id;
+    select coalesce(jsonb_agg(jsonb_build_object('id', s.id, 'name', s.name, 'assumption', s.assumption, 'conflict', s.conflict)
+      order by s.name, s.id), '[]')
+      into estimates
+    from public.steps s where s.revision_id = new.id and (s.assumption or s.conflict);
+    diff := jsonb_build_object(
+      'revision_id', new.id,
+      'number', new.number,
+      'previous_revision_id', previous.id,
+      'previous_number', previous.number,
+      'accept_estimates', coalesce(current_setting('transpera.accept_estimates', true), '') = 'on',
+      'estimates', estimates,
+      'changes', private.revision_changes(previous.id, new.id));
+  elsif tg_op = 'DELETE' and old.status = 'draft' then
+    action := 'discard_draft';
+    diff := jsonb_build_object('revision_id', old.id, 'number', old.number);
+  else
+    return null;
+  end if;
+
+  insert into public.audit_log (workspace_id, actor_id, actor_kind, action, target_table, target_id, diff)
+  values (coalesce(new.workspace_id, old.workspace_id), auth.uid(), kind, action, 'processes',
+    coalesce(new.process_id, old.process_id), diff);
+  return null;
+end;
+$$;
+
+revoke execute on function public.audit_revision_change() from public, anon, authenticated;
+
+create trigger audit after insert or update of status or delete on public.process_revisions
+  for each row execute function public.audit_revision_change();
+
+insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261006000000', 'drafts', array['-- Draft mode for processes (issue #9; docs/PRD.md §7.1b, decision D18).
+--
+-- Each process has one live (published) revision and at most one draft. The
+-- first edit to a published process copies its live revision into a new draft
+-- revision with the same step and edge ids (open_draft); every later edit goes
+-- to that draft. Publishing makes the draft live in one transaction
+-- (publish_process); discarding deletes it (discard_draft). Live revisions are
+-- never edited in place, so simulation, the company map, forecasts, reports
+-- and MCP reads of the live revision never see work in progress.
+--
+-- Strictly additive: two partial unique indexes, three RPCs (security
+-- invoker, so RLS decides what the caller may do), a private helper, and two
+-- triggers: one refuses step and edge writes by signed-in users outside a
+-- draft revision, one writes audit_log entries for opening, publishing and
+-- discarding drafts.
+--
+-- Rollback:
+--   drop trigger if exists audit on public.process_revisions;
+--   drop trigger if exists edit_drafts_only on public.steps;
+--   drop trigger if exists edit_drafts_only on public.edges;
+--   drop function if exists public.audit_revision_change();
+--   drop function if exists public.edit_drafts_only();
+--   drop function if exists public.publish_process(uuid, boolean);
+--   drop function if exists public.discard_draft(uuid);
+--   drop function if exists public.open_draft(uuid);
+--   drop function if exists private.revision_changes(uuid, uuid);
+--   drop index if exists public.process_revisions_one_draft;
+--   drop index if exists public.process_revisions_one_published;
+--   delete from supabase_migrations.schema_migrations where version = ''20261006000000'';
+
+-- ---------------------------------------------------------------------------
+-- At most one draft and one published revision per process
+-- ---------------------------------------------------------------------------
+
+create unique index process_revisions_one_draft on public.process_revisions (process_id) where status = ''draft'';
+create unique index process_revisions_one_published on public.process_revisions (process_id) where status = ''published'';
+
+-- ---------------------------------------------------------------------------
+-- What changed between two revisions of a process (step and edge ids are
+-- stable across revisions). Internal: used for the audit entry and returned by
+-- publish_process. Bookkeeping columns don''t count as changes.
+-- ---------------------------------------------------------------------------
+
+create function private.revision_changes(from_revision uuid, to_revision uuid) returns jsonb
+language sql stable
+set search_path = ''''
+as $$
+  with
+    ignored as (select array[''revision_id'', ''created_at'', ''updated_at'', ''created_by''] as cols),
+    ls as (select s.id, to_jsonb(s) - (select cols from ignored) as j from public.steps s where s.revision_id = from_revision),
+    ds as (select s.id, to_jsonb(s) - (select cols from ignored) as j from public.steps s where s.revision_id = to_revision),
+    le as (select e.id, to_jsonb(e) - (select cols from ignored) as j from public.edges e where e.revision_id = from_revision),
+    de as (select e.id, to_jsonb(e) - (select cols from ignored) as j from public.edges e where e.revision_id = to_revision)
+  select jsonb_build_object(
+    ''steps'', jsonb_build_object(
+      ''added'', coalesce((select jsonb_agg(ds.id order by ds.id) from ds where not exists (select 1 from ls where ls.id = ds.id)), ''[]''),
+      ''removed'', coalesce((select jsonb_agg(ls.id order by ls.id) from ls where not exists (select 1 from ds where ds.id = ls.id)), ''[]''),
+      ''changed'', coalesce((select jsonb_agg(ds.id order by ds.id) from ds join ls on ls.id = ds.id where ds.j <> ls.j), ''[]'')),
+    ''edges'', jsonb_build_object(
+      ''added'', coalesce((select jsonb_agg(de.id order by de.id) from de where not exists (select 1 from le where le.id = de.id)), ''[]''),
+      ''removed'', coalesce((select jsonb_agg(le.id order by le.id) from le where not exists (select 1 from de where de.id = le.id)), ''[]''),
+      ''changed'', coalesce((select jsonb_agg(de.id order by de.id) from de join le on le.id = de.id where de.j <> le.j), ''[]'')));
+$$;
+
+revoke all on function private.revision_changes(uuid, uuid) from public;
+
+-- ---------------------------------------------------------------------------
+-- open_draft: the process''s draft revision, created from live if there is none
+-- ---------------------------------------------------------------------------
+
+-- Returns {status: ''ok'', revision_id, number, created} or {status: ''not_found''}
+-- (no such process, or the caller may not edit it). Race-safe: the process row
+-- is locked first, so two editors opening at once end up in the same draft;
+-- the partial unique index is the backstop.
+create function public.open_draft(target_process uuid) returns jsonb
+language plpgsql
+security invoker
+set search_path = ''''
+as $$
+declare
+  proc public.processes;
+  live public.process_revisions;
+  draft public.process_revisions;
+begin
+  -- FOR UPDATE applies the update policy too: a process the caller can''t edit is not found.
+  select * into proc from public.processes p where p.id = target_process for update;
+  if proc.id is null then
+    return jsonb_build_object(''status'', ''not_found'');
+  end if;
+
+  select * into draft from public.process_revisions r where r.process_id = proc.id and r.status = ''draft'';
+  if draft.id is not null then
+    if proc.draft_revision_id is distinct from draft.id then
+      update public.processes p set draft_revision_id = draft.id where p.id = proc.id;
+    end if;
+    return jsonb_build_object(''status'', ''ok'', ''revision_id'', draft.id, ''number'', draft.number, ''created'', false);
+  end if;
+
+  select * into live from public.process_revisions r where r.id = proc.live_revision_id;
+
+  insert into public.process_revisions (workspace_id, process_id, number, status, layout)
+  values (
+    proc.workspace_id,
+    proc.id,
+    coalesce((select max(r.number) from public.process_revisions r where r.process_id = proc.id), 0) + 1,
+    ''draft'',
+    coalesce(live.layout, ''{}''))
+  returning * into draft;
+
+  if live.id is not null then
+    -- Every column is copied (so columns added later come along), with the
+    -- same ids; steps first, as edges reference them.
+    insert into public.steps
+    select (jsonb_populate_record(null::public.steps,
+      to_jsonb(s) || jsonb_build_object(''revision_id'', draft.id, ''created_at'', now(), ''updated_at'', now()))).*
+    from public.steps s where s.revision_id = live.id;
+    insert into public.edges
+    select (jsonb_populate_record(null::public.edges,
+      to_jsonb(e) || jsonb_build_object(''revision_id'', draft.id, ''created_at'', now(), ''updated_at'', now()))).*
+    from public.edges e where e.revision_id = live.id;
+  end if;
+
+  update public.processes p set draft_revision_id = draft.id where p.id = proc.id;
+  return jsonb_build_object(''status'', ''ok'', ''revision_id'', draft.id, ''number'', draft.number, ''created'', true);
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- discard_draft: delete the draft (its steps and edges go with it)
+-- ---------------------------------------------------------------------------
+
+-- Returns {status: ''discarded'', revision_id}, {status: ''no_draft''} or {status: ''not_found''}.
+create function public.discard_draft(target_process uuid) returns jsonb
+language plpgsql
+security invoker
+set search_path = ''''
+as $$
+declare
+  proc public.processes;
+  draft_id uuid;
+begin
+  select * into proc from public.processes p where p.id = target_process for update;
+  if proc.id is null then
+    return jsonb_build_object(''status'', ''not_found'');
+  end if;
+  select r.id into draft_id from public.process_revisions r where r.process_id = proc.id and r.status = ''draft'';
+  if draft_id is null then
+    return jsonb_build_object(''status'', ''no_draft'');
+  end if;
+  update public.processes p set draft_revision_id = null where p.id = proc.id;
+  delete from public.process_revisions r where r.id = draft_id;
+  return jsonb_build_object(''status'', ''discarded'', ''revision_id'', draft_id);
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- publish_process: make the draft live
+-- ---------------------------------------------------------------------------
+
+-- Returns one of
+--   {status: ''published'', revision_id, number, previous_revision_id, changes}
+--   {status: ''unresolved'', steps: [{id, name, assumption, conflict}]}  (nothing written)
+--   {status: ''no_draft''} | {status: ''not_found''}
+-- Publishing is refused while a step of the draft is an assumption or a
+-- conflict, unless accept_estimates is true; the choice is recorded in the
+-- audit entry. The draft''s number is already one above every other revision,
+-- so live''s number goes up by one. The old live revision becomes superseded.
+create function public.publish_process(target_process uuid, accept_estimates boolean default false) returns jsonb
+language plpgsql
+security invoker
+set search_path = ''''
+as $$
+declare
+  proc public.processes;
+  draft public.process_revisions;
+  unresolved jsonb;
+  next_number integer;
+begin
+  select * into proc from public.processes p where p.id = target_process for update;
+  if proc.id is null then
+    return jsonb_build_object(''status'', ''not_found'');
+  end if;
+  select * into draft from public.process_revisions r where r.process_id = proc.id and r.status = ''draft'';
+  if draft.id is null then
+    return jsonb_build_object(''status'', ''no_draft'');
+  end if;
+
+  select jsonb_agg(jsonb_build_object(''id'', s.id, ''name'', s.name, ''assumption'', s.assumption, ''conflict'', s.conflict) order by s.name, s.id)
+    into unresolved
+  from public.steps s where s.revision_id = draft.id and (s.assumption or s.conflict);
+  if unresolved is not null and not coalesce(accept_estimates, false) then
+    return jsonb_build_object(''status'', ''unresolved'', ''steps'', unresolved);
+  end if;
+
+  next_number := coalesce((select max(r.number) from public.process_revisions r where r.process_id = proc.id and r.id <> draft.id), 0) + 1;
+
+  -- Read by the audit trigger (transaction-local).
+  perform set_config(''transpera.accept_estimates'', case when coalesce(accept_estimates, false) then ''on'' else ''off'' end, true);
+
+  -- Superseded first (one published revision per process), then the draft,
+  -- then the process: the audit trigger reads the previous live revision from it.
+  update public.process_revisions r set status = ''superseded'' where r.process_id = proc.id and r.status = ''published'';
+  update public.process_revisions r
+  set status = ''published'', number = next_number, published_at = now(), published_by = auth.uid()
+  where r.id = draft.id;
+  update public.processes p set live_revision_id = draft.id, draft_revision_id = null where p.id = proc.id;
+
+  perform set_config(''transpera.accept_estimates'', '''', true);
+
+  return jsonb_build_object(
+    ''status'', ''published'',
+    ''revision_id'', draft.id,
+    ''number'', next_number,
+    ''previous_revision_id'', proc.live_revision_id,
+    ''changes'', private.revision_changes(proc.live_revision_id, draft.id));
+end;
+$$;
+
+revoke execute on function public.open_draft(uuid) from public, anon;
+revoke execute on function public.discard_draft(uuid) from public, anon;
+revoke execute on function public.publish_process(uuid, boolean) from public, anon;
+grant execute on function public.open_draft(uuid) to authenticated;
+grant execute on function public.discard_draft(uuid) to authenticated;
+grant execute on function public.publish_process(uuid, boolean) to authenticated;
+-- publish_process (security invoker) builds its reply with it.
+grant execute on function private.revision_changes(uuid, uuid) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Signed-in users edit drafts only
+-- ---------------------------------------------------------------------------
+
+-- Steps and edges of published and superseded revisions are fixed for signed-in
+-- users: edits go into the draft. Cascades from deleting a revision or a
+-- process run as the table owner and are not affected, nor are the seed and
+-- migrations.
+create function public.edit_drafts_only() returns trigger
+language plpgsql
+set search_path = ''''
+as $$
+declare
+  rev uuid;
+  rev_status text;
+begin
+  if current_user not in (''authenticated'', ''anon'') then
+    return coalesce(new, old);
+  end if;
+  foreach rev in array array[
+    case when tg_op <> ''INSERT'' then old.revision_id end,
+    case when tg_op <> ''DELETE'' then new.revision_id end
+  ] loop
+    continue when rev is null;
+    select r.status into rev_status from public.process_revisions r where r.id = rev;
+    if rev_status is not null and rev_status <> ''draft'' then
+      raise exception ''Revision % is %: edits go into the process''''s draft'', rev, rev_status using errcode = ''55000'';
+    end if;
+  end loop;
+  return coalesce(new, old);
+end;
+$$;
+
+create trigger edit_drafts_only before insert or update or delete on public.steps
+  for each row execute function public.edit_drafts_only();
+create trigger edit_drafts_only before insert or update or delete on public.edges
+  for each row execute function public.edit_drafts_only();
+
+-- ---------------------------------------------------------------------------
+-- Audit: opening, publishing and discarding drafts
+-- ---------------------------------------------------------------------------
+
+create function public.audit_revision_change() returns trigger
+language plpgsql security definer
+set search_path = ''''
+as $$
+declare
+  kind text := case
+    when auth.jwt() ? ''api_token_id'' then ''mcp''
+    when auth.uid() is not null then ''user''
+    else ''system'' end;
+  action text;
+  diff jsonb;
+  previous public.process_revisions;
+  estimates jsonb;
+begin
+  if tg_op = ''INSERT'' and new.status = ''draft'' then
+    action := ''open_draft'';
+    select r.* into previous from public.processes p join public.process_revisions r on r.id = p.live_revision_id
+    where p.id = new.process_id;
+    diff := jsonb_build_object(''revision_id'', new.id, ''number'', new.number,
+      ''from_revision_id'', previous.id, ''from_number'', previous.number);
+  elsif tg_op = ''UPDATE'' and old.status = ''draft'' and new.status = ''published'' then
+    action := ''publish'';
+    -- publish_process points the process at the new revision after this runs.
+    select r.* into previous from public.processes p join public.process_revisions r on r.id = p.live_revision_id
+    where p.id = new.process_id and r.id <> new.id;
+    select coalesce(jsonb_agg(jsonb_build_object(''id'', s.id, ''name'', s.name, ''assumption'', s.assumption, ''conflict'', s.conflict)
+      order by s.name, s.id), ''[]'')
+      into estimates
+    from public.steps s where s.revision_id = new.id and (s.assumption or s.conflict);
+    diff := jsonb_build_object(
+      ''revision_id'', new.id,
+      ''number'', new.number,
+      ''previous_revision_id'', previous.id,
+      ''previous_number'', previous.number,
+      ''accept_estimates'', coalesce(current_setting(''transpera.accept_estimates'', true), '''') = ''on'',
+      ''estimates'', estimates,
+      ''changes'', private.revision_changes(previous.id, new.id));
+  elsif tg_op = ''DELETE'' and old.status = ''draft'' then
+    action := ''discard_draft'';
+    diff := jsonb_build_object(''revision_id'', old.id, ''number'', old.number);
+  else
+    return null;
+  end if;
+
+  insert into public.audit_log (workspace_id, actor_id, actor_kind, action, target_table, target_id, diff)
+  values (coalesce(new.workspace_id, old.workspace_id), auth.uid(), kind, action, ''processes'',
+    coalesce(new.process_id, old.process_id), diff);
+  return null;
+end;
+$$;
+
+revoke execute on function public.audit_revision_change() from public, anon, authenticated;
+
+create trigger audit after insert or update of status or delete on public.process_revisions
+  for each row execute function public.audit_revision_change();
+']);
+
+-- 20261007000000_realtime.sql
+-- Presence and live changes in the process editor (issue #10; docs/PRD.md
+-- §4.1, decision D14; docs/adr/0005-realtime-presence-and-live-changes.md).
+--
+-- 1. Postgres Changes: steps, edges and processes join the
+--    `supabase_realtime` publication, so an editor hears about rows other
+--    people (or the MCP server, acting as them) save. Supabase checks each
+--    change against the listener's RLS select policies before sending it.
+--    `processes` is there for its live_revision_id / draft_revision_id, which
+--    change when a draft is opened, published or discarded.
+-- 2. Realtime Authorization: the editor's presence channel `process:<uuid>` is
+--    private. These policies on realtime.messages let people who can read the
+--    process's workspace join it and track presence, and people who can edit
+--    it send broadcasts (the "who saved what" notes that name the author).
+--
+-- Both parts only exist on Supabase: on plain Postgres (the test database)
+-- there is no `supabase_realtime` publication and no `realtime` schema, and
+-- this migration does nothing. Replica identity stays default: updates carry
+-- the whole new row, and deletes carry the primary key, (revision_id, id) for
+-- steps and edges, which is all the editor needs.
+--
+-- Strictly additive.
+--
+-- Rollback:
+--   do $$ begin
+--     if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+--       alter publication supabase_realtime drop table public.steps, public.edges, public.processes;
+--     end if;
+--     if to_regclass('realtime.messages') is not null then
+--       drop policy if exists "join process channels" on realtime.messages;
+--       drop policy if exists "use process channels" on realtime.messages;
+--     end if;
+--   end $$;
+--   drop function if exists private.process_topic(text);
+--   delete from supabase_migrations.schema_migrations where version = '20261007000000';
+
+do $$
+declare
+  t text;
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    foreach t in array array['steps', 'edges', 'processes'] loop
+      -- Someone may have switched Realtime on for a table in the dashboard already.
+      if not exists (
+        select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t
+      ) then
+        execute format('alter publication supabase_realtime add table public.%I', t);
+      end if;
+    end loop;
+  end if;
+end;
+$$;
+
+-- The process a `process:<uuid>` topic names, or null for any other topic.
+create function private.process_topic(topic text) returns uuid
+language sql immutable
+set search_path = ''
+as $$
+  select (regexp_match(topic, '^process:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$'))[1]::uuid;
+$$;
+
+revoke all on function private.process_topic(text) from public;
+grant execute on function private.process_topic(text) to authenticated;
+
+do $$
+begin
+  if to_regclass('realtime.messages') is not null then
+    -- Receive presence and broadcasts on a process's channel: anyone who can read the process.
+    create policy "join process channels" on realtime.messages for select to authenticated
+    using (
+      realtime.messages.extension in ('presence', 'broadcast')
+      and exists (
+        select 1 from public.processes p
+        where p.id = private.process_topic((select realtime.topic()))
+          and public.can_read_workspace(p.workspace_id)
+      )
+    );
+    -- Track presence: anyone who can read it. Send broadcasts (save notes): editors only.
+    create policy "use process channels" on realtime.messages for insert to authenticated
+    with check (
+      exists (
+        select 1 from public.processes p
+        where p.id = private.process_topic((select realtime.topic()))
+          and case realtime.messages.extension
+            when 'presence' then public.can_read_workspace(p.workspace_id)
+            when 'broadcast' then public.can_edit_workspace(p.workspace_id)
+            else false
+          end
+      )
+    );
+  end if;
+end;
+$$;
+
+insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261007000000', 'realtime', array['-- Presence and live changes in the process editor (issue #10; docs/PRD.md
+-- §4.1, decision D14; docs/adr/0005-realtime-presence-and-live-changes.md).
+--
+-- 1. Postgres Changes: steps, edges and processes join the
+--    `supabase_realtime` publication, so an editor hears about rows other
+--    people (or the MCP server, acting as them) save. Supabase checks each
+--    change against the listener''s RLS select policies before sending it.
+--    `processes` is there for its live_revision_id / draft_revision_id, which
+--    change when a draft is opened, published or discarded.
+-- 2. Realtime Authorization: the editor''s presence channel `process:<uuid>` is
+--    private. These policies on realtime.messages let people who can read the
+--    process''s workspace join it and track presence, and people who can edit
+--    it send broadcasts (the "who saved what" notes that name the author).
+--
+-- Both parts only exist on Supabase: on plain Postgres (the test database)
+-- there is no `supabase_realtime` publication and no `realtime` schema, and
+-- this migration does nothing. Replica identity stays default: updates carry
+-- the whole new row, and deletes carry the primary key, (revision_id, id) for
+-- steps and edges, which is all the editor needs.
+--
+-- Strictly additive.
+--
+-- Rollback:
+--   do $$ begin
+--     if exists (select 1 from pg_publication where pubname = ''supabase_realtime'') then
+--       alter publication supabase_realtime drop table public.steps, public.edges, public.processes;
+--     end if;
+--     if to_regclass(''realtime.messages'') is not null then
+--       drop policy if exists "join process channels" on realtime.messages;
+--       drop policy if exists "use process channels" on realtime.messages;
+--     end if;
+--   end $$;
+--   drop function if exists private.process_topic(text);
+--   delete from supabase_migrations.schema_migrations where version = ''20261007000000'';
+
+do $$
+declare
+  t text;
+begin
+  if exists (select 1 from pg_publication where pubname = ''supabase_realtime'') then
+    foreach t in array array[''steps'', ''edges'', ''processes''] loop
+      -- Someone may have switched Realtime on for a table in the dashboard already.
+      if not exists (
+        select 1 from pg_publication_tables where pubname = ''supabase_realtime'' and schemaname = ''public'' and tablename = t
+      ) then
+        execute format(''alter publication supabase_realtime add table public.%I'', t);
+      end if;
+    end loop;
+  end if;
+end;
+$$;
+
+-- The process a `process:<uuid>` topic names, or null for any other topic.
+create function private.process_topic(topic text) returns uuid
+language sql immutable
+set search_path = ''''
+as $$
+  select (regexp_match(topic, ''^process:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$''))[1]::uuid;
+$$;
+
+revoke all on function private.process_topic(text) from public;
+grant execute on function private.process_topic(text) to authenticated;
+
+do $$
+begin
+  if to_regclass(''realtime.messages'') is not null then
+    -- Receive presence and broadcasts on a process''s channel: anyone who can read the process.
+    create policy "join process channels" on realtime.messages for select to authenticated
+    using (
+      realtime.messages.extension in (''presence'', ''broadcast'')
+      and exists (
+        select 1 from public.processes p
+        where p.id = private.process_topic((select realtime.topic()))
+          and public.can_read_workspace(p.workspace_id)
+      )
+    );
+    -- Track presence: anyone who can read it. Send broadcasts (save notes): editors only.
+    create policy "use process channels" on realtime.messages for insert to authenticated
+    with check (
+      exists (
+        select 1 from public.processes p
+        where p.id = private.process_topic((select realtime.topic()))
+          and case realtime.messages.extension
+            when ''presence'' then public.can_read_workspace(p.workspace_id)
+            when ''broadcast'' then public.can_edit_workspace(p.workspace_id)
+            else false
+          end
+      )
+    );
+  end if;
+end;
+$$;
+']);
+
 -- seed.sql
 -- Generated by `pnpm --filter @transpera-flow/db gen:seed`. Do not edit by hand.
 
@@ -2312,22 +4828,35 @@ insert into public.person_roles (person_id, role_id, workspace_id) values
 insert into public.processes (id, workspace_id, name, kind, entity_name, description) values
   ('c0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'Lead to live', 'pipeline', 'lead', 'From inbound lead to a live SEO or PPC campaign.');
 
+insert into public.services (id, workspace_id, name, pricing_model, price, margin, tenure_months, churn_monthly_base, mix_share, entry_process_id, path_tags, active) values
+  ('80000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'SEO retainer', 'retainer', 3500, 0.45, 18, 0.03, 0.55, 'c0000000-0000-4000-8000-000000000001', array['seo']::text[], true),
+  ('80000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'PPC management', 'retainer', 4200, 0.4, 12, 0.04, 0.45, 'c0000000-0000-4000-8000-000000000001', array['ppc']::text[], true);
+
+insert into public.lead_sources (id, workspace_id, name, volume_week, conversion_to_qualified, provenance) values
+  ('60000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'Website enquiries', 8, 0.25, '{"volume_week":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"},"conversion_to_qualified":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"}}'),
+  ('60000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'Google Ads', 4, 0.5, '{"volume_week":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"},"conversion_to_qualified":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"}}'),
+  ('60000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'Client referrals', 3, 1, '{"volume_week":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"},"conversion_to_qualified":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"}}');
+
+
+insert into public.demand_settings (workspace_id, growth_monthly, provenance) values
+  ('a0000000-0000-4000-8000-000000000001', 0, '{"growth_monthly":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"}}');
+
 insert into public.process_revisions (id, workspace_id, process_id, number, status, published_at) values
   ('d0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 1, 'published', '2026-09-29T00:00:00Z');
 
-insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, current_wip, x, y) values
-  ('e0000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Qualify lead', 'task', null, 'b0000000-0000-4000-8000-000000000001', null, 0.5, 'lognormal', '{}', 4, 'lognormal', '{}', 0, null, 'HubSpot', null, null, null, 60, 50),
-  ('e0000000-0000-4000-8000-000000000002', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Discovery call', 'task', null, 'b0000000-0000-4000-8000-000000000001', null, 1.5, 'lognormal', '{}', 24, 'lognormal', '{}', 0, null, 'Zoom + HubSpot', null, null, null, 290, 50),
-  ('e0000000-0000-4000-8000-000000000003', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Audit & proposal', 'task', null, 'b0000000-0000-4000-8000-000000000002', null, 6, 'lognormal', '{}', 0, 'lognormal', '{}', 0.15, null, 'SEMrush, Google Docs', null, null, null, 520, 50),
-  ('e0000000-0000-4000-8000-000000000004', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Client decision', 'decision', null, null, null, 0, 'lognormal', '{}', 40, 'lognormal', '{}', 0, null, 'Email', null, null, null, 750, 50),
-  ('e0000000-0000-4000-8000-000000000005', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Contract & onboarding', 'task', null, 'b0000000-0000-4000-8000-000000000003', null, 3, 'lognormal', '{}', 16, 'lognormal', '{}', 0.1, null, 'PandaDoc, Notion', null, null, null, 60, 290),
-  ('e0000000-0000-4000-8000-000000000006', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Kickoff & strategy', 'task', null, 'b0000000-0000-4000-8000-000000000002', null, 4, 'lognormal', '{}', 8, 'lognormal', '{}', 0, null, 'Notion', null, null, null, 290, 290),
-  ('e0000000-0000-4000-8000-000000000007', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'SEO campaign setup', 'task', null, 'b0000000-0000-4000-8000-000000000004', null, 10, 'lognormal', '{}', 8, 'lognormal', '{}', 0.1, null, 'Ahrefs, WordPress', null, null, null, 520, 230),
-  ('e0000000-0000-4000-8000-000000000008', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'PPC campaign setup', 'task', null, 'b0000000-0000-4000-8000-000000000005', null, 8, 'lognormal', '{}', 8, 'lognormal', '{}', 0.1, null, 'Google Ads', null, null, null, 520, 340),
-  ('e0000000-0000-4000-8000-000000000009', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Go live & first report', 'task', null, 'b0000000-0000-4000-8000-000000000003', null, 2, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Looker Studio', null, null, null, 750, 290),
-  ('e0000000-0000-4000-8000-00000000000a', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Lead arrives', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, -150, 50),
-  ('e0000000-0000-4000-8000-00000000000b', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Won', 'end', 'won', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, 980, 290),
-  ('e0000000-0000-4000-8000-00000000000c', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Lost', 'end', 'lost', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, 640, 170);
+insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, current_wip, x, y, assumption) values
+  ('e0000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Qualify lead', 'task', null, 'b0000000-0000-4000-8000-000000000001', null, 0.5, 'lognormal', '{}', 4, 'lognormal', '{}', 0, null, 'HubSpot', null, null, null, 60, 50, false),
+  ('e0000000-0000-4000-8000-000000000002', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Discovery call', 'task', null, 'b0000000-0000-4000-8000-000000000001', null, 1.5, 'lognormal', '{}', 24, 'lognormal', '{}', 0, null, 'Zoom + HubSpot', null, null, null, 290, 50, false),
+  ('e0000000-0000-4000-8000-000000000003', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Audit & proposal', 'task', null, 'b0000000-0000-4000-8000-000000000002', null, 6, 'lognormal', '{}', 0, 'lognormal', '{}', 0.15, null, 'SEMrush, Google Docs', null, null, null, 520, 50, false),
+  ('e0000000-0000-4000-8000-000000000004', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Client decision', 'decision', null, null, null, 0, 'lognormal', '{}', 40, 'lognormal', '{}', 0, null, 'Email', null, null, null, 750, 50, false),
+  ('e0000000-0000-4000-8000-000000000005', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Contract & onboarding', 'task', null, 'b0000000-0000-4000-8000-000000000003', null, 3, 'lognormal', '{}', 16, 'lognormal', '{}', 0.1, null, 'PandaDoc, Notion', null, null, null, 60, 290, false),
+  ('e0000000-0000-4000-8000-000000000006', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Kickoff & strategy', 'task', null, 'b0000000-0000-4000-8000-000000000002', null, 4, 'lognormal', '{}', 8, 'lognormal', '{}', 0, null, 'Notion', null, null, null, 290, 290, false),
+  ('e0000000-0000-4000-8000-000000000007', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'SEO campaign setup', 'task', null, 'b0000000-0000-4000-8000-000000000004', null, 10, 'lognormal', '{}', 8, 'lognormal', '{}', 0.1, null, 'Ahrefs, WordPress', null, null, null, 520, 230, false),
+  ('e0000000-0000-4000-8000-000000000008', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'PPC campaign setup', 'task', null, 'b0000000-0000-4000-8000-000000000005', null, 8, 'lognormal', '{}', 8, 'lognormal', '{}', 0.1, null, 'Google Ads', null, null, null, 520, 340, false),
+  ('e0000000-0000-4000-8000-000000000009', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Go live & first report', 'task', null, 'b0000000-0000-4000-8000-000000000003', null, 2, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Looker Studio', null, null, null, 750, 290, false),
+  ('e0000000-0000-4000-8000-00000000000a', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Lead arrives', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, -150, 50, false),
+  ('e0000000-0000-4000-8000-00000000000b', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Won', 'end', 'won', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, 980, 290, false),
+  ('e0000000-0000-4000-8000-00000000000c', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Lost', 'end', 'lost', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, 640, 170, false);
 
 insert into public.edges (id, revision_id, workspace_id, process_id, from_step_id, to_step_id, probability, condition_tag, label) values
   ('f0000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-00000000000a', 'e0000000-0000-4000-8000-000000000001', 1, null, null),
@@ -2339,8 +4868,8 @@ insert into public.edges (id, revision_id, workspace_id, process_id, from_step_i
   ('f0000000-0000-4000-8000-000000000007', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000004', 'e0000000-0000-4000-8000-000000000005', 0.32, null, null),
   ('f0000000-0000-4000-8000-000000000008', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000004', 'e0000000-0000-4000-8000-00000000000c', 0.68, null, null),
   ('f0000000-0000-4000-8000-000000000009', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000005', 'e0000000-0000-4000-8000-000000000006', 1, null, null),
-  ('f0000000-0000-4000-8000-00000000000a', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000006', 'e0000000-0000-4000-8000-000000000007', 0.55, null, null),
-  ('f0000000-0000-4000-8000-00000000000b', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000006', 'e0000000-0000-4000-8000-000000000008', 0.45, null, null),
+  ('f0000000-0000-4000-8000-00000000000a', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000006', 'e0000000-0000-4000-8000-000000000007', 0.55, 'seo', null),
+  ('f0000000-0000-4000-8000-00000000000b', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000006', 'e0000000-0000-4000-8000-000000000008', 0.45, 'ppc', null),
   ('f0000000-0000-4000-8000-00000000000c', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000007', 'e0000000-0000-4000-8000-000000000009', 1, null, null),
   ('f0000000-0000-4000-8000-00000000000d', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000008', 'e0000000-0000-4000-8000-000000000009', 1, null, null),
   ('f0000000-0000-4000-8000-00000000000e', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000009', 'e0000000-0000-4000-8000-00000000000b', 1, null, null);
@@ -2358,5 +4887,22 @@ insert into public.workspace_access_emails (id, workspace_id, email, role, perso
   ('70000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'rosa.diaz@northbeam.example', 'owner', '90000000-0000-4000-8000-00000000000b'),
   ('70000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'leah.brooks@northbeam.example', 'editor', '90000000-0000-4000-8000-000000000004'),
   ('70000000-0000-4000-8000-000000000004', 'a0000000-0000-4000-8000-000000000001', 'sam.patel.seo@example.com', 'member', '90000000-0000-4000-8000-000000000006');
+
+-- Scenario library: replaces the generic one the workspace trigger created
+
+delete from public.scenarios where workspace_id in ('a0000000-0000-4000-8000-000000000001');
+
+insert into public.scenarios (id, workspace_id, name, description, patch, parent_scenario_id) values
+  ('50000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'Hire a strategist', 'A second full-time strategist to share audits, proposals and kickoffs.', '[{"path":"roles.b0000000-0000-4000-8000-000000000002.headcount","op":"add","value":1}]', null),
+  ('50000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'Automate proposals', 'Templates and SEMrush exports cut hands-on time on audits and proposals by 60%.', '[{"path":"steps.e0000000-0000-4000-8000-000000000003.work_hours","op":"multiply","value":0.4}]', null),
+  ('50000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'More leads', '25% more leads every week.', '[{"path":"demand.leads_per_week","op":"multiply","value":1.25}]', null),
+  ('50000000-0000-4000-8000-000000000004', 'a0000000-0000-4000-8000-000000000001', 'Downturn', '30% fewer leads a week, and client churn up by half.', '[{"path":"demand.leads_per_week","op":"multiply","value":0.7},{"path":"demand.churn_monthly","op":"multiply","value":1.5}]', null);
+
+-- Issues register: audit findings and a promoted detection
+
+insert into public.issues (workspace_id, process_id, role_id, person_id, evidence_metrics, owner_person_id, scenario_id, detected_key, created_at, updated_at, id, step_id, type, severity, title, evidence, status, source) values
+  ('a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000002', null, '{}', '90000000-0000-4000-8000-00000000000b', '50000000-0000-4000-8000-000000000002', null, '2026-09-29T09:00:00Z', '2026-09-29T09:00:00Z', '40000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000003', 'manual', 'serious', 'Every proposal is built by hand', 'Audit interview, 12 Sep: 5–8 hours per proposal, and 15% go back for rework after sales review.', 'open', 'manual'),
+  ('a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000003', '{}', '90000000-0000-4000-8000-00000000000b', '50000000-0000-4000-8000-000000000001', 'spof:step:e0000000-0000-4000-8000-000000000003', '2026-09-29T09:00:00Z', '2026-09-29T09:00:00Z', '40000000-0000-4000-8000-000000000002', 'e0000000-0000-4000-8000-000000000003', 'spof', 'serious', 'Only Maya Collins can do Audit & proposal', 'Detected: nobody else can pick up audits when Maya is away. Proposals stalled for 9 days in July.', 'in_progress', 'promoted'),
+  ('a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', null, '{}', '90000000-0000-4000-8000-000000000001', null, null, '2026-09-29T09:00:00Z', '2026-09-29T09:00:00Z', '40000000-0000-4000-8000-000000000003', 'e0000000-0000-4000-8000-000000000001', 'idea', 'info', 'Lead scoring could skip unqualified discovery calls', '45% of leads drop out at qualification but still get a 4-hour response.', 'open', 'manual');
 
 commit;

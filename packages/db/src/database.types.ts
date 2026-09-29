@@ -103,6 +103,41 @@ export type Database = {
         }
         Relationships: []
       }
+      demand_settings: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          growth_monthly: number
+          provenance: Json
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          growth_monthly?: number
+          provenance?: Json
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          growth_monthly?: number
+          provenance?: Json
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "demand_settings_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: true
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       edges: {
         Row: {
           condition_tag: string | null
@@ -167,6 +202,165 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "process_revisions"
             referencedColumns: ["id", "workspace_id"]
+          },
+        ]
+      }
+      issues: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          detected_key: string | null
+          evidence: string | null
+          evidence_metrics: Json
+          evidence_sources: Json
+          id: string
+          owner_person_id: string | null
+          person_id: string | null
+          process_id: string | null
+          resolved_at: string | null
+          role_id: string | null
+          scenario_id: string | null
+          severity: string
+          source: string
+          status: string
+          step_id: string | null
+          title: string
+          type: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          detected_key?: string | null
+          evidence?: string | null
+          evidence_metrics?: Json
+          evidence_sources?: Json
+          id?: string
+          owner_person_id?: string | null
+          person_id?: string | null
+          process_id?: string | null
+          resolved_at?: string | null
+          role_id?: string | null
+          scenario_id?: string | null
+          severity?: string
+          source?: string
+          status?: string
+          step_id?: string | null
+          title: string
+          type: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          detected_key?: string | null
+          evidence?: string | null
+          evidence_metrics?: Json
+          evidence_sources?: Json
+          id?: string
+          owner_person_id?: string | null
+          person_id?: string | null
+          process_id?: string | null
+          resolved_at?: string | null
+          role_id?: string | null
+          scenario_id?: string | null
+          severity?: string
+          source?: string
+          status?: string
+          step_id?: string | null
+          title?: string
+          type?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "issues_owner_person_id_workspace_id_fkey"
+            columns: ["owner_person_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "issues_person_id_workspace_id_fkey"
+            columns: ["person_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "issues_process_id_workspace_id_fkey"
+            columns: ["process_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "issues_role_id_workspace_id_fkey"
+            columns: ["role_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "roles"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "issues_scenario_id_workspace_id_fkey"
+            columns: ["scenario_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "scenarios"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "issues_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lead_sources: {
+        Row: {
+          conversion_to_qualified: number
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          provenance: Json
+          updated_at: string
+          volume_week: number
+          workspace_id: string
+        }
+        Insert: {
+          conversion_to_qualified?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          provenance?: Json
+          updated_at?: string
+          volume_week?: number
+          workspace_id: string
+        }
+        Update: {
+          conversion_to_qualified?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          provenance?: Json
+          updated_at?: string
+          volume_week?: number
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_sources_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -562,6 +756,173 @@ export type Database = {
           },
         ]
       }
+      scenarios: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          name: string
+          parent_scenario_id: string | null
+          patch: Json
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          parent_scenario_id?: string | null
+          patch?: Json
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          parent_scenario_id?: string | null
+          patch?: Json
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scenarios_parent_scenario_id_workspace_id_fkey"
+            columns: ["parent_scenario_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "scenarios"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "scenarios_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      seasonality: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          month: number
+          multiplier: number
+          provenance: Json
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          month: number
+          multiplier?: number
+          provenance?: Json
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          month?: number
+          multiplier?: number
+          provenance?: Json
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "seasonality_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      services: {
+        Row: {
+          active: boolean
+          churn_health_sensitivity: number
+          churn_monthly_base: number
+          created_at: string
+          created_by: string | null
+          entry_process_id: string | null
+          fallback_ongoing_load: Json
+          id: string
+          margin: number
+          mix_share: number
+          name: string
+          path_tags: string[]
+          price: number
+          pricing_model: string
+          tenure_months: number
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          active?: boolean
+          churn_health_sensitivity?: number
+          churn_monthly_base?: number
+          created_at?: string
+          created_by?: string | null
+          entry_process_id?: string | null
+          fallback_ongoing_load?: Json
+          id?: string
+          margin?: number
+          mix_share?: number
+          name: string
+          path_tags?: string[]
+          price?: number
+          pricing_model?: string
+          tenure_months?: number
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          active?: boolean
+          churn_health_sensitivity?: number
+          churn_monthly_base?: number
+          created_at?: string
+          created_by?: string | null
+          entry_process_id?: string | null
+          fallback_ongoing_load?: Json
+          id?: string
+          margin?: number
+          mix_share?: number
+          name?: string
+          path_tags?: string[]
+          price?: number
+          pricing_model?: string
+          tenure_months?: number
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "services_entry_process_id_workspace_id_fkey"
+            columns: ["entry_process_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "services_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       steps: {
         Row: {
           assumption: boolean
@@ -807,8 +1168,14 @@ export type Database = {
       can_edit_workspace: { Args: { ws: string }; Returns: boolean }
       can_manage_workspace: { Args: { ws: string }; Returns: boolean }
       can_read_workspace: { Args: { ws: string }; Returns: boolean }
+      discard_draft: { Args: { target_process: string }; Returns: Json }
       is_agency_admin: { Args: never; Returns: boolean }
       is_free_mail_domain: { Args: { domain: string }; Returns: boolean }
+      open_draft: { Args: { target_process: string }; Returns: Json }
+      publish_process: {
+        Args: { accept_estimates?: boolean; target_process: string }
+        Returns: Json
+      }
       qualifies_for_domain: {
         Args: { domain: string; uid: string }
         Returns: boolean

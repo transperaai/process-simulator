@@ -1,5 +1,14 @@
-import type { Distribution as EngineDistribution, EngineModel, EnginePerson, EngineStep } from "@transpera-flow/engine";
-import type { DistParams, Distribution, ProcessBundle, StepRow } from "./types";
+import {
+  isFlatDemand,
+  type EngineDemand,
+  type Distribution as EngineDistribution,
+  type EngineEnd,
+  type EngineModel,
+  type EnginePerson,
+  type EngineService,
+  type EngineStep,
+} from "@transpera-flow/engine";
+import type { DistParams, Distribution, LeadSourceRow, ProcessBundle, SeasonalityRow, StepRow } from "./types";
 
 const WORKING_DAYS_PER_WEEK = 5;
 const DAY_MS = 86_400_000;
@@ -31,7 +40,15 @@ export class ModelError extends Error {}
  *
  * - The single `start` step marks the entry: its one outgoing edge points at
  *   the first real step.
- * - `end` steps become the engine's sinks by outcome (`won`, `lost`).
+ * - `end` steps by outcome: the first `won` and first `lost` (by id) become
+ *   the engine's sinks; any further `won`/`lost` ends and every `done` end go
+ *   to `ends`.
+ * - Services (see `engineServices`) and, only when there are some, the edges'
+ *   condition tags. A process with no services maps exactly as it did before
+ *   services existed.
+ * - Arrivals (see `arrivalsPerWeek` and `engineDemand`): the lead sources'
+ *   qualified leads split by the services mix, with seasonality and growth
+ *   placed in the calendar from the start date. Flat demand is left out.
  * - Steps and roles are ordered by id so the result, and therefore the
  *   simulation, doesn't depend on database row order.
  */
@@ -46,22 +63,26 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
   if (startEdges.length !== 1) throw new ModelError("The start step needs exactly one outgoing edge");
   const entry = startEdges[0]!.to_step_id;
 
-  /** An edge may lead to a working step or a won/lost end; anything else would strand items in the engine. */
+  /** An edge may lead to a working step or an end step (any outcome); anything else would strand items in the engine. */
   const checkTarget = (from: string, to: string) => {
     const target = byId.get(to);
     if (!target) throw new ModelError(`Edge from '${from}' points at a missing step`);
     if (target.kind === "start") throw new ModelError(`Edge from '${from}' leads back to the start step`);
-    if (target.kind === "end" && target.outcome !== "won" && target.outcome !== "lost") {
-      throw new ModelError(`End step '${target.name}' ends as '${target.outcome}'; only won and lost ends can be simulated`);
-    }
   };
   checkTarget(starts[0]!.name, entry);
 
-  const sinkFor = (outcome: "won" | "lost") => {
-    const ends = steps.filter((step) => step.kind === "end" && step.outcome === outcome);
-    if (ends.length > 1) throw new ModelError(`At most one '${outcome}' end step is supported, found ${ends.length}`);
-    return ends[0]?.id ?? `__${outcome}__`;
-  };
+  const endSteps = steps.filter((step) => step.kind === "end").sort(byIdAsc);
+  const sinkFor = (outcome: "won" | "lost") => endSteps.find((step) => step.outcome === outcome)?.id ?? `__${outcome}__`;
+  const sinks = { won: sinkFor("won"), lost: sinkFor("lost") };
+  const ends: Record<string, EngineEnd> = {};
+  for (const step of endSteps) {
+    // The database requires an outcome on every end step; "done" is the harmless reading of a missing one.
+    if (step.id !== sinks.won && step.id !== sinks.lost) ends[step.id] = { outcome: step.outcome ?? "done" };
+  }
+
+  const services = engineServices(bundle);
+  // Tags route only entities whose service carries them, so without services they are left out.
+  const tagOf = (tag: string | null) => (services && tag?.trim() ? { tag: tag.trim() } : {});
 
   const working = steps
     .filter((step) => step.kind !== "start" && step.kind !== "end")
@@ -70,7 +91,7 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
       const next = edges
         .filter((e) => e.from_step_id === step.id)
         .sort(byIdAsc)
-        .map((e) => ({ to: e.to_step_id, p: Number(e.probability) }));
+        .map((e) => ({ to: e.to_step_id, p: Number(e.probability), ...tagOf(e.condition_tag) }));
       if (!next.length) throw new ModelError(`Step '${step.name}' has no outgoing edge`);
       for (const n of next) checkTarget(step.name, n.to);
       return {
@@ -85,6 +106,8 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
         ...optional("waitDist", engineDistribution(step.wait_dist, step.wait_params, Number(step.wait_hours))),
         // Entered WIP (0 included) makes the run start from it instead of a warm-up.
         ...(step.current_wip != null ? { currentWip: Number(step.current_wip) } : {}),
+        // An SLA only counts breaches (detected issues); it doesn't change the run.
+        ...(step.sla_hours != null ? { sla: Number(step.sla_hours) } : {}),
         next,
       };
     });
@@ -99,22 +122,115 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
     };
   }
 
-  const people = resolvePeopleRows(bundle, working, options.startDate ?? new Date().toISOString().slice(0, 10));
+  const startDate = options.startDate ?? new Date().toISOString().slice(0, 10);
+  const people = resolvePeopleRows(bundle, working, startDate);
+  const demand = engineDemand(bundle, startDate);
 
   return {
     horizonWeeks: s.horizon_weeks,
     hoursPerWeek: s.hours_per_week,
-    leadsPerWeek: s.leads_per_week,
+    leadsPerWeek: arrivalsPerWeek(bundle, services),
+    ...(demand ? { demand } : {}),
     activeClients: s.active_clients,
     churnMonthly: s.churn_monthly,
     retainer: s.retainer,
     roles: engineRoles,
+    ...(services ? { services } : {}),
     ...(people ? { people } : {}),
     ...(s.availability_floor !== undefined ? { availabilityFloor: s.availability_floor } : {}),
     entry,
-    sinks: { won: sinkFor("won"), lost: sinkFor("lost") },
+    sinks,
+    ...(Object.keys(ends).length ? { ends } : {}),
     steps: working,
   };
+}
+
+/**
+ * The engine's services for this process: the workspace's active services
+ * whose arrivals enter it. PRD §5 gives a service an `entry_process_id`, not a
+ * step. A service entering this process, or with none set (meaning the
+ * workspace's pipeline), enters at the process's own entry step, which is the
+ * engine's default, so `entry` is left out. Services entering another process
+ * don't arrive here. Undefined when none apply: then the interim `retainer`
+ * prices every win, as before services existed.
+ */
+function engineServices(bundle: ProcessBundle): Record<string, EngineService> | undefined {
+  const here = bundle.services
+    .filter((sv) => sv.active && (sv.entry_process_id === null || sv.entry_process_id === bundle.process.id))
+    .sort(byIdAsc);
+  if (!here.length) return undefined;
+  if (!(here.reduce((sum, sv) => sum + Number(sv.mix_share), 0) > 0)) {
+    throw new ModelError("The services' mix shares add up to 0; give at least one service a share");
+  }
+  const services: Record<string, EngineService> = {};
+  for (const sv of here) {
+    services[sv.id] = {
+      name: sv.name,
+      pricingModel: sv.pricing_model,
+      price: Number(sv.price),
+      margin: Number(sv.margin),
+      tenureMonths: Number(sv.tenure_months),
+      churnMonthly: Number(sv.churn_monthly_base),
+      mixShare: Number(sv.mix_share),
+      pathTags: sv.path_tags.map((t) => t.trim()).filter(Boolean),
+    };
+  }
+  return services;
+}
+
+/**
+ * Qualified leads a week from the lead sources: Σ volume × conversion
+ * (docs/PRD.md §6.2), summed in id order so the result doesn't depend on row
+ * order. Null when there are none.
+ */
+export function qualifiedLeadsPerWeek(
+  sources: readonly Pick<LeadSourceRow, "id" | "volume_week" | "conversion_to_qualified">[],
+): number | null {
+  if (!sources.length) return null;
+  return [...sources].sort(byIdAsc).reduce((sum, src) => sum + Number(src.volume_week) * Number(src.conversion_to_qualified), 0);
+}
+
+/** The seasonality curve: twelve multipliers, January first. A month with no row is 1. */
+export function seasonalityCurve(rows: readonly Pick<SeasonalityRow, "month" | "multiplier">[]): number[] {
+  const curve = new Array<number>(12).fill(1);
+  for (const row of rows) if (row.month >= 1 && row.month <= 12) curve[row.month - 1] = Number(row.multiplier);
+  return curve;
+}
+
+/**
+ * This process's arrivals a week (docs/PRD.md §6.2): the lead sources'
+ * qualified leads (or, with none, the interim `settings.leads_per_week`),
+ * times the share of the active services' mix that enters this process.
+ * The share is exactly 1 when every active service enters here, as in a
+ * single-pipeline workspace, and 0 when none does.
+ */
+function arrivalsPerWeek(bundle: ProcessBundle, here: Record<string, EngineService> | undefined): number {
+  const total = qualifiedLeadsPerWeek(bundle.leadSources ?? []) ?? bundle.workspace.settings.leads_per_week;
+  const mix = (shares: number[]) => shares.reduce((sum, m) => sum + m, 0);
+  const all = mix(bundle.services.filter((sv) => sv.active).sort(byIdAsc).map((sv) => Number(sv.mix_share)));
+  // No mix to split by: every arrival is this process's.
+  if (!(all > 0)) return total;
+  const mine = here ? mix(Object.values(here).map((sv) => sv.mixShare)) : 0;
+  return mine === all ? total : (total * mine) / all;
+}
+
+/**
+ * Seasonality and growth for the engine, with the start date placed in the
+ * calendar (1 September is month 8; the 16th of a 30-day month is half a
+ * month further on). Undefined when flat with no growth, so such a
+ * workspace simulates exactly as before demand settings existed.
+ */
+function engineDemand(bundle: ProcessBundle, startDate: string): EngineDemand | undefined {
+  const seasonality = seasonalityCurve(bundle.seasonality ?? []);
+  const growth = Number(bundle.demand?.growth_monthly ?? 0);
+  const [year, month, day] = startDate.split("-").map(Number) as [number, number, number];
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const demand: EngineDemand = {
+    ...(seasonality.some((m) => m !== 1) ? { seasonality } : {}),
+    ...(growth ? { growthMonthly: growth } : {}),
+    startMonth: month - 1 + (day - 1) / daysInMonth,
+  };
+  return isFlatDemand(demand) ? undefined : demand;
 }
 
 /**

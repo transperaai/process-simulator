@@ -8,6 +8,7 @@
 //
 // Time runs from -warmup to H; everything reported is measured over [0, H].
 
+import { arrivalTimes as drawArrivals } from "./demand";
 import { EventQueue } from "./event-queue";
 import type {
   Distribution,
@@ -22,6 +23,7 @@ import type {
   Outcome,
   PersonResult,
   ReplicationResult,
+  ReplicationSamples,
   RoleResult,
   ServiceCounts,
   Stat,
@@ -38,7 +40,7 @@ const DEFAULT_WORK_DIST: Distribution = { kind: "lognormal", cv: 0.35 };
 const DEFAULT_WAIT_DIST: Distribution = { kind: "lognormal", cv: 0.3 };
 const WEEKS_PER_MONTH = 4.33;
 /** Stride between replication seeds. */
-const SEED_STRIDE = 7919;
+export const SEED_STRIDE = 7919;
 /** Automatic warm-up: at least this many weeks (docs/PRD.md §6.3.1)... */
 const DEFAULT_WARMUP_WEEKS = 4;
 /** ...or twice the pilot run's P90 cycle time if longer, up to this cap. */
@@ -69,6 +71,10 @@ interface StepStat {
   waitSum: number;
   waitN: number;
   reworks: number;
+  /** Queue area over the second half of the measured window. */
+  qAreaLate: number;
+  departures: number;
+  slaBreaches: number;
 }
 
 /** A step's run-time state: its statistics, queue, who can work it, and its random streams. */
@@ -273,7 +279,19 @@ export function runOnce(
     const waitDist = s.waitDist ?? DEFAULT_WAIT_DIST;
     stepStates.set(s.id, {
       s,
-      stat: { arrivals: 0, qLen: 0, qArea: 0, qLast: 0, qMax: 0, waitSum: 0, waitN: 0, reworks: 0 },
+      stat: {
+        arrivals: 0,
+        qLen: 0,
+        qArea: 0,
+        qLast: 0,
+        qMax: 0,
+        waitSum: 0,
+        waitN: 0,
+        reworks: 0,
+        qAreaLate: 0,
+        departures: 0,
+        slaBreaches: 0,
+      },
       queue: [],
       people: [],
       staffed: Boolean(s.role || s.person),
@@ -366,8 +384,15 @@ export function runOnce(
     return false;
   };
 
-  const setQ = (st: StepStat, t: number, delta: number) => {
+  /** Start of the measured window's second half, for queue growth. */
+  const half = H / 2;
+  /** Add the queue area since the last change, and the part of it in the second half. */
+  const addArea = (st: StepStat, t: number) => {
     st.qArea += st.qLen * (t - st.qLast);
+    if (t > half) st.qAreaLate += st.qLen * (t - Math.max(st.qLast, half));
+  };
+  const setQ = (st: StepStat, t: number, delta: number) => {
+    addArea(st, t);
     st.qLast = t;
     st.qLen += delta;
     if (st.qLen > st.qMax) st.qMax = st.qLen;
@@ -509,6 +534,8 @@ export function runOnce(
   function leave(e: SimEntity, st: StepState, t: number) {
     e.seg!.tL = t;
     const s = st.s;
+    st.stat.departures++;
+    if (s.sla !== undefined && t - e.seg!.tQ > s.sla) st.stat.slaBreaches++;
     if (s.rework && st.rework() < s.rework) {
       st.stat.reworks++;
       enter(e, s.id, t);
@@ -546,7 +573,18 @@ export function runOnce(
     cycle.length = 0;
     active = model.activeClients;
     for (const { stat } of stepList) {
-      Object.assign(stat, { arrivals: 0, qArea: 0, qLast: 0, qMax: stat.qLen, waitSum: 0, waitN: 0, reworks: 0 });
+      Object.assign(stat, {
+        arrivals: 0,
+        qArea: 0,
+        qLast: 0,
+        qMax: stat.qLen,
+        waitSum: 0,
+        waitN: 0,
+        reworks: 0,
+        qAreaLate: 0,
+        departures: 0,
+        slaBreaches: 0,
+      });
     }
     for (const rid in roleBusyHours) roleBusyHours[rid] = 0;
     for (const p of people) {
@@ -585,21 +623,14 @@ export function runOnce(
   // Arrivals: Poisson process over the horizon. The warm-up's arrivals come
   // from their own stream, drawn backwards from t = 0, so the measured
   // window's arrivals are the same whatever the warm-up length. Only the next
-  // arrival sits in the event queue, which keeps the heap small.
-  const arrivalTimes: number[] = [];
-  const meanGap = model.hoursPerWeek / model.leadsPerWeek;
-  if (W > 0) {
-    push({ t: 0, type: "measure" });
-    const early = streams.get("arrivals:warmup");
-    for (let tb = -expo(early, meanGap); tb >= -W; tb -= expo(early, meanGap)) arrivalTimes.push(tb);
-    arrivalTimes.reverse();
-  }
-  const arrivals = streams.get("arrivals");
+  // arrival sits in the event queue, which keeps the heap small. The rate
+  // follows the calendar when the model has seasonality or growth (demand.ts).
+  if (W > 0) push({ t: 0, type: "measure" });
+  const arrivalTimes = drawArrivals(model, H, W, streams.get("arrivals"), streams.get("arrivals:warmup"));
   // Each arrival's service comes from the mix, on its own streams (warm-up and
   // measured window apart, as for the arrival times).
   const mixWarmup = streams.get("mix:warmup");
   const mix = streams.get("mix");
-  for (let ta = expo(arrivals, meanGap); ta < H; ta += expo(arrivals, meanGap)) arrivalTimes.push(ta);
   let nextArrival = 0;
   const scheduleArrival = () => {
     if (nextArrival < arrivalTimes.length) push({ t: arrivalTimes[nextArrival++]!, type: "arrive" });
@@ -636,7 +667,8 @@ export function runOnce(
   const stepOut: Record<string, StepResult> = {};
   for (const s of model.steps) {
     const st = stepStates.get(s.id)!.stat;
-    st.qArea += st.qLen * (H - st.qLast);
+    addArea(st, H);
+    const halfWeeks = model.horizonWeeks / 2;
     stepOut[s.id] = {
       arrivals: st.arrivals,
       avgQueue: st.qArea / H,
@@ -644,6 +676,9 @@ export function runOnce(
       avgWait: st.waitN ? st.waitSum / st.waitN : 0,
       reworks: st.reworks,
       wip: st.qLen,
+      queueGrowth: halfWeeks > 0 ? ((st.qAreaLate - (st.qArea - st.qAreaLate)) / half) / halfWeeks : 0,
+      departures: st.departures,
+      slaBreaches: st.slaBreaches,
     };
   }
   // Ongoing load is reported from the starting client count, as in the
@@ -730,13 +765,15 @@ export function stat(values: number[]): Stat {
   return { mean: values.reduce((a, b) => a + b, 0) / values.length, p10: pct(values, 0.1), p90: pct(values, 0.9) };
 }
 
+/** Pipeline labour cost of one replication. */
+function labourOf(model: EngineModel, r: ReplicationResult): number {
+  let total = 0;
+  for (const rid in model.roles) total += r.roles[rid]!.pipelineHours * model.horizonWeeks * model.roles[rid]!.cost;
+  return total;
+}
+
 function kpis(model: EngineModel, runs: ReplicationResult[], cycle: number[]): Kpis {
-  const labourOf = (r: ReplicationResult) => {
-    let total = 0;
-    for (const rid in model.roles) total += r.roles[rid]!.pipelineHours * model.horizonWeeks * model.roles[rid]!.cost;
-    return total;
-  };
-  const labour = runs.map(labourOf);
+  const labour = runs.map((r) => labourOf(model, r));
   const roles: Kpis["roles"] = {};
   for (const rid in model.roles) {
     roles[rid] = {
@@ -805,6 +842,9 @@ export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationRes
       avgWait: avg((r) => r.steps[s.id]!.avgWait),
       reworks: avg((r) => r.steps[s.id]!.reworks),
       wip: avg((r) => r.steps[s.id]!.wip),
+      queueGrowth: avg((r) => r.steps[s.id]!.queueGrowth),
+      departures: avg((r) => r.steps[s.id]!.departures),
+      slaBreaches: avg((r) => r.steps[s.id]!.slaBreaches),
     };
   }
   const roles: Record<string, RoleResult> = {};
@@ -847,8 +887,19 @@ export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationRes
   }
 
   const kpi = kpis(model, runs, cycle);
+  const samples: ReplicationSamples = {
+    won: wonArr,
+    lost: runs.map((r) => r.lost),
+    mrrAdded: runs.map((r) => r.newMrr),
+    billed: runs.map((r) => r.billed),
+    labour: runs.map((r) => labourOf(model, r)),
+    wipEnd: runs.map((r) => Object.values(r.steps).reduce((a, st) => a + st.wip, 0)),
+    cycleMean: runs.map((r) => (r.cycle.length ? r.cycle.reduce((a, b) => a + b, 0) / r.cycle.length : 0)),
+  };
   return {
     kpi,
+    samples,
+    seed,
     won,
     wonLow: pct(wonArr, 0.1),
     wonHigh: pct(wonArr, 0.9),

@@ -2,7 +2,7 @@
 
 Process-map simulator: turns a company's workflows into a runnable
 discrete-event Monte Carlo model. Product spec and decisions: [`docs/PRD.md`](docs/PRD.md).
-Work is tracked as GitHub issues (milestone parents #1–#3).
+Work is tracked as GitHub issues (milestone parents #1–#3). Picking this up? Start with [`docs/HANDOVER.md`](docs/HANDOVER.md).
 
 ## Layout
 

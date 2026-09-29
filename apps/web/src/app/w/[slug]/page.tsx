@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { ProcessView } from "@/components/process-view";
-import { canEditWorkspace, canManageWorkspace } from "@/lib/access-data";
+import { canEditWorkspace, canManageWorkspace, currentUserId } from "@/lib/access-data";
 import { loadLiveProcess, loadWorkspaceIssues, loadWorkspaceScenarios } from "@/lib/data";
 
 export default async function WorkspacePage(props: PageProps<"/w/[slug]">) {
@@ -10,11 +10,12 @@ export default async function WorkspacePage(props: PageProps<"/w/[slug]">) {
   const { fix } = await props.searchParams;
   const bundle = await loadLiveProcess(slug);
   if (!bundle) notFound();
-  const [canEdit, canManage, scenarios, issues] = await Promise.all([
+  const [canEdit, canManage, scenarios, issues, userId] = await Promise.all([
     canEditWorkspace(bundle.workspace.id),
     canManageWorkspace(bundle.workspace.id),
     loadWorkspaceScenarios(bundle.workspace.id),
     loadWorkspaceIssues(bundle.workspace.id),
+    currentUserId(),
   ]);
   return (
     <main className="mx-auto w-full max-w-7xl px-4 pb-8">
@@ -40,6 +41,7 @@ export default async function WorkspacePage(props: PageProps<"/w/[slug]">) {
         issues={issues}
         initialFix={typeof fix === "string" ? fix : null}
         registerHref={`/w/${slug}/issues`}
+        userId={userId}
       />
     </main>
   );

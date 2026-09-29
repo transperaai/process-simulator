@@ -1,15 +1,17 @@
 // Discrete-event Monte Carlo simulation, ported from the Northbeam
 // prototype's `ProcessSim` (prototype/northbeam-process-simulator.html).
-// Fixed so far (docs/PRD.md §6.8): separate random streams per purpose and a
-// binary-heap event queue. Still as in the prototype, and fixed in later
-// tickets: stale ongoing utilisation, empty start, role head-counts.
+// Fixed so far (docs/PRD.md §6.8): separate random streams per purpose, a
+// binary-heap event queue, and dispatch to named people. Still as in the
+// prototype, and fixed in later tickets: stale ongoing utilisation, empty start.
 
 import { EventQueue } from "./event-queue";
 import type {
   Distribution,
   EngineModel,
+  EnginePerson,
   EngineStep,
   Kpis,
+  PersonResult,
   ReplicationResult,
   RoleResult,
   Stat,
@@ -20,8 +22,8 @@ import type {
 } from "./model";
 import { expo, lognormal, Streams, triangular, type Rng } from "./random";
 
-/** Minimum share of a role's capacity left for pipeline work. */
-const AVAILABILITY_FLOOR = 0.08;
+/** Minimum share of a person's time left for pipeline work, unless the model sets one. */
+const DEFAULT_AVAILABILITY_FLOOR = 0.08;
 const DEFAULT_WORK_DIST: Distribution = { kind: "lognormal", cv: 0.35 };
 const DEFAULT_WAIT_DIST: Distribution = { kind: "lognormal", cv: 0.3 };
 const WEEKS_PER_MONTH = 4.33;
@@ -35,6 +37,7 @@ interface SimEntity extends TraceEntity {
 type SimEvent =
   | { t: number; type: "arrive" }
   | { t: number; type: "week" }
+  | { t: number; type: "back"; person: string }
   | { t: number; type: "end" | "leave"; e: SimEntity; step: string };
 
 interface StepStat {
@@ -46,12 +49,6 @@ interface StepStat {
   waitSum: number;
   waitN: number;
   reworks: number;
-}
-
-interface RoleState {
-  count: number;
-  busy: number;
-  busyHours: number;
 }
 
 /** Sample a duration with the given mean. */
@@ -68,18 +65,74 @@ export function sampleDuration(rng: Rng, mean: number, dist: Distribution): numb
   }
 }
 
+/** The model's people, or one anonymous person per role head-count when it has none. */
+export function resolvePeople(model: EngineModel): Record<string, EnginePerson> {
+  if (model.people && Object.keys(model.people).length) return model.people;
+  const people: Record<string, EnginePerson> = {};
+  for (const rid in model.roles) {
+    const role = model.roles[rid]!;
+    const count = Math.max(1, role.count);
+    for (let i = 1; i <= count; i++) {
+      people[`${rid}#${i}`] = { name: `${role.name} ${i}`, roles: [rid], capacity: model.hoursPerWeek };
+    }
+  }
+  return people;
+}
+
+interface PersonState {
+  id: string;
+  person: EnginePerson;
+  busy: boolean;
+  /** When they last became free; the longest-idle eligible person gets new work. */
+  freeSince: number;
+  busyHours: number;
+  completed: number;
+  steps: EngineStep[];
+}
+
 export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): ReplicationResult {
   const streams = new Streams(seed);
   const H = model.horizonWeeks * model.hoursPerWeek;
+  const floor = model.availabilityFloor ?? DEFAULT_AVAILABILITY_FLOOR;
   const steps = new Map<string, EngineStep>(model.steps.map((s) => [s.id, s]));
-  const roles: Record<string, RoleState> = {};
-  for (const id in model.roles) {
-    roles[id] = { count: Math.max(1, model.roles[id]!.count), busy: 0, busyHours: 0 };
+  const peopleModel = resolvePeople(model);
+
+  // Who can do what.
+  const canDo = (pid: string, p: EnginePerson, s: EngineStep) =>
+    s.person ? s.person === pid : p.skills ? p.skills.includes(s.id) : s.role !== null && p.roles.includes(s.role);
+  const people: PersonState[] = Object.entries(peopleModel).map(([id, person]) => ({
+    id,
+    person,
+    busy: false,
+    freeSince: 0,
+    busyHours: 0,
+    completed: 0,
+    steps: model.steps.filter((s) => canDo(id, person, s)),
+  }));
+  const peopleById = new Map(people.map((p) => [p.id, p]));
+  const stepPeople: Record<string, PersonState[]> = {};
+  for (const s of model.steps) stepPeople[s.id] = people.filter((p) => p.steps.includes(s));
+
+  // Capacity per role: each person's capacity split evenly across their roles.
+  const roleCapacity: Record<string, number> = {};
+  const roleMembers: Record<string, PersonState[]> = {};
+  for (const rid in model.roles) {
+    roleCapacity[rid] = 0;
+    roleMembers[rid] = [];
   }
+  for (const p of people) {
+    for (const rid of p.person.roles) {
+      if (!(rid in roleCapacity)) continue;
+      roleCapacity[rid]! += p.person.capacity / p.person.roles.length;
+      roleMembers[rid]!.push(p);
+    }
+  }
+  const roleBusyHours: Record<string, number> = {};
+  for (const rid in model.roles) roleBusyHours[rid] = 0;
+
   const stepStat: Record<string, StepStat> = {};
   const stepQueue: Record<string, SimEntity[]> = {};
   const stepRng: Record<string, { work: Rng; wait: Rng; rework: Rng; route: Rng }> = {};
-  const roleSteps: Record<string, EngineStep[]> = {};
   for (const s of model.steps) {
     stepStat[s.id] = { arrivals: 0, qLen: 0, qArea: 0, qLast: 0, qMax: 0, waitSum: 0, waitN: 0, reworks: 0 };
     stepQueue[s.id] = [];
@@ -89,7 +142,6 @@ export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): R
       rework: streams.get(`rework:${s.id}`),
       route: streams.get(`route:${s.id}`),
     };
-    if (s.role) (roleSteps[s.role] ??= []).push(s);
   }
   let active = model.activeClients;
   const events = new EventQueue<SimEvent>();
@@ -100,11 +152,23 @@ export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): R
   let lost = 0;
 
   const push = (ev: SimEvent) => events.push(ev);
-  const availFrac = (rid: string) => {
-    const ong = active * (model.roles[rid]!.ongoing || 0);
-    const cap = roles[rid]!.count * model.hoursPerWeek;
-    return Math.max(AVAILABILITY_FLOOR, 1 - ong / cap);
+
+  /** Ongoing client hours per week a person carries, shared across each role's members by capacity. */
+  const ongoingHours = (p: PersonState, clients: number) => {
+    let hours = 0;
+    for (const rid of p.person.roles) {
+      const role = model.roles[rid];
+      const cap = roleCapacity[rid];
+      if (!role || !cap) continue;
+      hours += (clients * (role.ongoing || 0) * (p.person.capacity / p.person.roles.length)) / cap;
+    }
+    return hours;
   };
+  /** Share of a working week this person has for pipeline work. */
+  const availFrac = (p: PersonState) =>
+    Math.max(floor, (p.person.capacity - ongoingHours(p, active)) / model.hoursPerWeek);
+  const onLeave = (p: PersonState, t: number) => p.person.leave?.some(([a, b]) => t >= a && t < b) ?? false;
+
   const setQ = (sid: string, t: number, delta: number) => {
     const st = stepStat[sid]!;
     st.qArea += st.qLen * (t - st.qLast);
@@ -130,61 +194,70 @@ export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): R
     }
     const s = steps.get(sid)!;
     stepStat[sid]!.arrivals++;
-    const seg: TraceSegment = { step: sid, tQ: t, tS: null, tE: null, tL: null };
+    const seg: TraceSegment = { step: sid, person: null, tQ: t, tS: null, tE: null, tL: null };
     if (keepTrace) e.trace.push(seg);
     e.seg = seg;
-    if (!s.role) {
-      startService(e, s, t);
+    if (!s.role && !s.person) {
+      startService(e, s, null, t);
       return;
     }
     stepQueue[sid]!.push(e);
     setQ(sid, t, 1);
-    tryStart(s.role, t);
-  }
-
-  function tryStart(rid: string, t: number) {
-    const r = roles[rid]!;
-    while (r.busy < r.count) {
-      // Oldest waiting entity across this role's steps (FIFO across steps).
-      let best: SimEntity | null = null;
-      let bestSid: string | null = null;
-      for (const s of roleSteps[rid] ?? []) {
-        const q = stepQueue[s.id]!;
-        if (q.length) {
-          const c = q[0]!;
-          if (!best || c.seg!.tQ < best.seg!.tQ) {
-            best = c;
-            bestSid = s.id;
-          }
-        }
-      }
-      if (!best || !bestSid) break;
-      stepQueue[bestSid]!.shift();
-      setQ(bestSid, t, -1);
-      stepStat[bestSid]!.waitSum += t - best.seg!.tQ;
-      stepStat[bestSid]!.waitN++;
-      r.busy++;
-      startService(best, steps.get(bestSid)!, t);
+    // Give it to the longest-idle eligible person, if anyone is free.
+    let pick: PersonState | null = null;
+    for (const p of stepPeople[sid]!) {
+      if (!p.busy && !onLeave(p, t) && (!pick || p.freeSince < pick.freeSince)) pick = p;
     }
+    if (pick) takeNext(pick, t);
   }
 
-  function startService(e: SimEntity, s: EngineStep, t: number) {
+  /** A free person takes the oldest waiting item across the steps they can do (FIFO across steps). */
+  function takeNext(p: PersonState, t: number) {
+    if (p.busy || onLeave(p, t)) return;
+    let best: SimEntity | null = null;
+    let bestStep: EngineStep | null = null;
+    for (const s of p.steps) {
+      const c = stepQueue[s.id]![0];
+      if (c && (!best || c.seg!.tQ < best.seg!.tQ)) {
+        best = c;
+        bestStep = s;
+      }
+    }
+    if (!best || !bestStep) return;
+    stepQueue[bestStep.id]!.shift();
+    setQ(bestStep.id, t, -1);
+    stepStat[bestStep.id]!.waitSum += t - best.seg!.tQ;
+    stepStat[bestStep.id]!.waitN++;
+    startService(best, bestStep, p, t);
+  }
+
+  function startService(e: SimEntity, s: EngineStep, p: PersonState | null, t: number) {
     e.seg!.tS = t;
+    e.seg!.person = p?.id ?? null;
     let dur = 0;
-    if (s.role) {
-      dur = sampleDuration(stepRng[s.id]!.work, s.work, s.workDist ?? DEFAULT_WORK_DIST) / availFrac(s.role);
-      roles[s.role]!.busyHours += dur * availFrac(s.role);
+    if (p) {
+      p.busy = true;
+      const frac = availFrac(p);
+      const handsOn = sampleDuration(stepRng[s.id]!.work, s.work, s.workDist ?? DEFAULT_WORK_DIST);
+      dur = handsOn / frac;
+      p.busyHours += handsOn;
+      if (s.role && s.role in roleBusyHours) roleBusyHours[s.role]! += handsOn;
     }
     push({ t: t + dur, type: "end", e, step: s.id });
   }
 
   function endService(e: SimEntity, s: EngineStep, t: number) {
     e.seg!.tE = t;
-    if (s.role) roles[s.role]!.busy--;
+    const p = e.seg!.person ? peopleById.get(e.seg!.person)! : null;
+    if (p) {
+      p.busy = false;
+      p.freeSince = t;
+      p.completed++;
+    }
     const waitDist = s.waitDist ?? DEFAULT_WAIT_DIST;
     const w = s.wait || waitDist.kind === "triangular" ? sampleDuration(stepRng[s.id]!.wait, s.wait, waitDist) : 0;
     push({ t: t + w, type: "leave", e, step: s.id });
-    if (s.role) tryStart(s.role, t);
+    if (p) takeNext(p, t);
   }
 
   function leave(e: SimEntity, s: EngineStep, t: number) {
@@ -217,6 +290,8 @@ export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): R
   }
   // Weekly churn ticks.
   for (let w = 1; w <= model.horizonWeeks; w++) push({ t: w * model.hoursPerWeek, type: "week" });
+  // People coming back from leave pick up waiting work.
+  for (const p of people) for (const [, end] of p.person.leave ?? []) if (end < H) push({ t: end, type: "back", person: p.id });
 
   for (let ev = events.pop(); ev; ev = events.pop()) {
     if (ev.t > H) break;
@@ -228,6 +303,8 @@ export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): R
       endService(ev.e, steps.get(ev.step)!, ev.t);
     } else if (ev.type === "leave") {
       leave(ev.e, steps.get(ev.step)!, ev.t);
+    } else if (ev.type === "back") {
+      takeNext(peopleById.get(ev.person)!, ev.t);
     } else {
       active = Math.max(0, active - active * (model.churnMonthly / WEEKS_PER_MONTH));
     }
@@ -246,17 +323,32 @@ export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): R
       wip: st.qLen,
     };
   }
+  // Ongoing load is reported from the starting client count, as in the
+  // prototype (docs/PRD.md §6.8 item 2; fixed with the client roster).
   const roleOut: Record<string, RoleResult> = {};
-  for (const rid in roles) {
-    const r = model.roles[rid]!;
-    const cap = roles[rid]!.count * H;
-    const ong = model.activeClients * (r.ongoing || 0) * model.horizonWeeks;
+  for (const rid in model.roles) {
+    const cap = (roleCapacity[rid] ?? 0) * model.horizonWeeks;
+    const ong = model.activeClients * (model.roles[rid]!.ongoing || 0) * model.horizonWeeks;
+    const busy = roleBusyHours[rid]!;
     roleOut[rid] = {
-      pipeline: roles[rid]!.busyHours / cap,
-      ongoing: ong / cap,
-      util: (roles[rid]!.busyHours + ong) / cap,
-      pipelineHours: roles[rid]!.busyHours / model.horizonWeeks,
+      pipeline: cap ? busy / cap : 0,
+      ongoing: cap ? ong / cap : 0,
+      util: cap ? (busy + ong) / cap : 0,
+      pipelineHours: busy / model.horizonWeeks,
       ongoingHours: ong / model.horizonWeeks,
+    };
+  }
+  const peopleOut: Record<string, PersonResult> = {};
+  for (const p of people) {
+    const cap = p.person.capacity * model.horizonWeeks;
+    const ong = ongoingHours(p, model.activeClients) * model.horizonWeeks;
+    peopleOut[p.id] = {
+      pipeline: cap ? p.busyHours / cap : 0,
+      ongoing: cap ? ong / cap : 0,
+      util: cap ? (p.busyHours + ong) / cap : 0,
+      pipelineHours: p.busyHours / model.horizonWeeks,
+      ongoingHours: ong / model.horizonWeeks,
+      completed: p.completed,
     };
   }
   return {
@@ -265,6 +357,7 @@ export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): R
     cycle,
     steps: stepOut,
     roles: roleOut,
+    people: peopleOut,
     entities: keepTrace ? entities.map(stripSeg) : null,
     H,
     activeEnd: active,
@@ -303,6 +396,14 @@ function kpis(model: EngineModel, runs: ReplicationResult[], cycle: number[]): K
       ongoing: stat(runs.map((r) => r.roles[rid]!.ongoing)),
     };
   }
+  const people: Kpis["people"] = {};
+  for (const pid in runs[0]?.people ?? {}) {
+    people[pid] = {
+      util: stat(runs.map((r) => r.people[pid]!.util)),
+      pipeline: stat(runs.map((r) => r.people[pid]!.pipeline)),
+      ongoing: stat(runs.map((r) => r.people[pid]!.ongoing)),
+    };
+  }
   return {
     won: stat(runs.map((r) => r.won)),
     lost: stat(runs.map((r) => r.lost)),
@@ -316,6 +417,7 @@ function kpis(model: EngineModel, runs: ReplicationResult[], cycle: number[]): K
       p90: pct(cycle, 0.9),
     },
     roles,
+    people,
   };
 }
 
@@ -352,6 +454,18 @@ export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationRes
       ongoingHours: avg((r) => r.roles[rid]!.ongoingHours),
     };
   }
+  const resolvedPeople = resolvePeople(model);
+  const people: Record<string, PersonResult> = {};
+  for (const pid in resolvedPeople) {
+    people[pid] = {
+      pipeline: avg((r) => r.people[pid]!.pipeline),
+      ongoing: avg((r) => r.people[pid]!.ongoing),
+      util: avg((r) => r.people[pid]!.util),
+      pipelineHours: avg((r) => r.people[pid]!.pipelineHours),
+      ongoingHours: avg((r) => r.people[pid]!.ongoingHours),
+      completed: avg((r) => r.people[pid]!.completed),
+    };
+  }
   const wonArr = runs.map((r) => r.won);
   const won = avg((r) => r.won);
   const lost = avg((r) => r.lost);
@@ -362,6 +476,8 @@ export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationRes
   // Bottleneck: role with highest utilisation; step with the largest average queue.
   let bnRole: string | null = null;
   for (const rid in roles) if (!bnRole || roles[rid]!.util > roles[bnRole]!.util) bnRole = rid;
+  let bnPerson: string | null = null;
+  for (const pid in people) if (!bnPerson || people[pid]!.util > people[bnPerson]!.util) bnPerson = pid;
   let bnStep: string | null = null;
   for (const s of model.steps) {
     if (s.role && (!bnStep || steps[s.id]!.avgQueue > steps[bnStep]!.avgQueue)) bnStep = s.id;
@@ -377,11 +493,14 @@ export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationRes
     cycleP90: pct(cycle, 0.9),
     steps,
     roles,
+    people,
+    resolvedPeople,
     labour,
     costPerWin: won ? labour / won : 0,
     mrrAdded: won * model.retainer,
     bnRole,
     bnStep,
+    bnPerson,
     trace,
     H,
     reps,

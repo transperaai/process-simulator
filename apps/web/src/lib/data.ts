@@ -33,13 +33,18 @@ export async function loadLiveProcess(slug: string): Promise<ProcessBundle | nul
   if (!process) return null;
 
   const rev = process.live_revision_id as string;
-  const [revision, roles, steps, edges] = await Promise.all([
+  const ws = workspace.id;
+  const [revision, roles, steps, edges, people, personRoles, personSkills, personLeave] = await Promise.all([
     supabase.from("process_revisions").select("id, workspace_id, process_id, number, status").eq("id", rev).single(),
-    supabase.from("roles").select("*").eq("workspace_id", workspace.id),
+    supabase.from("roles").select("*").eq("workspace_id", ws),
     supabase.from("steps").select("*").eq("revision_id", rev),
     supabase.from("edges").select("*").eq("revision_id", rev),
+    supabase.from("people").select("id, workspace_id, name, fte, capacity_hours_week, cost_rate, active, start_date, end_date").eq("workspace_id", ws),
+    supabase.from("person_roles").select("person_id, role_id, workspace_id").eq("workspace_id", ws),
+    supabase.from("person_skills").select("person_id, step_id, workspace_id").eq("workspace_id", ws),
+    supabase.from("person_leave").select("id, person_id, workspace_id, start_date, end_date").eq("workspace_id", ws),
   ]);
-  for (const r of [revision, roles, steps, edges]) if (r.error) throw r.error;
+  for (const r of [revision, roles, steps, edges, people, personRoles, personSkills, personLeave]) if (r.error) throw r.error;
 
   return {
     workspace,
@@ -48,5 +53,9 @@ export async function loadLiveProcess(slug: string): Promise<ProcessBundle | nul
     roles: roles.data ?? [],
     steps: steps.data ?? [],
     edges: edges.data ?? [],
+    people: people.data ?? [],
+    personRoles: personRoles.data ?? [],
+    personSkills: personSkills.data ?? [],
+    personLeave: personLeave.data ?? [],
   } as ProcessBundle;
 }

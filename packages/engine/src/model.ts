@@ -5,7 +5,7 @@
 /** Times are in working hours. */
 export interface EngineRole {
   name: string;
-  /** Number of interchangeable people in the role. */
+  /** Number of interchangeable people in the role; used only when the model has no `people`. */
   count: number;
   /** Cost per hour. */
   cost: number;
@@ -23,6 +23,19 @@ export type Distribution =
   | { kind: "constant" }
   | { kind: "triangular"; min: number; mode: number; max: number };
 
+/** A named person who does the work (docs/PRD.md §6.3.3). */
+export interface EnginePerson {
+  name: string;
+  /** Role ids; ongoing client load and utilisation roll up to these roles. */
+  roles: string[];
+  /** Working hours per week (FTE × the workspace's hours per week). */
+  capacity: number;
+  /** Step ids this person can perform; omitted means every step of their roles. */
+  skills?: string[];
+  /** Leave windows as [start, end) in simulation hours; no new work starts during leave. */
+  leave?: [number, number][];
+}
+
 export interface EngineEdge {
   /** Target step id, or one of the sink ids. */
   to: string;
@@ -35,6 +48,8 @@ export interface EngineStep {
   name: string;
   /** Role that performs the step; null for pure waits/decisions. */
   role: string | null;
+  /** Pinned assignee: only this person works the step. */
+  person?: string | null;
   /** Mean hands-on hours. */
   work: number;
   /** Mean external wait after service, in hours. */
@@ -57,6 +72,10 @@ export interface EngineModel {
   /** Monthly retainer price per won client. */
   retainer: number;
   roles: Record<string, EngineRole>;
+  /** Named people. When omitted, each role gets `count` anonymous people. */
+  people?: Record<string, EnginePerson>;
+  /** Minimum share of a person's time left for pipeline work (default 0.08). */
+  availabilityFloor?: number;
   entry: string;
   sinks: { won: string; lost: string };
   steps: EngineStep[];
@@ -65,6 +84,8 @@ export interface EngineModel {
 /** One visit of an entity to a step: queued, started, ended service, left. */
 export interface TraceSegment {
   step: string;
+  /** Who served it; null for steps with no resource. */
+  person: string | null;
   tQ: number;
   tS: number | null;
   tE: number | null;
@@ -100,12 +121,24 @@ export interface RoleResult {
   ongoingHours: number;
 }
 
+export interface PersonResult {
+  /** Total utilisation: (pipeline + ongoing hours) / capacity. */
+  util: number;
+  pipeline: number;
+  ongoing: number;
+  pipelineHours: number;
+  ongoingHours: number;
+  /** Services completed. */
+  completed: number;
+}
+
 export interface ReplicationResult {
   won: number;
   lost: number;
   cycle: number[];
   steps: Record<string, StepResult>;
   roles: Record<string, RoleResult>;
+  people: Record<string, PersonResult>;
   entities: TraceEntity[] | null;
   H: number;
   activeEnd: number;
@@ -130,6 +163,7 @@ export interface Kpis {
   /** Over every completed item in every replication. */
   cycle: { mean: number; p50: number; p90: number };
   roles: Record<string, { util: Stat; pipeline: Stat; ongoing: Stat }>;
+  people: Record<string, { util: Stat; pipeline: Stat; ongoing: Stat }>;
 }
 
 export interface SimulationResult {
@@ -143,11 +177,16 @@ export interface SimulationResult {
   cycleP90: number;
   steps: Record<string, StepResult>;
   roles: Record<string, RoleResult>;
+  people: Record<string, PersonResult>;
+  /** The resolved people the run used (named, or synthesised from role counts). */
+  resolvedPeople: Record<string, EnginePerson>;
   labour: number;
   costPerWin: number;
   mrrAdded: number;
   bnRole: string | null;
   bnStep: string | null;
+  /** Person with the highest utilisation. */
+  bnPerson: string | null;
   /** Replication 0's entities, for animation. */
   trace: TraceEntity[] | null;
   H: number;

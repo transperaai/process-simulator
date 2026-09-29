@@ -41,17 +41,25 @@ describe("seed", () => {
         roles: await many("select * from roles where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
         steps: await many("select * from steps where revision_id = $1", [process.live_revision_id]),
         edges: await many("select * from edges where revision_id = $1", [process.live_revision_id]),
+        people: await many("select * from people where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
+        personRoles: await many("select * from person_roles where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
+        personSkills: await many("select * from person_skills where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
+        personLeave: await many(
+          "select id, person_id, workspace_id, start_date::text, end_date::text from person_leave where workspace_id = $1",
+          [NORTHBEAM_WORKSPACE_ID],
+        ),
       } as ProcessBundle;
     });
     expect(bundle.process.live_revision_id).toBe(NORTHBEAM_REVISION_ID);
-    expect(toEngineModel(bundle)).toEqual(toEngineModel(northbeamBundle()));
+    const opts = { startDate: "2026-10-05" };
+    expect(toEngineModel(bundle, opts)).toEqual(toEngineModel(northbeamBundle(), opts));
   });
 });
 
 describe("row-level security", () => {
   const countVisible = async (c: import("pg").Client) => {
     const counts: Record<string, number> = {};
-    for (const t of ["workspaces", "roles", "processes", "process_revisions", "steps", "edges"]) {
+    for (const t of ["workspaces", "roles", "processes", "process_revisions", "steps", "edges", "people", "person_roles"]) {
       counts[t] = Number((await c.query(`select count(*) from ${t}`)).rows[0].count);
     }
     return counts;
@@ -60,7 +68,7 @@ describe("row-level security", () => {
   it("lets an agency admin see every workspace", async () => {
     const admin = await createUser(db, "agency@example.com", { agency_admin: true });
     const visible = await db.as(admin.claims, countVisible);
-    expect(visible).toMatchObject({ workspaces: 1, roles: 6, processes: 1, steps: 12, edges: 14 });
+    expect(visible).toMatchObject({ workspaces: 1, roles: 6, processes: 1, steps: 12, edges: 14, people: 11, person_roles: 11 });
   });
 
   it("lets a member with an agency_admin membership see the workspace", async () => {
@@ -81,6 +89,8 @@ describe("row-level security", () => {
       process_revisions: 0,
       steps: 0,
       edges: 0,
+      people: 0,
+      person_roles: 0,
     });
   });
 

@@ -37,4 +37,6 @@ may need code or migration changes.
 | Deferred FKs | `processes.live_revision_id` FK is `deferrable initially deferred`; the seed inserts the process first and links the revision last | Fine on Supabase; noted in case the SQL editor runs statements separately. |
 | Realtime | Not used yet (ticket A7) | Enable Realtime on the relevant tables when that ticket lands. |
 | Storage | Not used yet | Buckets and storage RLS policies come with sources, reports and branding tickets. |
+| Loading people (#6) | `apps/web/src/lib/data.ts` fetches people, person_roles, person_skills and person_leave with supabase-js; only the SQL/RLS side is tested | Open a workspace page with a real project and confirm the People view lists everyone. Dates come back as `YYYY-MM-DD` strings from PostgREST, which the leave conversion expects. |
+| Per-person visibility | People tables are readable by every workspace member for now | PRD §2: members should see only their own record. That RLS change lands with roles and visibility (#30). |
 | Proxy (middleware) | `src/proxy.ts` refreshes the session with `@supabase/ssr` | Next.js 16 renamed middleware to proxy; confirm session refresh works on Vercel's runtime. |

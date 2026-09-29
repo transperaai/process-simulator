@@ -1,4 +1,4 @@
-import type { EdgeRow, ProcessBundle, RoleRow, StepRow } from "../types";
+import type { EdgeRow, PersonRoleRow, PersonRow, ProcessBundle, RoleRow, StepRow } from "../types";
 
 // Northbeam Digital, the prototype's sample agency, as database rows. Ids are
 // fixed so the seed is reproducible, and they sort in the prototype's order so
@@ -38,6 +38,25 @@ export const northbeamStepIds = {
   lost: id("e", 12),
 } as const;
 
+/** Named people matching the prototype's head-counts (fictional). */
+const PEOPLE: [RoleKey, string][] = [
+  ["sales", "Priya Shah"],
+  ["sales", "Tom Reed"],
+  ["strat", "Maya Collins"],
+  ["am", "Leah Brooks"],
+  ["am", "Dan Okafor"],
+  ["seo", "Sam Patel"],
+  ["seo", "Chloe Evans"],
+  ["seo", "Arjun Mehta"],
+  ["ppc", "Nina Kowalski"],
+  ["ppc", "Ben Carter"],
+  ["fin", "Rosa Diaz"],
+];
+
+export const northbeamPersonIds: Record<string, string> = Object.fromEntries(
+  PEOPLE.map(([, name], i) => [name, id("9", i + 1)]),
+);
+
 type RoleKey = keyof typeof northbeamRoleIds;
 type StepKey = keyof typeof northbeamStepIds;
 
@@ -71,6 +90,7 @@ const step = (
   kind,
   outcome: kind === "end" ? (key as "won" | "lost") : null,
   role_id: roleKey ? northbeamRoleIds[roleKey] : null,
+  person_id: null,
   work_hours: work,
   work_dist: "lognormal",
   wait_hours: wait,
@@ -159,5 +179,27 @@ export function northbeamBundle(): ProcessBundle {
       edge("ppc", "live", 1),
       edge("live", "won", 1),
     ],
+    people: PEOPLE.map(
+      ([, name]): PersonRow => ({
+        id: northbeamPersonIds[name]!,
+        workspace_id: ws,
+        name,
+        fte: 1,
+        capacity_hours_week: null,
+        cost_rate: null,
+        active: true,
+        start_date: null,
+        end_date: null,
+      }),
+    ),
+    personRoles: PEOPLE.map(
+      ([roleKey, name]): PersonRoleRow => ({
+        person_id: northbeamPersonIds[name]!,
+        role_id: northbeamRoleIds[roleKey],
+        workspace_id: ws,
+      }),
+    ),
+    personSkills: [],
+    personLeave: [],
   };
 }

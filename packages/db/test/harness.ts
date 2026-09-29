@@ -17,7 +17,12 @@ export interface TestDb {
   close(): Promise<void>;
 }
 
-export async function createTestDb(): Promise<TestDb> {
+export interface TestDbOptions {
+  /** Also load a stand-in for Supabase Realtime's publication and realtime.messages (./sql/realtime-shim.sql). */
+  realtime?: boolean;
+}
+
+export async function createTestDb(options: TestDbOptions = {}): Promise<TestDb> {
   const name = `transpera_flow_test_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
   const admin = new pg.Client({ connectionString: ADMIN_URL });
   await admin.connect();
@@ -30,6 +35,7 @@ export async function createTestDb(): Promise<TestDb> {
   await client.connect();
 
   await client.query(readFileSync(dir("./sql/auth-shim.sql"), "utf8"));
+  if (options.realtime) await client.query(readFileSync(dir("./sql/realtime-shim.sql"), "utf8"));
   const migrations = readdirSync(dir("../supabase/migrations")).filter((f) => f.endsWith(".sql")).sort();
   for (const file of migrations) {
     await client.query(readFileSync(dir(`../supabase/migrations/${file}`), "utf8"));

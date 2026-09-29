@@ -15,12 +15,15 @@ const inputClass =
 /** The "keep mine / keep theirs" prompt for a same-field conflict. `subject` names the field when it isn't next to it. */
 export function ConflictPrompt({
   subject,
+  by = null,
   theirs,
   mine,
   onKeepMine,
   onKeepTheirs,
 }: {
   subject?: ReactNode;
+  /** Who made the other change, when known ("Tom"). */
+  by?: string | null;
   theirs: string;
   mine: string;
   onKeepMine: () => void;
@@ -29,7 +32,8 @@ export function ConflictPrompt({
   return (
     <div role="alert" className="mt-1 rounded-token border border-warn bg-warn-soft p-2 text-xs">
       <p>
-        Someone else changed {subject ?? "this"} to <strong>{theirs}</strong> while you were editing.
+        {by ?? "Someone else"} changed {subject ?? "this"} to <strong>{theirs}</strong> while you were editing. Keep yours or
+        theirs?
       </p>
       <div className="mt-1.5 flex gap-2">
         <button type="button" onClick={onKeepMine} className="rounded-token bg-accent px-2 py-0.5 font-semibold text-accent-fg">

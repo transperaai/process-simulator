@@ -5,18 +5,21 @@ import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type Scen
 import type { EngineModel } from "@transpera-flow/engine";
 import { discardChange, revertField } from "@/lib/drafts/discard";
 import { EMPTY_DIFF, diffBundles, unresolvedSteps } from "@/lib/drafts/diff";
-import { serverDraftBackend } from "@/lib/drafts/server-backend";
-import { MemoryDraftBackend } from "@/lib/drafts/session";
 import { useDraftSession } from "@/lib/drafts/use-draft-session";
 import { PASTE_OFFSET, copySteps, deleteSelection, duplicateSteps, pasteSteps, type StepClipboard } from "@/lib/editor/commands";
 import { describeValue, fieldLabel, namesOf } from "@/lib/editor/describe";
 import type { Conflict, ProcessEditor } from "@/lib/editor/editor";
 import type { Table, Value } from "@/lib/editor/ops";
 import { isProvenanceField } from "@/lib/editor/provenance";
+import { connect } from "@/lib/realtime/connect";
+import type { RealtimeSync } from "@/lib/realtime/sync";
+import type { View, Viewer } from "@/lib/realtime/transport";
+import { useRealtime } from "@/lib/realtime/use-realtime";
 import { useSimulation } from "@/lib/sim/use-simulation";
 import { ChangesPanel, DraftBar, DraftCompare, type DraftView } from "./draft-panels";
 import { ConflictPrompt } from "./fields";
 import { KpiStrip } from "./kpi-strip";
+import { PresenceBar } from "./presence-bar";
 import { NO_SELECTION, ProcessCanvas, type CanvasCommands, type Selection } from "./process-canvas";
 import { useProcessIssues } from "./process-issues";
 import { ScenarioPanel } from "./scenario-panel";
@@ -29,6 +32,9 @@ import { UtilisationBars } from "./utilisation-bars";
  * edits go into the process's draft, never the live revision (issue #9).
  */
 export type EditMode = "live" | "demo" | "readonly";
+
+/** Who you are on the public demo, where nobody signs in. */
+const DEMO_VIEWER: Viewer = { userId: "demo-you", name: "You", email: null };
 
 /** A bundle's engine model, the same object while the model is unchanged (moving a step doesn't change it). */
 function useEngineModel(bundle: ProcessBundle): { model: EngineModel | null; error: string | null } {
@@ -54,6 +60,7 @@ export function ProcessView({
   initialFix = null,
   registerHref,
   userId = null,
+  viewer = null,
 }: {
   live: ProcessBundle;
   draft: ProcessBundle | null;
@@ -68,11 +75,15 @@ export function ProcessView({
   registerHref?: string;
   /** The signed-in user, recorded as who entered the values they change. */
   userId?: string | null;
+  /** The signed-in user as others see them in presence (issue #10). */
+  viewer?: Viewer | null;
 }) {
+  // Saves, catch-up reads and Realtime: the database and Supabase, or memory on the demo.
+  const [connection] = useState(() => connect(mode, initialLive));
   const [session, drafts, state] = useDraftSession(
     initialLive,
     initialDraft,
-    () => (mode === "live" ? serverDraftBackend(initialLive.process.id) : new MemoryDraftBackend(initialLive)),
+    () => connection.backend,
     () => ({ at: new Date().toISOString(), by: userId }),
   );
   const editor = session.editor;
@@ -87,6 +98,9 @@ export function ProcessView({
   const editable = canEdit && !showingLive;
   const [selection, setSelection] = useState<Selection>(NO_SELECTION);
   const [compare, setCompare] = useState(false);
+  const me = viewer ?? (mode === "demo" ? DEMO_VIEWER : null);
+  const presenceView: View = hasDraft && !showingLive ? "draft" : "live";
+  const [sync, realtime] = useRealtime(session, connection.transport, me, presenceView);
 
   const diff = useMemo(() => (hasDraft ? diffBundles(live, working) : EMPTY_DIFF), [hasDraft, live, working]);
   const names = useMemo(() => namesOf(working, live), [working, live]);
@@ -250,6 +264,14 @@ export function ProcessView({
 
   return (
     <div className="flex flex-col gap-3">
+      <PresenceBar
+        sync={sync}
+        state={realtime}
+        me={me}
+        processName={live.process.name}
+        colleague={connection.colleague}
+        selectedStep={selected.steps.length === 1 ? selected.steps[0]! : null}
+      />
       <DraftBar
         session={session}
         drafts={drafts}
@@ -290,7 +312,7 @@ export function ProcessView({
           {shownModel && result ? " The figures above are from before this change." : ""}
         </p>
       )}
-      {editable && <SaveProblems editor={editor} bundle={bundle} conflicts={state.conflicts} error={state.error} />}
+      {editable && <SaveProblems editor={editor} bundle={bundle} conflicts={state.conflicts} error={state.error} sync={sync} />}
       <div className="grid gap-3 lg:grid-cols-[1fr_22rem]">
         <ProcessCanvas
           bundle={bundle}
@@ -361,11 +383,14 @@ function SaveProblems({
   bundle,
   conflicts,
   error,
+  sync,
 }: {
   editor: ProcessEditor;
   bundle: ProcessBundle;
   conflicts: Conflict[];
   error: string | null;
+  /** Names who made the other change, when their note has arrived. */
+  sync: RealtimeSync | null;
 }) {
   // A value's provenance is settled along with the value, so it gets no prompt of its own.
   conflicts = conflicts.filter((c) => !isProvenanceField(c.field));
@@ -384,6 +409,7 @@ function SaveProblems({
         <ConflictPrompt
           key={`${c.table}:${c.id}:${c.field}`}
           subject={subject(c)}
+          by={sync?.who(c.table, c.id, c.field, c.theirs) ?? null}
           theirs={show(c.field, c.theirs)}
           mine={show(c.field, c.mine)}
           onKeepMine={() => void editor.keepMine(c)}

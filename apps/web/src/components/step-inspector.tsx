@@ -24,7 +24,7 @@ import { POSITION } from "@/lib/drafts/discard";
 import type { StepChange } from "@/lib/drafts/diff";
 import { describeValue, fieldLabel } from "@/lib/editor/describe";
 import type { ProcessEditor } from "@/lib/editor/editor";
-import type { Edit, Scalar } from "@/lib/editor/ops";
+import { readField, type Edit, type Scalar } from "@/lib/editor/ops";
 import type { SaveOutcome, Saver } from "@/lib/fields/field-controller";
 import { formatHours } from "@/lib/format";
 
@@ -67,14 +67,24 @@ export function StepInspector({
     ref.current?.querySelector<HTMLElement>("input, select, textarea")?.focus();
     onFocused?.();
   }, [autoFocus, onFocused]);
-  /** A saver that runs an edit; the editor saves it and reports conflicts itself. */
+  /**
+   * A saver that runs an edit; the editor saves it and reports conflicts
+   * itself. With `check`, a field someone else saved while this one was
+   * being typed (its stored value is no longer the one editing started from)
+   * becomes a keep mine / keep theirs conflict instead of a silent overwrite.
+   */
   const via =
-    <T extends Scalar>(build: (b: ProcessBundle, value: T) => Edit | null): Saver<T> =>
-    async (_base, next) => {
-      editor.run((b) => build(b, next));
+    <T extends Scalar>(build: (b: ProcessBundle, value: T) => Edit | null, check?: { field: string; current: T }): Saver<T> =>
+    async (base, next) => {
+      if (check && !sameish(check.current, base) && !sameish(check.current, next)) {
+        editor.raiseConflict({ table: "steps", id, field: check.field, mine: next, theirs: check.current, retry: (b) => build(b, next) });
+      } else {
+        editor.run((b) => build(b, next));
+      }
       return { status: "saved", value: next } as SaveOutcome<T>;
     };
-  const field = <T extends Scalar>(name: string) => via<T>((b, v) => updateStep(b, id, { [name]: v }));
+  const field = <T extends Scalar>(name: string) =>
+    via<T>((b, v) => updateStep(b, id, { [name]: v }), { field: name, current: readField(step, name) as T });
   const working = step.kind !== "start" && step.kind !== "end";
 
   const kindOptions: SelectOption[] = [...STEP_KINDS, ...(step.kind === "subprocess" ? (["subprocess"] as const) : [])]
@@ -280,6 +290,14 @@ function DraftChanges({ info, change }: { info: DraftInfo; change: StepChange })
 
 const nullableNumber = (v: number | null) => (v === null ? null : Number(v));
 
+/** Equal as the inspector shows values: numbers to the precision it displays, blank text as none. */
+function sameish(a: Scalar, b: Scalar): boolean {
+  const blank = (v: Scalar) => v === null || v === "";
+  if (blank(a) || blank(b)) return blank(a) && blank(b);
+  if (typeof a === "number" || typeof b === "number") return Math.abs(Number(a) - Number(b)) < 1e-6;
+  return a === b;
+}
+
 /** Refuse fractions before they reach the saver. */
 const wholeNumber =
   (save: Saver<number | null>): Saver<number | null> =>
@@ -296,7 +314,7 @@ function Duration({
   phase: Phase;
   title: string;
   step: StepRow;
-  via: <T extends Scalar>(build: (b: ProcessBundle, value: T) => Edit | null) => Saver<T>;
+  via: <T extends Scalar>(build: (b: ProcessBundle, value: T) => Edit | null, check?: { field: string; current: T }) => Saver<T>;
   field: <T extends Scalar>(name: string) => Saver<T>;
 }) {
   const dist = step[`${phase}_dist`];
@@ -304,7 +322,10 @@ function Duration({
   const params = step[`${phase}_params`] ?? {};
   const range = triangularRange(params, mean);
   const point = (p: "min" | "mode" | "max") =>
-    via<number | null>((b, v) => (v === null ? null : setRangePoint(b, step.id, phase, p, v)));
+    via<number | null>((b, v) => (v === null ? null : setRangePoint(b, step.id, phase, p, v)), {
+      field: `${phase}_params.${p}`,
+      current: range[p],
+    });
   return (
     <fieldset className={sectionClass}>
       <legend className="sr-only">{title}</legend>

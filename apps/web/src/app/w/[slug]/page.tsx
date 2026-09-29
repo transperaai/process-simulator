@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { ProcessView } from "@/components/process-view";
-import { canEditWorkspace, canManageWorkspace, currentUserId } from "@/lib/access-data";
+import { canEditWorkspace, canManageWorkspace, currentViewer } from "@/lib/access-data";
 import { loadProcessForEditing, loadWorkspaceIssues, loadWorkspaceScenarios } from "@/lib/data";
 
 export default async function WorkspacePage(props: PageProps<"/w/[slug]">) {
@@ -11,12 +11,12 @@ export default async function WorkspacePage(props: PageProps<"/w/[slug]">) {
   const process = await loadProcessForEditing(slug);
   if (!process) notFound();
   const { live, draft } = process;
-  const [canEdit, canManage, scenarios, issues, userId] = await Promise.all([
+  const [canEdit, canManage, scenarios, issues, viewer] = await Promise.all([
     canEditWorkspace(live.workspace.id),
     canManageWorkspace(live.workspace.id),
     loadWorkspaceScenarios(live.workspace.id),
     loadWorkspaceIssues(live.workspace.id),
-    currentUserId(),
+    currentViewer(),
   ]);
   return (
     <main className="mx-auto w-full max-w-7xl px-4 pb-8">
@@ -43,7 +43,8 @@ export default async function WorkspacePage(props: PageProps<"/w/[slug]">) {
         issues={issues}
         initialFix={typeof fix === "string" ? fix : null}
         registerHref={`/w/${slug}/issues`}
-        userId={userId}
+        userId={viewer?.userId ?? null}
+        viewer={viewer}
       />
     </main>
   );

@@ -321,9 +321,29 @@ export interface Kpis {
   services: Record<string, { arrivals: Stat; won: Stat; lost: Stat }>;
 }
 
+/**
+ * Headline metrics per replication, in replication order. Replication i of
+ * every run with the same seed uses the same random streams, so two runs'
+ * samples pair up for a delta's range (common random numbers; see compare.ts).
+ */
+export interface ReplicationSamples {
+  won: number[];
+  lost: number[];
+  mrrAdded: number[];
+  billed: number[];
+  labour: number[];
+  wipEnd: number[];
+  /** Mean cycle time of the replication's completed items (0 when none completed). */
+  cycleMean: number[];
+}
+
 export interface SimulationResult {
   /** Means and ranges; the flat fields below are the prototype's shape, kept for compatibility. */
   kpi: Kpis;
+  /** Per-replication values behind `kpi`, for paired comparisons. */
+  samples: ReplicationSamples;
+  /** The seed the run started from. */
+  seed: number;
   won: number;
   wonLow: number;
   wonHigh: number;

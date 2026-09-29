@@ -101,3 +101,13 @@ insert into public.workspace_access_emails (id, workspace_id, email, role, perso
   ('70000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'rosa.diaz@northbeam.example', 'owner', '90000000-0000-4000-8000-00000000000b'),
   ('70000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'leah.brooks@northbeam.example', 'editor', '90000000-0000-4000-8000-000000000004'),
   ('70000000-0000-4000-8000-000000000004', 'a0000000-0000-4000-8000-000000000001', 'sam.patel.seo@example.com', 'member', '90000000-0000-4000-8000-000000000006');
+
+-- Scenario library: replaces the generic one the workspace trigger created
+
+delete from public.scenarios where workspace_id in ('a0000000-0000-4000-8000-000000000001');
+
+insert into public.scenarios (id, workspace_id, name, description, patch, parent_scenario_id) values
+  ('60000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'Hire a strategist', 'A second full-time strategist to share audits, proposals and kickoffs.', '[{"path":"roles.b0000000-0000-4000-8000-000000000002.headcount","op":"add","value":1}]', null),
+  ('60000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'Automate proposals', 'Templates and SEMrush exports cut hands-on time on audits and proposals by 60%.', '[{"path":"steps.e0000000-0000-4000-8000-000000000003.work_hours","op":"multiply","value":0.4}]', null),
+  ('60000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'More leads', '25% more leads every week.', '[{"path":"demand.leads_per_week","op":"multiply","value":1.25}]', null),
+  ('60000000-0000-4000-8000-000000000004', 'a0000000-0000-4000-8000-000000000001', 'Downturn', '30% fewer leads a week, and client churn up by half.', '[{"path":"demand.leads_per_week","op":"multiply","value":0.7},{"path":"demand.churn_monthly","op":"multiply","value":1.5}]', null);

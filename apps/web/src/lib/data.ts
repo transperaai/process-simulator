@@ -3,6 +3,7 @@ import {
   DEMAND_SETTINGS_COLUMNS,
   LEAD_SOURCE_COLUMNS,
   loadLiveProcessBySlug,
+  loadScenarios,
   SEASONALITY_COLUMNS,
   SERVICE_COLUMNS,
   type DemandSettingsRow,
@@ -13,6 +14,7 @@ import {
   type PersonSkillRow,
   type ProcessBundle,
   type RoleRow,
+  type ScenarioRow,
   type SeasonalityRow,
   type ServiceRow,
   type StepRow,
@@ -32,6 +34,11 @@ export async function listWorkspaces(): Promise<Pick<WorkspaceRow, "id" | "name"
 /** The workspace's first process at its live revision, or null if not visible. */
 export async function loadLiveProcess(slug: string): Promise<ProcessBundle | null> {
   return loadLiveProcessBySlug(await createClient(), slug);
+}
+
+/** The workspace's saved scenarios, oldest first (RLS: everyone in the workspace can read them). */
+export async function loadWorkspaceScenarios(workspaceId: string): Promise<ScenarioRow[]> {
+  return loadScenarios(await createClient(), workspaceId);
 }
 
 export interface PersonDetail extends PersonRow {

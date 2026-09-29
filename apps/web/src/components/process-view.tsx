@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ModelError, toEngineModel, type ProcessBundle } from "@transpera-flow/db";
+import { ModelError, toEngineModel, type ProcessBundle, type ScenarioRow } from "@transpera-flow/db";
 import type { EngineModel } from "@transpera-flow/engine";
 import { PASTE_OFFSET, copySteps, deleteSelection, duplicateSteps, pasteSteps, type StepClipboard } from "@/lib/editor/commands";
 import type { Conflict, ProcessEditor } from "@/lib/editor/editor";
@@ -14,6 +14,7 @@ import { useSimulation } from "@/lib/sim/use-simulation";
 import { ConflictPrompt } from "./fields";
 import { KpiStrip } from "./kpi-strip";
 import { NO_SELECTION, ProcessCanvas, type CanvasCommands, type Selection } from "./process-canvas";
+import { ScenarioPanel } from "./scenario-panel";
 import { FIELD_LABELS, StepInspector } from "./step-inspector";
 import { UtilisationBars } from "./utilisation-bars";
 
@@ -26,10 +27,13 @@ export type EditMode = "live" | "demo" | "readonly";
 export function ProcessView({
   bundle: initial,
   mode,
+  scenarios = [],
   userId = null,
 }: {
   bundle: ProcessBundle;
   mode: EditMode;
+  /** Saved scenarios of the workspace (in memory on the demo). */
+  scenarios?: ScenarioRow[];
   /** The signed-in user, recorded as who entered the values they change. */
   userId?: string | null;
 }) {
@@ -216,6 +220,16 @@ export function ProcessView({
           <UtilisationBars model={shownModel} result={result} />
         ) : null}
       </div>
+      {shownModel && (
+        <ScenarioPanel
+          model={shownModel}
+          baseline={sim.run}
+          currency={bundle.workspace.settings.currency}
+          workspaceId={bundle.workspace.id}
+          initialScenarios={scenarios}
+          mode={mode}
+        />
+      )}
     </div>
   );
 }

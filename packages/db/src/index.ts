@@ -22,6 +22,7 @@ export {
   northbeamLeadSourceIds,
   northbeamPersonIds,
   northbeamRoleIds,
+  northbeamScenarios,
   northbeamServiceIds,
   northbeamStepIds,
 } from "./fixtures/northbeam";
@@ -31,6 +32,8 @@ export {
   listProcesses,
   loadLiveProcessBySlug,
   loadProcessBundle,
+  loadScenarios,
+  SCENARIO_COLUMNS,
   SEASONALITY_COLUMNS,
   SERVICE_COLUMNS,
   type Db,

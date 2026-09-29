@@ -23,6 +23,7 @@ import type {
   Outcome,
   PersonResult,
   ReplicationResult,
+  ReplicationSamples,
   RoleResult,
   ServiceCounts,
   Stat,
@@ -724,13 +725,15 @@ export function stat(values: number[]): Stat {
   return { mean: values.reduce((a, b) => a + b, 0) / values.length, p10: pct(values, 0.1), p90: pct(values, 0.9) };
 }
 
+/** Pipeline labour cost of one replication. */
+function labourOf(model: EngineModel, r: ReplicationResult): number {
+  let total = 0;
+  for (const rid in model.roles) total += r.roles[rid]!.pipelineHours * model.horizonWeeks * model.roles[rid]!.cost;
+  return total;
+}
+
 function kpis(model: EngineModel, runs: ReplicationResult[], cycle: number[]): Kpis {
-  const labourOf = (r: ReplicationResult) => {
-    let total = 0;
-    for (const rid in model.roles) total += r.roles[rid]!.pipelineHours * model.horizonWeeks * model.roles[rid]!.cost;
-    return total;
-  };
-  const labour = runs.map(labourOf);
+  const labour = runs.map((r) => labourOf(model, r));
   const roles: Kpis["roles"] = {};
   for (const rid in model.roles) {
     roles[rid] = {
@@ -841,8 +844,19 @@ export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationRes
   }
 
   const kpi = kpis(model, runs, cycle);
+  const samples: ReplicationSamples = {
+    won: wonArr,
+    lost: runs.map((r) => r.lost),
+    mrrAdded: runs.map((r) => r.newMrr),
+    billed: runs.map((r) => r.billed),
+    labour: runs.map((r) => labourOf(model, r)),
+    wipEnd: runs.map((r) => Object.values(r.steps).reduce((a, st) => a + st.wip, 0)),
+    cycleMean: runs.map((r) => (r.cycle.length ? r.cycle.reduce((a, b) => a + b, 0) / r.cycle.length : 0)),
+  };
   return {
     kpi,
+    samples,
+    seed,
     won,
     wonLow: pct(wonArr, 0.1),
     wonHigh: pct(wonArr, 0.9),

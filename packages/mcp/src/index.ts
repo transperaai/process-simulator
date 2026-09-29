@@ -4,4 +4,4 @@ export { API_TOKEN_HEADER, handleMcpRequest, type McpHandlerOptions } from "./ha
 export { assertPublishableKey } from "./key-guard";
 export { ToolError, type ToolPayload } from "./result";
 export { generateApiToken, hashApiToken, looksLikeApiToken } from "./tokens";
-export { createMcpServer, DEFAULT_REPS, DEFAULT_SEED, summarizeRun, TOOL_NAMES } from "./tools";
+export { applyOverrides, createMcpServer, DEFAULT_REPS, DEFAULT_SEED, summarizeRun, TOOL_NAMES } from "./tools";

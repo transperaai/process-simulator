@@ -39,7 +39,7 @@ const DEFAULT_WORK_DIST: Distribution = { kind: "lognormal", cv: 0.35 };
 const DEFAULT_WAIT_DIST: Distribution = { kind: "lognormal", cv: 0.3 };
 const WEEKS_PER_MONTH = 4.33;
 /** Stride between replication seeds. */
-const SEED_STRIDE = 7919;
+export const SEED_STRIDE = 7919;
 /** Automatic warm-up: at least this many weeks (docs/PRD.md §6.3.1)... */
 const DEFAULT_WARMUP_WEEKS = 4;
 /** ...or twice the pilot run's P90 cycle time if longer, up to this cap. */

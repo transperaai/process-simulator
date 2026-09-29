@@ -65,7 +65,10 @@ import type { EditorState, ProcessEditor } from "@/lib/editor/editor";
 import type { InlineField } from "@/lib/editor/inline-edit";
 import { laneLayout, type Lane } from "@/lib/editor/lanes";
 import { formatHours, formatNumber } from "@/lib/format";
+import { usePlayback } from "@/lib/playback/use-playback";
 import { InlineEditContext, NodeInlineEditor, type InlineEditing } from "./node-inline-editor";
+import { PlaybackBar } from "./playback-bar";
+import { PlaybackLayer } from "./playback-layer";
 import { NodeMenu, type CanvasCommands, type MenuState } from "./node-menu";
 
 export type { CanvasCommands } from "./node-menu";
@@ -90,6 +93,8 @@ type StepNodeData = {
   reworkTo: string | null;
   /** The field to focus while the card is being edited in place; null when it isn't. */
   editing: InlineField | null;
+  /** The bottleneck, while playback plays. */
+  pulse: boolean;
 };
 
 type StepFlowNode = Node<StepNodeData, "step">;
@@ -150,12 +155,15 @@ function stepLabel({ step, role, person, warning, reworkTo }: StepNodeData): str
 }
 
 function StepNode({ data, selected }: NodeProps<StepFlowNode>) {
-  const { step, role, person, avgQueue, bottleneck, warning, editable, reworkTo, editing } = data;
+  const { step, role, person, avgQueue, bottleneck, warning, editable, reworkTo, editing, pulse } = data;
   const who = person?.name ?? role?.name;
   return (
     <div
       className={`relative rounded-token border bg-panel shadow-token ${editing ? "w-60 border-accent" : "w-44"} ${bottleneck && !editing ? "border-crit ring-2 ring-crit/40" : editing ? "" : "border-line-2"} ${selected ? selectedRing : ""}`}
     >
+      {pulse && !editing && (
+        <span aria-hidden className="bottleneck-pulse pointer-events-none absolute -inset-1.5 rounded-token border-2 border-crit" />
+      )}
       <Handle type="target" position={Position.Left} className={handleClass(editable)} />
       <div className="h-1 rounded-t-token" style={{ background: role?.color ?? "var(--line-2)" }} />
       {editing ? (
@@ -349,8 +357,8 @@ function BranchEditor({ editor, edgeId, probability, tag }: { editor: ProcessEdi
 const nodeTypes = { step: StepNode, terminal: TerminalNode };
 const edgeTypes = { branch: BranchEdge };
 
-/** Room around the steps when framing them: the toolbar sits top left, lane names on the left. */
-const fitPadding = (lanes: boolean) => ({ top: "64px", right: "24px", bottom: "24px", left: lanes ? "150px" : "24px" }) as const;
+/** Room around the steps when framing them: the toolbar sits top left, playback along the foot, lane names on the left. */
+const fitPadding = (lanes: boolean) => ({ top: "64px", right: "24px", bottom: "72px", left: lanes ? "150px" : "24px" }) as const;
 
 const EDIT_ARIA: Partial<AriaLabelConfig> = {
   "node.a11yDescription.default":
@@ -416,6 +424,7 @@ function Canvas({ bundle, result, editor, editorState, selection, onSelectionCha
   const [menu, setMenu] = useState<(MenuState & { bounds: { width: number; height: number } }) | null>(null);
   // Which step's menu is open, synchronously, so the context-menu event that follows Shift+F10 doesn't reopen it.
   const menuFor = useRef<string | null>(null);
+  const playback = usePlayback(bundle, result);
 
   const warnings = useMemo(() => (editable ? stepWarnings(bundle) : new Map<string, string>()), [bundle, editable]);
   const order = useMemo(() => flowOrder(bundle), [bundle]);
@@ -447,6 +456,7 @@ function Canvas({ bundle, result, editor, editorState, selection, onSelectionCha
           editable,
           reworkTo: step.rework_to_step_id ? (names.get(step.rework_to_step_id) ?? null) : null,
           editing: editing && editingId === step.id ? editing.field : null,
+          pulse: playback.pulsing && result?.bnStep === step.id,
         };
         const node: FlowNode = {
           id: step.id,
@@ -465,7 +475,7 @@ function Canvas({ bundle, result, editor, editorState, selection, onSelectionCha
         nodeCache.set(step.id, node);
         return node;
       });
-  }, [bundle, result, selection.steps, dragging, measured, warnings, editable, order, layout, editing, editingId, nodeCache]);
+  }, [bundle, result, selection.steps, dragging, measured, warnings, editable, order, layout, editing, editingId, nodeCache, playback.pulsing]);
 
   const edges = useMemo(() => {
     const selected = new Set(selection.edges);
@@ -689,6 +699,16 @@ function Canvas({ bundle, result, editor, editorState, selection, onSelectionCha
               <LaneToggle lanes={lanes} onToggle={toggleLanes} />
             </div>
           )}
+          {/* Playback of the run (issue #14), over the foot of the map; before it in the page, for Tab. */}
+          <div className="absolute right-2.5 bottom-2.5 left-2.5 z-10">
+            <PlaybackBar
+              clock={playback.clock}
+              H={playback.index?.H ?? null}
+              hoursPerWeek={playback.hoursPerWeek}
+              reps={result?.reps ?? null}
+              describe={playback.describe}
+            />
+          </div>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -746,6 +766,15 @@ function Canvas({ bundle, result, editor, editorState, selection, onSelectionCha
           >
             <Background color="var(--line)" gap={24} />
             {layout && <LaneLayer lanes={layout.lanes} />}
+            {playback.index && (
+              <PlaybackLayer
+                clock={playback.clock}
+                index={playback.index}
+                steps={playback.steps}
+                bottleneck={result?.bnStep ?? null}
+                reducedMotion={playback.reducedMotion}
+              />
+            )}
           </ReactFlow>
           {menu && editor && commands && (
             <NodeMenu
@@ -931,6 +960,8 @@ const KEYS: [string, string][] = [
   ["Delete", "delete what is selected"],
   ["mod+Z / mod+Y", "undo / redo"],
   ["Esc", "clear the selection"],
+  ["Space (playback bar)", "play or pause"],
+  ["Arrows (scrubber)", "an hour (Shift: a day); Page Up/Down: a week"],
 ];
 
 function KeysHelp({ mod }: { mod: string }) {

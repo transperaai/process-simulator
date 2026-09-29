@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { northbeamModel, simulate, type EngineModel } from "@flowsim/engine";
+import { northbeamModel, simulate, type EngineModel } from "@transpera-flow/engine";
 import {
   ModelError,
   northbeamBundle,

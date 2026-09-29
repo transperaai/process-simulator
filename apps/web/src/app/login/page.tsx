@@ -11,7 +11,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6 px-4 py-16">
       <div>
-        <p className="font-mono text-xs uppercase tracking-widest text-fg-3">Flowsim</p>
+        <p className="font-mono text-xs uppercase tracking-widest text-fg-3">Transpera Flow</p>
         <h1 className="text-2xl font-bold">Sign in</h1>
       </div>
       {error ? (

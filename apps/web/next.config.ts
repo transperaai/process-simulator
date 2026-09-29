@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["@flowsim/engine", "@flowsim/db"],
+  transpilePackages: ["@transpera-flow/engine", "@transpera-flow/db"],
 };
 
 export default nextConfig;

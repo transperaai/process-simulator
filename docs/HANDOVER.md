@@ -61,8 +61,8 @@ claude                 # first run signs in to your Claude account; /exit afterw
 
 ```sh
 mkdir -p ~/Code && cd ~/Code
-gh repo clone transperaai/process-simulator
-cd process-simulator
+gh repo clone transperaai/transpera-flow
+cd transpera-flow
 git checkout claude/charming-cannon-2jmd09
 corepack enable            # gives you pnpm 10 (Node 22 required)
 pnpm install
@@ -70,7 +70,7 @@ npx supabase login         # opens the browser
 npx vercel login
 ```
 
-**4. Start the session** from inside `process-simulator`:
+**4. Start the session** from inside `transpera-flow`:
 
 ```sh
 claude remote-control      # or open this folder in the Claude Desktop app
@@ -83,8 +83,8 @@ and network.
 
 > Read `docs/HANDOVER.md` and `CLAUDE.md`, then work through "Steps for the next
 > session" one at a time. If the current folder isn't a clone of
-> `transperaai/process-simulator`, clone it first with
-> `gh repo clone transperaai/process-simulator`, `cd` into it, check out
+> `transperaai/transpera-flow`, clone it first with
+> `gh repo clone transperaai/transpera-flow`, `cd` into it, check out
 > `claude/charming-cannon-2jmd09`, and run `corepack enable && pnpm install`.
 > The Supabase and Vercel CLIs are logged in on this machine (if not, walk me
 > through `npx supabase login` and `npx vercel login`). Ask me before merging to `main`.
@@ -92,8 +92,8 @@ and network.
 For the full test suite locally you also need Postgres 16 and Chromium:
 
 ```sh
-docker run -d --name flowsim-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16
-pnpm --filter @flowsim/engine exec playwright-core install chromium
+docker run -d --name transpera-flow-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16
+pnpm --filter @transpera-flow/engine exec playwright-core install chromium
 pnpm lint && pnpm typecheck && pnpm test
 ```
 
@@ -177,6 +177,6 @@ Work the frontier: any open ticket whose "Blocked by" issues are all closed. Clo
 - **Engine determinism**: never use `Math.log`/`Math.exp` in the engine; use `det-math.ts`.
   The browser-vs-Node byte-identity test will catch it.
 - **Fixtures are the source of truth for sample data**: after changing them or a migration,
-  run `pnpm --filter @flowsim/db gen:seed` and `gen:bootstrap` (CI fails if stale).
+  run `pnpm --filter @transpera-flow/db gen:seed` and `gen:bootstrap` (CI fails if stale).
 - **Engine numbers moved from the prototype** after the stream fix: Northbeam now shows
   ~7.5 wins/quarter and the strategist at ~92% (prototype: 7.1 / 91%). Parity is statistical.

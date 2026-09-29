@@ -1,4 +1,4 @@
-import type { EngineModel, SimulationResult } from "@flowsim/engine";
+import type { EngineModel, SimulationResult } from "@transpera-flow/engine";
 import type { SimRequest, SimResponse } from "./protocol";
 
 export class SimulationCancelled extends Error {

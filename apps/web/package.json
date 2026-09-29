@@ -1,5 +1,5 @@
 {
-  "name": "@flowsim/web",
+  "name": "@transpera-flow/web",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -11,8 +11,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@flowsim/db": "workspace:*",
-    "@flowsim/engine": "workspace:*",
+    "@transpera-flow/db": "workspace:*",
+    "@transpera-flow/engine": "workspace:*",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.117.2",
     "@xyflow/react": "^12.12.0",

@@ -16,7 +16,7 @@ export interface TestDb {
 }
 
 export async function createTestDb(): Promise<TestDb> {
-  const name = `flowsim_test_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
+  const name = `transpera_flow_test_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
   const admin = new pg.Client({ connectionString: ADMIN_URL });
   await admin.connect();
   await admin.query(`create database ${name}`);

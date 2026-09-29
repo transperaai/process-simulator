@@ -1,4 +1,4 @@
-# PRD — Process Map Simulator (working title: "Flowsim")
+# PRD — Transpera Flow (process map simulator)
 
 Version 0.3 · 29 Sep 2026 · Owner: Austin · Audience: Claude Code (implementation), future contributors
 
@@ -10,7 +10,7 @@ Reference prototype: the "Northbeam Process Simulator" artifact (single-file HTM
 
 ## 1. Summary
 
-Flowsim is a multi-tenant web app that turns a company's documented workflows into a runnable model. An agency consultant (Austin) maps a client's processes during a paid audit, attaches findings to specific steps, and quantifies fixes as before/after scenarios using a discrete-event Monte Carlo simulation. The client then keeps a live workspace: their ops manager maintains the maps, tracks issues, sees per-person and per-role capacity, watches client health and churn risk, and re-runs scenarios (more leads, new hire, faster step, market downturn) at any time. Claude can build and edit processes in a workspace through an MCP server; AI-originated changes never reach production without human review.
+Transpera Flow is a multi-tenant web app that turns a company's documented workflows into a runnable model. An agency consultant (Austin) maps a client's processes during a paid audit, attaches findings to specific steps, and quantifies fixes as before/after scenarios using a discrete-event Monte Carlo simulation. The client then keeps a live workspace: their ops manager maintains the maps, tracks issues, sees per-person and per-role capacity, watches client health and churn risk, and re-runs scenarios (more leads, new hire, faster step, market downturn) at any time. Claude can build and edit processes in a workspace through an MCP server; AI-originated changes never reach production without human review.
 
 Three jobs, in priority order:
 
@@ -20,7 +20,7 @@ Three jobs, in priority order:
 
 ### Business model and cost constraint
 
-Flowsim is **not sold separately**. It is included in Austin's service retainer as part of a suite. Every dollar of opex is margin, so:
+Transpera Flow is **not sold separately**. It is included in Austin's service retainer as part of a suite. Every dollar of opex is margin, so:
 
 - Hosting cost must be flat, not per-client (target ≈ $45/month total, §10).
 - Interactive simulation runs in the browser (zero server cost).
@@ -49,9 +49,9 @@ Visibility rules (v1):
 
 - Per-person data (capacity, utilisation, capacity factor) is visible to `agency_admin`, `owner` and `editor`, **and to the person themselves**. `member` sees roles, their own record and the clients assigned to them only.
 - Share links see only what their toggles allow (People, Financials, Clients), enforced server-side (§9).
-- Flowsim models people for **capacity, not performance** (§6.3.7). There are no rankings, leaderboards or "vs role median" benchmarks.
+- Transpera Flow models people for **capacity, not performance** (§6.3.7). There are no rankings, leaderboards or "vs role median" benchmarks.
 
-Legal: Flowsim processes employee and client data on behalf of the client (client = controller, Austin = processor). Austin's retainer template must include a data processing agreement (DPA) clause. Not a software requirement, but a launch prerequisite.
+Legal: Transpera Flow processes employee and client data on behalf of the client (client = controller, Austin = processor). Austin's retainer template must include a data processing agreement (DPA) clause. Not a software requirement, but a launch prerequisite.
 
 ---
 

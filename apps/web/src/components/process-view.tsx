@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { ModelError, toEngineModel, type ProcessBundle } from "@flowsim/db";
+import { ModelError, toEngineModel, type ProcessBundle } from "@transpera-flow/db";
 import { useSimulation } from "@/lib/sim/use-simulation";
 import { KpiStrip } from "./kpi-strip";
 import { ProcessCanvas } from "./process-canvas";

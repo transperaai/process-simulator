@@ -1,4 +1,4 @@
-import { northbeamBundle } from "@flowsim/db";
+import { northbeamBundle } from "@transpera-flow/db";
 import { AppHeader } from "@/components/app-header";
 import { ProcessView } from "@/components/process-view";
 

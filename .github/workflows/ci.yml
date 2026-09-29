@@ -35,8 +35,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Install Chromium for the browser determinism test
-        run: pnpm --filter @flowsim/engine exec playwright-core install --with-deps chromium
+        run: pnpm --filter @transpera-flow/engine exec playwright-core install --with-deps chromium
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
-      - run: pnpm --filter @flowsim/web build
+      - run: pnpm --filter @transpera-flow/web build

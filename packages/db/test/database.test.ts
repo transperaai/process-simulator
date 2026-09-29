@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  NORTHBEAM_PROCESS_ID,
   NORTHBEAM_REVISION_ID,
   NORTHBEAM_WORKSPACE_ID,
   northbeamAccess,
@@ -124,10 +125,21 @@ describe("row-level security", () => {
       "insert into memberships (workspace_id, user_id, role) values ($1, $2, 'editor'), ($1, $3, 'viewer')",
       [NORTHBEAM_WORKSPACE_ID, editor.id, viewer.id],
     );
-    const bump = (c: import("pg").Client) =>
-      c.query("update steps set work_hours = 7 where id = $1 returning id", [northbeamStepIds.audit]).then((r) => r.rowCount);
+    // Edits go into the process's draft (issue #9); the viewer can't open one, nor write to the editor's.
+    const bump = async (c: import("pg").Client) => {
+      await c.query("select public.open_draft($1)", [NORTHBEAM_PROCESS_ID]);
+      return c
+        .query("update steps set work_hours = 7 where id = $1 and revision_id <> $2 returning id", [northbeamStepIds.audit, NORTHBEAM_REVISION_ID])
+        .then((r) => r.rowCount);
+    };
     expect(await db.as(editor.claims, bump)).toBe(1);
     expect(await db.as(viewer.claims, bump)).toBe(0);
+    const viewerOnEditorsDraft = async (c: import("pg").Client) => {
+      await c.query("select public.open_draft($1)", [NORTHBEAM_PROCESS_ID]);
+      await c.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify(viewer.claims)]);
+      return c.query("update steps set work_hours = 7 where id = $1 returning id", [northbeamStepIds.audit]).then((r) => r.rowCount);
+    };
+    expect(await db.as(editor.claims, viewerOnEditorsDraft)).toBe(0);
   });
 
   it("stops non-admins creating workspaces", async () => {

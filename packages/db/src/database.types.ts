@@ -807,8 +807,14 @@ export type Database = {
       can_edit_workspace: { Args: { ws: string }; Returns: boolean }
       can_manage_workspace: { Args: { ws: string }; Returns: boolean }
       can_read_workspace: { Args: { ws: string }; Returns: boolean }
+      discard_draft: { Args: { target_process: string }; Returns: Json }
       is_agency_admin: { Args: never; Returns: boolean }
       is_free_mail_domain: { Args: { domain: string }; Returns: boolean }
+      open_draft: { Args: { target_process: string }; Returns: Json }
+      publish_process: {
+        Args: { accept_estimates?: boolean; target_process: string }
+        Returns: Json
+      }
       qualifies_for_domain: {
         Args: { domain: string; uid: string }
         Returns: boolean

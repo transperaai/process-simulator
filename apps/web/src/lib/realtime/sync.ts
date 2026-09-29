@@ -16,7 +16,7 @@
 import type { DraftSession } from "@/lib/drafts/session";
 import { describeValue, fieldLabel, namesOf } from "@/lib/editor/describe";
 import { sameScalar } from "@/lib/editor/commands";
-import type { Scalar, Table } from "@/lib/editor/ops";
+import type { Table, Value } from "@/lib/editor/ops";
 import type { Applied } from "./merge";
 import type { ChannelStatus, Note, Present, ProcessChannel, RealtimeTransport, View, Viewer } from "./transport";
 
@@ -31,7 +31,7 @@ export interface Activity {
   /** The sentence without its subject: "changed Audit's hands-on time to 4h". */
   what: string;
   author:
-    | { kind: "field"; table: Table; id: string; field: string; value: Scalar }
+    | { kind: "field"; table: Table; id: string; field: string; value: Value }
     | { kind: "rows"; op: "insert" | "remove"; table: Table; id: string };
 }
 
@@ -68,7 +68,7 @@ export class RealtimeSync {
   private view: View;
   private readonly since: string;
   private readonly key: string;
-  private notes = new Map<string, { value: Scalar; by: Viewer; at: number }>();
+  private notes = new Map<string, { value: Value; by: Viewer; at: number }>();
   private draftNotes = new Map<string, { by: Viewer; at: number }>();
   private rowNotes = new Map<string, { by: Viewer; at: number }>();
   private seenOffline = false;
@@ -158,7 +158,7 @@ export class RealtimeSync {
   }
 
   /** Who saved `value` into this field, if a note said so. */
-  who(table: Table, id: string, field: string, value: Scalar): string | null {
+  who(table: Table, id: string, field: string, value: Value): string | null {
     const note = this.notes.get(`${table}:${id}:${field}`);
     return note && this.now() - note.at < NOTE_MS && sameScalar(note.value, value) ? note.by.name : null;
   }

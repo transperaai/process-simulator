@@ -1,7 +1,7 @@
 // Rows as Realtime (or the demo) reports them, turned into the editor's row
-// types. Postgres Changes sends the whole row as JSON: extra columns
-// (created_at, provenance, …) are dropped, and numeric columns, which can
-// arrive as strings, become numbers. Pure.
+// types. Postgres Changes sends the whole row as JSON: columns the editor
+// doesn't use (created_at, …) are dropped, a step's provenance is kept, and
+// numeric columns, which can arrive as strings, become numbers. Pure.
 
 import type { DistParams, EdgeRow, StepRow } from "@transpera-flow/db";
 import type { Table } from "@/lib/editor/ops";
@@ -49,6 +49,9 @@ export function stepFromRecord(record: Json): StepRow | null {
   const k = keys(record);
   if (!k) return null;
   const row: Json = { ...k, work_params: params(record.work_params), wait_params: params(record.wait_params), assumption: record.assumption === true };
+  // Where each parameter came from (lib/editor/provenance.ts): merged with the values it describes.
+  const provenance = record.provenance;
+  if (provenance && typeof provenance === "object" && !Array.isArray(provenance)) row.provenance = provenance;
   for (const f of STEP_NUMBERS) {
     const v = num(record[f]);
     if (v === null) return null;

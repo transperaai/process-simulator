@@ -11,7 +11,8 @@ import { useDraftSession } from "@/lib/drafts/use-draft-session";
 import { PASTE_OFFSET, copySteps, deleteSelection, duplicateSteps, pasteSteps, type StepClipboard } from "@/lib/editor/commands";
 import { describeValue, fieldLabel, namesOf } from "@/lib/editor/describe";
 import type { Conflict, ProcessEditor } from "@/lib/editor/editor";
-import type { Scalar, Table } from "@/lib/editor/ops";
+import type { Table, Value } from "@/lib/editor/ops";
+import { isProvenanceField } from "@/lib/editor/provenance";
 import { useSimulation } from "@/lib/sim/use-simulation";
 import { ChangesPanel, DraftBar, DraftCompare, type DraftView } from "./draft-panels";
 import { ConflictPrompt } from "./fields";
@@ -42,9 +43,23 @@ function useEngineModel(bundle: ProcessBundle): { model: EngineModel | null; err
   return { model, error: resolved.error };
 }
 
-export function ProcessView({ live: initialLive, draft: initialDraft, mode }: { live: ProcessBundle; draft: ProcessBundle | null; mode: EditMode }) {
-  const [session, drafts, state] = useDraftSession(initialLive, initialDraft, () =>
-    mode === "live" ? serverDraftBackend(initialLive.process.id) : new MemoryDraftBackend(initialLive),
+export function ProcessView({
+  live: initialLive,
+  draft: initialDraft,
+  mode,
+  userId = null,
+}: {
+  live: ProcessBundle;
+  draft: ProcessBundle | null;
+  mode: EditMode;
+  /** The signed-in user, recorded as who entered the values they change. */
+  userId?: string | null;
+}) {
+  const [session, drafts, state] = useDraftSession(
+    initialLive,
+    initialDraft,
+    () => (mode === "live" ? serverDraftBackend(initialLive.process.id) : new MemoryDraftBackend(initialLive)),
+    () => ({ at: new Date().toISOString(), by: userId }),
   );
   const editor = session.editor;
   const canEdit = mode !== "readonly";
@@ -311,9 +326,11 @@ function SaveProblems({
   conflicts: Conflict[];
   error: string | null;
 }) {
+  // A value's provenance is settled along with the value, so it gets no prompt of its own.
+  conflicts = conflicts.filter((c) => !isProvenanceField(c.field));
   if (!conflicts.length && !error) return null;
   const names = namesOf(bundle);
-  const show = (field: string, v: Scalar): string => describeValue(field, v, names);
+  const show = (field: string, v: Value): string => describeValue(field, v, names);
   const subject = (c: Conflict) => {
     const label = fieldLabel(c.field);
     if (c.table === "steps") return `${names.get(c.id) ?? "a step"}'s ${label}`;

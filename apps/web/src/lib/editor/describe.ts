@@ -4,7 +4,7 @@ import type { ProcessBundle } from "@transpera-flow/db";
 import { formatHours } from "@/lib/format";
 import { KIND_LABELS, OUTCOME_LABELS } from "./commands";
 import { FIELD_LABELS } from "./labels";
-import type { Scalar } from "./ops";
+import type { Value } from "./ops";
 
 /** Names of steps, roles and people by id, for describing `*_id` fields. */
 export function namesOf(...bundles: Pick<ProcessBundle, "steps" | "roles" | "people">[]): Map<string, string> {
@@ -19,8 +19,9 @@ export function namesOf(...bundles: Pick<ProcessBundle, "steps" | "roles" | "peo
 
 export const fieldLabel = (field: string): string => FIELD_LABELS[field] ?? field;
 
-export function describeValue(field: string, v: Scalar, names: Map<string, string>): string {
+export function describeValue(field: string, v: Value, names: Map<string, string>): string {
   if (v === null || v === "") return field === "rework_to_step_id" ? "the step itself" : "blank";
+  if (typeof v === "object") return v.source;
   if (field === "probability" || field === "rework_rate") return `${Math.round(Number(v) * 1000) / 10}%`;
   if (field.endsWith("_id")) return names.get(String(v)) ?? "a removed item";
   if (field === "kind") return KIND_LABELS[v as keyof typeof KIND_LABELS] ?? String(v);

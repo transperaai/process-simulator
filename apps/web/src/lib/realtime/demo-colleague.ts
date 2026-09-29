@@ -8,7 +8,7 @@ import type { ProcessBundle, StepRow } from "@transpera-flow/db";
 import type { DraftBackend, MemoryDraftBackend } from "@/lib/drafts/session";
 import { formatHours } from "@/lib/format";
 import { sameScalar } from "@/lib/editor/commands";
-import { readField, type Patch, type Scalar, type Table } from "@/lib/editor/ops";
+import { readField, type Patch, type Table, type Value } from "@/lib/editor/ops";
 import type { MemoryRealtime } from "./memory";
 import type { ProcessChannel, Viewer } from "./transport";
 
@@ -58,7 +58,7 @@ export class DemoColleague {
     const hours = Number(target.work_hours);
     const next = Math.max(0.5, Math.round((hours >= 4 ? hours / 2 : hours * 2) * 2) / 2);
     const field = target.work_dist === "triangular" ? "name" : "work_hours";
-    const value: Scalar = field === "name" ? `${target.name} (checked)` : next;
+    const value: Value = field === "name" ? `${target.name} (checked)` : next;
     await this.save(draft, "steps", target.id, field, readField(target, field), value);
     return field === "name" ? `Tom renamed ${target.name}` : `Tom set ${target.name}'s hands-on time to ${formatHours(next)}`;
   }
@@ -110,7 +110,7 @@ export class DemoColleague {
     return r.revision.id;
   }
 
-  private async save(revisionId: string, table: Table, id: string, field: string, base: Scalar, value: Scalar): Promise<void> {
+  private async save(revisionId: string, table: Table, id: string, field: string, base: Value, value: Value): Promise<void> {
     const r = await this.backend.store(revisionId).update(table, id, { [field]: base }, { [field]: value });
     if (r.status === "saved" || r.status === "conflict") {
       const values: Patch = r.status === "conflict" && field in r.theirs ? {} : { [field]: value };
@@ -120,7 +120,7 @@ export class DemoColleague {
 }
 
 /** A different value of the same kind, for Tom to race with. */
-function rival(v: Scalar): Scalar {
+function rival(v: Value): Value {
   if (typeof v === "number") return sameScalar(v, 0) ? 1 : Math.round(v * 1.5 * 100) / 100 + 1;
   if (typeof v === "string") return `${v} (Tom's version)`;
   return null;

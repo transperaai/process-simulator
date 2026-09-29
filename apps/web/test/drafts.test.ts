@@ -7,6 +7,7 @@ import { diffBundles, unresolvedSteps } from "@/lib/drafts/diff";
 import { DraftSession, MemoryDraftBackend } from "@/lib/drafts/session";
 import { addEdge, addStep, deleteSteps, moveSteps, updateEdge, updateStep } from "@/lib/editor/commands";
 import { applyEdit } from "@/lib/editor/ops";
+import { provenanceSource, stepProvenance } from "@/lib/editor/provenance";
 
 const ids = northbeamStepIds;
 const START = "2026-10-05";
@@ -114,6 +115,28 @@ describe("a draft session", () => {
     expect(simulate(toEngineModel(liveNow, { startDate: START }), 3, 1).kpi).toEqual(simulate(liveModel, 3, 1).kpi);
     expect(toEngineModel(now(), { startDate: START })).not.toEqual(liveModel);
     expect(session.getState().live).toBe(live);
+  });
+
+  it("records a person's parameter edits in the draft as entered, and a revert puts back live's provenance", async () => {
+    const live = northbeamBundle();
+    const backend = new MemoryDraftBackend(live);
+    const at = "2026-09-29T10:00:00.000Z";
+    const by = "11111111-1111-4111-8111-111111111111";
+    const session = new DraftSession(live, null, backend, () => ({ at, by }));
+    const editor = session.editor;
+    const audit = (b: Pick<ProcessBundle, "steps">) => b.steps.find((s) => s.id === ids.audit)!;
+
+    editor.run((b) => updateStep(b, ids.audit, { current_wip: 7 }));
+    await editor.settled();
+    expect(stepProvenance(audit(backend.draftRows()!), "current_wip")).toEqual({ source: "entered", at, by });
+    expect(provenanceSource(audit(backend.liveRows()), "current_wip")).toBe("estimated");
+    // The draft's changes list the value, not its provenance.
+    expect(diffBundles(live, editor.getState().bundle).steps.get(ids.audit)?.fields.map((f) => f.field)).toEqual(["current_wip"]);
+
+    editor.run((b) => revertField(live, b, "steps", ids.audit, "current_wip"));
+    await editor.settled();
+    expect(provenanceSource(audit(backend.draftRows()!), "current_wip")).toBe("estimated");
+    expect(diffBundles(live, editor.getState().bundle).list).toEqual([]);
   });
 
   it("undo and redo work in the draft", async () => {

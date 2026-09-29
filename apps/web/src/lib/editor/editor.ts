@@ -30,9 +30,10 @@ import {
   type Patch,
   type RowChange,
   type SaveUnit,
-  type Scalar,
+  type Value,
   type Table,
 } from "./ops";
+import { isProvenanceField, provenanceFieldFor, stampProvenance, type Stamp } from "./provenance";
 import type { ProcessStore } from "./store";
 
 /** A field someone else changed while we were editing it. */
@@ -41,9 +42,9 @@ export interface Conflict {
   id: string;
   field: string;
   /** What we tried to save (still shown). */
-  mine: Scalar;
+  mine: Value;
   /** What is stored now. */
-  theirs: Scalar;
+  theirs: Value;
   /**
    * Set when the clash was noticed before saving (someone else saved the
    * field while it was being typed): "keep mine" re-runs the edit on top of
@@ -92,6 +93,8 @@ export class ProcessEditor {
   constructor(
     bundle: ProcessBundle,
     private readonly store: ProcessStore,
+    /** Who is editing, and when: step parameters they change are recorded as entered (./provenance.ts). */
+    private readonly stamp?: () => Stamp,
     now: () => number = Date.now,
   ) {
     this.state = { bundle, undoLabel: null, redoLabel: null, saving: false, conflicts: [], error: null };
@@ -107,7 +110,8 @@ export class ProcessEditor {
 
   /** Run an edit built against the current process. Returns whether anything changed. */
   run(build: (bundle: ProcessBundle) => Edit | null): boolean {
-    const edit = build(this.state.bundle);
+    const built = build(this.state.bundle);
+    const edit = built && this.stamp ? stampProvenance(this.state.bundle, built, this.stamp()) : built;
     if (!edit || !edit.ops.length) return false;
     this.undoStack.push(edit);
     this.redoStack = [];
@@ -131,22 +135,23 @@ export class ProcessEditor {
     return true;
   }
 
-  /** Save our value over theirs. */
+  /** Save our value over theirs (and our provenance for it, if that clashed too). */
   keepMine(conflict: Conflict): Promise<void> {
-    this.dropConflict(conflict);
+    const all = this.withCompanion(conflict);
+    all.forEach((c) => this.dropConflict(c));
     if (conflict.retry) {
-      // Start from theirs, as the edit would have if we'd seen it in time.
-      this.setField(conflict, conflict.theirs);
+      // Start from theirs, as the edit would have if we'd seen it in time (stamped as ours again).
+      for (const c of all) this.setField(c, c.theirs);
       this.run(conflict.retry);
       return this.queue;
     }
     const change: RowChange = {
       table: conflict.table,
       id: conflict.id,
-      before: { [conflict.field]: conflict.theirs },
-      after: { [conflict.field]: conflict.mine },
+      before: Object.fromEntries(all.map((c) => [c.field, c.theirs])),
+      after: Object.fromEntries(all.map((c) => [c.field, c.mine])),
     };
-    this.setField(conflict, conflict.mine);
+    for (const c of all) this.setField(c, c.mine);
     const unit: SaveUnit = { kind: "update", change };
     this.merger.begin(unit);
     return this.enqueue(async () => {
@@ -154,10 +159,18 @@ export class ProcessEditor {
     });
   }
 
-  /** Take the stored value. Not an edit of ours, so it isn't undoable. */
+  /** Take the stored value (and its provenance). Not an edit of ours, so it isn't undoable. */
   keepTheirs(conflict: Conflict): void {
-    this.dropConflict(conflict);
-    this.setField(conflict, conflict.theirs);
+    const all = this.withCompanion(conflict);
+    all.forEach((c) => this.dropConflict(c));
+    for (const c of all) this.setField(c, c.theirs);
+  }
+
+  /** A conflict, plus the conflict on its value's provenance, which is settled with it and never shown. */
+  private withCompanion(conflict: Conflict): Conflict[] {
+    const key = provenanceFieldFor(conflict.field);
+    const companion = key && this.state.conflicts.find((c) => c.table === conflict.table && c.id === conflict.id && c.field === key);
+    return companion ? [conflict, companion] : [conflict];
   }
 
   /**
@@ -311,13 +324,21 @@ export class ProcessEditor {
       const r = await this.store.update(table, id, unit.change.before, after);
       if (r.status === "saved" || r.status === "conflict") {
         const theirs: Patch = r.status === "conflict" ? r.theirs : {};
+        // Provenance that clashed while its value didn't (say, both of us entered
+        // the same number): the value stands, so take the stored provenance.
+        const valueClashed = new Set(Object.keys(theirs).map(provenanceFieldFor));
+        const adopt: Patch = {};
         let conflicts = this.state.conflicts;
         for (const field of Object.keys(after)) {
           const key = conflictKey({ table, id, field });
           conflicts = conflicts.filter((c) => conflictKey(c) !== key);
-          if (field in theirs) conflicts = [...conflicts, { table, id, field, mine: after[field]!, theirs: theirs[field]! }];
+          if (!(field in theirs)) continue;
+          if (isProvenanceField(field) && !valueClashed.has(field)) adopt[field] = theirs[field]!;
+          else conflicts = [...conflicts, { table, id, field, mine: after[field]!, theirs: theirs[field]! }];
         }
         this.set({ conflicts });
+        if (Object.keys(adopt).length) this.applyLocal({ kind: "update", changes: [{ table, id, before: {}, after: adopt }] });
+        // Fields not written (in conflict, or adopted) will have no echo.
         return saved(new Set(Object.keys(theirs)));
       }
       this.set({ error: `${r.status === "not_found" ? GONE : r.message} ${ROLLED_BACK}` });
@@ -333,7 +354,7 @@ export class ProcessEditor {
   }
 
   /** Show `value` for a conflict's field (not an edit: no history, no save). */
-  private setField(c: Pick<Conflict, "table" | "id" | "field">, value: Scalar): void {
+  private setField(c: Pick<Conflict, "table" | "id" | "field">, value: Value): void {
     const rows: readonly object[] = c.table === "steps" ? this.state.bundle.steps : this.state.bundle.edges;
     const row = rows.find((r) => (r as { id: string }).id === c.id);
     if (!row || readField(row, c.field) === value) return;

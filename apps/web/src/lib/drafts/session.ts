@@ -7,6 +7,7 @@
 
 import type { EdgeRow, ProcessBundle, StepRow } from "@transpera-flow/db";
 import { ProcessEditor } from "@/lib/editor/editor";
+import type { Stamp } from "@/lib/editor/provenance";
 import { MemoryStore, type ProcessStore, type WriteResult } from "@/lib/editor/store";
 import type { RemoteChange } from "@/lib/realtime/rows";
 import { unresolvedSteps } from "./diff";
@@ -83,6 +84,8 @@ export class DraftSession {
     live: ProcessBundle,
     draft: { bundle: ProcessBundle; number: number } | null,
     private readonly backend: DraftBackend,
+    /** Who is editing, and when: step parameters they change in the draft are recorded as entered (lib/editor/provenance.ts). */
+    stamp?: () => Stamp,
   ) {
     this.state = {
       live,
@@ -93,7 +96,7 @@ export class DraftSession {
       notice: null,
       error: null,
     };
-    this.editor = new ProcessEditor(draft?.bundle ?? live, this.store);
+    this.editor = new ProcessEditor(draft?.bundle ?? live, this.store, stamp);
   }
 
   getState = (): DraftState => this.state;

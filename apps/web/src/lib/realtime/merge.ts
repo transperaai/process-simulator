@@ -22,7 +22,7 @@
 
 import type { EdgeRow, ProcessBundle, StepRow } from "@transpera-flow/db";
 import { sameScalar } from "@/lib/editor/commands";
-import { applyOp, readField, writeFields, type Patch, type SaveUnit, type Scalar, type Table } from "@/lib/editor/ops";
+import { applyOp, readField, writeFields, type Patch, type SaveUnit, type Value, type Table } from "@/lib/editor/ops";
 import { EDGE_FIELDS, STEP_FIELDS } from "@/lib/editor/validate";
 import type { RemoteChange } from "./rows";
 
@@ -34,8 +34,8 @@ export interface FieldConflict {
   table: Table;
   id: string;
   field: string;
-  mine: Scalar;
-  theirs: Scalar;
+  mine: Value;
+  theirs: Value;
 }
 
 /** What a remote change did to the editor's copy, for "Tom changed …" notes. */
@@ -61,7 +61,7 @@ const ECHO_MS = 30_000;
 
 interface FieldEcho {
   unit: SaveUnit;
-  value: Scalar;
+  value: Value;
   at: number;
 }
 
@@ -78,7 +78,7 @@ export class RemoteChangeMerger {
   private fieldEchoes = new Map<string, FieldEcho[]>();
   private rowEchoes = new Map<string, RowEcho[]>();
   /** The latest value skipped as stale per field, in case our save fails after all. */
-  private skipped = new Map<string, Scalar>();
+  private skipped = new Map<string, Value>();
   /** Saves of ours queued or running. */
   private inFlight = new Set<SaveUnit>();
 

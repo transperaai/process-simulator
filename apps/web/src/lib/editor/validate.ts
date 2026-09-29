@@ -3,7 +3,8 @@
 // as the signed-in user through RLS and the tables' check constraints.
 
 import type { EdgeRow, StepRow } from "@transpera-flow/db";
-import type { Patch, Scalar, Table } from "./ops";
+import type { Patch, Scalar, Table, Value } from "./ops";
+import { PROVENANCE_COLUMNS, isProvenanceField } from "./provenance";
 
 type Check = (v: unknown) => boolean;
 
@@ -25,6 +26,19 @@ const optionalCount: Check = (v) => v === null || (Number.isInteger(v) && (v as 
 const coordinate: Check = (v) => number(v) && Math.abs(v as number) <= 1e6;
 
 const DIST = oneOf("constant", "triangular", "lognormal");
+
+/**
+ * One value's provenance entry (docs/PRD.md §5), or null: undo can restore
+ * whatever entry the value had, so any source is accepted, with a valid date
+ * and user if given.
+ */
+const optionalProvenance: Check = (v) =>
+  v === null ||
+  (isObject(v) &&
+    oneOf("estimated", "entered", "measured")(v.source) &&
+    (v.at === undefined || (typeof v.at === "string" && !Number.isNaN(Date.parse(v.at)))) &&
+    (v.by === undefined || isId(v.by)) &&
+    JSON.stringify(v).length <= 20_000);
 
 /** Step fields the editor saves, and what each accepts. `*_params.key` are keys of the jsonb params. */
 export const STEP_FIELDS = {
@@ -55,6 +69,7 @@ export const STEP_FIELDS = {
   y: coordinate,
   // Confirming an estimate clears it (issue #9).
   assumption: (v) => typeof v === "boolean",
+  ...Object.fromEntries(PROVENANCE_COLUMNS.map((col) => [`provenance.${col}`, optionalProvenance])),
 } as const satisfies Record<string, Check>;
 
 export const EDGE_FIELDS = {
@@ -85,9 +100,10 @@ export function parseFieldUpdate(table: unknown, base: unknown, changes: unknown
     const check = Object.hasOwn(FIELDS[table], field) ? FIELDS[table][field] : undefined;
     const raw = changes[field];
     const value = typeof raw === "string" ? raw.trim() || (field === "name" ? "" : null) : raw;
-    if (!check || !Object.hasOwn(base, field) || !isScalar(base[field]) || !check(value)) return null;
-    outBase[field] = base[field] as Scalar;
-    outChanges[field] = value as Scalar;
+    const baseOk = isProvenanceField(field) ? optionalProvenance(base[field]) : isScalar(base[field]);
+    if (!check || !Object.hasOwn(base, field) || !baseOk || !check(value)) return null;
+    outBase[field] = base[field] as Value;
+    outChanges[field] = value as Value;
   }
   // End steps, and only end steps, have an outcome (the table's check constraint).
   if ("kind" in outChanges && "outcome" in outChanges && (outChanges.kind === "end") !== (outChanges.outcome !== null)) return null;

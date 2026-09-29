@@ -5,15 +5,19 @@
 // saves them.
 
 import type { EdgeRow, ProcessBundle, StepRow } from "@transpera-flow/db";
+import type { Provenance } from "./provenance";
 
 /** A value one field can hold. */
 export type Scalar = string | number | boolean | null;
+
+/** A field's value: a scalar, or a provenance entry (`provenance.<column>`, see ./provenance.ts). */
+export type Value = Scalar | Provenance;
 
 /**
  * Field values by name. A name is a column, or `column.key` for one key of a
  * jsonb column (e.g. `work_params.cv`), the same convention `save_fields` uses.
  */
-export type Patch = Record<string, Scalar>;
+export type Patch = Record<string, Value>;
 
 export type Table = "steps" | "edges";
 
@@ -65,11 +69,11 @@ export function invertEdit(edit: Edit): Edit {
 }
 
 /** Read a field (`column` or `column.key`) from a row. */
-export function readField(row: object, field: string): Scalar {
+export function readField(row: object, field: string): Value {
   const [col, sub] = splitField(field);
   const value = (row as Record<string, unknown>)[col];
-  if (sub === undefined) return (value ?? null) as Scalar;
-  return value && typeof value === "object" ? (((value as Record<string, unknown>)[sub] ?? null) as Scalar) : null;
+  if (sub === undefined) return (value ?? null) as Value;
+  return value && typeof value === "object" ? (((value as Record<string, unknown>)[sub] ?? null) as Value) : null;
 }
 
 /** A copy of `row` with the patch applied. */

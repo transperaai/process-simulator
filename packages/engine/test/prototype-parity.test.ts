@@ -42,7 +42,9 @@ function prototypeBaseModel(): EngineModel {
 describe("port parity with the prototype engine", () => {
   const proto = loadPrototypeEngine();
 
-  it("fixture matches the prototype's BASE_MODEL", () => {
+  // Northbeam is re-baselined (PRD §6.9): the prototype's 12 leads/week
+  // overloads the strategist, so the fixture runs at 7. Nothing else differs.
+  it("fixture matches the prototype's BASE_MODEL apart from the lead rate", () => {
     const base = prototypeBaseModel();
     const ours = northbeamModel();
     expect(ours.steps.map(({ id, role, work, wait, rework, next }) => ({ id, role, work, wait, rework, next }))).toEqual(
@@ -52,13 +54,14 @@ describe("port parity with the prototype engine", () => {
     expect({ ...ours, steps: undefined, roles: undefined }).toMatchObject({
       horizonWeeks: base.horizonWeeks,
       hoursPerWeek: base.hoursPerWeek,
-      leadsPerWeek: base.leadsPerWeek,
       activeClients: base.activeClients,
       churnMonthly: base.churnMonthly,
       retainer: base.retainer,
       entry: base.entry,
       sinks: base.sinks,
     });
+    expect(base.leadsPerWeek).toBe(12);
+    expect(ours.leadsPerWeek).toBe(7);
   });
 
   // The port draws random numbers from separate streams per purpose, so single
@@ -69,7 +72,7 @@ describe("port parity with the prototype engine", () => {
   const REPS = 300;
   for (const [label, leads] of [["baseline", 12], ["double leads", 24]] as const) {
     it(`agrees statistically with the prototype (${label})`, () => {
-      const model: EngineModel = { ...northbeamModel(), leadsPerWeek: leads, warmupWeeks: 0 };
+      const model: EngineModel = { ...prototypeBaseModel(), leadsPerWeek: leads, warmupWeeks: 0 };
       const ours = simulate(model, REPS, 1);
       const theirs = proto.simulate(model, REPS, 1);
       const rel = (a: number, b: number) => Math.abs(a - b) / b;

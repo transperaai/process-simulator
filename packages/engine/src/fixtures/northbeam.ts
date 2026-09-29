@@ -2,14 +2,18 @@ import type { EngineModel } from "../model";
 
 /**
  * Northbeam Digital: fictional SEO/PPC agency, lead-to-live pipeline.
- * Copied verbatim from the prototype's BASE_MODEL (minus canvas positions).
+ * The prototype's BASE_MODEL (minus canvas positions) with one change: 7 leads
+ * a week, not 12. At 12 the lone strategist gets ~38h/week of audits and
+ * kickoffs against ~30h left after client work, so the queue grows without
+ * bound and every KPI depends on how long the warm-up ran. At 7 the strategist
+ * is still the bottleneck (~82%) but the business reaches a steady state.
  * Times in working hours.
  */
 export function northbeamModel(): EngineModel {
   return {
     horizonWeeks: 13,
     hoursPerWeek: 40,
-    leadsPerWeek: 12,
+    leadsPerWeek: 7,
     activeClients: 26,
     churnMonthly: 0.03,
     retainer: 3800,

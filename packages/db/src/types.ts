@@ -10,6 +10,14 @@ export type StepKind = "task" | "wait" | "decision" | "subprocess" | "start" | "
 export type StepOutcome = "won" | "lost" | "done";
 export type Distribution = "constant" | "triangular" | "lognormal";
 
+/**
+ * A step duration's distribution parameters (`work_params`, `wait_params`).
+ * Lognormal reads `cv` (spread relative to the mean); triangular reads `min`,
+ * `mode` and `max` in hours; constant reads nothing. Missing keys use defaults.
+ * A type alias, not an interface, so it stays assignable to the jsonb column.
+ */
+export type DistParams = { cv?: number | null; min?: number | null; mode?: number | null; max?: number | null };
+
 export interface WorkspaceSettings {
   hours_per_week: number;
   horizon_weeks: number;
@@ -104,10 +112,17 @@ export interface StepRow {
   person_id: string | null;
   work_hours: number;
   work_dist: Distribution;
+  work_params: DistParams;
   wait_hours: number;
   wait_dist: Distribution;
+  wait_params: DistParams;
   rework_rate: number;
+  /** Step a rework goes back to; null means the same step. Not simulated yet. */
+  rework_to_step_id: string | null;
   tool: string | null;
+  notes: string | null;
+  /** Target hours for the step; not simulated yet. */
+  sla_hours: number | null;
   /** Items sitting at this step now; null when not entered (docs/PRD.md §6.3.1). */
   current_wip: number | null;
   x: number;

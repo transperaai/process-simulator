@@ -73,6 +73,15 @@ describe("toEngineModel", () => {
     expect(() => toEngineModel(b)).toThrow(/no outgoing edge/);
   });
 
+  it("rejects edges into the start step or an end the engine can't finish at", () => {
+    const b = northbeamBundle();
+    b.steps = b.steps.map((s) => (s.id === northbeamStepIds.lost ? { ...s, outcome: "done" } : s));
+    expect(() => toEngineModel(b)).toThrow(/ends as 'done'/);
+    const c = northbeamBundle();
+    c.edges = c.edges.map((e) => (e.to_step_id === northbeamStepIds.won ? { ...e, to_step_id: northbeamStepIds.start } : e));
+    expect(() => toEngineModel(c)).toThrow(/back to the start step/);
+  });
+
   it("maps entered current WIP, 0 included, and leaves unentered WIP out", () => {
     const b = northbeamBundle();
     b.steps = b.steps.map((s) =>
@@ -84,6 +93,26 @@ describe("toEngineModel", () => {
     expect(steps.get(northbeamStepIds.qualify)!).not.toHaveProperty("currentWip");
     expect(simulate(toEngineModel(b, { startDate: START }), 3, 1).initialState).toEqual({ kind: "wip", items: 4 });
     expect(simulate(toEngineModel(northbeamBundle(), { startDate: START }), 3, 1).initialState.kind).toBe("warmup");
+  });
+
+  it("maps each step's time distributions, leaving untouched lognormal steps on the engine default", () => {
+    const b = northbeamBundle();
+    b.steps = b.steps.map((s) =>
+      s.id === northbeamStepIds.audit
+        ? { ...s, work_dist: "triangular", work_params: { min: 4, mode: 5, max: 12 }, wait_dist: "constant" }
+        : s.id === northbeamStepIds.onboard
+          ? { ...s, work_params: { cv: 0.8 }, wait_dist: "triangular", wait_params: { min: 5, mode: 1 } }
+          : s,
+    );
+    const steps = new Map(toEngineModel(b, { startDate: START }).steps.map((s) => [s.id, s]));
+    expect(steps.get(northbeamStepIds.audit)!.workDist).toEqual({ kind: "triangular", min: 4, mode: 5, max: 12 });
+    expect(steps.get(northbeamStepIds.audit)!.waitDist).toEqual({ kind: "constant" });
+    expect(steps.get(northbeamStepIds.onboard)!.workDist).toEqual({ kind: "lognormal", cv: 0.8 });
+    // An inconsistent range falls back to one around the mean (16 h wait).
+    expect(steps.get(northbeamStepIds.onboard)!.waitDist).toEqual({ kind: "triangular", min: 8, mode: 16, max: 24 });
+    expect(steps.get(northbeamStepIds.qualify)!).not.toHaveProperty("workDist");
+    expect(steps.get(northbeamStepIds.qualify)!).not.toHaveProperty("waitDist");
+    expect(simulate(toEngineModel(b, { startDate: START }), 3, 1).kpi.won.mean).toBeGreaterThan(0);
   });
 });
 

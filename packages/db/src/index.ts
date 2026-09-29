@@ -1,6 +1,14 @@
 export * from "./types";
 export type { Database, Json } from "./database.types";
-export { ModelError, isWorkingStep, toEngineModel, workingDaysBetween, type ModelOptions } from "./model";
+export {
+  ModelError,
+  engineDistribution,
+  isWorkingStep,
+  toEngineModel,
+  triangularRange,
+  workingDaysBetween,
+  type ModelOptions,
+} from "./model";
 export { seedSql } from "./seed";
 export {
   NORTHBEAM_DOMAIN,

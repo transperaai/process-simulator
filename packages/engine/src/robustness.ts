@@ -383,7 +383,7 @@ export interface RobustnessResult {
   bottleneckHolds: { baseline: number; scenario: number };
   /** Share of runs where the delta keeps the nominal sign. */
   signHolds: number;
-  /** Every screened parameter, most sensitive first (flips first, then influence). */
+  /** Every screened parameter, most sensitive first: those that flip the delta's sign, then by influence. */
   sensitivities: Sensitivity[];
   /** Parameters planned, screened (both directions) and refined. */
   parameters: number;
@@ -531,7 +531,7 @@ function* plan(ctx: Ctx): Generator<RobustnessJob[], Omit<RobustnessResult, "sta
       .map((e) => ({ e, s: sensitivity(e) }))
       .sort(
         (x, y) =>
-          Number(y.s.flipsSign || y.s.flipsBottleneck) - Number(x.s.flipsSign || x.s.flipsBottleneck) ||
+          Number(y.s.flipsSign) - Number(x.s.flipsSign) ||
           y.s.influence - x.s.influence ||
           x.e.index - y.e.index,
       );
@@ -622,7 +622,7 @@ export interface RobustnessProgress {
  */
 export type RobustnessExecutor = (
   tasks: RobustnessTask[],
-  hooks: { onResult: (index: number) => void; signal?: AbortSignal },
+  hooks: { onResult: (index: number, result: ChunkResult) => void; signal?: AbortSignal },
 ) => Promise<ChunkResult[]>;
 
 /** Runs tasks one after another on this thread, yielding to the event loop between them. */
@@ -631,7 +631,7 @@ export const localExecutor: RobustnessExecutor = async (tasks, { onResult, signa
   for (let i = 0; i < tasks.length; i++) {
     if (signal?.aborted) throw new RobustnessCancelled();
     out.push(runRobustnessTask(tasks[i]!));
-    onResult(i);
+    onResult(i, out[i]!);
     await Promise.resolve();
   }
   return out;
@@ -681,7 +681,9 @@ export async function checkRobustness(
       const tasks = missing.map((i) => ({ model, scenario, job: jobs[i]! }));
       const out = await execute(tasks, {
         signal,
-        onResult: (k) => {
+        onResult: (k, result) => {
+          // Cached as each job finishes, so a cancelled check resumes where it stopped.
+          cache?.set(robustnessJobKey(ctx.hashes, tasks[k]!.job), result);
           done += 2 * tasks[k]!.job.reps;
           onProgress?.({ done, total, stage });
         },
@@ -689,7 +691,6 @@ export async function checkRobustness(
       if (signal?.aborted) throw new RobustnessCancelled();
       missing.forEach((i, k) => {
         results[i] = out[k]!;
-        cache?.set(robustnessJobKey(ctx.hashes, jobs[i]!), out[k]!);
       });
     }
     step = gen.next(results);
@@ -718,11 +719,12 @@ export interface RobustnessNodeOptions extends RobustnessOptions {
  * PDF) or for reading a cached result. With `timeBudgetMs` it stops starting
  * jobs once the budget is spent.
  *
- * Measured on the 40-step, 25-person benchmark model (test/robustness.test.ts,
- * ~3,600 replications): about 60 s on one core of the CI container, so a
- * server caller should cap it and report `complete: false`, or use a pool. In
- * the browser pool (7 workers on an 8-core laptop) the same check takes
- * 10–15 s; see the benchmark notes in the test file.
+ * Benchmark (40 steps, 25 people, 72 estimated parameters, 3,340
+ * replications over both sides; test/robustness-browser.test.ts with
+ * ROBUSTNESS_BENCH=1): 62 s on one core of the 4-core CI container, so a
+ * server caller should cap it (the result then says `complete: false`). The
+ * browser pool took 23 s there with 3 workers, so ~10 s with the 7 workers
+ * of an 8-core laptop.
  */
 export function robustness(model: EngineModel, scenario: ScenarioPatch[], opts?: RobustnessNodeOptions & { cacheOnly?: false }): RobustnessResult;
 export function robustness(model: EngineModel, scenario: ScenarioPatch[], opts: RobustnessNodeOptions & { cacheOnly: true }): RobustnessResult | null;

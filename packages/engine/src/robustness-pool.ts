@@ -102,7 +102,7 @@ export class RobustnessPool {
           if (!msg.ok) return fail(new Error(msg.error));
           results[entry.index] = msg.result;
           finished++;
-          onResult(entry.index);
+          onResult(entry.index, msg.result);
           if (finished === tasks.length) {
             settled = true;
             slot.busy = false;

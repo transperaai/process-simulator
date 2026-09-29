@@ -23,7 +23,7 @@ import type {
 import { expo, lognormal, Streams, triangular, type Rng } from "./random";
 
 /** Minimum share of a person's time left for pipeline work, unless the model sets one. */
-const DEFAULT_AVAILABILITY_FLOOR = 0.08;
+export const DEFAULT_AVAILABILITY_FLOOR = 0.08;
 const DEFAULT_WORK_DIST: Distribution = { kind: "lognormal", cv: 0.35 };
 const DEFAULT_WAIT_DIST: Distribution = { kind: "lognormal", cv: 0.3 };
 const WEEKS_PER_MONTH = 4.33;

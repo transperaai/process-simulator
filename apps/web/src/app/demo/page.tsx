@@ -1,4 +1,4 @@
-import { northbeamBundle, northbeamScenarios } from "@transpera-flow/db";
+import { northbeamBundle, northbeamIssues, northbeamScenarios } from "@transpera-flow/db";
 import { AppHeader } from "@/components/app-header";
 import { ProcessView } from "@/components/process-view";
 
@@ -9,11 +9,11 @@ export default function DemoPage() {
     <main className="mx-auto w-full max-w-7xl px-4 pb-8">
       <AppHeader workspace={`${bundle.workspace.name} · demo`} signedIn={false} />
       <p className="mt-3 rounded-token border border-line bg-panel-2 px-3 py-2 text-fg-2">
-        Demo mode: sample data from the seed fixtures, not a database. Edit the map, move levers and save scenarios
-        freely; changes stay in this tab and are gone when you reload.
+        Demo mode: sample data from the seed fixtures, not a database. Edit the map, move levers, save scenarios and
+        log issues freely; changes stay in this tab and are gone when you reload.
       </p>
       <h1 className="mt-4 mb-3 text-xl font-bold">{bundle.process.name}</h1>
-      <ProcessView bundle={bundle} mode="demo" scenarios={northbeamScenarios()} />
+      <ProcessView bundle={bundle} mode="demo" scenarios={northbeamScenarios()} issues={northbeamIssues()} />
     </main>
   );
 }

@@ -1,0 +1,66 @@
+"use client";
+
+// The full issues register screen: tracked issues from the database plus what
+// a fresh run of the live process detects (in a worker, as on the process
+// page). "Run the fix" goes to the process page, which applies it and opens
+// the compare view.
+
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow } from "@transpera-flow/db";
+import { detectIssues } from "@transpera-flow/engine";
+import { useIssues } from "@/lib/issues/use-issues";
+import { useSimulation } from "@/lib/sim/use-simulation";
+import { IssuesRegister, type Named } from "./issues-register";
+
+export function IssuesPage({
+  bundle,
+  issues,
+  scenarios,
+  processes,
+  mode,
+  fixHref,
+}: {
+  bundle: ProcessBundle;
+  issues: IssueRow[];
+  scenarios: ScenarioRow[];
+  processes: Named[];
+  mode: "live" | "readonly";
+  /** Prefix of the link that runs an issue's fix; the issue id (or detected key) is appended. */
+  fixHref: string;
+}) {
+  const router = useRouter();
+  const state = useIssues(bundle.workspace.id, issues, mode);
+  const [stepFilter, setStepFilter] = useState("");
+  const model = useMemo(() => {
+    try {
+      return toEngineModel(bundle);
+    } catch (err) {
+      if (err instanceof ModelError) return null;
+      throw err;
+    }
+  }, [bundle]);
+  const sim = useSimulation(model);
+  const result = sim.run?.result ?? null;
+  const detected = useMemo(() => (model && result ? detectIssues(model, result) : model ? null : []), [model, result]);
+
+  return (
+    <div className="rounded-token border border-line bg-panel p-4 shadow-token">
+      <IssuesRegister
+        layout="page"
+        state={state}
+        detected={detected}
+        running={sim.status === "running"}
+        processId={bundle.process.id}
+        processes={processes}
+        steps={bundle.steps.filter((s) => s.kind !== "start" && s.kind !== "end").map((s) => ({ id: s.id, name: s.name }))}
+        people={bundle.people.filter((p) => p.active).map((p) => ({ id: p.id, name: p.name }))}
+        scenarios={scenarios}
+        canEdit={mode === "live"}
+        stepFilter={stepFilter}
+        onStepFilterChange={setStepFilter}
+        onRunFix={(_fix, id) => router.push(`${fixHref}${encodeURIComponent(id)}`)}
+      />
+    </div>
+  );
+}

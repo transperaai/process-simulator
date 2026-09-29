@@ -1,5 +1,5 @@
 import type { EngineModel, SimulationResult } from "@transpera-flow/engine";
-import { formatCurrency, formatDays, formatNumber, formatPercent, formatRange } from "@/lib/format";
+import { formatCurrency, formatDays, formatInitialState, formatNumber, formatPercent, formatRange } from "@/lib/format";
 
 interface KpiStripProps {
   model: EngineModel;
@@ -63,6 +63,7 @@ export function KpiStrip({ model, currency, result, status, durationMs }: KpiStr
           : status === "error"
             ? "Simulation failed"
             : `Average of ${result?.reps} replications; ranges are the 10th–90th percentile · ${formatNumber(durationMs ?? 0, 0)} ms`}
+        {status === "done" && result && ` · ${formatInitialState(result.initialState, model.hoursPerWeek)}`}
       </p>
     </section>
   );

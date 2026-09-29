@@ -10,7 +10,7 @@ import {
   type StepOutcome,
   type StepRow,
 } from "@transpera-flow/db";
-import { pick, readField, type Edit, type Op, type Patch, type RowChange, type Scalar } from "./ops";
+import { pick, readField, type Edit, type Op, type Patch, type RowChange, type Value } from "./ops";
 
 /** Kinds the palette offers. `subprocess` arrives with sub-processes. */
 export const STEP_KINDS = ["task", "wait", "decision", "start", "end"] as const satisfies readonly StepKind[];
@@ -132,12 +132,28 @@ function updateRow(bundle: ProcessBundle, table: "steps" | "edges", id: string, 
   return { label, ops: [{ kind: "update", changes: [{ table, id, before: pick(row, Object.keys(after)), after }] }] };
 }
 
-/** Numbers compare by value, so "1.5" loaded from Postgres matches 1.5. */
-export function sameScalar(a: Scalar, b: Scalar): boolean {
+/**
+ * Numbers compare by value, so "1.5" loaded from Postgres matches 1.5.
+ * Objects (provenance entries) compare by content, whatever their key order.
+ */
+export function sameScalar(a: Value, b: Value): boolean {
+  if (typeof a === "object" && a !== null) return typeof b === "object" && b !== null && canonical(a) === canonical(b);
+  if (typeof b === "object" && b !== null) return false;
   if (typeof a === "number" || typeof b === "number") {
     return a !== null && b !== null && a !== "" && b !== "" && Number(a) === Number(b);
   }
   return a === b;
+}
+
+/** JSON with object keys sorted, so equal objects give equal text. */
+function canonical(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonical).join(",")}]`;
+  if (v && typeof v === "object") {
+    const entries = Object.entries(v).filter(([, x]) => x !== undefined);
+    entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries.map(([k, x]) => `${JSON.stringify(k)}:${canonical(x)}`).join(",")}}`;
+  }
+  return JSON.stringify(v ?? null);
 }
 
 export function updateStep(bundle: ProcessBundle, id: string, patch: Patch): Edit | null {

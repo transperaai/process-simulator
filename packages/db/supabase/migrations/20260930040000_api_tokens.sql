@@ -132,7 +132,7 @@ begin
   if current_user <> 'anon' then
     raise sqlstate 'PGRST' using
       message = json_build_object('code', 'API_TOKEN', 'message', 'Send either a session or an API token, not both')::text,
-      detail = json_build_object('status', 400)::text;
+      detail = json_build_object('status', 400, 'headers', json_build_object())::text;
   end if;
   claims := private.api_token_claims(token);
   if claims is null then
@@ -193,7 +193,7 @@ begin
   if not found then
     raise sqlstate 'PGRST' using
       message = json_build_object('code', 'API_TOKEN', 'message', 'Invalid or revoked API token')::text,
-      detail = json_build_object('status', 401)::text;
+      detail = json_build_object('status', 401, 'headers', json_build_object())::text;
   end if;
 
   return jsonb_build_object(

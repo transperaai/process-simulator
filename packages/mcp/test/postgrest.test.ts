@@ -131,7 +131,8 @@ describe.skipIf(!POSTGREST_URL)("MCP over PostgREST (acts as the user under RLS)
 
     // Straight at the Data API with the same token: RLS still hides every row.
     for (const table of ["workspaces", "processes", "steps", "edges", "people"]) {
-      const res = await rest(`/${table}?select=workspace_id&workspace_id=eq.${NORTHBEAM_WORKSPACE_ID}`, { "x-api-token": strangerToken });
+      const column = table === "workspaces" ? "id" : "workspace_id";
+      const res = await rest(`/${table}?select=${column}&${column}=eq.${NORTHBEAM_WORKSPACE_ID}`, { "x-api-token": strangerToken });
       expect(res.status, table).toBe(200);
       expect(await res.json(), table).toEqual([]);
     }
@@ -170,6 +171,13 @@ describe.skipIf(!POSTGREST_URL)("MCP over PostgREST (acts as the user under RLS)
     await admin.query("update api_tokens set revoked_at = now() where token_hash = encode(sha256(convert_to($1, 'UTF8')), 'hex')", [token]);
     expect((await post(options, { authorization: `Bearer ${token}` })).status).toBe(401);
     expect((await post(options, { authorization: `Bearer ${generateApiToken().token}` })).status).toBe(401);
+    // use_api_token's own check, without the header (so without the hook).
+    const direct = await fetch(`${POSTGREST_URL}/rpc/use_api_token`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${anonKey()}`, "content-type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    expect(direct.status).toBe(401);
   });
 
   it("rate-limits per token", async () => {

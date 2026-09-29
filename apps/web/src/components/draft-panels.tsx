@@ -60,7 +60,7 @@ export function DraftBar({
   const estimates = drafts.unresolved ?? unresolved.map((s) => ({ id: s.id, name: s.name }));
 
   return (
-    <section aria-label="Draft" className="flex flex-col gap-2 rounded-token border border-line bg-panel p-2 text-xs shadow-token">
+    <section aria-label="Draft controls" className="flex flex-col gap-2 rounded-token border border-line bg-panel p-2 text-xs shadow-token">
       <div className="flex flex-wrap items-center gap-2">
         {hasDraft ? (
           <div role="group" aria-label="Show revision" className="flex overflow-hidden rounded-token border border-line">
@@ -141,7 +141,7 @@ export function DraftBar({
           {estimates.length ? (
             <>
               <p>
-                <strong>{plural(estimates.length, "step")} still hold unconfirmed estimates.</strong> Confirm them in the inspector
+                <strong>{plural(estimates.length, "step")} {estimates.length === 1 ? "holds" : "hold"} unconfirmed estimates.</strong> Confirm them in the inspector
                 first, or publish and accept them as estimates (recorded in the audit log).
               </p>
               <ul className="flex flex-wrap gap-1.5">
@@ -175,7 +175,14 @@ export function DraftBar({
                   ? `Publish, accepting ${plural(estimates.length, "estimate")}`
                   : `Publish revision ${draftNumber}`}
             </button>
-            <button type="button" onClick={() => setConfirming(null)} className={button}>
+            <button
+              type="button"
+              onClick={() => {
+                setConfirming(null);
+                session.dismiss();
+              }}
+              className={button}
+            >
               Cancel
             </button>
           </div>

@@ -164,7 +164,7 @@ export class DraftSession {
         draft: null,
         busy: null,
         unresolved: null,
-        notice: `Published revision ${r.revision.number}${accepted ? `, with ${accepted} value${accepted === 1 ? "" : "s"} accepted as estimates` : ""}. It is now the live model.`,
+        notice: `Published revision ${r.revision.number}${accepted ? `, with ${accepted} step${accepted === 1 ? "" : "s"} accepted as estimates` : ""}. It is now the live model.`,
       });
     } else if (r.status === "unresolved") {
       this.set({ busy: null, unresolved: r.steps });

@@ -1,7 +1,7 @@
 import "server-only";
 import type { Json } from "@transpera-flow/db";
 import { createClient } from "@/lib/supabase/server";
-import type { FieldValue, SaveOutcome } from "./field-controller";
+import type { SaveOutcome } from "./field-controller";
 
 // Server half of per-field saves (docs/adr/0001-per-field-saves.md). Calls the
 // database's save_fields / save_links as the signed-in user, so RLS decides

@@ -13,7 +13,23 @@ create schema auth;
 create table auth.users (
   id uuid primary key,
   email text unique,
-  raw_app_meta_data jsonb not null default '{}'
+  email_confirmed_at timestamptz default now(),
+  last_sign_in_at timestamptz,
+  raw_app_meta_data jsonb not null default '{}',
+  raw_user_meta_data jsonb not null default '{}'
+);
+
+-- One row per linked provider account; identity_data is written only by Auth.
+create table auth.identities (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  provider text not null,
+  provider_id text not null,
+  identity_data jsonb not null default '{}',
+  last_sign_in_at timestamptz,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique (provider_id, provider)
 );
 
 create function auth.uid() returns uuid

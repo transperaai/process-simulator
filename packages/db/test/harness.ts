@@ -56,8 +56,32 @@ export async function createTestDb(): Promise<TestDb> {
   };
 }
 
-export async function createUser(db: TestDb, email: string, appMetadata: Record<string, unknown> = {}) {
+export interface UserOptions {
+  /** Add a Google identity; `hd` is the ID token's hosted-domain claim (absent for personal accounts). */
+  google?: { hd?: string };
+  /** Leave the email unconfirmed. */
+  unconfirmed?: boolean;
+}
+
+export async function createUser(
+  db: TestDb,
+  email: string,
+  appMetadata: Record<string, unknown> = {},
+  options: UserOptions = {},
+) {
   const id = randomUUID();
-  await db.client.query("insert into auth.users (id, email, raw_app_meta_data) values ($1, $2, $3)", [id, email, appMetadata]);
+  await db.client.query(
+    "insert into auth.users (id, email, raw_app_meta_data, email_confirmed_at) values ($1, $2, $3, $4)",
+    [id, email, appMetadata, options.unconfirmed ? null : new Date()],
+  );
+  if (options.google) {
+    // Mirrors what Supabase Auth stores from Google's ID token.
+    const hd = options.google.hd;
+    const identityData = { sub: id, email, ...(hd ? { custom_claims: { hd } } : {}) };
+    await db.client.query(
+      "insert into auth.identities (user_id, provider, provider_id, identity_data) values ($1, 'google', $2, $3)",
+      [id, id, identityData],
+    );
+  }
   return { id, claims: { sub: id, role: "authenticated", app_metadata: appMetadata } };
 }

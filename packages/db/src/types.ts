@@ -139,6 +139,28 @@ export interface ProcessBundle {
   personLeave: PersonLeaveRow[];
 }
 
+/** An allowed email domain: managed Google accounts on it join as `member`. */
+export interface WorkspaceDomainRow {
+  id: string;
+  workspace_id: string;
+  domain: string;
+}
+
+/** A pre-assigned email: whoever signs in with it gets exactly this role. */
+export interface AccessEmailRow {
+  id: string;
+  workspace_id: string;
+  email: string;
+  role: Exclude<MembershipRole, "agency_admin">;
+  person_id: string | null;
+}
+
+/** Who can get into a workspace without an invitation (issue #51). */
+export interface WorkspaceAccess {
+  domains: WorkspaceDomainRow[];
+  emails: AccessEmailRow[];
+}
+
 type TableRow<T extends keyof Database["public"]["Tables"]> = Database["public"]["Tables"][T]["Row"];
 
 /** `true` when every field of `Row` is a column of table `T` with a compatible type. */
@@ -161,4 +183,6 @@ export type _SchemaDriftChecks = [
   Assert<Matches<ProcessRevisionRow, "process_revisions">>,
   Assert<Matches<StepRow, "steps">>,
   Assert<Matches<EdgeRow, "edges">>,
+  Assert<Matches<WorkspaceDomainRow, "workspace_domains">>,
+  Assert<Matches<AccessEmailRow, "workspace_access_emails">>,
 ];

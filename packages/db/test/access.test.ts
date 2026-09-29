@@ -1,0 +1,317 @@
+import type pg from "pg";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { NORTHBEAM_DOMAIN, NORTHBEAM_WORKSPACE_ID, northbeamPersonIds } from "../src";
+import { createTestDb, createUser, type TestDb } from "./harness";
+
+// Workspace access without invitations (issue #51): pre-assigned emails,
+// allowed domains with Google's hosted-domain check, who may manage them,
+// removal and the audit log.
+
+let db: TestDb;
+const ws = NORTHBEAM_WORKSPACE_ID;
+
+beforeAll(async () => {
+  db = await createTestDb();
+});
+
+afterAll(async () => {
+  await db?.close();
+});
+
+type Claims = Record<string, unknown>;
+
+const resolve = (claims: Claims) =>
+  db.as(claims, async (c) => (await c.query("select workspace_id, role, source from resolve_my_access()")).rows);
+
+/** Like `db.as`, but commits, for multi-step scenarios. Cleans up nothing. */
+async function commitAs<T>(claims: Claims, fn: (c: pg.Client) => Promise<T>): Promise<T> {
+  await db.client.query("begin");
+  try {
+    await db.client.query("set local role authenticated");
+    await db.client.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify(claims)]);
+    const result = await fn(db.client);
+    await db.client.query("commit");
+    return result;
+  } catch (e) {
+    await db.client.query("rollback");
+    throw e;
+  }
+}
+
+const membership = async (userId: string, workspaceId = ws) =>
+  (
+    await db.client.query("select role, source, active, person_id from memberships where user_id = $1 and workspace_id = $2", [
+      userId,
+      workspaceId,
+    ])
+  ).rows[0] as { role: string; source: string; active: boolean; person_id: string | null } | undefined;
+
+const visibleWorkspaces = (claims: Claims) =>
+  db.as(claims, async (c) => Number((await c.query("select count(*) from workspaces")).rows[0].count));
+
+async function withRole(email: string, role: string) {
+  const user = await createUser(db, email);
+  await db.client.query("insert into memberships (workspace_id, user_id, role) values ($1, $2, $3)", [ws, user.id, role]);
+  return user;
+}
+
+describe("resolution at sign-in", () => {
+  it("gives a pre-assigned email exactly its role and person link", async () => {
+    const rosa = await createUser(db, "rosa.diaz@northbeam.example", {}, { google: { hd: NORTHBEAM_DOMAIN } });
+    expect(await resolve(rosa.claims)).toEqual([{ workspace_id: ws, role: "owner", source: "access_list" }]);
+    await commitAs(rosa.claims, (c) => c.query("select resolve_my_access()"));
+    expect(await membership(rosa.id)).toEqual({
+      role: "owner",
+      source: "access_list",
+      active: true,
+      person_id: northbeamPersonIds["Rosa Diaz"],
+    });
+  });
+
+  it("matches pre-assigned emails case-insensitively, even on a free-mail address", async () => {
+    const sam = await createUser(db, "Sam.Patel.SEO@example.com", {}, { google: {} });
+    expect(await resolve(sam.claims)).toEqual([{ workspace_id: ws, role: "member", source: "access_list" }]);
+  });
+
+  it("ignores a pre-assigned email that is not confirmed", async () => {
+    const unconfirmed = await createUser(db, "leah.brooks@northbeam.example", {}, { unconfirmed: true });
+    expect(await resolve(unconfirmed.claims)).toEqual([]);
+  });
+
+  it("joins a managed Google account on an allowed domain as member", async () => {
+    const user = await createUser(db, "new.hire@northbeam.example", {}, { google: { hd: NORTHBEAM_DOMAIN } });
+    expect(await resolve(user.claims)).toEqual([{ workspace_id: ws, role: "member", source: "domain" }]);
+  });
+
+  it("does not let a personal Google account (no hd) join by email domain", async () => {
+    const personal = await createUser(db, "ex.staff@northbeam.example", {}, { google: {} });
+    expect(await resolve(personal.claims)).toEqual([]);
+    expect(await visibleWorkspaces(personal.claims)).toBe(0);
+  });
+
+  it("requires hd to match the allowed domain, not just the email", async () => {
+    const other = await createUser(db, "someone@northbeam.example", {}, { google: { hd: "elsewhere.example" } });
+    expect(await resolve(other.claims)).toEqual([]);
+  });
+
+  it("does not trust an hd claim the user wrote into user_metadata", async () => {
+    const sneaky = await createUser(db, "sneaky@northbeam.example", {}, { google: {} });
+    await db.client.query(
+      `update auth.users set raw_user_meta_data = '{"custom_claims": {"hd": "northbeam.example"}, "hd": "northbeam.example"}' where id = $1`,
+      [sneaky.id],
+    );
+    const claims = { ...sneaky.claims, user_metadata: { custom_claims: { hd: NORTHBEAM_DOMAIN } } };
+    expect(await resolve(claims)).toEqual([]);
+  });
+
+  it("leaves a user with neither with no workspace", async () => {
+    const stranger = await createUser(db, "stranger@gmail.com", {}, { google: {} });
+    expect(await resolve(stranger.claims)).toEqual([]);
+  });
+
+  it("is idempotent and keeps a promotion of a domain member", async () => {
+    const user = await createUser(db, "promoted@northbeam.example", {}, { google: { hd: NORTHBEAM_DOMAIN } });
+    await commitAs(user.claims, (c) => c.query("select resolve_my_access()"));
+    await db.client.query("update memberships set role = 'editor' where user_id = $1", [user.id]);
+    const auditBefore = Number((await db.client.query("select count(*) from audit_log")).rows[0].count);
+    await commitAs(user.claims, (c) => c.query("select resolve_my_access()"));
+    await commitAs(user.claims, (c) => c.query("select resolve_my_access()"));
+    expect(await membership(user.id)).toMatchObject({ role: "editor", source: "domain" });
+    expect(Number((await db.client.query("select count(*) from audit_log")).rows[0].count)).toBe(auditBefore);
+  });
+
+  it("never changes manual memberships", async () => {
+    const admin = await withRole("leah.brooks+manual@northbeam.example", "viewer");
+    await db.client.query("insert into workspace_access_emails (workspace_id, email, role) values ($1, $2, 'editor')", [
+      ws,
+      "leah.brooks+manual@northbeam.example",
+    ]);
+    expect(await membership(admin.id)).toMatchObject({ role: "viewer", source: "manual" });
+    await db.client.query("delete from workspace_access_emails where email = $1", ["leah.brooks+manual@northbeam.example"]);
+    expect(await membership(admin.id)).toMatchObject({ role: "viewer", source: "manual" });
+  });
+
+  it("refuses anonymous callers", async () => {
+    await expect(db.as(null, (c) => c.query("select * from resolve_my_access()"))).rejects.toThrow(/not signed in/);
+  });
+
+  it("does not expose the internal functions", async () => {
+    const user = await createUser(db, "curious@example.org");
+    await expect(
+      db.as(user.claims, (c) => c.query("select reconcile_access($1)", [user.id])),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      db.as(user.claims, (c) => c.query("select qualifies_for_domain($1, 'northbeam.example')", [user.id])),
+    ).rejects.toThrow(/permission denied/);
+  });
+});
+
+describe("allowed domains", () => {
+  it.each(["gmail.com", "outlook.com", "hotmail.com", "icloud.com", "yahoo.com", "GMAIL.COM"])("rejects free-mail %s", async (d) => {
+    const agency = await createUser(db, `agency-${d}@transpera.example`, { agency_admin: true });
+    await expect(
+      db.as(agency.claims, (c) => c.query("insert into workspace_domains (workspace_id, domain) values ($1, lower($2))", [ws, d])),
+    ).rejects.toThrow(/workspace_domains_not_free_mail/);
+  });
+
+  it("rejects malformed domains and a domain another workspace already has", async () => {
+    await expect(
+      db.client.query("insert into workspace_domains (workspace_id, domain) values ($1, 'Acme.com')", [ws]),
+    ).rejects.toThrow(/workspace_domains_domain_format/);
+    const other = (await db.client.query("insert into workspaces (name, slug) values ('Other co', 'other-co') returning id")).rows[0]
+      .id as string;
+    await expect(
+      db.client.query("insert into workspace_domains (workspace_id, domain) values ($1, $2)", [other, NORTHBEAM_DOMAIN]),
+    ).rejects.toThrow(/workspace_domains_domain_key/);
+  });
+
+  it("rejects agency_admin as a pre-assigned role", async () => {
+    await expect(
+      db.client.query("insert into workspace_access_emails (workspace_id, email, role) values ($1, 'x@y.example', 'agency_admin')", [ws]),
+    ).rejects.toThrow(/workspace_access_emails_role_check/);
+  });
+});
+
+describe("who can manage access", () => {
+  const tryManage = (claims: Claims) =>
+    db.as(claims, async (c) => {
+      const read = (await c.query("select count(*) from workspace_access_emails")).rows[0].count;
+      await c.query("savepoint s");
+      let inserted = true;
+      try {
+        await c.query("insert into workspace_access_emails (workspace_id, email, role) values ($1, 'probe@acme.example', 'viewer')", [ws]);
+        await c.query("insert into workspace_domains (workspace_id, domain) values ($1, 'probe.example')", [ws]);
+      } catch {
+        inserted = false;
+        await c.query("rollback to savepoint s");
+      }
+      const updated = (await c.query("update workspace_access_emails set role = 'viewer' where email = 'leah.brooks@northbeam.example'"))
+        .rowCount;
+      const deleted = (await c.query("delete from workspace_domains where domain = $1", [NORTHBEAM_DOMAIN])).rowCount;
+      return { read: Number(read), inserted, updated, deleted };
+    });
+
+  it("lets owners and agency admins manage domains and the list", async () => {
+    const owner = await withRole("owner@northbeam.example", "owner");
+    const agency = await createUser(db, "austin@transpera.example", { agency_admin: true });
+    for (const u of [owner, agency]) {
+      expect(await tryManage(u.claims)).toEqual({ read: 3, inserted: true, updated: 1, deleted: 1 });
+    }
+  });
+
+  it.each(["editor", "member", "viewer"])("stops a %s from seeing or changing access", async (role) => {
+    const user = await withRole(`${role}-rls@northbeam.example`, role);
+    expect(await tryManage(user.claims)).toEqual({ read: 0, inserted: false, updated: 0, deleted: 0 });
+    expect(await db.as(user.claims, async (c) => (await c.query("select * from workspace_members($1)", [ws])).rowCount)).toBe(0);
+    expect(
+      await db.as(user.claims, async (c) => (await c.query("update memberships set role = 'owner' where workspace_id = $1", [ws])).rowCount),
+    ).toBe(0);
+  });
+
+  it("lets an owner list members with email and last sign-in", async () => {
+    const owner = await withRole("owner2@northbeam.example", "owner");
+    const rows = await db.as(owner.claims, async (c) => (await c.query("select * from workspace_members($1)", [ws])).rows);
+    expect(rows.map((r) => r.email)).toContain("owner2@northbeam.example");
+    expect(rows[0]).toHaveProperty("last_sign_in_at");
+  });
+
+  it("stops owners granting or touching agency_admin memberships", async () => {
+    const owner = await withRole("owner3@northbeam.example", "owner");
+    const target = await createUser(db, "target@northbeam.example");
+    await expect(
+      db.as(owner.claims, (c) =>
+        c.query("insert into memberships (workspace_id, user_id, role) values ($1, $2, 'agency_admin')", [ws, target.id]),
+      ),
+    ).rejects.toThrow(/row-level security/);
+    const admin = await withRole("agency-member@transpera.example", "agency_admin");
+    expect(
+      await db.as(owner.claims, async (c) => (await c.query("delete from memberships where user_id = $1", [admin.id])).rowCount),
+    ).toBe(0);
+  });
+});
+
+describe("removal and audit", () => {
+  it("removes access on the next request when the email leaves the list, and audits it", async () => {
+    const owner = await withRole("owner4@northbeam.example", "owner");
+    const temp = await createUser(db, "temp.contractor@example.com", {}, { google: {} });
+    await commitAs(owner.claims, (c) =>
+      c.query("insert into workspace_access_emails (workspace_id, email, role) values ($1, 'temp.contractor@example.com', 'editor')", [ws]),
+    );
+    // Already signed in: the trigger grants access without another sign-in.
+    expect(await membership(temp.id)).toMatchObject({ role: "editor", source: "access_list" });
+    expect(await visibleWorkspaces(temp.claims)).toBe(1);
+
+    await commitAs(owner.claims, (c) => c.query("update workspace_access_emails set role = 'viewer' where email = 'temp.contractor@example.com'"));
+    expect(await membership(temp.id)).toMatchObject({ role: "viewer" });
+
+    await commitAs(owner.claims, (c) => c.query("delete from workspace_access_emails where email = 'temp.contractor@example.com'"));
+    expect(await membership(temp.id)).toBeUndefined();
+    expect(await visibleWorkspaces(temp.claims)).toBe(0);
+
+    const log = (
+      await db.client.query(
+        "select actor_id, actor_kind, action, target_table from audit_log where diff::text like '%temp.contractor%' or diff -> 'old' ->> 'user_id' = $1::text or diff -> 'new' ->> 'user_id' = $1::text order by created_at, action",
+        [temp.id],
+      )
+    ).rows;
+    expect(log).toEqual(
+      expect.arrayContaining([
+        { actor_id: owner.id, actor_kind: "user", action: "insert", target_table: "workspace_access_emails" },
+        { actor_id: owner.id, actor_kind: "user", action: "insert", target_table: "memberships" },
+        { actor_id: owner.id, actor_kind: "user", action: "update", target_table: "memberships" },
+        { actor_id: owner.id, actor_kind: "user", action: "delete", target_table: "workspace_access_emails" },
+        { actor_id: owner.id, actor_kind: "user", action: "delete", target_table: "memberships" },
+      ]),
+    );
+  });
+
+  it("falls back to member when a listed domain user leaves the list", async () => {
+    const user = await createUser(db, "listed@northbeam.example", {}, { google: { hd: NORTHBEAM_DOMAIN } });
+    await db.client.query("insert into workspace_access_emails (workspace_id, email, role) values ($1, 'listed@northbeam.example', 'editor')", [ws]);
+    expect(await membership(user.id)).toMatchObject({ role: "editor", source: "access_list" });
+    await db.client.query("delete from workspace_access_emails where email = 'listed@northbeam.example'");
+    expect(await membership(user.id)).toMatchObject({ role: "member", source: "domain" });
+  });
+
+  it("removes domain members when the domain is removed", async () => {
+    const user = await createUser(db, "domain.only@northbeam.example", {}, { google: { hd: NORTHBEAM_DOMAIN } });
+    await commitAs(user.claims, (c) => c.query("select resolve_my_access()"));
+    expect(await membership(user.id)).toMatchObject({ source: "domain" });
+    await db.client.query("begin");
+    try {
+      await db.client.query("delete from workspace_domains where domain = $1", [NORTHBEAM_DOMAIN]);
+      expect(await membership(user.id)).toBeUndefined();
+      // Adding it back lets them in again straight away.
+      await db.client.query("insert into workspace_domains (workspace_id, domain) values ($1, $2)", [ws, NORTHBEAM_DOMAIN]);
+      expect(await membership(user.id)).toMatchObject({ role: "member", source: "domain" });
+    } finally {
+      await db.client.query("rollback");
+    }
+  });
+
+  it("blocks a deactivated member, and signing in again does not reactivate them", async () => {
+    const user = await createUser(db, "deactivated@northbeam.example", {}, { google: { hd: NORTHBEAM_DOMAIN } });
+    await commitAs(user.claims, (c) => c.query("select resolve_my_access()"));
+    expect(await visibleWorkspaces(user.claims)).toBe(1);
+    await db.client.query("update memberships set active = false where user_id = $1", [user.id]);
+    expect(await visibleWorkspaces(user.claims)).toBe(0);
+    expect(await resolve(user.claims)).toEqual([]);
+    expect(await membership(user.id)).toMatchObject({ active: false });
+  });
+
+  it("records automatic joins as system actions and lets only managers read the log", async () => {
+    const user = await createUser(db, "auto.join@northbeam.example", {}, { google: { hd: NORTHBEAM_DOMAIN } });
+    await commitAs(user.claims, (c) => c.query("select resolve_my_access()"));
+    const row = (
+      await db.client.query("select actor_kind, action from audit_log where target_table = 'memberships' and diff -> 'new' ->> 'user_id' = $1", [
+        user.id,
+      ])
+    ).rows;
+    expect(row).toEqual([{ actor_kind: "system", action: "insert" }]);
+    const editor = await withRole("editor-audit@northbeam.example", "editor");
+    expect(await db.as(editor.claims, async (c) => Number((await c.query("select count(*) from audit_log")).rows[0].count))).toBe(0);
+    await expect(
+      db.as(editor.claims, (c) => c.query("insert into audit_log (action, target_table) values ('x', 'y')")),
+    ).rejects.toThrow(/permission denied/);
+  });
+});

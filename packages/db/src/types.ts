@@ -1,5 +1,5 @@
 // Row shapes the app and engine work with. The database shape itself lives in
-// `database.types.ts` (generated: `pnpm --filter @flowsim/db gen:types`); these
+// `database.types.ts` (generated: `pnpm --filter @transpera-flow/db gen:types`); these
 // narrow its check-constrained text and jsonb columns, and the checks at the
 // bottom fail the typecheck if they drift from it.
 

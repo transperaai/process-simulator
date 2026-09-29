@@ -134,6 +134,8 @@ revoke all on public.issues from anon;
 
 -- Copied from 20260930000000_field_saves.sql; the only change is 'issues' at
 -- the end of `editable`. `create or replace` keeps the grants made there.
+-- PR #59 (services) extends the same list in an earlier-sorting migration;
+-- when both are merged this copy must list 'services' too (this one runs last).
 create or replace function public.save_fields(target text, key jsonb, base jsonb, changes jsonb) returns jsonb
 language plpgsql
 security invoker

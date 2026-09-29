@@ -299,7 +299,7 @@ function IssueItem({
           )}
           {issue && canEdit && (
             <button type="button" className={button} aria-expanded={editing} onClick={() => setEditing((x) => !x)}>
-              {editing ? "Close" : "Edit"}
+              {editing ? "Done editing" : "Edit"}
             </button>
           )}
           {fix && (

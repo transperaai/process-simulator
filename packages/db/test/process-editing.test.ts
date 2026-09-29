@@ -8,12 +8,21 @@ import { createTestDb, createUser, type TestDb } from "./harness";
 // run as the signed-in user under RLS: steps and edges created with ids made
 // in the browser, fields saved with save_fields (keyed by revision and id),
 // deletes, and undo re-inserting what was deleted. Step ids never change.
+// Edits go into the process's draft (issue #9), opened here with open_draft.
 
 let db: TestDb;
 const users: Record<string, { id: string; claims: Record<string, unknown> }> = {};
 const ws = NORTHBEAM_WORKSPACE_ID;
-const rev = NORTHBEAM_REVISION_ID;
 const ids = northbeamStepIds;
+/** The draft revision the current test edits (set by openDraft). */
+let rev = NORTHBEAM_REVISION_ID;
+
+const openDraft = async (c: pg.Client) => {
+  const r = (await c.query("select public.open_draft($1) as r", [NORTHBEAM_PROCESS_ID])).rows[0].r;
+  expect(r.status).toBe("ok");
+  rev = r.revision_id;
+  return rev;
+};
 
 beforeAll(async () => {
   db = await createTestDb();
@@ -54,6 +63,7 @@ const stepIds = async (c: pg.Client) => (await c.query("select id from steps whe
 describe("editing a process on the canvas", () => {
   it("creates a step and edges with the browser's ids, edits them, deletes and restores them, and never changes ids", async () => {
     await db.as(users.editor!.claims, async (c) => {
+      await openDraft(c);
       const before = await stepIds(c);
       const step = randomUUID();
       const inbound = randomUUID();
@@ -95,6 +105,7 @@ describe("editing a process on the canvas", () => {
 
   it("saves current WIP with its provenance as one compare-and-set, keyed per column in the provenance jsonb", async () => {
     await db.as(users.editor!.claims, async (c) => {
+      await openDraft(c);
       const entered = { source: "entered", at: "2026-09-29T10:00:00.000Z", by: users.editor!.id };
       // What the editor sends: the value and `provenance.current_wip`, each with the base it last saw.
       const saved = await saveFields(
@@ -105,7 +116,7 @@ describe("editing a process on the canvas", () => {
         { current_wip: 7, "provenance.current_wip": entered },
       );
       expect(saved.status).toBe("saved");
-      const row = (await c.query("select current_wip, provenance from steps where id = $1", [ids.audit])).rows[0];
+      const row = (await c.query("select current_wip, provenance from steps where revision_id = $1 and id = $2", [rev, ids.audit])).rows[0];
       expect(row).toEqual({ current_wip: 7, provenance: { current_wip: entered } });
 
       // Another column's provenance merges into the same jsonb.
@@ -128,22 +139,30 @@ describe("editing a process on the canvas", () => {
         (await saveFields(c, "steps", ids.audit, { current_wip: 7, "provenance.current_wip": entered }, { current_wip: null, "provenance.current_wip": null }))
           .status,
       ).toBe("saved");
-      const undone = (await c.query("select current_wip, provenance from steps where id = $1", [ids.audit])).rows[0];
+      const undone = (await c.query("select current_wip, provenance from steps where revision_id = $1 and id = $2", [rev, ids.audit])).rows[0];
       expect(undone).toEqual({ current_wip: null, provenance: { current_wip: null, work_hours: work } });
     });
   });
 
   it("rejects an end step without an outcome", async () => {
     await db.as(users.editor!.claims, async (c) => {
+      await openDraft(c);
       await expect(insertStep(c, randomUUID(), { kind: "end" })).rejects.toMatchObject({ code: "23514" });
     });
   });
 
   it("gives viewers a read-only process", async () => {
-    await db.as(users.viewer!.claims, async (c) => {
+    // An editor has a draft open; the viewer can't write to it.
+    const asViewerWithDraft = (fn: (c: pg.Client) => Promise<void>) =>
+      db.as(users.editor!.claims, async (c) => {
+        await openDraft(c);
+        await c.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify(users.viewer!.claims)]);
+        await fn(c);
+      });
+    await asViewerWithDraft(async (c) => {
       await expect(insertStep(c, randomUUID())).rejects.toMatchObject({ code: "42501" });
     });
-    await db.as(users.viewer!.claims, async (c) => {
+    await asViewerWithDraft(async (c) => {
       expect((await saveFields(c, "steps", ids.audit, { name: "Audit & proposal" }, { name: "Hacked" })).status).toBe("not_found");
       const deleted = await c.query("delete from steps where revision_id = $1 and id = $2 returning id", [rev, ids.audit]);
       expect(deleted.rowCount).toBe(0);

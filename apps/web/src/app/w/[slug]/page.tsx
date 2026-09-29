@@ -3,25 +3,26 @@ import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { ProcessView } from "@/components/process-view";
 import { canEditWorkspace, canManageWorkspace, currentUserId } from "@/lib/access-data";
-import { loadLiveProcess, loadWorkspaceIssues, loadWorkspaceScenarios } from "@/lib/data";
+import { loadProcessForEditing, loadWorkspaceIssues, loadWorkspaceScenarios } from "@/lib/data";
 
 export default async function WorkspacePage(props: PageProps<"/w/[slug]">) {
   const { slug } = await props.params;
   const { fix } = await props.searchParams;
-  const bundle = await loadLiveProcess(slug);
-  if (!bundle) notFound();
+  const process = await loadProcessForEditing(slug);
+  if (!process) notFound();
+  const { live, draft } = process;
   const [canEdit, canManage, scenarios, issues, userId] = await Promise.all([
-    canEditWorkspace(bundle.workspace.id),
-    canManageWorkspace(bundle.workspace.id),
-    loadWorkspaceScenarios(bundle.workspace.id),
-    loadWorkspaceIssues(bundle.workspace.id),
+    canEditWorkspace(live.workspace.id),
+    canManageWorkspace(live.workspace.id),
+    loadWorkspaceScenarios(live.workspace.id),
+    loadWorkspaceIssues(live.workspace.id),
     currentUserId(),
   ]);
   return (
     <main className="mx-auto w-full max-w-7xl px-4 pb-8">
-      <AppHeader workspace={bundle.workspace.name} signedIn />
+      <AppHeader workspace={live.workspace.name} signedIn />
       <div className="mt-4 mb-3 flex items-baseline gap-4">
-        <h1 className="text-xl font-bold">{bundle.process.name}</h1>
+        <h1 className="text-xl font-bold">{live.process.name}</h1>
         <Link href={`/w/${slug}/issues`} className="text-fg-2 hover:underline">
           Issues
         </Link>
@@ -35,7 +36,8 @@ export default async function WorkspacePage(props: PageProps<"/w/[slug]">) {
         )}
       </div>
       <ProcessView
-        bundle={bundle}
+        live={live}
+        draft={draft}
         mode={canEdit ? "live" : "readonly"}
         scenarios={scenarios}
         issues={issues}

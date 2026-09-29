@@ -20,44 +20,13 @@ import {
   updateStep,
   type Phase,
 } from "@/lib/editor/commands";
+import { POSITION } from "@/lib/drafts/discard";
+import type { StepChange } from "@/lib/drafts/diff";
+import { describeValue, fieldLabel } from "@/lib/editor/describe";
 import type { ProcessEditor } from "@/lib/editor/editor";
 import type { Edit, Scalar } from "@/lib/editor/ops";
 import type { SaveOutcome, Saver } from "@/lib/fields/field-controller";
 import { formatHours } from "@/lib/format";
-
-/** Labels for step and edge fields, also used to describe conflicts. */
-export const FIELD_LABELS: Record<string, string> = {
-  name: "name",
-  kind: "kind",
-  outcome: "outcome",
-  role_id: "role",
-  person_id: "pinned person",
-  work_hours: "hands-on time",
-  work_dist: "hands-on distribution",
-  "work_params.cv": "hands-on variability",
-  "work_params.min": "hands-on minimum",
-  "work_params.mode": "hands-on most likely",
-  "work_params.max": "hands-on maximum",
-  wait_hours: "wait time",
-  wait_dist: "wait distribution",
-  "wait_params.cv": "wait variability",
-  "wait_params.min": "wait minimum",
-  "wait_params.mode": "wait most likely",
-  "wait_params.max": "wait maximum",
-  rework_rate: "rework rate",
-  rework_to_step_id: "rework target",
-  tool: "tool",
-  notes: "notes",
-  sla_hours: "SLA",
-  current_wip: "current WIP",
-  x: "position",
-  y: "position",
-  probability: "branch probability",
-  condition_tag: "condition tag",
-  label: "label",
-  from_step_id: "start of the connection",
-  to_step_id: "end of the connection",
-};
 
 const DIST_OPTIONS: SelectOption[] = [
   { value: "lognormal", label: "Varies (lognormal)" },
@@ -78,6 +47,7 @@ export function StepInspector({
   onFocused,
   onClose,
   onDelete,
+  draft = null,
 }: {
   bundle: ProcessBundle;
   step: StepRow;
@@ -87,6 +57,8 @@ export function StepInspector({
   onFocused?: () => void;
   onClose: () => void;
   onDelete: () => void;
+  /** In a draft (issue #9): how the draft changed this step against live, and undoing that. */
+  draft?: DraftInfo | null;
 }) {
   const id = step.id;
   const ref = useRef<HTMLElement>(null);
@@ -140,6 +112,22 @@ export function StepInspector({
           Close
         </button>
       </div>
+      {draft?.change && <DraftChanges info={draft} change={draft.change} />}
+      {step.assumption && (
+        <div role="note" className="flex flex-col gap-1.5 rounded-token border border-warn bg-warn-soft p-2 text-xs">
+          <p>
+            <strong>Estimate.</strong> This step&apos;s values haven&apos;t been confirmed. Check them, then confirm; a draft
+            can&apos;t be published with estimates unless they are accepted as such.
+          </p>
+          <button
+            type="button"
+            onClick={() => editor.run((b) => updateStep(b, id, { assumption: false }))}
+            className="self-start rounded-token bg-accent px-2 py-0.5 font-semibold text-accent-fg"
+          >
+            Confirm values
+          </button>
+        </div>
+      )}
       <TextField label="Name" value={step.name} save={field<string | null>("name")} />
       <div className="grid grid-cols-2 gap-2">
         <SelectField
@@ -228,6 +216,65 @@ export function StepInspector({
         </button>
       </div>
     </aside>
+  );
+}
+
+export interface DraftInfo {
+  change: StepChange | undefined;
+  /** Names of steps, roles and people, live and draft, for describing values. */
+  names: Map<string, string>;
+  /** Put one field (or `position`) back as it is live. */
+  onRevert: (field: string) => void;
+  /** Put the whole step back as it is live (or remove it, if it is new). */
+  onDiscard: () => void;
+}
+
+/** What the draft changed on this step, old → new, each with Revert. */
+function DraftChanges({ info, change }: { info: DraftInfo; change: StepChange }) {
+  const buttonClass = "rounded-token border border-line bg-panel px-1.5 py-0.5 font-semibold hover:bg-panel-2";
+  if (change.kind === "added") {
+    return (
+      <div className="flex items-center justify-between gap-2 rounded-token border border-dashed border-accent bg-accent-soft p-2 text-xs">
+        <p>New in this draft.</p>
+        <button type="button" onClick={info.onDiscard} className={buttonClass}>
+          Discard step
+        </button>
+      </div>
+    );
+  }
+  if (change.kind !== "changed") return null;
+  // Kind and outcome revert together, so they are listed together.
+  const fields = change.fields.filter((f) => f.field !== "outcome" || !change.fields.some((g) => g.field === "kind"));
+  return (
+    <section aria-label="Changed in this draft" className="flex flex-col gap-1.5 rounded-token border border-accent bg-accent-soft p-2 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-semibold">Changed in this draft</p>
+        <button type="button" onClick={info.onDiscard} className={buttonClass}>
+          Revert all
+        </button>
+      </div>
+      <ul className="flex flex-col gap-1">
+        {fields.map((f) => (
+          <li key={f.field} className="flex items-center justify-between gap-2">
+            <span>
+              {fieldLabel(f.field)}: <s className="text-fg-3">{describeValue(f.field, f.live, info.names)}</s>{" "}
+              <span aria-label="changed to">→</span> <strong>{describeValue(f.field, f.draft, info.names)}</strong>
+            </span>
+            <button type="button" onClick={() => info.onRevert(f.field)} className={buttonClass} aria-label={`Revert ${fieldLabel(f.field)}`}>
+              Revert
+            </button>
+          </li>
+        ))}
+        {change.moved && (
+          <li className="flex items-center justify-between gap-2">
+            <span>Moved on the map</span>
+            <button type="button" onClick={() => info.onRevert(POSITION)} className={buttonClass} aria-label="Revert position">
+              Revert
+            </button>
+          </li>
+        )}
+      </ul>
+    </section>
   );
 }
 

@@ -183,6 +183,55 @@ describe.skipIf(!POSTGREST_URL)("MCP over PostgREST (acts as the user under RLS)
     expect(bad).toMatchObject({ ok: false, error: { code: "invalid_overrides" } });
   });
 
+  it("runs of the live model ignore an open draft (issue #9)", async () => {
+    const startDate = "2026-10-05";
+    const opened = (await admin.query("select public.open_draft($1) as r", [NORTHBEAM_PROCESS_ID])).rows[0].r;
+    try {
+      await admin.query("update steps set work_hours = 30 where revision_id = $1", [opened.revision_id]);
+      const client = await connect(memberToken, options);
+      const live = await call<{ kpi: unknown; revision: { status: string } }>(client, "run_scenario", { start_date: startDate, reps: 5 });
+      const draft = await call<{ kpi: unknown; revision: { status: string } }>(client, "run_scenario", {
+        start_date: startDate,
+        reps: 5,
+        revision: "draft",
+      });
+      const process = await call<{ steps: { work_hours: number }[] }>(client, "get_process", { process: NORTHBEAM_PROCESS_ID });
+      await client.close();
+      const browser = simulate(toEngineModel(northbeamBundle(), { startDate }), 5, 1);
+      expect(live.data.revision.status).toBe("published");
+      expect(live.data.kpi).toEqual(JSON.parse(JSON.stringify(browser.kpi)));
+      expect(draft.data.revision.status).toBe("draft");
+      expect(draft.data.kpi).not.toEqual(live.data.kpi);
+      expect(process.data.steps.some((s) => Number(s.work_hours) === 30)).toBe(false);
+    } finally {
+      await admin.query("select public.discard_draft($1)", [NORTHBEAM_PROCESS_ID]);
+    }
+  });
+
+  it("serves the draft RPCs to a signed-in editor, as the web app calls them (issue #9)", async () => {
+    const editorId = await createUser("draft-editor@example.com");
+    await admin.query("insert into memberships (workspace_id, user_id, role) values ($1, $2, 'editor')", [NORTHBEAM_WORKSPACE_ID, editorId]);
+    const session = signJwt({ sub: editorId, role: "authenticated", aud: "authenticated", app_metadata: {} }, JWT_SECRET);
+    const rpc = async (fn: string, body: object) => {
+      const res = await fetch(`${POSTGREST_URL}/rpc/${fn}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${session}`, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      expect(res.status, fn).toBe(200);
+      return res.json();
+    };
+    const opened = await rpc("open_draft", { target_process: NORTHBEAM_PROCESS_ID });
+    expect(opened).toMatchObject({ status: "ok", created: true });
+    expect(await rpc("publish_process", { target_process: NORTHBEAM_PROCESS_ID, accept_estimates: false })).toMatchObject({
+      status: "published",
+      number: opened.number,
+    });
+    const audit = await admin.query("select actor_id, diff from audit_log where action = 'publish' and target_id = $1", [NORTHBEAM_PROCESS_ID]);
+    expect(audit.rows).toEqual([expect.objectContaining({ actor_id: editorId })]);
+    expect(await rpc("discard_draft", { target_process: NORTHBEAM_PROCESS_ID })).toEqual({ status: "no_draft" });
+  });
+
   it("rejects revoked and unknown tokens with 401", async () => {
     const token = await issueToken(memberId);
     await admin.query("update api_tokens set revoked_at = now() where token_hash = encode(sha256(convert_to($1, 'UTF8')), 'hex')", [token]);

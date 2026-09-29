@@ -10,6 +10,8 @@ const dir = (p: string) => new URL(p, import.meta.url);
 
 export interface TestDb {
   client: pg.Client;
+  /** Connection string of the throwaway database, for extra connections. */
+  url: string;
   /** Run `fn` as `authenticated` with the given JWT claims, inside a rolled-back transaction. */
   as<T>(claims: Record<string, unknown> | null, fn: (c: pg.Client) => Promise<T>): Promise<T>;
   close(): Promise<void>;
@@ -36,6 +38,7 @@ export async function createTestDb(): Promise<TestDb> {
 
   return {
     client,
+    url: url.toString(),
     async as(claims, fn) {
       await client.query("begin");
       try {

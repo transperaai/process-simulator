@@ -120,6 +120,7 @@ const step = (
   current_wip: null,
   x,
   y,
+  assumption: false,
 });
 
 let edgeN = 0;

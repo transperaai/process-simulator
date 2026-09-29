@@ -35,6 +35,7 @@ export {
   loadIssues,
   loadLiveProcessBySlug,
   loadProcessBundle,
+  loadProcessBySlug,
   loadScenarios,
   SCENARIO_COLUMNS,
   SEASONALITY_COLUMNS,

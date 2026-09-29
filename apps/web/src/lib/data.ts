@@ -5,6 +5,7 @@ import {
   listProcesses,
   loadIssues,
   loadLiveProcessBySlug,
+  loadProcessBySlug,
   loadScenarios,
   SEASONALITY_COLUMNS,
   SERVICE_COLUMNS,
@@ -52,6 +53,11 @@ export async function loadProcessNames(workspaceId: string): Promise<{ id: strin
 /** The workspace's saved scenarios, oldest first (RLS: everyone in the workspace can read them). */
 export async function loadWorkspaceScenarios(workspaceId: string): Promise<ScenarioRow[]> {
   return loadScenarios(await createClient(), workspaceId);
+}
+
+/** The workspace's first process: its live revision and its open draft, if any (issue #9). */
+export async function loadProcessForEditing(slug: string): Promise<{ live: ProcessBundle; draft: ProcessBundle | null } | null> {
+  return loadProcessBySlug(await createClient(), slug);
 }
 
 export interface PersonDetail extends PersonRow {

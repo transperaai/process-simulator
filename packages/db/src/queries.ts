@@ -93,15 +93,34 @@ export async function listProcesses(db: Db, workspaceId: string): Promise<(Proce
   return rows(r) as (ProcessRow & { draft_revision_id: string | null })[];
 }
 
-/** The workspace's first process at its live revision, or null if not visible. */
+/**
+ * The workspace's first process at its live revision, or null if not visible.
+ * Only the live revision: simulation, forecasts and reports never see a draft.
+ */
 export async function loadLiveProcessBySlug(db: Db, slug: string): Promise<ProcessBundle | null> {
+  return (await loadProcessBySlug(db, slug, { draft: false }))?.live ?? null;
+}
+
+/**
+ * The workspace's first process at its live revision, and its draft revision
+ * if one is open (for the editor; issue #9). Null if not visible.
+ */
+export async function loadProcessBySlug(
+  db: Db,
+  slug: string,
+  { draft = true }: { draft?: boolean } = {},
+): Promise<{ live: ProcessBundle; draft: ProcessBundle | null } | null> {
   const { data: workspace, error } = await db.from("workspaces").select("id, name, slug, settings").eq("slug", slug).maybeSingle();
   if (error) throw error;
   if (!workspace) return null;
   const process = (await listProcesses(db, workspace.id)).find((p) => p.live_revision_id);
   if (!process) return null;
-  const { draft_revision_id: _draft, ...row } = process;
-  return loadProcessBundle(db, workspace, row, process.live_revision_id as string);
+  const { draft_revision_id: draftId, ...row } = process;
+  const [live, drafted] = await Promise.all([
+    loadProcessBundle(db, workspace, row, process.live_revision_id as string),
+    draft && draftId ? loadProcessBundle(db, workspace, row, draftId) : null,
+  ]);
+  return { live, draft: drafted };
 }
 
 export const SCENARIO_COLUMNS = "id, workspace_id, name, description, patch, parent_scenario_id" as const;

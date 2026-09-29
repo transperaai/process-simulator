@@ -129,6 +129,12 @@ export interface StepRow {
   current_wip: number | null;
   x: number;
   y: number;
+  /**
+   * The step's values are estimates nobody has confirmed yet (e.g. filled in
+   * by the MCP server). Publishing a draft with any is refused unless they are
+   * accepted as estimates (docs/PRD.md §7.1b).
+   */
+  assumption: boolean;
 }
 
 export interface EdgeRow {

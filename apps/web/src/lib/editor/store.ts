@@ -8,6 +8,7 @@
 
 import type { EdgeRow, ProcessBundle, StepRow } from "@transpera-flow/db";
 import { sameScalar } from "./commands";
+import type { RemoteChange } from "@/lib/realtime/rows";
 import { readField, writeFields, type Patch, type Table } from "./ops";
 
 export type WriteResult = { status: "ok" } | { status: "error"; message: string };
@@ -27,14 +28,25 @@ export interface ProcessStore {
   update(table: Table, id: string, base: Patch, next: Patch): Promise<UpdateResult>;
 }
 
-/** Rows in memory, with the same compare-and-set rules as the database. */
+/**
+ * Rows in memory, with the same compare-and-set rules as the database.
+ * `onChange` hears every stored change, as Realtime's Postgres Changes would
+ * report it (the demo's live updates, and tests).
+ */
 export class MemoryStore implements ProcessStore {
   private steps = new Map<string, StepRow>();
   private edges = new Map<string, EdgeRow>();
 
-  constructor(bundle: Pick<ProcessBundle, "steps" | "edges">) {
+  constructor(
+    bundle: Pick<ProcessBundle, "steps" | "edges">,
+    public onChange: ((change: RemoteChange) => void) | null = null,
+  ) {
     for (const s of bundle.steps) this.steps.set(s.id, structuredClone(s));
     for (const e of bundle.edges) this.edges.set(e.id, structuredClone(e));
+  }
+
+  private tell(change: RemoteChange): void {
+    this.onChange?.(structuredClone(change));
   }
 
   /** What is stored, as a reload would see it. */
@@ -52,14 +64,20 @@ export class MemoryStore implements ProcessStore {
       }
       this.edges.set(e.id, structuredClone(e));
     }
+    for (const row of steps) this.tell({ kind: "upsert", table: "steps", row });
+    for (const row of edges) this.tell({ kind: "upsert", table: "edges", row });
     return { status: "ok" };
   }
 
   async remove(stepIds: string[], edgeIds: string[]): Promise<WriteResult> {
-    for (const id of edgeIds) this.edges.delete(id);
     const gone = new Set(stepIds);
-    for (const id of stepIds) this.steps.delete(id);
-    for (const [id, e] of this.edges) if (gone.has(e.from_step_id) || gone.has(e.to_step_id)) this.edges.delete(id);
+    const edges = new Set(edgeIds.filter((id) => this.edges.has(id)));
+    for (const [id, e] of this.edges) if (gone.has(e.from_step_id) || gone.has(e.to_step_id)) edges.add(id);
+    const steps = stepIds.filter((id) => this.steps.has(id));
+    for (const id of edges) this.edges.delete(id);
+    for (const id of steps) this.steps.delete(id);
+    for (const id of edges) this.tell({ kind: "delete", table: "edges", id });
+    for (const id of steps) this.tell({ kind: "delete", table: "steps", id });
     return { status: "ok" };
   }
 
@@ -75,7 +93,11 @@ export class MemoryStore implements ProcessStore {
       if (!sameScalar(stored, seen) && !sameScalar(stored, value)) theirs[field] = stored;
       else write[field] = value;
     }
-    rows.set(id, writeFields(row, write));
+    const updated = writeFields(row, write);
+    rows.set(id, updated);
+    if (Object.keys(write).some((f) => !sameScalar(readField(row, f), write[f]!))) {
+      this.tell(table === "steps" ? { kind: "upsert", table, row: updated as StepRow } : { kind: "upsert", table, row: updated as EdgeRow });
+    }
     return Object.keys(theirs).length ? { status: "conflict", theirs } : { status: "saved" };
   }
 }

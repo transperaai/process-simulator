@@ -37,6 +37,15 @@ export interface Edit {
   ops: Op[];
 }
 
+/** One unit of saving: an insert, a remove, or one row's fields. */
+export type SaveUnit = Exclude<Op, { kind: "update" }> | { kind: "update"; change: RowChange };
+
+export function saveUnits(edit: Edit): SaveUnit[] {
+  return edit.ops.flatMap((op): SaveUnit[] => (op.kind === "update" ? op.changes.map((change) => ({ kind: "update", change })) : [op]));
+}
+
+export const unitOp = (u: SaveUnit): Op => (u.kind === "update" ? { kind: "update", changes: [u.change] } : u);
+
 export function invertOp(op: Op): Op {
   switch (op.kind) {
     case "insert":

@@ -120,7 +120,8 @@ describe("robustness check", () => {
     // Nominal 3 chunks + 6 screen jobs, then 2 parameters × 2 directions × 2 more chunks.
     expect(r.stats.jobs).toBe(3 + 6 + 8);
     expect(r.stats.replications).toBe(plannedReplications({ parameters: quick.parameters, screenReps: 10, refineReps: 30, refineTop: 2 }));
-    for (const share of [r.signHolds, r.bottleneckHolds.baseline, r.bottleneckHolds.scenario]) {
+    expect(r.bottleneckHolds.both).toBeLessThanOrEqual(Math.min(r.bottleneckHolds.baseline, r.bottleneckHolds.scenario));
+    for (const share of [r.signHolds, r.bottleneckHolds.baseline, r.bottleneckHolds.scenario, r.bottleneckHolds.both]) {
       expect(share).toBeGreaterThanOrEqual(0);
       expect(share).toBeLessThanOrEqual(1);
     }
@@ -271,7 +272,7 @@ describe("verdict", () => {
 
   it("never rounds a share that isn't 100% up to 100%", () => {
     const base = robustness(northbeamModel(), hire, quick);
-    const r: RobustnessResult = { ...base, signHolds: 0.996, bottleneckHolds: { baseline: 1, scenario: 1 }, nominal: { ...base.nominal, sign: 1 } };
+    const r: RobustnessResult = { ...base, signHolds: 0.996, bottleneckHolds: { baseline: 1, scenario: 1, both: 1 }, nominal: { ...base.nominal, sign: 1 } };
     expect(robustnessVerdict({ result: r, subject: "X", roleNames: {}, horizonWeeks: 13 }).verdict).toMatch(/adds wins in 99% of cases/);
   });
 });

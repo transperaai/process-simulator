@@ -379,8 +379,8 @@ export interface RobustnessResult {
   };
   /** Perturbed runs counted in the shares (two per parameter, each at its most refined). */
   runs: number;
-  /** Share of runs where each side's nominal bottleneck is still the bottleneck. */
-  bottleneckHolds: { baseline: number; scenario: number };
+  /** Share of runs where each side's nominal bottleneck is still the bottleneck, and where both are. */
+  bottleneckHolds: { baseline: number; scenario: number; both: number };
   /** Share of runs where the delta keeps the nominal sign. */
   signHolds: number;
   /** Every screened parameter, most sensitive first: those that flip the delta's sign, then by influence. */
@@ -580,6 +580,9 @@ function* plan(ctx: Ctx): Generator<RobustnessJob[], Omit<RobustnessResult, "sta
     bottleneckHolds: {
       baseline: share((o) => o.bottleneck.baseline === nominalFull.bottleneck.baseline),
       scenario: share((o) => o.bottleneck.scenario === nominalFull.bottleneck.scenario),
+      both: share(
+        (o) => o.bottleneck.baseline === nominalFull.bottleneck.baseline && o.bottleneck.scenario === nominalFull.bottleneck.scenario,
+      ),
     },
     signHolds: share((o) => o.sign === nominalFull.sign),
     sensitivities,
@@ -811,7 +814,7 @@ export function robustnessVerdict({ result: r, subject, plural = false, roleName
   const { baseline: bA, scenario: bB } = r.nominal.bottleneck;
   const parts: string[] = [];
   if (bA === bB) {
-    const share = Math.min(r.bottleneckHolds.baseline, r.bottleneckHolds.scenario);
+    const share = r.bottleneckHolds.both;
     parts.push(`${name(bA)} is the bottleneck in ${pctText(share)} of cases`);
   } else {
     parts.push(`${name(bA)} is the bottleneck today in ${pctText(r.bottleneckHolds.baseline)} of cases, and ${name(bB)} after the change in ${pctText(r.bottleneckHolds.scenario)}`);
@@ -830,7 +833,7 @@ export function robustnessVerdict({ result: r, subject, plural = false, roleName
       : `${Math.abs(v).toLocaleString(LOCALE, currency ? { style: "currency", currency, maximumFractionDigits: 0 } : { maximumFractionDigits: 0 })}/quarter`;
   const conflicted = r.sensitivities.some((s) => s.conflict);
   const details = [
-    `Each estimated input was moved ${Math.round(r.perturbation * 100)}% down and up${conflicted ? " (conflicting estimates across their range)" : ""}, one at a time: ${r.runs} runs, ${r.screenReps} replications each, the ${r.refined} most sensitive refined at ${r.refineReps}.`,
+    `Each estimated input was moved ${Math.round(r.perturbation * 100)}% down and up${conflicted ? " (conflicting estimates across their range)" : ""}, one at a time: ${r.runs} runs of ${r.screenReps} replications${r.refined ? `, with the ${r.refined} most sensitive inputs re-run at ${r.refineReps}` : ""}.`,
   ];
   if (!r.complete) details.push(`Stopped early: ${r.screened} of ${r.parameters} inputs checked.`);
   const sensitive = r.sensitivities.slice(0, top).map((s) => {

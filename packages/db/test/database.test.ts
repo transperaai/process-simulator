@@ -9,6 +9,7 @@ import {
   toEngineModel,
   type ProcessBundle,
 } from "../src";
+import { bootstrapSql } from "../src/bootstrap";
 import { createTestDb, createUser, type TestDb } from "./harness";
 
 let db: TestDb;
@@ -22,6 +23,11 @@ afterAll(async () => {
 });
 
 describe("seed", () => {
+  it("bootstrap.sql is up to date with the migrations and seed", () => {
+    const dir = new URL("../supabase/", import.meta.url);
+    expect(readFileSync(new URL("bootstrap.sql", dir), "utf8")).toBe(bootstrapSql(dir));
+  });
+
   it("seed.sql is up to date with the fixtures", () => {
     const onDisk = readFileSync(new URL("../supabase/seed.sql", import.meta.url), "utf8");
     expect(onDisk).toBe(seedSql([northbeamBundle()]));

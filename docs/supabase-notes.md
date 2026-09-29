@@ -11,14 +11,23 @@ may need code or migration changes.
 1. Create a Supabase project (Pro plan per PRD D2) and a Vercel project for `apps/web`.
 2. Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` to Vercel
    (and to `apps/web/.env.local` for local dev). See `apps/web/.env.example`.
-3. Apply migrations: `npx supabase link --workdir packages/db` then
-   `npx supabase db push --workdir packages/db`.
-4. Load the seed: run `packages/db/supabase/seed.sql` in the SQL editor (or
-   `supabase db reset` locally, which runs it automatically).
+3. Apply migrations and seed. Either:
+   - **SQL editor (works from a phone):** paste `packages/db/supabase/bootstrap.sql`
+     into a new query and run it once. It contains every migration, the seed, and
+     the migration-history rows so the CLI stays in sync afterwards.
+   - **CLI:** `npx supabase link --workdir packages/db` then
+     `npx supabase db push --workdir packages/db`, then run `seed.sql` in the SQL editor.
+   Regenerate the bundle with `pnpm --filter @flowsim/db gen:bootstrap` after changing
+   migrations or fixtures (CI fails if it's stale).
+4. (Covered by the bootstrap bundle.)
 5. Auth → URL configuration: set the site URL and add
    `https://<your-domain>/auth/callback` (and Vercel preview URLs) to the redirect allow-list.
 6. Sign in once with your email, then run `packages/db/scripts/make-agency-admin.sql`
    (with your email) and sign out/in again.
+
+The Claude Code environment's network policy currently blocks `api.supabase.com`
+and `*.supabase.co`; allow them in the environment's Network access settings so an
+agent can run migrations and checks directly.
 
 ## Things that may need changes
 

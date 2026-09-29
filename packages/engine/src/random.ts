@@ -1,5 +1,8 @@
-// Seeded random helpers ported from the Northbeam prototype. `mulberry32` gives
-// a deterministic stream per seed, which is what makes runs reproducible.
+// Seeded random helpers. `mulberry32` gives a deterministic stream per seed,
+// and all transcendental maths goes through det-math so results are identical
+// in every JS engine (browser and server).
+
+import { exp, log } from "./det-math";
 
 export type Rng = () => number;
 
@@ -14,24 +17,71 @@ export function mulberry32(seed: number): Rng {
   };
 }
 
-/** Standard normal sample via Box–Muller. */
+/** Standard normal sample via Marsaglia's polar method (no trigonometry). */
 export function randn(rng: Rng): number {
-  let u = 0;
-  let v = 0;
-  while (u === 0) u = rng();
-  while (v === 0) v = rng();
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  let u: number;
+  let v: number;
+  let s: number;
+  do {
+    u = 2 * rng() - 1;
+    v = 2 * rng() - 1;
+    s = u * u + v * v;
+  } while (s >= 1 || s === 0);
+  return u * Math.sqrt((-2 * log(s)) / s);
 }
 
 /** Lognormal sample with the given mean and coefficient of variation. */
 export function lognormal(rng: Rng, mean: number, cv: number): number {
   if (mean <= 0) return 0;
-  const s2 = Math.log(1 + cv * cv);
-  const mu = Math.log(mean) - s2 / 2;
-  return Math.exp(mu + Math.sqrt(s2) * randn(rng));
+  const s2 = log(1 + cv * cv);
+  const mu = log(mean) - s2 / 2;
+  return exp(mu + Math.sqrt(s2) * randn(rng));
 }
 
 /** Exponential sample with the given mean. */
 export function expo(rng: Rng, mean: number): number {
-  return -Math.log(1 - rng()) * mean;
+  return -log(1 - rng()) * mean;
+}
+
+/** Triangular sample on [min, max] with the given mode. */
+export function triangular(rng: Rng, min: number, mode: number, max: number): number {
+  if (max <= min) return min;
+  const u = rng();
+  const c = (mode - min) / (max - min);
+  return u < c ? min + Math.sqrt(u * (max - min) * (mode - min)) : max - Math.sqrt((1 - u) * (max - min) * (max - mode));
+}
+
+/** 32-bit hash of a seed and a label (cyrb53-style mixing, truncated). */
+export function hashSeed(seed: number, label: string): number {
+  let h1 = 0xdeadbeef ^ seed;
+  let h2 = 0x41c6ce57 ^ seed;
+  for (let i = 0; i < label.length; i++) {
+    const ch = label.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (h1 ^ h2) >>> 0;
+}
+
+/**
+ * Independent random streams per purpose ("arrivals", "work:<step>", ...),
+ * all derived from one replication seed. Changing how often one stream is
+ * drawn from leaves every other stream's sequence untouched, which gives
+ * common random numbers between a baseline and a scenario.
+ */
+export class Streams {
+  private readonly streams = new Map<string, Rng>();
+
+  constructor(private readonly seed: number) {}
+
+  get(label: string): Rng {
+    let rng = this.streams.get(label);
+    if (!rng) {
+      rng = mulberry32(hashSeed(this.seed, label));
+      this.streams.set(label, rng);
+    }
+    return rng;
+  }
 }

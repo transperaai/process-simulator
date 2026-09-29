@@ -270,7 +270,8 @@ Notes:
 - Deterministic given a seed. Same model + seed = same output, in Node and in the browser. Reproducibility is non-negotiable for client trust.
 - One TypeScript module (`packages/engine`), two hosts: Web Worker in the browser for interactive use; Node for MCP `run_scenario`, report generation, calibration and server-side robustness.
 - Time unit: working hours. Calendar (working days, leave) is applied through resource availability.
-- Separate seeded random streams per purpose (arrivals, each step's service time, routing, churn, servicing requests) so that changing one parameter does not reshuffle unrelated draws. This gives common random numbers between baseline and scenario, which the robustness check depends on.
+- Separate seeded random streams per purpose (arrivals, each step's service time, routing, churn, servicing requests) so that changing one parameter does not reshuffle unrelated draws.
+- Transcendental maths (log, exp) uses portable fdlibm ports rather than `Math.log`/`Math.exp`, which engines may approximate differently; normal samples use the polar method (no trigonometry). This is what makes browser and server results byte-identical. This gives common random numbers between baseline and scenario, which the robustness check depends on.
 
 ### 6.2 Model resolution
 Before a run, the company model (published revisions only, or one draft for draft-vs-live) and a scenario patch are resolved into a flat `SimModel`:

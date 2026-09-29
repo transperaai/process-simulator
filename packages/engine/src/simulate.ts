@@ -1,10 +1,12 @@
-// Discrete-event Monte Carlo simulation, ported faithfully from the Northbeam
+// Discrete-event Monte Carlo simulation, ported from the Northbeam
 // prototype's `ProcessSim` (prototype/northbeam-process-simulator.html).
-// Known prototype issues (shared RNG stream, linear-scan event queue, stale
-// ongoing utilisation, empty start) are deliberately preserved here and fixed
-// test-first in later tickets; see docs/PRD.md §6.8.
+// Fixed so far (docs/PRD.md §6.8): separate random streams per purpose and a
+// binary-heap event queue. Still as in the prototype, and fixed in later
+// tickets: stale ongoing utilisation, empty start, role head-counts.
 
+import { EventQueue } from "./event-queue";
 import type {
+  Distribution,
   EngineModel,
   EngineStep,
   ReplicationResult,
@@ -14,14 +16,12 @@ import type {
   TraceEntity,
   TraceSegment,
 } from "./model";
-import { expo, lognormal, mulberry32 } from "./random";
+import { expo, lognormal, Streams, triangular, type Rng } from "./random";
 
 /** Minimum share of a role's capacity left for pipeline work. */
 const AVAILABILITY_FLOOR = 0.08;
-/** Coefficient of variation for hands-on time. */
-const WORK_CV = 0.35;
-/** Coefficient of variation for external waits. */
-const WAIT_CV = 0.3;
+const DEFAULT_WORK_DIST: Distribution = { kind: "lognormal", cv: 0.35 };
+const DEFAULT_WAIT_DIST: Distribution = { kind: "lognormal", cv: 0.3 };
 const WEEKS_PER_MONTH = 4.33;
 /** Stride between replication seeds. */
 const SEED_STRIDE = 7919;
@@ -52,8 +52,22 @@ interface RoleState {
   busyHours: number;
 }
 
+/** Sample a duration with the given mean. */
+export function sampleDuration(rng: Rng, mean: number, dist: Distribution): number {
+  switch (dist.kind) {
+    case "constant":
+      return mean;
+    case "exponential":
+      return mean > 0 ? expo(rng, mean) : 0;
+    case "lognormal":
+      return lognormal(rng, mean, dist.cv);
+    case "triangular":
+      return triangular(rng, dist.min, dist.mode, dist.max);
+  }
+}
+
 export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): ReplicationResult {
-  const rng = mulberry32(seed);
+  const streams = new Streams(seed);
   const H = model.horizonWeeks * model.hoursPerWeek;
   const steps = new Map<string, EngineStep>(model.steps.map((s) => [s.id, s]));
   const roles: Record<string, RoleState> = {};
@@ -62,29 +76,28 @@ export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): R
   }
   const stepStat: Record<string, StepStat> = {};
   const stepQueue: Record<string, SimEntity[]> = {};
+  const stepRng: Record<string, { work: Rng; wait: Rng; rework: Rng; route: Rng }> = {};
+  const roleSteps: Record<string, EngineStep[]> = {};
   for (const s of model.steps) {
     stepStat[s.id] = { arrivals: 0, qLen: 0, qArea: 0, qLast: 0, qMax: 0, waitSum: 0, waitN: 0, reworks: 0 };
     stepQueue[s.id] = [];
+    stepRng[s.id] = {
+      work: streams.get(`work:${s.id}`),
+      wait: streams.get(`wait:${s.id}`),
+      rework: streams.get(`rework:${s.id}`),
+      route: streams.get(`route:${s.id}`),
+    };
+    if (s.role) (roleSteps[s.role] ??= []).push(s);
   }
   let active = model.activeClients;
-  const events: SimEvent[] = [];
+  const events = new EventQueue<SimEvent>();
   const entities: SimEntity[] = [];
   let eid = 0;
   const cycle: number[] = [];
   let won = 0;
   let lost = 0;
 
-  const push = (ev: SimEvent) => {
-    events.push(ev);
-  };
-  const pop = (): SimEvent => {
-    let bi = 0;
-    for (let i = 1; i < events.length; i++) if (events[i]!.t < events[bi]!.t) bi = i;
-    const ev = events[bi]!;
-    events[bi] = events[events.length - 1]!;
-    events.pop();
-    return ev;
-  };
+  const push = (ev: SimEvent) => events.push(ev);
   const availFrac = (rid: string) => {
     const ong = active * (model.roles[rid]!.ongoing || 0);
     const cap = roles[rid]!.count * model.hoursPerWeek;
@@ -133,9 +146,9 @@ export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): R
       // Oldest waiting entity across this role's steps (FIFO across steps).
       let best: SimEntity | null = null;
       let bestSid: string | null = null;
-      for (const s of model.steps) {
+      for (const s of roleSteps[rid] ?? []) {
         const q = stepQueue[s.id]!;
-        if (s.role === rid && q.length) {
+        if (q.length) {
           const c = q[0]!;
           if (!best || c.seg!.tQ < best.seg!.tQ) {
             best = c;
@@ -157,7 +170,7 @@ export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): R
     e.seg!.tS = t;
     let dur = 0;
     if (s.role) {
-      dur = lognormal(rng, s.work, WORK_CV) / availFrac(s.role);
+      dur = sampleDuration(stepRng[s.id]!.work, s.work, s.workDist ?? DEFAULT_WORK_DIST) / availFrac(s.role);
       roles[s.role]!.busyHours += dur * availFrac(s.role);
     }
     push({ t: t + dur, type: "end", e, step: s.id });
@@ -166,19 +179,20 @@ export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): R
   function endService(e: SimEntity, s: EngineStep, t: number) {
     e.seg!.tE = t;
     if (s.role) roles[s.role]!.busy--;
-    const w = s.wait ? lognormal(rng, s.wait, WAIT_CV) : 0;
+    const waitDist = s.waitDist ?? DEFAULT_WAIT_DIST;
+    const w = s.wait || waitDist.kind === "triangular" ? sampleDuration(stepRng[s.id]!.wait, s.wait, waitDist) : 0;
     push({ t: t + w, type: "leave", e, step: s.id });
     if (s.role) tryStart(s.role, t);
   }
 
   function leave(e: SimEntity, s: EngineStep, t: number) {
     e.seg!.tL = t;
-    if (s.rework && rng() < s.rework) {
+    if (s.rework && stepRng[s.id]!.rework() < s.rework) {
       stepStat[s.id]!.reworks++;
       enter(e, s.id, t);
       return;
     }
-    const u = rng();
+    const u = stepRng[s.id]!.route();
     let acc = 0;
     let to = s.next[s.next.length - 1]!.to;
     for (const n of s.next) {
@@ -192,17 +206,17 @@ export function runOnce(model: EngineModel, seed: number, keepTrace: boolean): R
   }
 
   // Arrivals: Poisson process over the horizon.
+  const arrivals = streams.get("arrivals");
   const meanGap = model.hoursPerWeek / model.leadsPerWeek;
-  let ta = expo(rng, meanGap);
+  let ta = expo(arrivals, meanGap);
   while (ta < H) {
     push({ t: ta, type: "arrive" });
-    ta += expo(rng, meanGap);
+    ta += expo(arrivals, meanGap);
   }
   // Weekly churn ticks.
   for (let w = 1; w <= model.horizonWeeks; w++) push({ t: w * model.hoursPerWeek, type: "week" });
 
-  while (events.length) {
-    const ev = pop();
+  for (let ev = events.pop(); ev; ev = events.pop()) {
     if (ev.t > H) break;
     if (ev.type === "arrive") {
       const e: SimEntity = { id: eid++, t0: ev.t, trace: [], seg: null };

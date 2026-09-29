@@ -13,6 +13,16 @@ export interface EngineRole {
   ongoing: number;
 }
 
+/**
+ * How a duration varies around its mean. Triangular uses its own bounds, so
+ * its mean is (min + mode + max) / 3.
+ */
+export type Distribution =
+  | { kind: "lognormal"; cv: number }
+  | { kind: "exponential" }
+  | { kind: "constant" }
+  | { kind: "triangular"; min: number; mode: number; max: number };
+
 export interface EngineEdge {
   /** Target step id, or one of the sink ids. */
   to: string;
@@ -31,6 +41,10 @@ export interface EngineStep {
   wait: number;
   /** Probability of repeating the step. */
   rework: number;
+  /** Defaults to lognormal with CV 0.35. */
+  workDist?: Distribution;
+  /** Defaults to lognormal with CV 0.3. */
+  waitDist?: Distribution;
   next: EngineEdge[];
 }
 

@@ -4,6 +4,7 @@ import { DraftSession, MemoryDraftBackend } from "@/lib/drafts/session";
 import { addStep, deleteSteps, updateStep } from "@/lib/editor/commands";
 import { ProcessEditor } from "@/lib/editor/editor";
 import { MemoryStore, type ProcessStore } from "@/lib/editor/store";
+import { COLLEAGUE, DemoColleague } from "@/lib/realtime/demo-colleague";
 import { MemoryRealtime } from "@/lib/realtime/memory";
 import { RemoteChangeMerger } from "@/lib/realtime/merge";
 import { changeFromPayload, stepFromRecord, type RemoteChange } from "@/lib/realtime/rows";
@@ -251,6 +252,42 @@ describe("merging other people's saved changes", () => {
   });
 });
 
+describe("provenance in remote changes", () => {
+  const stamped = (row: StepRow) => (row as StepRow & { provenance?: Record<string, unknown> }).provenance ?? {};
+
+  it("applies a remote value together with its provenance, and knows our own stamped echo", async () => {
+    const bundle = northbeamBundle();
+    const memory = new MemoryStore(bundle);
+    const changes: RemoteChange[] = [];
+    memory.onChange = (c) => changes.push(c);
+    const editor = new ProcessEditor(bundle, memory, () => ({ at: "2026-10-07T09:00:00.000Z", by: "00000000-0000-4000-8000-00000000a0a0" }));
+    editor.run((b) => updateStep(b, ids.audit, { work_hours: 4 }));
+    await editor.settled();
+    // The echo comes back with the entry's keys in another order (jsonb does that): still ours.
+    const echo = changes.splice(0)[0]!;
+    if (echo.kind !== "upsert" || echo.table !== "steps") throw new Error("expected a step upsert");
+    const entry = stamped(echo.row).work_hours as Record<string, unknown>;
+    const reordered = { ...echo.row, provenance: { work_hours: { by: entry.by, at: entry.at, source: entry.source } } } as StepRow;
+    let notified = 0;
+    editor.subscribe(() => notified++);
+    editor.applyRemote({ kind: "upsert", table: "steps", row: reordered });
+    expect(notified).toBe(0);
+
+    // Tom enters a new value: it arrives with his provenance.
+    const tom = { source: "entered", at: "2026-10-07T09:05:00.000Z", by: "00000000-0000-4000-8000-00000000b0b0" };
+    await memory.update("steps", ids.audit, { work_hours: 4, "provenance.work_hours": entry as never }, { work_hours: 9, "provenance.work_hours": tom });
+    for (const c of changes.splice(0)) editor.applyRemote(c);
+    const now = step(editor.getState().bundle, ids.audit);
+    expect(now.work_hours).toBe(9);
+    expect(stamped(now).work_hours).toEqual(tom);
+    // Our next edit compares against his provenance too, so it saves without a conflict.
+    editor.run((b) => updateStep(b, ids.audit, { work_hours: 5 }));
+    await editor.settled();
+    expect(editor.getState().conflicts).toEqual([]);
+    expect(stored(memory, ids.audit).work_hours).toBe(5);
+  });
+});
+
 describe("rows from Realtime", () => {
   it("turns Postgres Changes payloads into rows, numbers and all", () => {
     const row = { ...step(northbeamBundle(), ids.audit), work_hours: "6.5", created_at: "2026-10-01", provenance: {} };
@@ -387,6 +424,43 @@ describe("presence and live changes between two editors", () => {
     realtime.restore();
     await settle();
     expect(step(ana.editor.getState().bundle, ids.audit).name).toBe("Offline rename");
+  });
+});
+
+describe("the demo's simulated colleague", () => {
+  it("is present, edits through the shared store, and can beat your next save to cause a named conflict", async () => {
+    const live = northbeamBundle();
+    const realtime = new MemoryRealtime();
+    const memory = new MemoryDraftBackend(live, realtime);
+    const tom = new DemoColleague(memory, realtime, live.process.id);
+    const you = new DraftSession(live, null, tom.wrap(memory));
+    const sync = new RealtimeSync(you, realtime, ANA, { noteWaitMs: 0 });
+    sync.start();
+    tom.join();
+    const settle = async () => {
+      for (let i = 0; i < 6; i++) {
+        await you.editor.settled();
+        realtime.flush();
+        await new Promise((r) => setTimeout(r, 0));
+      }
+    };
+    await settle();
+    expect(sync.getState().others.map((p) => p.name)).toEqual([COLLEAGUE.name]);
+
+    expect(await tom.editSomething(ids.qualify)).toMatch(/^Tom set Qualify lead's hands-on time/);
+    await settle();
+    expect(step(you.editor.getState().bundle, ids.qualify).work_hours).toBe(step(memory.draftRows()!, ids.qualify).work_hours);
+
+    tom.race(true);
+    you.editor.run((b) => updateStep(b, ids.audit, { name: "Audit" }));
+    await settle();
+    const [conflict] = you.editor.getState().conflicts;
+    expect(conflict).toMatchObject({ field: "name", mine: "Audit", theirs: "Audit (Tom's version)" });
+    expect(sync.who("steps", ids.audit, "name", conflict!.theirs)).toBe("Tom");
+    expect(tom.isRacing).toBe(false);
+    tom.leave();
+    await settle();
+    expect(sync.getState().others).toEqual([]);
   });
 });
 

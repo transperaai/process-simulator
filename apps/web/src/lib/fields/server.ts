@@ -8,7 +8,18 @@ import type { FieldValue, SaveOutcome } from "./field-controller";
 // what may be written. Server Actions validate their inputs, then call these.
 
 /** Tables `save_fields` accepts. Keep in sync with the migration's allow-list. */
-export type EditableTable = "workspaces" | "roles" | "people" | "person_leave" | "processes" | "steps" | "edges" | "services";
+export type EditableTable =
+  | "workspaces"
+  | "roles"
+  | "people"
+  | "person_leave"
+  | "processes"
+  | "steps"
+  | "edges"
+  | "services"
+  | "lead_sources"
+  | "seasonality"
+  | "demand_settings";
 
 /** Link tables `save_links` accepts, and their member column. */
 export const LINK_MEMBERS = { person_roles: "role_id", person_skills: "step_id" } as const;

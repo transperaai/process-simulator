@@ -1,13 +1,19 @@
 import "server-only";
 import {
+  DEMAND_SETTINGS_COLUMNS,
+  LEAD_SOURCE_COLUMNS,
   loadLiveProcessBySlug,
+  SEASONALITY_COLUMNS,
   SERVICE_COLUMNS,
+  type DemandSettingsRow,
+  type LeadSourceRow,
   type PersonLeaveRow,
   type PersonRoleRow,
   type PersonRow,
   type PersonSkillRow,
   type ProcessBundle,
   type RoleRow,
+  type SeasonalityRow,
   type ServiceRow,
   type StepRow,
   type WorkspaceRow,
@@ -56,6 +62,10 @@ export interface WorkspaceSettingsData {
   processes: { id: string; name: string; kind: string }[];
   /** Condition tags on the connections of the live processes, as hints for services' path tags. */
   conditionTags: string[];
+  /** Demand (issue #13): lead sources oldest first, seasonality by month, and the growth row if any. */
+  leadSources: LeadSourceRow[];
+  seasonality: SeasonalityRow[];
+  demand: DemandSettingsRow | null;
 }
 
 export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSettingsData | null> {
@@ -78,6 +88,11 @@ export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSett
   if (pError) throw pError;
   const revisions = processes.flatMap((p) => (p.live_revision_id ? [p.live_revision_id] : []));
 
+  const demandQueries = Promise.all([
+    supabase.from("lead_sources").select(LEAD_SOURCE_COLUMNS).eq("workspace_id", ws).order("created_at").order("id"),
+    supabase.from("seasonality").select(SEASONALITY_COLUMNS).eq("workspace_id", ws).order("month"),
+    supabase.from("demand_settings").select(DEMAND_SETTINGS_COLUMNS).eq("workspace_id", ws).maybeSingle(),
+  ]);
   const [canEdit, canManage, roles, steps, people, personRoles, personSkills, personLeave, services, tags] = await Promise.all([
     supabase.rpc("can_edit_workspace", { ws }),
     supabase.rpc("can_manage_workspace", { ws }),
@@ -105,7 +120,8 @@ export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSett
     supabase.from("services").select(SERVICE_COLUMNS).eq("workspace_id", ws).order("created_at").order("id"),
     supabase.from("edges").select("condition_tag").in("revision_id", revisions).not("condition_tag", "is", null),
   ]);
-  for (const r of [canEdit, canManage, roles, steps, people, personRoles, personSkills, personLeave, services, tags]) {
+  const [leadSources, seasonality, demand] = await demandQueries;
+  for (const r of [canEdit, canManage, roles, steps, people, personRoles, personSkills, personLeave, services, tags, leadSources, seasonality, demand]) {
     if (r.error) throw r.error;
   }
 
@@ -123,5 +139,9 @@ export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSett
     services: (services.data ?? []) as ServiceRow[],
     processes: processes.map(({ id, name, kind }) => ({ id, name, kind })),
     conditionTags: [...new Set((tags.data ?? []).map((e) => e.condition_tag?.trim() ?? "").filter(Boolean))].sort(),
+    // The casts give the provenance jsonb its shape.
+    leadSources: (leadSources.data ?? []) as LeadSourceRow[],
+    seasonality: (seasonality.data ?? []) as SeasonalityRow[],
+    demand: demand.data as DemandSettingsRow | null,
   };
 }

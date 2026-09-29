@@ -274,7 +274,7 @@ describe("provenance in remote changes", () => {
     expect(notified).toBe(0);
 
     // Tom enters a new value: it arrives with his provenance.
-    const tom = { source: "entered", at: "2026-10-07T09:05:00.000Z", by: "00000000-0000-4000-8000-00000000b0b0" };
+    const tom = { source: "entered" as const, at: "2026-10-07T09:05:00.000Z", by: "00000000-0000-4000-8000-00000000b0b0" };
     await memory.update("steps", ids.audit, { work_hours: 4, "provenance.work_hours": entry as never }, { work_hours: 9, "provenance.work_hours": tom });
     for (const c of changes.splice(0)) editor.applyRemote(c);
     const now = step(editor.getState().bundle, ids.audit);

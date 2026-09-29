@@ -623,6 +623,20 @@ export type Database = {
       can_manage_workspace: { Args: { ws: string }; Returns: boolean }
       can_read_workspace: { Args: { ws: string }; Returns: boolean }
       is_agency_admin: { Args: never; Returns: boolean }
+      save_fields: {
+        Args: { base: Json; changes: Json; key: Json; target: string }
+        Returns: Json
+      }
+      save_links: {
+        Args: {
+          base: Json
+          member: string
+          next: Json
+          owner: Json
+          target: string
+        }
+        Returns: Json
+      }
       workspace_role: {
         Args: { ws: string }
         Returns: Database["public"]["Enums"]["membership_role"]

@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { NORTHBEAM_PROCESS_ID, NORTHBEAM_WORKSPACE_ID, northbeamBundle, toEngineModel } from "@transpera-flow/db";
-import { simulate } from "@transpera-flow/engine";
+import { NORTHBEAM_PROCESS_ID, NORTHBEAM_WORKSPACE_ID, northbeamBundle, northbeamScenarios, toEngineModel } from "@transpera-flow/db";
+import { applyPatches, simulate } from "@transpera-flow/engine";
 import { generateApiToken, TOOL_NAMES, type McpHandlerOptions } from "../src";
 import { call, connect, post, signJwt } from "./helpers";
 
@@ -164,6 +164,23 @@ describe.skipIf(!POSTGREST_URL)("MCP over PostgREST (acts as the user under RLS)
     const browser = simulate(toEngineModel(northbeamBundle(), { startDate }), 30, 1);
     expect(run.data.kpi).toEqual(JSON.parse(JSON.stringify(browser.kpi)));
     expect(run.data).toMatchObject({ reps: 30, seed: 1 });
+  });
+
+  it("run_scenario applies overrides as the browser applies a scenario, and refuses ones it can't apply", async () => {
+    const startDate = "2026-10-05";
+    const overrides = northbeamScenarios().find((s) => s.name === "Automate proposals")!.patch;
+    const client = await connect(memberToken, options);
+    const run = await call<{ kpi: unknown; overrides: unknown }>(client, "run_scenario", { start_date: startDate, overrides });
+    const bad = await call(client, "run_scenario", {
+      start_date: startDate,
+      overrides: [{ path: "steps.gone.work_hours", op: "set", value: 1 }],
+    });
+    await client.close();
+    const browser = simulate(applyPatches(toEngineModel(northbeamBundle(), { startDate }), overrides).model, 30, 1);
+    expect(run.ok).toBe(true);
+    expect(run.data.kpi).toEqual(JSON.parse(JSON.stringify(browser.kpi)));
+    expect(run.data.overrides).toEqual(overrides);
+    expect(bad).toMatchObject({ ok: false, error: { code: "invalid_overrides" } });
   });
 
   it("rejects revoked and unknown tokens with 401", async () => {

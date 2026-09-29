@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { listProcesses, loadProcessBundle, ModelError, toEngineModel } from "@transpera-flow/db";
-import { simulate, type EngineModel, type SimulationResult } from "@transpera-flow/engine";
+import { applyPatches, isBlocking, MAX_PATCHES, PATCH_OPS, simulate, type EngineModel, type ScenarioPatch, type SimulationResult } from "@transpera-flow/engine";
 import { resolveProcess, resolveWorkspace, revisionIdFor, visibleWorkspaces, matchWorkspace, type ToolContext } from "./context";
 import { runTool, ToolError } from "./result";
 
@@ -23,6 +23,36 @@ function check<T>(r: { data: T | null; error: unknown }): T {
   if (r.error) throw r.error;
   return r.data as T;
 }
+
+/**
+ * Apply scenario overrides (the same `{path, op, value}` patches saved
+ * scenarios hold) to the model. A patch that can't be applied (unknown path,
+ * missing step or person) fails the call instead of being dropped; values
+ * brought into range are listed as assumptions.
+ */
+export function applyOverrides(model: EngineModel, overrides: ScenarioPatch[], assumptions: string[]): EngineModel {
+  const { model: patched, issues } = applyPatches(model, overrides);
+  const blocking = issues.filter(isBlocking);
+  if (blocking.length) {
+    throw new ToolError(
+      "invalid_overrides",
+      `${blocking.length} override${blocking.length === 1 ? "" : "s"} can't be applied: ${blocking.map((i) => i.message).join(" ")}`,
+      blocking,
+    );
+  }
+  for (const issue of issues) assumptions.push(`Override ${issue.index + 1}: ${issue.message}`);
+  return patched;
+}
+
+const overridesArg = z
+  .array(z.object({ path: z.string(), op: z.enum(PATCH_OPS), value: z.number() }).strict())
+  .max(MAX_PATCHES)
+  .optional()
+  .describe(
+    "Scenario patches applied in order on top of the model, e.g. {path: 'steps.<step_id>.work_hours', op: 'multiply', value: 0.5}. " +
+      "Paths: demand.leads_per_week|active_clients|churn_monthly, finances.retainer, roles.<id>.headcount|cost_rate|ongoing_hours, " +
+      "people.<id>.fte, steps.<id>.work_hours|wait_hours|rework_rate, services.<id>.price|mix_share; roles.@busiest and steps.@heaviest pick the model's busiest role and heaviest step.",
+  );
 
 /** A run summary: means and 10th–90th percentile ranges, no trace (docs/PRD.md §6.4, §7.1). */
 export function summarizeRun(model: EngineModel, result: SimulationResult) {
@@ -160,6 +190,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
         process: processArg,
         revision: revisionArg,
         workspace: workspaceArg,
+        overrides: overridesArg,
         reps: z.number().int().min(1).max(MAX_REPS).optional().describe(`Replications (default ${DEFAULT_REPS})`),
         seed: z.number().int().min(0).optional().describe(`Random seed (default ${DEFAULT_SEED})`),
         horizon_weeks: z.number().int().min(1).max(104).optional().describe("Weeks to simulate (default: workspace setting)"),
@@ -194,6 +225,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
         }
         if (args.horizon_weeks !== undefined) model = { ...model, horizonWeeks: args.horizon_weeks };
         else assumptions.push(`horizon_weeks defaulted to the workspace setting (${model.horizonWeeks}).`);
+        if (args.overrides?.length) model = applyOverrides(model, args.overrides, assumptions);
 
         const started = performance.now();
         const result = simulate(model, reps, seed);
@@ -203,6 +235,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
           revision: { id: bundle.revision.id, number: bundle.revision.number, status: bundle.revision.status, which: revision },
           seed,
           start_date: startDate,
+          overrides: args.overrides ?? [],
           duration_ms: Math.round(performance.now() - started),
           ...summarizeRun(model, result),
         };

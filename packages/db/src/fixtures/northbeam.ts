@@ -2,7 +2,7 @@ import type { EdgeRow, PersonRoleRow, PersonRow, ProcessBundle, RoleRow, StepRow
 
 // Northbeam Digital, the prototype's sample agency, as database rows. Ids are
 // fixed so the seed is reproducible, and they sort in the prototype's order so
-// the resolved engine model matches the prototype exactly.
+// the resolved engine model matches the engine's northbeamModel() exactly.
 
 const id = (prefix: string, n: number) => `${prefix}0000000-0000-4000-8000-${n.toString(16).padStart(12, "0")}`;
 
@@ -126,7 +126,7 @@ export function northbeamBundle(): ProcessBundle {
         hours_per_week: 40,
         horizon_weeks: 13,
         currency: "GBP",
-        leads_per_week: 12,
+        leads_per_week: 7,
         active_clients: 26,
         churn_monthly: 0.03,
         retainer: 3800,

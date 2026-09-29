@@ -22,7 +22,18 @@ describe("simulate (Northbeam)", () => {
   it("finds the strategist as the bottleneck role", () => {
     const res = simulate(northbeamModel(), 30, 1);
     expect(res.bnRole).toBe("strat");
-    expect(res.roles.strat!.util).toBeGreaterThan(0.85);
+    expect(res.roles.strat!.util).toBeGreaterThan(0.75);
+  });
+
+  // The golden model must be in steady state, or its KPIs measure the warm-up
+  // rather than the business (at the prototype's 12 leads/week, wins moved
+  // from 7.4 to 11.2 a quarter with warm-up length).
+  it("reaches a steady state, so KPIs do not depend on warm-up length", () => {
+    const auto = simulate(northbeamModel(), 200, 1);
+    const long = simulate({ ...northbeamModel(), warmupWeeks: 32 }, 200, 1);
+    expect(auto.roles.strat!.util).toBeLessThan(0.9);
+    expect(Math.abs(auto.won - long.won) / long.won).toBeLessThan(0.05);
+    expect(Math.abs(auto.cycleP90 - long.cycleP90) / long.cycleP90).toBeLessThan(0.05);
   });
 
   it("produces a plausible quarter of wins with an ordered range", () => {
@@ -43,7 +54,7 @@ describe("simulate (Northbeam)", () => {
 
   it("raises bottleneck utilisation when leads double", () => {
     const base = simulate(northbeamModel(), 30, 1);
-    const doubled = simulate({ ...northbeamModel(), leadsPerWeek: 24 }, 30, 1);
+    const doubled = simulate({ ...northbeamModel(), leadsPerWeek: 2 * northbeamModel().leadsPerWeek }, 30, 1);
     expect(doubled.roles.strat!.util).toBeGreaterThan(base.roles.strat!.util);
   });
 });

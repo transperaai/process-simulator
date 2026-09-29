@@ -96,5 +96,7 @@ describe("performance", () => {
       best = Math.min(best, performance.now() - t);
     }
     expect(best).toBeLessThan(1500);
-  });
+    // The assertion above is the target; the automatic warm-up (~15 weeks here)
+    // makes the seven calls outlast vitest's default 5 s on a shared CI runner.
+  }, 30_000);
 });

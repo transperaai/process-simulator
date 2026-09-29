@@ -5,7 +5,7 @@ project_id = "flowsim"
 schemas = ["public"]
 
 [db]
-major_version = 15
+major_version = 17
 
 [db.seed]
 enabled = true

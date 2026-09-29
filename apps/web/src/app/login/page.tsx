@@ -16,7 +16,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       </div>
       {error ? (
         <p role="alert" className="text-crit">
-          Sign-in failed: {error} Request a new link and open it in this browser.
+          Sign-in failed: {error} Please try again.
         </p>
       ) : null}
       <LoginForm />

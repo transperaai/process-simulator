@@ -1,5 +1,5 @@
 // The one place numbers become text, so every screen rounds and labels the same way.
-import type { Stat } from "@flowsim/engine";
+import type { Stat } from "@transpera-flow/engine";
 
 const WORKING_DAYS_PER_WEEK = 5;
 const LOCALE = "en-GB";

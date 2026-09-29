@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Issues and specs for this repo live as GitHub issues on `transperaai/process-simulator`. Use the `gh` CLI for all operations.
+Issues and specs for this repo live as GitHub issues on `transperaai/transpera-flow`. Use the `gh` CLI for all operations.
 
 **No `gh` available (e.g. Claude Code on the web)?** Use the GitHub MCP tools instead: `issue_write` (create/update/close, labels, `parent_issue_number` for sub-issues), `issue_read`, `list_issues`, `add_issue_comment`, `sub_issue_write`.
 

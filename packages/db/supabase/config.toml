@@ -1,5 +1,5 @@
 # Supabase CLI project config. Run CLI commands with `--workdir packages/db`.
-project_id = "flowsim"
+project_id = "transpera-flow"
 
 [api]
 schemas = ["public"]

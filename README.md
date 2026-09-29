@@ -1,4 +1,4 @@
-# Flowsim
+# Transpera Flow
 
 Process-map simulator: turns a company's workflows into a runnable
 discrete-event Monte Carlo model. Product spec and decisions: [`docs/PRD.md`](docs/PRD.md).
@@ -40,4 +40,4 @@ Database tests create a throwaway database on the Postgres at `DATABASE_URL`
 (default `postgres://postgres:postgres@localhost:5432/postgres`) and load a
 small stand-in for Supabase auth, the migrations and the seed.
 
-After changing the fixtures, regenerate the seed with `pnpm --filter @flowsim/db gen:seed`.
+After changing the fixtures, regenerate the seed with `pnpm --filter @transpera-flow/db gen:seed`.

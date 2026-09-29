@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { northbeamModel, simulate } from "@flowsim/engine";
+import { northbeamModel, simulate } from "@transpera-flow/engine";
 import { SimulationCancelled, SimulationClient, type WorkerLike } from "@/lib/sim/client";
 import type { SimRequest, SimResponse } from "@/lib/sim/protocol";
 

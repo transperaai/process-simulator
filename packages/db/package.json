@@ -1,5 +1,5 @@
 {
-  "name": "@flowsim/db",
+  "name": "@transpera-flow/db",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -14,7 +14,7 @@
     "gen:bootstrap": "node --experimental-strip-types scripts/gen-bootstrap.ts"
   },
   "dependencies": {
-    "@flowsim/engine": "workspace:*"
+    "@transpera-flow/engine": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.20.4",

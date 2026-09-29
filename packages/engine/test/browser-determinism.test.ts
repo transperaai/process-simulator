@@ -17,7 +17,7 @@ beforeAll(async () => {
     entryPoints: [fileURLToPath(new URL("../src/index.ts", import.meta.url))],
     bundle: true,
     format: "iife",
-    globalName: "FlowsimEngine",
+    globalName: "TransperaFlowEngine",
     write: false,
     platform: "browser",
   });
@@ -35,7 +35,7 @@ async function runInWorker(model: unknown, reps: number, seed: number): Promise<
     return await page.evaluate(
       ({ bundle, model, reps, seed }) =>
         new Promise<string>((resolve, reject) => {
-          const src = `${bundle}\nself.onmessage = (e) => self.postMessage(JSON.stringify(FlowsimEngine.simulate(e.data.model, e.data.reps, e.data.seed)));`;
+          const src = `${bundle}\nself.onmessage = (e) => self.postMessage(JSON.stringify(TransperaFlowEngine.simulate(e.data.model, e.data.reps, e.data.seed)));`;
           const worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
           worker.onmessage = (e) => resolve(e.data as string);
           worker.onerror = (e) => reject(new Error(e.message));

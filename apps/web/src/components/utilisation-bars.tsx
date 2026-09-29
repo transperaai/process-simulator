@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { EngineModel, SimulationResult, Stat } from "@flowsim/engine";
+import type { EngineModel, SimulationResult, Stat } from "@transpera-flow/engine";
 import { formatPercent, formatRange } from "@/lib/format";
 
 const THRESHOLD = 0.85;

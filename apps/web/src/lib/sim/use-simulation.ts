@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { EngineModel } from "@flowsim/engine";
+import type { EngineModel } from "@transpera-flow/engine";
 import { SimulationCancelled, SimulationClient, type SimRun, type WorkerLike } from "./client";
 
 export type SimulationState =

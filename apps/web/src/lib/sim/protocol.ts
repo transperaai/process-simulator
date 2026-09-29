@@ -1,4 +1,4 @@
-import type { EngineModel, SimulationResult } from "@flowsim/engine";
+import type { EngineModel, SimulationResult } from "@transpera-flow/engine";
 
 export interface SimRequest {
   id: number;

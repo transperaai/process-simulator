@@ -1,4 +1,4 @@
-import type { EngineModel, EnginePerson, EngineStep } from "@flowsim/engine";
+import type { EngineModel, EnginePerson, EngineStep } from "@transpera-flow/engine";
 import type { ProcessBundle, StepRow } from "./types";
 
 const WORKING_DAYS_PER_WEEK = 5;

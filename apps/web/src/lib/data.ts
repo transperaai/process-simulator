@@ -1,5 +1,5 @@
 import "server-only";
-import type { ProcessBundle, WorkspaceRow } from "@flowsim/db";
+import type { ProcessBundle, WorkspaceRow } from "@transpera-flow/db";
 import { createClient } from "./supabase/server";
 
 /** Workspaces the signed-in user can see (RLS decides). */

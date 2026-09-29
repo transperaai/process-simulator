@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { simulate } from "@flowsim/engine";
+import { simulate } from "@transpera-flow/engine";
 import type { SimRequest, SimResponse } from "@/lib/sim/protocol";
 
 self.onmessage = (event: MessageEvent<SimRequest>) => {

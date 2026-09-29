@@ -17,7 +17,7 @@ may need code or migration changes.
      the migration-history rows so the CLI stays in sync afterwards.
    - **CLI:** `npx supabase link --workdir packages/db` then
      `npx supabase db push --workdir packages/db`, then run `seed.sql` in the SQL editor.
-   Regenerate the bundle with `pnpm --filter @flowsim/db gen:bootstrap` after changing
+   Regenerate the bundle with `pnpm --filter @transpera-flow/db gen:bootstrap` after changing
    migrations or fixtures (CI fails if it's stale).
 4. (Covered by the bootstrap bundle.)
 5. Auth → URL configuration: set the site URL and add

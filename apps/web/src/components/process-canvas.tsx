@@ -2,8 +2,8 @@
 
 import { Background, Handle, MarkerType, Position, ReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
 import { useMemo } from "react";
-import type { SimulationResult } from "@flowsim/engine";
-import type { ProcessBundle, RoleRow, StepRow } from "@flowsim/db";
+import type { SimulationResult } from "@transpera-flow/engine";
+import type { ProcessBundle, RoleRow, StepRow } from "@transpera-flow/db";
 import { formatHours, formatNumber } from "@/lib/format";
 
 type StepNodeData = {

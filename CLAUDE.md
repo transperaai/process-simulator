@@ -1,4 +1,4 @@
-# Flowsim (process-simulator)
+# Transpera Flow (transpera-flow)
 
 Multi-tenant process-map simulator: discrete-event Monte Carlo engine, React Flow canvas, Supabase, MCP server. The product spec and decision log live in `docs/PRD.md`; read the relevant sections before working on a ticket.
 
@@ -6,7 +6,7 @@ Multi-tenant process-map simulator: discrete-event Monte Carlo engine, React Flo
 
 ### Issue tracker
 
-GitHub Issues on `transperaai/process-simulator`; milestone parent issues with tracer-bullet sub-issues and `Blocked by` lines. See `docs/agents/issue-tracker.md`.
+GitHub Issues on `transperaai/transpera-flow`; milestone parent issues with tracer-bullet sub-issues and `Blocked by` lines. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

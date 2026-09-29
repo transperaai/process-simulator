@@ -1,4 +1,4 @@
-import type { EngineModel, SimulationResult } from "@flowsim/engine";
+import type { EngineModel, SimulationResult } from "@transpera-flow/engine";
 import { formatCurrency, formatDays, formatNumber, formatPercent, formatRange } from "@/lib/format";
 
 interface KpiStripProps {

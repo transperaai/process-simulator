@@ -1,6 +1,6 @@
 // Engine input and output shapes. This is the prototype's model, extended so
-// far with named people, services, end-step outcomes and seasonal demand; later tickets add
-// clients and servicing (docs/PRD.md §6).
+// far with named people, services, end-step outcomes, seasonal demand, a client
+// roster and overtime; a later ticket adds servicing (docs/PRD.md §6).
 
 /** Times are in working hours. */
 export interface EngineRole {
@@ -34,6 +34,8 @@ export interface EnginePerson {
   skills?: string[];
   /** Leave windows as [start, end) in simulation hours; no new work starts during leave. */
   leave?: [number, number][];
+  /** Cost per hour, for overtime cost; omitted means the mean of their roles' costs. */
+  cost?: number;
 }
 
 export interface EngineEdge {
@@ -89,6 +91,33 @@ export interface EngineService {
   entry?: string;
   /** Condition tags this service's entities follow (see `EngineEdge.tag`). */
   pathTags: string[];
+  /**
+   * Fallback ongoing load (docs/PRD.md §6.3.4): hours per month each client
+   * on this service needs from each role id, for services with no servicing
+   * process. Omitted: the roles' `ongoing` hours per client apply instead.
+   * Used only when the model has a client roster (`EngineModel.clients`).
+   */
+  fallbackOngoing?: Record<string, number>;
+}
+
+/**
+ * A client on the roster (docs/PRD.md §5 `clients`, §6.2, decision D13).
+ * Real clients seed the run; clients won during it are added as synthetic ones.
+ */
+export interface EngineClient {
+  name: string;
+  /** Service ids it takes. Ids the model doesn't know are ignored. */
+  services: string[];
+  /** Monthly recurring revenue (reported; billing follows with servicing, issue #19). */
+  mrr: number;
+  /** Health 0–100 (carried for servicing and churn, issue #19). */
+  health?: number;
+  /**
+   * The person looking after it, per role id. A role with no assignment, or
+   * one to a person the model doesn't have, is shared across that role's
+   * members by capacity, as the pooled `ongoing` load is.
+   */
+  assignments: Record<string, string>;
 }
 
 export interface EngineStep {
@@ -174,6 +203,21 @@ export interface EngineModel {
   /** Minimum share of a person's time left for pipeline work (default 0.08). */
   availabilityFloor?: number;
   /**
+   * Overtime a person may work when their ongoing client load exceeds their
+   * capacity, as a share of that capacity (docs/PRD.md §6.3.4, decision D7).
+   * Default 0: none, and the model runs exactly as before this field existed.
+   */
+  overtimeCap?: number;
+  /**
+   * The client roster by id. When present, ongoing load is per client: each
+   * client's services' `fallbackOngoing` hours (or the roles' `ongoing`) go to
+   * the people assigned to it, clients churn one by one at their services'
+   * base churn, and each retainer won adds a synthetic client assigned per
+   * role by round-robin. `activeClients` and the pooled load are then unused.
+   * Omitted: the pooled `activeClients` × `ongoing` load, as before.
+   */
+  clients?: Record<string, EngineClient>;
+  /**
    * Warm-up run before measuring, in weeks, discarded from every reported
    * metric. Omitted means automatic: 4 weeks, or 2x the P90 cycle time of a
    * pilot run if longer (capped at 52 weeks). 0 starts from an empty business.
@@ -240,26 +284,43 @@ export interface StepResult {
   slaBreaches: number;
 }
 
+/**
+ * Utilisation over the measured window. Ongoing hours follow the live client
+ * count (clients won and churned during the run), exactly as the engine
+ * applied them to availability. Shares are of contracted capacity; `util` is
+ * of capacity plus the overtime worked, so it goes above 1 only when the work
+ * exceeds even that (docs/PRD.md §6.3.4, §13).
+ */
 export interface RoleResult {
   /** Share of capacity spent on pipeline work. */
   pipeline: number;
   /** Share of capacity spent on ongoing client work. */
   ongoing: number;
-  /** Total utilisation (pipeline + ongoing). */
+  /** Total utilisation: (pipeline + ongoing hours) / (capacity + overtime hours). */
   util: number;
   pipelineHours: number;
   ongoingHours: number;
+  /** Overtime as a share of capacity. */
+  overtime: number;
+  /** Overtime hours a week. */
+  overtimeHours: number;
 }
 
 export interface PersonResult {
-  /** Total utilisation: (pipeline + ongoing hours) / capacity. */
+  /** Total utilisation: (pipeline + ongoing hours) / (capacity + overtime hours). */
   util: number;
   pipeline: number;
   ongoing: number;
   pipelineHours: number;
   ongoingHours: number;
+  /** Overtime as a share of capacity. */
+  overtime: number;
+  /** Overtime hours a week. */
+  overtimeHours: number;
   /** Services completed. */
   completed: number;
+  /** With a client roster: clients assigned to them in any role, averaged over the window. */
+  clients?: number;
 }
 
 /** Per-service counts in one replication. */
@@ -283,6 +344,12 @@ export interface ReplicationResult {
   lostRevenue: number;
   /** By service id; empty when the model has no services. */
   services: Record<string, ServiceCounts>;
+  /** Overtime hours over the measured window, everyone together. */
+  overtimeHours: number;
+  /** Their cost: each person's overtime hours × their cost rate. */
+  overtimeCost: number;
+  /** With a client roster: clients that churned in the measured window. */
+  clientsChurned?: number;
   /** Cycle times of won and done entities. */
   cycle: number[];
   steps: Record<string, StepResult>;
@@ -296,6 +363,7 @@ export interface ReplicationResult {
   H: number;
   /** Warm-up simulated before t = 0 and discarded. */
   warmupHours: number;
+  /** Active clients at the horizon (with a roster: whole clients). */
   activeEnd: number;
 }
 
@@ -329,10 +397,14 @@ export interface Kpis {
   /** Lost revenue: Σ over lost entities of their service's expected value (as for LTV). */
   lostRevenue: Stat;
   wipEnd: Stat;
+  /** Overtime hours over the horizon, everyone together (0 unless `overtimeCap` is above 0). */
+  overtimeHours: Stat;
+  /** Overtime cost over the horizon: overtime hours × cost rate. */
+  overtimeCost: Stat;
   /** Over every completed item in every replication. */
   cycle: { mean: number; p50: number; p90: number };
-  roles: Record<string, { util: Stat; pipeline: Stat; ongoing: Stat }>;
-  people: Record<string, { util: Stat; pipeline: Stat; ongoing: Stat }>;
+  roles: Record<string, { util: Stat; pipeline: Stat; ongoing: Stat; overtime: Stat }>;
+  people: Record<string, { util: Stat; pipeline: Stat; ongoing: Stat; overtime: Stat }>;
   /** By service id; empty when the model has no services. */
   services: Record<string, { arrivals: Stat; won: Stat; lost: Stat }>;
 }

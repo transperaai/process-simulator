@@ -2,7 +2,27 @@ export * from "./model";
 export { DEFAULT_AVAILABILITY_FLOOR, initialState, pct, resolvePeople, runOnce, simulate, stat } from "./simulate";
 export { checkDemand, demandFactor, isFlatDemand, WEEKS_PER_CALENDAR_MONTH } from "./demand";
 export { mulberry32 } from "./random";
-export { northbeamModel, northbeamWithServices } from "./fixtures/northbeam";
+export {
+  NORTHBEAM_FALLBACK_LOAD,
+  NORTHBEAM_ROSTER,
+  NORTHBEAM_TEAM,
+  northbeamClientKey,
+  northbeamModel,
+  northbeamWithClients,
+  northbeamWithServices,
+  type NorthbeamClient,
+} from "./fixtures/northbeam";
+export {
+  LOAD_WEEKS_PER_MONTH,
+  carriersFor,
+  clientChurnMonthly,
+  clientRoleLoads,
+  rolePools,
+  rosterLoads,
+  type Carrier,
+  type PersonLoad,
+} from "./clients";
+export { overtimeIssues } from "./overtime-issues";
 export {
   HIRE_PREFIX,
   MAX_PATCHES,

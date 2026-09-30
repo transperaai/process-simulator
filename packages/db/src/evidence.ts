@@ -26,6 +26,7 @@
 // editor's convention (`work_params.min`, `provenance.work_hours`), so the
 // process editor saves and undoes them like any other edit.
 
+import { isRetiredStep } from "./retired";
 import type { ConflictValue, EvidenceCitation, Provenance, ProvenanceConflict, StepRow } from "./types";
 
 /** Step columns that can cite evidence (the simulation parameters a person can state). */
@@ -299,9 +300,11 @@ export interface ChecklistItem {
  * What the draft review lists (docs/PRD.md §7.1b): every open conflict first,
  * then every assumption, each by step name then column order. A step flagged
  * as an estimate with no value singled out is one item for the whole step.
+ * Retired steps (split or replaced, issue #16) are left out: they are no
+ * longer part of the process.
  */
 export function checklistItems(steps: readonly StepRow[]): ChecklistItem[] {
-  const sorted = [...steps].sort((a, b) => a.name.localeCompare(b.name) || (a.id < b.id ? -1 : 1));
+  const sorted = steps.filter((s) => !isRetiredStep(s)).sort((a, b) => a.name.localeCompare(b.name) || (a.id < b.id ? -1 : 1));
   const conflicts: ChecklistItem[] = [];
   const assumptions: ChecklistItem[] = [];
   for (const step of sorted) {
@@ -332,6 +335,7 @@ export function checklistItems(steps: readonly StepRow[]): ChecklistItem[] {
 
 /** The first quote cited for a step's open conflicts, then its assumptions, for a badge's tooltip. */
 export function badgeQuote(step: StepRow): string | null {
+  if (isRetiredStep(step)) return null;
   const columns = [...EVIDENCE_COLUMNS.filter((c) => openConflict(step, c)), ...EVIDENCE_COLUMNS.filter((c) => isOpenAssumption(step, c))];
   for (const column of columns) {
     const quoted = evidenceOf(step, column).filter((c) => c.quote?.trim());
@@ -362,10 +366,12 @@ export interface PerceptionGap {
 /**
  * Open conflicts whose values differ by `PERCEPTION_GAP_RATIO` or more, as
  * issues to log. Title and evidence match what the database's trigger writes.
+ * Retired steps are skipped, as the trigger skips them.
  */
 export function perceptionGaps(steps: readonly StepRow[]): PerceptionGap[] {
   const out: PerceptionGap[] = [];
   for (const step of steps) {
+    if (isRetiredStep(step)) continue;
     for (const column of EVIDENCE_COLUMNS) {
       const conflict = openConflict(step, column);
       if (!conflict) continue;

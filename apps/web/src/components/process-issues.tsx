@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { IssueRow, ProcessBundle, ScenarioRow } from "@transpera-flow/db";
-import { detectIssues, type EngineModel, type SimulationResult } from "@transpera-flow/engine";
+import { detectBrokenScenarios, detectIssues, type EngineModel, type RetiredSteps, type SimulationResult } from "@transpera-flow/engine";
 import { perceptionGapDetections } from "@/lib/issues/perception";
 import { entryView, fixFor, promoteInput, registerEntries, stepBadges, type FixRequest } from "@/lib/issues/register";
 import { useIssues } from "@/lib/issues/use-issues";
@@ -23,7 +23,11 @@ export interface ProcessIssues {
   fix: FixRequest | null;
   /** The scenario panel reports its saved scenarios here, so issues can link and run them. */
   onScenariosChange: (scenarios: ScenarioRow[]) => void;
+  /** The saved scenarios as the scenario panel last reported them. */
+  scenarios: ScenarioRow[];
 }
+
+const NO_RETIRED: RetiredSteps = {};
 
 export function useProcessIssues({
   bundle,
@@ -35,6 +39,7 @@ export function useProcessIssues({
   initialScenarios,
   initialFix,
   registerHref,
+  retired = NO_RETIRED,
 }: {
   bundle: ProcessBundle;
   model: EngineModel | null;
@@ -47,6 +52,8 @@ export function useProcessIssues({
   initialFix?: string | null;
   /** Link to the full register page, if there is one. */
   registerHref?: string;
+  /** Steps the model no longer has and what replaced them, for broken-scenario issues (issue #16). */
+  retired?: RetiredSteps;
 }): ProcessIssues {
   const state = useIssues(bundle.workspace.id, initialIssues, mode);
   const [scenarios, setScenarios] = useState(initialScenarios);
@@ -54,12 +61,29 @@ export function useProcessIssues({
   const [tab, setTab] = useState<"utilisation" | "issues">(initialFix ? "issues" : "utilisation");
   const [stepFilter, setStepFilter] = useState("");
 
-  // What the run detects, and perception gaps from the steps' evidence (issue #21).
+  // Saved scenarios whose targets no longer resolve raise a broken_scenario issue each (issue #16).
+  const broken = useMemo(() => (model ? detectBrokenScenarios(model, scenarios, retired) : []), [model, scenarios, retired]);
+  // Perception gaps from the steps' evidence (issue #21).
   const gaps = useMemo(() => perceptionGapDetections(bundle.steps), [bundle.steps]);
-  const detected = useMemo(() => (model && result ? [...detectIssues(model, result), ...gaps] : null), [model, result, gaps]);
+  const detected = useMemo(() => (model && result ? [...broken, ...detectIssues(model, result), ...gaps] : null), [model, result, broken, gaps]);
+  const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);
+
+  // A tracked broken-scenario issue resolves itself once its scenario is fixed (re-pointed or deleted).
+  const resolving = useRef(new Set<string>());
+  const { issues: tracked, saver, promote } = state;
+  useEffect(() => {
+    if (mode === "readonly" || !model) return;
+    const still = new Set(broken.map((d) => d.key));
+    for (const i of tracked) {
+      if (i.type !== "broken_scenario" || !i.detected_key || still.has(i.detected_key)) continue;
+      if ((i.status !== "open" && i.status !== "in_progress") || resolving.current.has(i.id)) continue;
+      resolving.current.add(i.id);
+      void saver(i.id, "status")(i.status, "done").finally(() => resolving.current.delete(i.id));
+    }
+  }, [mode, model, broken, tracked, saver]);
+
   // The database logs a perception gap as a tracked issue when it is saved; the demo has no database, so it tracks it here.
   const logged = useRef(new Set<string>());
-  const { issues: tracked, promote } = state;
   useEffect(() => {
     if (mode !== "demo") return;
     for (const g of gaps) {
@@ -129,6 +153,7 @@ export function useProcessIssues({
               steps={steps}
               people={people}
               scenarios={scenarios}
+              brokenScenarios={brokenScenarios}
               canEdit={mode !== "readonly"}
               stepFilter={stepFilter}
               onStepFilterChange={setStepFilter}
@@ -158,5 +183,6 @@ export function useProcessIssues({
     rail,
     fix,
     onScenariosChange: setScenarios,
+    scenarios,
   };
 }

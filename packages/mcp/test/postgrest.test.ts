@@ -1,8 +1,26 @@
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { NORTHBEAM_PROCESS_ID, NORTHBEAM_WORKSPACE_ID, northbeamBundle, northbeamScenarios, toEngineModel } from "@transpera-flow/db";
-import { applyPatches, simulate } from "@transpera-flow/engine";
+import {
+  NORTHBEAM_PROCESS_ID,
+  NORTHBEAM_WORKSPACE_ID,
+  northbeamBundle,
+  northbeamPersonIds,
+  northbeamRoleIds,
+  northbeamScenarios,
+  northbeamStepIds,
+  toEngineModel,
+} from "@transpera-flow/db";
+import {
+  applyPatches,
+  compareHeadline,
+  compareRuns,
+  compareTable,
+  headlineSubject,
+  rankBottlenecks,
+  shadowPrice,
+  simulate,
+} from "@transpera-flow/engine";
 import { generateApiToken, TOOL_NAMES, type McpHandlerOptions } from "../src";
 import { call, connect, post, signJwt } from "./helpers";
 
@@ -15,7 +33,7 @@ import { call, connect, post, signJwt } from "./helpers";
 const POSTGREST_URL = process.env.POSTGREST_URL;
 const JWT_SECRET = process.env.POSTGREST_JWT_SECRET ?? "";
 const ADMIN_URL = process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/postgres";
-const DATABASE_NAME = "transpera_flow_postgrest";
+const DATABASE_NAME = process.env.POSTGREST_DATABASE ?? "transpera_flow_postgrest";
 const SUPABASE_URL = "https://project.supabase.test";
 
 if (process.env.CI && !POSTGREST_URL) throw new Error("CI must run the PostgREST end-to-end suite: set POSTGREST_URL");
@@ -89,7 +107,7 @@ describe.skipIf(!POSTGREST_URL)("MCP over PostgREST (acts as the user under RLS)
     await admin?.end();
   });
 
-  it("lists the five tools to an MCP client", async () => {
+  it("lists every tool to an MCP client", async () => {
     const client = await connect(memberToken, options);
     expect((await client.listTools()).tools.map((t) => t.name).sort()).toEqual([...TOOL_NAMES].sort());
     await client.close();
@@ -230,6 +248,175 @@ describe.skipIf(!POSTGREST_URL)("MCP over PostgREST (acts as the user under RLS)
     const audit = await admin.query("select actor_id, diff from audit_log where action = 'publish' and target_id = $1", [NORTHBEAM_PROCESS_ID]);
     expect(audit.rows).toEqual([expect.objectContaining({ actor_id: editorId })]);
     expect(await rpc("discard_draft", { target_process: NORTHBEAM_PROCESS_ID })).toEqual({ status: "no_draft" });
+  });
+
+  // --- Analysis tools (issue #26) ---
+
+  it("get_bottlenecks ranks Northbeam's constraints and prices one more strategist", async () => {
+    const startDate = "2026-10-05";
+    const client = await connect(memberToken, options);
+    const r = await call<{
+      top: { id: string; name: string; evidence: string };
+      roles: { id: string }[];
+      steps: { id: string }[];
+      shadow_price: { role: { id: string; name: string }; per_quarter: { mean: number; p10: number; p90: number }; complete: boolean; text: string };
+      revision: { status: string };
+      text: string;
+    }>(client, "get_bottlenecks", { start_date: startDate });
+    await client.close();
+    expect(r.ok).toBe(true);
+    const m = toEngineModel(northbeamBundle(), { startDate });
+    const run = simulate(m, 30, 1);
+    const strat = northbeamRoleIds.strat;
+    expect(r.data.revision.status).toBe("published");
+    expect(r.data.top).toMatchObject({ id: strat, name: "Strategist" });
+    expect(r.data.roles.map((x) => x.id)).toEqual(rankBottlenecks(m, run, { limit: 5 }).roles.map((x) => x.id));
+    const sp = shadowPrice(m, strat, { reps: 30, seed: 1 })!;
+    expect(r.data.shadow_price).toMatchObject({ role: { id: strat, name: "Strategist" }, per_quarter: sp.perQuarter, complete: true });
+    expect(r.data.shadow_price.per_quarter.mean).toBeGreaterThan(0);
+    expect(r.data.shadow_price.text).toMatch(/^One more full-time Strategist adds avg [\d.]+ completions a quarter/);
+    expect(r.data.text).toContain(r.data.top.evidence);
+  });
+
+  it("compare_scenarios returns the app's delta table and headline", async () => {
+    const startDate = "2026-10-05";
+    const client = await connect(memberToken, options);
+    const r = await call<{ headline: string; details: string[]; table: { label: string; baseline: string; change: string; changeRange: string }[] }>(
+      client,
+      "compare_scenarios",
+      { b: "automate proposals", start_date: startDate },
+    );
+    const missing = await call(client, "compare_scenarios", { b: "Hire a unicorn", start_date: startDate });
+    await client.close();
+    expect(r.ok).toBe(true);
+    expect(r.assumptions).toEqual(expect.arrayContaining(["a defaulted to the baseline (the live model with no scenario applied)."]));
+    // The app: the baseline's run and the scenario's run (30 replications, seed
+    // 1), compareRuns, compareHeadline with the scenario's name, compareTable.
+    const m = toEngineModel(northbeamBundle(), { startDate });
+    const s = northbeamScenarios().find((x) => x.name === "Automate proposals")!;
+    const comparison = compareRuns(simulate(m, 30, 1), simulate(applyPatches(m, s.patch).model, 30, 1));
+    const roleNames = Object.fromEntries(Object.entries(m.roles).map(([id, x]) => [id, x.name]));
+    const app = compareHeadline({ comparison, ...headlineSubject([s.name], false), horizonWeeks: m.horizonWeeks, hoursPerWeek: m.hoursPerWeek, currency: "GBP", roleNames });
+    const rows = compareTable(comparison, { horizonWeeks: m.horizonWeeks, hoursPerWeek: m.hoursPerWeek, currency: "GBP" });
+    expect(r.data.headline).toBe(app.headline);
+    expect(r.data.details).toEqual(app.details);
+    expect(r.data.table.map((x) => [x.label, x.baseline, x.change, x.changeRange])).toEqual(
+      rows.map((x) => [x.label, x.text.baseline, x.text.change, x.text.changeRange]),
+    );
+    expect(missing).toMatchObject({ ok: false, error: { code: "not_found" } });
+  });
+
+  it("check_robustness returns a verdict within its time cap, or a partial result flagged as such", async () => {
+    const client = await connect(memberToken, options);
+    const started = Date.now();
+    const r = await call<{ verdict: string; complete: boolean; partial: boolean; screened: number; parameters: number; details: string[] }>(
+      client,
+      "check_robustness",
+      { scenario: "Hire a strategist", time_budget_seconds: 1, start_date: "2026-10-05" },
+    );
+    const elapsed = Date.now() - started;
+    await client.close();
+    expect(r.ok).toBe(true);
+    expect(r.data.verdict).toMatch(/^Strategist is the bottleneck .*; “Hire a strategist” (adds|costs|makes no difference to) wins in \d+% of cases\.$/);
+    expect(r.data.partial).toBe(!r.data.complete);
+    if (r.data.partial) expect(r.data.details.join(" ")).toMatch(/Stopped early/);
+    // 1 s of perturbations plus the unperturbed runs and the round trips.
+    expect(elapsed).toBeLessThan(15_000);
+  });
+
+  it("save_scenario and log_issue write as the user: an editor can, a viewer can't", async () => {
+    const editorId = await createUser("analysis-editor@example.com");
+    await admin.query("insert into memberships (workspace_id, user_id, role) values ($1, $2, 'editor')", [NORTHBEAM_WORKSPACE_ID, editorId]);
+    const editor = await connect(await issueToken(editorId), options);
+    const viewer = await connect(memberToken, options);
+    const patch = [{ path: `roles.${northbeamRoleIds.strat}.headcount`, op: "add", value: 2 }];
+
+    expect(await call(viewer, "save_scenario", { name: "Two more strategists", overrides: patch })).toMatchObject({
+      ok: false,
+      error: { code: "forbidden" },
+    });
+    const saved = await call<{ scenario: { id: string; name: string; patch: unknown } }>(editor, "save_scenario", {
+      name: "Two more strategists",
+      description: "From Claude",
+      overrides: patch,
+    });
+    expect(saved).toMatchObject({ ok: true, data: { scenario: { name: "Two more strategists", patch } } });
+    expect(await call(editor, "save_scenario", { name: "two MORE strategists", overrides: patch })).toMatchObject({
+      ok: false,
+      error: { code: "name_taken" },
+    });
+    expect(
+      await call(editor, "save_scenario", { name: "Broken", overrides: [{ path: "steps.gone.work_hours", op: "set", value: 1 }] }),
+    ).toMatchObject({ ok: false, error: { code: "invalid_overrides" } });
+    const stored = await admin.query("select created_by, patch from scenarios where id = $1", [saved.data.scenario.id]);
+    expect(stored.rows).toEqual([{ created_by: editorId, patch }]);
+    // The saved scenario can be compared straight away, by name.
+    const compared = await call<{ headline: string }>(viewer, "compare_scenarios", { b: "Two more strategists", reps: 5, start_date: "2026-10-05" });
+    expect(compared.data.headline).toMatch(/^“Two more strategists” /);
+
+    const issue = {
+      title: "Proposals wait for the strategist",
+      type: "bottleneck",
+      severity: "serious",
+      step: "audit & proposal",
+      person: "Maya Collins",
+      owner: "Arjun",
+      scenario: "Two more strategists",
+      evidence: "Interview 12 Sep: proposals wait up to a week.",
+    };
+    expect(await call(viewer, "log_issue", issue)).toMatchObject({ ok: false, error: { code: "forbidden" } });
+    expect(await call(editor, "log_issue", { ...issue, client: "Acme" })).toMatchObject({ ok: false, error: { code: "not_supported" } });
+    expect(await call(editor, "log_issue", { ...issue, step: "nowhere" })).toMatchObject({ ok: false, error: { code: "not_found" } });
+    const logged = await call<{ issue: { id: string; source: string; step: { name: string }; scenario: { id: string } } }>(editor, "log_issue", issue);
+    expect(logged.ok).toBe(true);
+    expect(logged.data.issue).toMatchObject({ source: "manual", status: "open", step: { name: "Audit & proposal" }, scenario: { id: saved.data.scenario.id } });
+    const row = (await admin.query("select * from issues where id = $1", [logged.data.issue.id])).rows[0];
+    expect(row).toMatchObject({
+      process_id: NORTHBEAM_PROCESS_ID,
+      step_id: northbeamStepIds.audit,
+      person_id: northbeamPersonIds["Maya Collins"],
+      scenario_id: saved.data.scenario.id,
+      created_by: editorId,
+      source: "manual",
+    });
+
+    // list_issues shows it to the viewer, with names, and filters.
+    const list = await call<{ issues: { id: string; step: { name: string }; person: { name: string }; owner: { name: string } }[] }>(viewer, "list_issues", {
+      type: "bottleneck",
+      status: "open",
+    });
+    expect(list.ok).toBe(true);
+    expect(list.data.issues.find((i) => i.id === logged.data.issue.id)).toMatchObject({
+      step: { name: "Audit & proposal" },
+      person: { name: "Maya Collins" },
+      owner: { name: "Arjun Mehta" },
+    });
+    const ideas = await call<{ issues: { type: string }[] }>(viewer, "list_issues", { type: "idea" });
+    expect(ideas.data.issues.every((i) => i.type === "idea")).toBe(true);
+    const withDetected = await call<{ detected: { key: string }[] }>(viewer, "list_issues", { include_detected: true });
+    expect(withDetected.ok).toBe(true);
+    // The seeded register tracks the audit SPOF, so the run doesn't list it again.
+    expect(withDetected.data.detected.map((d) => d.key)).not.toContain(`spof:step:${northbeamStepIds.audit}`);
+
+    await editor.close();
+    await viewer.close();
+    await admin.query("delete from issues where id = $1", [logged.data.issue.id]);
+    await admin.query("delete from scenarios where id = $1", [saved.data.scenario.id]);
+  });
+
+  it("hides another workspace from the analysis tools", async () => {
+    const client = await connect(strangerToken, options);
+    for (const [tool, args] of [
+      ["get_bottlenecks", { workspace: NORTHBEAM_WORKSPACE_ID }],
+      ["compare_scenarios", { workspace: "northbeam", b: "Hire a strategist" }],
+      ["check_robustness", { workspace: "northbeam", scenario: "Hire a strategist" }],
+      ["list_issues", { workspace: "northbeam" }],
+      ["log_issue", { workspace: "northbeam", title: "x", type: "idea" }],
+      ["save_scenario", { workspace: "northbeam", name: "x", overrides: [{ path: "demand.leads_per_week", op: "add", value: 1 }] }],
+    ] as const) {
+      expect(await call(client, tool, args), tool).toMatchObject({ ok: false, error: { code: "not_found" } });
+    }
+    await client.close();
   });
 
   it("rejects revoked and unknown tokens with 401", async () => {

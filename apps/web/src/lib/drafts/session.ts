@@ -5,7 +5,7 @@
 // throws the draft away. Framework-free so it can be unit tested;
 // `useDraftSession` wraps it for React.
 
-import type { EdgeRow, ProcessBundle, StepRow } from "@transpera-flow/db";
+import { partitionSteps, type EdgeRow, type ProcessBundle, type StepRow } from "@transpera-flow/db";
 import { ProcessEditor } from "@/lib/editor/editor";
 import type { Stamp } from "@/lib/editor/provenance";
 import { MemoryStore, type ProcessStore, type WriteResult } from "@/lib/editor/store";
@@ -287,6 +287,8 @@ export class DraftSession {
       const live: ProcessBundle = {
         ...bundle,
         ...liveRows,
+        // Split or replaced steps are filed apart (issue #16).
+        ...partitionSteps(liveRows.steps),
         revision: { ...bundle.revision, id: stored.live.id, number: stored.live.number, status: "published" },
       };
       this.editor.reset(live);
@@ -344,7 +346,8 @@ export class MemoryDraftBackend implements DraftBackend {
     private readonly events: MemoryDraftEvents | null = null,
   ) {
     this.liveRevision = { id: live.revision.id, number: live.revision.number };
-    this.live = this.storeFor(live, this.liveRevision.id);
+    // Retired steps are stored rows too (issue #16).
+    this.live = this.storeFor({ steps: [...live.steps, ...(live.retired ?? [])], edges: live.edges }, this.liveRevision.id);
     this.revisionCount = live.revision.number;
   }
 

@@ -12,7 +12,9 @@ import {
 import { updateStep } from "@/lib/editor/commands";
 import { ProcessEditor } from "@/lib/editor/editor";
 import { citeEdit, confirmEdit, removeCitationEdit } from "@/lib/editor/evidence";
+import { splitStep } from "@/lib/editor/split";
 import { MemoryStore } from "@/lib/editor/store";
+import { unresolvedSteps } from "@/lib/drafts/diff";
 import { parseFieldUpdate } from "@/lib/editor/validate";
 import { perceptionGapDetections } from "@/lib/issues/perception";
 import { demoBundle, demoCitations } from "@/lib/sources/demo";
@@ -79,6 +81,18 @@ describe("citing and confirming through the editor", () => {
     editor.run((b) => removeCitationEdit(b, ids.audit, "work_hours", 1, stamp()));
     await editor.settled();
     expect(step(store.snapshot(), ids.audit)).toMatchObject({ work_hours: 6, conflict: false });
+  });
+
+  it("splitting a step with a hands-on conflict leaves no stray conflict flag on the halves or the retired row (issue #16)", async () => {
+    const { store, editor, now } = setup();
+    editor.run((b) => citeEdit(b, ids.audit, "work_hours", rosa, stamp()));
+    expect(editor.run((b) => splitStep(b, ids.audit)?.edit ?? null)).toBe(true);
+    await editor.settled();
+    expect(now().steps.filter((s) => s.conflict)).toEqual([]);
+    expect(unresolvedSteps(now())).toEqual([]);
+    expect(checklistItems(now().steps)).toEqual([]);
+    expect(perceptionGapDetections([...now().steps, ...(now().retired ?? [])])).toEqual([]);
+    expect(step(store.snapshot(), ids.audit)).toMatchObject({ replaced_by: expect.any(Array), conflict: false });
   });
 
   it("lets the server actions save the conflict flag and evidence provenance", () => {

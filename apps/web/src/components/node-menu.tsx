@@ -20,6 +20,7 @@ import {
   setStepKind,
 } from "@/lib/editor/commands";
 import type { ProcessEditor } from "@/lib/editor/editor";
+import { splitProblem } from "@/lib/editor/split";
 
 /** Selection-wide actions the menu shares with the keyboard shortcuts (see ProcessView). */
 export interface CanvasCommands {
@@ -28,6 +29,8 @@ export interface CanvasCommands {
   remove: (ids: string[]) => void;
   /** Select the step and put focus in the inspector. */
   inspect: (id: string) => void;
+  /** Split a step into two new ones; the old one is retired with `replaced_by` (issue #16). */
+  split?: (id: string) => void;
 }
 
 export interface MenuState {
@@ -169,6 +172,15 @@ export function NodeMenu({
         >
           Copy
         </Item>
+        {commands.split && (
+          <Item
+            onSelect={run(() => commands.split!(step.id))}
+            disabled={splitProblem(bundle, step.id) ?? undefined}
+            note="Two new steps take its place; scenarios that changed it ask to be re-pointed."
+          >
+            Split in two
+          </Item>
+        )}
         <Separator />
         <Item view="kind" onSelect={() => setView("kind")} submenu>
           Change kind

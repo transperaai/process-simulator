@@ -1,6 +1,7 @@
 "use server";
 
 import { SCENARIO_COLUMNS, type Json, type ScenarioRow } from "@transpera-flow/db";
+import { parsePatches } from "@transpera-flow/engine";
 import { isId, parseScenarioInput } from "@/lib/scenarios/validate";
 import type { RemoveScenarioResult, SaveScenarioResult } from "@/lib/scenarios/store";
 import { createClient } from "@/lib/supabase/server";
@@ -55,4 +56,27 @@ export async function deleteScenario(id: unknown): Promise<RemoveScenarioResult>
   if (error) return failure(error);
   if (!data.length) return forbidden;
   return { status: "ok" };
+}
+
+/**
+ * Replace a scenario's patches (issue #16: re-pointing a change whose step was
+ * split or deleted). Last write wins, like the rest of a scenario's row; RLS
+ * decides who may. A row that is gone, or that the user may not change, reads
+ * as forbidden.
+ */
+export async function updateScenarioPatch(id: unknown, patch: unknown): Promise<SaveScenarioResult> {
+  if (!isId(id)) return { status: "error", message: "That scenario isn't valid." };
+  const parsed = parsePatches(patch);
+  if (!parsed.ok) return { status: "error", message: parsed.error };
+  if (!parsed.patches.length) return { status: "error", message: "A scenario needs at least one change." };
+  const supabase = await signedInClient();
+  if (!supabase) return signedOut;
+  const { data, error } = await supabase
+    .from("scenarios")
+    .update({ patch: parsed.patches as unknown as Json })
+    .eq("id", id)
+    .select(SCENARIO_COLUMNS);
+  if (error) return failure(error);
+  if (!data.length) return forbidden;
+  return { status: "ok", scenario: data[0] as unknown as ScenarioRow };
 }

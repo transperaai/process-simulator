@@ -11,6 +11,8 @@ import { describeValue, fieldLabel, namesOf } from "@/lib/editor/describe";
 import type { Conflict, ProcessEditor } from "@/lib/editor/editor";
 import type { Table, Value } from "@/lib/editor/ops";
 import { isProvenanceField } from "@/lib/editor/provenance";
+import { splitStep } from "@/lib/editor/split";
+import { newlyBroken, retiredSteps } from "@/lib/scenarios/broken";
 import { connect } from "@/lib/realtime/connect";
 import type { RealtimeSync } from "@/lib/realtime/sync";
 import type { View, Viewer } from "@/lib/realtime/transport";
@@ -26,6 +28,7 @@ import { useProcessIssues } from "./process-issues";
 import { ScenarioPanel } from "./scenario-panel";
 import { StepInspector } from "./step-inspector";
 import { UtilisationBars } from "./utilisation-bars";
+import { BottleneckPanel } from "./bottleneck-panel";
 
 /**
  * How edits are saved: `live` to the database as the signed-in user, `demo`
@@ -166,6 +169,15 @@ export function ProcessView({
         setSelection({ steps: [id], edges: [] });
         setInspectFocus(id);
       },
+      split: (id) => {
+        let made: string[] = [];
+        editor.run((b) => {
+          const r = splitStep(b, id);
+          made = r?.ids ?? [];
+          return r?.edit ?? null;
+        });
+        if (made.length) setSelection({ steps: made, edges: [] });
+      },
     }),
     [editor],
   );
@@ -250,6 +262,9 @@ export function ProcessView({
         ? `The draft can't be simulated: ${workingModel.error}.`
         : null;
 
+  // Steps the model on screen no longer has (split, replaced or deleted), to explain broken scenarios (issue #16).
+  const retired = useMemo(() => (showingLive ? retiredSteps(live) : retiredSteps(working, live)), [showingLive, live, working]);
+
   // Issues, levers and scenarios follow the model on screen (the draft, or live when shown).
   const issuesUi = useProcessIssues({
     bundle,
@@ -261,7 +276,16 @@ export function ProcessView({
     initialScenarios: scenarios,
     initialFix,
     registerHref,
+    retired,
   });
+  // Saved scenarios that work on live but not on the draft: publishing would break them (issue #16).
+  const breaks = useMemo(
+    () =>
+      hasDraft && liveModel.model && workingModel.model
+        ? newlyBroken(liveModel.model, workingModel.model, issuesUi.scenarios, retiredSteps(working, live))
+        : [],
+    [hasDraft, liveModel.model, workingModel.model, issuesUi.scenarios, working, live],
+  );
 
   const select = (table: Table, id: string) => {
     setView("draft");
@@ -293,6 +317,7 @@ export function ProcessView({
         compare={compare}
         onCompare={setCompare}
         onReview={(id) => select("steps", id)}
+        breaks={breaks}
       />
       {compare && hasDraft && (
         <DraftCompare
@@ -373,7 +398,13 @@ export function ProcessView({
             {!showingLive && (
               <ChangesPanel diff={diff} live={live} bundle={working} editor={editable ? editor : null} names={names} onSelect={select} />
             )}
-            {shownModel && issuesUi.rail(<UtilisationBars model={shownModel} result={result} />)}
+            {shownModel &&
+              issuesUi.rail(
+                <div className="flex flex-col gap-3">
+                  <BottleneckPanel model={shownModel} result={result} ready={sim.status === "done"} />
+                  <UtilisationBars model={shownModel} result={result} />
+                </div>,
+              )}
           </div>
         )}
       </div>
@@ -389,6 +420,7 @@ export function ProcessView({
           fix={issuesUi.fix}
           onScenariosChange={issuesUi.onScenariosChange}
           steps={bundle.steps}
+          retired={retired}
         />
       )}
     </div>

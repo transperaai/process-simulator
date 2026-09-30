@@ -8,9 +8,10 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow } from "@transpera-flow/db";
-import { detectIssues } from "@transpera-flow/engine";
+import { detectBrokenScenarios, detectIssues } from "@transpera-flow/engine";
 import { perceptionGapDetections } from "@/lib/issues/perception";
 import { useIssues } from "@/lib/issues/use-issues";
+import { retiredSteps } from "@/lib/scenarios/broken";
 import { useSimulation } from "@/lib/sim/use-simulation";
 import { IssuesRegister, type Named } from "./issues-register";
 
@@ -43,10 +44,15 @@ export function IssuesPage({
   }, [bundle]);
   const sim = useSimulation(model);
   const result = sim.run?.result ?? null;
+  // Saved scenarios that no longer resolve against the live model raise a broken_scenario issue each (issue #16).
+  const broken = useMemo(() => (model ? detectBrokenScenarios(model, scenarios, retiredSteps(bundle)) : []), [model, scenarios, bundle]);
+  // Perception gaps come from the steps' evidence, not the run (issue #21).
+  const gaps = useMemo(() => perceptionGapDetections(bundle.steps), [bundle.steps]);
   const detected = useMemo(
-    () => (model && result ? [...detectIssues(model, result), ...perceptionGapDetections(bundle.steps)] : model ? null : perceptionGapDetections(bundle.steps)),
-    [model, result, bundle.steps],
+    () => (model && result ? [...broken, ...detectIssues(model, result), ...gaps] : model ? null : gaps),
+    [model, result, broken, gaps],
   );
+  const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);
 
   return (
     <div className="rounded-token border border-line bg-panel p-4 shadow-token">
@@ -60,6 +66,7 @@ export function IssuesPage({
         steps={bundle.steps.filter((s) => s.kind !== "start" && s.kind !== "end").map((s) => ({ id: s.id, name: s.name }))}
         people={bundle.people.filter((p) => p.active).map((p) => ({ id: p.id, name: p.name }))}
         scenarios={scenarios}
+        brokenScenarios={brokenScenarios}
         canEdit={mode === "live"}
         stepFilter={stepFilter}
         onStepFilterChange={setStepFilter}

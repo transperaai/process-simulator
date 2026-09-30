@@ -1,4 +1,4 @@
-# 6. Evidence and conflicts live in each value's provenance
+# 7. Evidence and conflicts live in each value's provenance
 
 Date: 30 Sep 2026 · Status: accepted · Issue: #21 · Implements PRD §4.1 "Sources and evidence", §7.1b, D17
 

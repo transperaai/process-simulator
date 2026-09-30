@@ -302,6 +302,21 @@ describe("perception gaps", () => {
     });
   });
 
+  it("leaves retired steps alone: a split step's old row is neither flagged nor logged (issue #16)", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      const rev = await openDraft(c);
+      const conflict = { values: [{ value: 6, source_id: interview, speaker: "Maya Collins" }, { value: 12, source_id: interview, speaker: "Rosa Diaz" }] };
+      await c.query(
+        "update steps set replaced_by = array[$1::uuid], conflict = false, provenance = jsonb_set(provenance, '{work_hours}', $2::jsonb) where revision_id = $3 and id = $4",
+        [northbeamStepIds.kickoff, JSON.stringify({ source: "estimated", conflict }), rev, audit],
+      );
+      expect((await stepRow(c, rev, audit)).conflict).toBe(false);
+      expect(await gapIssues(c)).toEqual([]);
+      const r = (await c.query("select public.publish_process($1) as r", [NORTHBEAM_PROCESS_ID])).rows[0].r;
+      expect(r.status).toBe("published");
+    });
+  });
+
   it("is written by the trigger, not the user: a member can't log one by editing a step", async () => {
     // Members can't edit steps at all, so they can't trigger one either.
     await db.as(users.member!.claims, async (c) => {

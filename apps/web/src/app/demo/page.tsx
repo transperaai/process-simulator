@@ -14,8 +14,9 @@ export default async function DemoPage(props: PageProps<"/demo">) {
       <AppHeader workspace={`${bundle.workspace.name} · demo`} signedIn={false} />
       <p className="mt-3 rounded-token border border-line bg-panel-2 px-3 py-2 text-fg-2">
         Demo mode: sample data from the seed fixtures, not a database. Edit the map freely: edits open a draft you can
-        compare with live, publish or discard. Move levers, save scenarios and log issues too. Everything stays in this
-        tab and is gone when you reload.
+        compare with live, publish or discard. Move levers, save scenarios and log issues too. Split a step a saved
+        scenario changes (right-click “Audit &amp; proposal”, Split in two) to see it flagged for re-pointing. Everything
+        stays in this tab and is gone when you reload.
       </p>
       <div className="mt-4 mb-3 flex items-baseline gap-4">
         <h1 className="text-xl font-bold">{bundle.process.name}</h1>

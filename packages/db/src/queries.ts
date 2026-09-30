@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "./database.types";
 import type { CitingRow } from "./evidence";
+import { partitionSteps } from "./retired";
 import type {
   DemandSettingsRow,
   IssueRow,
@@ -62,13 +63,16 @@ export async function loadProcessBundle(
       db.from("demand_settings").select(DEMAND_SETTINGS_COLUMNS).eq("workspace_id", ws).maybeSingle(),
     ]);
 
+  // Split or replaced steps stay in the revision for scenarios to re-point, never drawn or simulated (./retired.ts).
+  const { steps: inUse, retired } = partitionSteps((rows(steps) ?? []) as StepRow[]);
   // The casts narrow text columns that check constraints already limit, and the settings jsonb.
   return {
     workspace: { id: workspace.id, name: workspace.name, slug: workspace.slug, settings: workspace.settings as WorkspaceSettings },
     process,
     revision: rows(revision) as ProcessRevisionRow,
     roles: rows(roles) ?? [],
-    steps: (rows(steps) ?? []) as StepRow[],
+    steps: inUse,
+    retired,
     edges: rows(edges) ?? [],
     people: rows(people) ?? [],
     personRoles: rows(personRoles) ?? [],
@@ -176,14 +180,15 @@ export async function loadCitingRows(db: Db, workspaceId: string): Promise<Citin
   }
   const [steps, leadSources, seasonality, demand] = await Promise.all([
     revisions.size
-      ? db.from("steps").select("id, name, process_id, revision_id, provenance").in("revision_id", [...revisions.keys()])
+      ? db.from("steps").select("id, name, process_id, revision_id, provenance, replaced_by").in("revision_id", [...revisions.keys()])
       : Promise.resolve({ data: [], error: null }),
     db.from("lead_sources").select("id, name, provenance").eq("workspace_id", workspaceId),
     db.from("seasonality").select("id, month, provenance").eq("workspace_id", workspaceId),
     db.from("demand_settings").select("workspace_id, provenance").eq("workspace_id", workspaceId),
   ]);
   return [
-    ...rows(steps).map((s) => ({
+    // Retired steps (split or replaced, issue #16) are no longer part of the process.
+    ...partitionSteps(rows(steps)).steps.map((s) => ({
       table: "steps",
       id: s.id,
       name: s.name,

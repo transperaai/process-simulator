@@ -15,7 +15,7 @@
 // any edit, so undoing a field someone else has since changed is a conflict
 // (keep mine / keep theirs), not an overwrite.
 
-import type { EdgeRow, ProcessBundle, StepRow } from "@transpera-flow/db";
+import { isRetiredStep, partitionSteps, type EdgeRow, type ProcessBundle, type StepRow } from "@transpera-flow/db";
 import { RemoteChangeMerger, type Applied, type UnitOutcome } from "@/lib/realtime/merge";
 import type { RemoteChange } from "@/lib/realtime/rows";
 import {
@@ -191,6 +191,11 @@ export class ProcessEditor {
    * one in conflict; see lib/realtime/merge.ts.
    */
   applyRemote(change: RemoteChange): void {
+    if (change.kind === "upsert" && change.table === "steps" && isRetiredStep(change.row)) {
+      // Only for echo bookkeeping (it may be our own split's echo); the row itself is never drawn.
+      this.merger.merge(this.state.bundle, this.state.conflicts, change);
+      return this.retire(change.row);
+    }
     const r = this.merger.merge(this.state.bundle, this.state.conflicts, change);
     if (r.bundle !== this.state.bundle || r.conflicts !== this.state.conflicts) this.set({ bundle: r.bundle, conflicts: r.conflicts });
     if (r.applied) this.emitRemote([r.applied]);
@@ -201,7 +206,11 @@ export class ProcessEditor {
    * reconnect, when changes may have been missed. Our in-flight saves and
    * conflicts are kept, as in `applyRemote`.
    */
-  resync(rows: { steps: StepRow[]; edges: EdgeRow[] }): void {
+  resync(saved: { steps: StepRow[]; edges: EdgeRow[] }): void {
+    // Split or replaced steps are filed apart (issue #16); the stored ones are the truth.
+    const { steps: inUse, retired } = partitionSteps(saved.steps);
+    const rows = { steps: inUse, edges: saved.edges };
+    if (retired.length || this.state.bundle.retired?.length) this.set({ bundle: { ...this.state.bundle, retired } });
     let { bundle, conflicts } = this.state;
     const applied: Applied[] = [];
     const merge = (change: RemoteChange) => {
@@ -216,6 +225,16 @@ export class ProcessEditor {
     for (const s of bundle.steps) if (!stored.steps.has(s.id)) merge({ kind: "delete", table: "steps", id: s.id });
     if (bundle !== this.state.bundle || conflicts !== this.state.conflicts) this.set({ bundle, conflicts });
     if (applied.length) this.emitRemote(applied);
+  }
+
+  /**
+   * A step was split or replaced (issue #16): file its row with the retired
+   * ones, and take it off the map if it is still there (as its delete would).
+   */
+  private retire(row: StepRow): void {
+    if (this.state.bundle.steps.some((s) => s.id === row.id)) this.applyRemote({ kind: "delete", table: "steps", id: row.id });
+    const kept = (this.state.bundle.retired ?? []).filter((r) => r.id !== row.id);
+    this.set({ bundle: { ...this.state.bundle, retired: [...kept, row] } });
   }
 
   /** Listen for our saves going through (to tell others who made them). */

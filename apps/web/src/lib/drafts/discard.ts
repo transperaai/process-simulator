@@ -82,7 +82,10 @@ export function discardChange(live: ProcessBundle, draft: ProcessBundle, table: 
         .filter((e) => (e.from_step_id === id || e.to_step_id === id) && !inDraft.has(e.id))
         .filter((e) => present.has(e.from_step_id) && present.has(e.to_step_id))
         .map((e) => intoDraft(e, draft));
-      return { label: label("Restored"), ops: [{ kind: "insert", steps: [step], edges }] };
+      // A split step's retired row (issue #16) makes way for it: the step is back in use.
+      const retired = draft.retired?.find((s) => s.id === id);
+      const unretire = retired ? [{ kind: "remove" as const, steps: [retired], edges: [] }] : [];
+      return { label: label("Restored"), ops: [...unretire, { kind: "insert", steps: [step], edges }] };
     }
     const fields = [...change.fields.map((f) => f.field), ...(change.moved ? ["x", "y"] : [])];
     const edit = revertSteps(change.live!, draft, id, fields);

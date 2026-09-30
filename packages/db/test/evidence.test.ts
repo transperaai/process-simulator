@@ -197,6 +197,17 @@ describe("perception gaps", () => {
   });
 });
 
+describe("retired steps (issue #16)", () => {
+  it("are left out of the checklist, badges and perception gaps", () => {
+    const audit = step(bundle(), "audit");
+    const conflicted = applyStepPatch(audit, citeEvidence(audit, "work_hours", rosa(12), stamp));
+    const retired = { ...conflicted, replaced_by: [northbeamStepIds.kickoff] };
+    expect(checklistItems([retired])).toEqual([]);
+    expect(perceptionGaps([retired])).toEqual([]);
+    expect(badgeQuote(retired)).toBeNull();
+  });
+});
+
 describe("the Sources page", () => {
   it("lists every value citing each source, once when live and draft cite the same words", () => {
     const b = bundle();

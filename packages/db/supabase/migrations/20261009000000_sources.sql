@@ -23,6 +23,8 @@
 --     `source = 'detected'` are read-only), and the register's unique key keeps
 --     it to one row per value, however often the step is saved or copied into a
 --     draft. Title and evidence text match `perceptionGaps()` in evidence.ts.
+--   Both skip retired rows (`replaced_by` set, issue #16): a split step's old row
+--   is neither flagged (publishing would count it) nor logged.
 --
 -- Files: a screenshot or recording is linked by `file_url` for now; uploads
 -- to Supabase Storage (a `sources` bucket and its policies) come later, see
@@ -113,7 +115,8 @@ language plpgsql
 set search_path = ''
 as $$
 begin
-  if not new.conflict and private.has_open_conflict(new.provenance) then
+  -- A retired step (split or replaced, `replaced_by` set; issue #16) is never simulated or published as work: its flag stays as written.
+  if not new.conflict and cardinality(new.replaced_by) = 0 and private.has_open_conflict(new.provenance) then
     new.conflict := true;
   end if;
   return new;
@@ -147,6 +150,10 @@ declare
   said text;
   apart text;
 begin
+  -- A retired step (split or replaced; issue #16) is no longer part of the process: nothing to log.
+  if cardinality(new.replaced_by) > 0 then
+    return null;
+  end if;
   foreach col in array array['work_hours', 'wait_hours', 'rework_rate', 'current_wip', 'sla_hours'] loop
     c := new.provenance -> col -> 'conflict';
     continue when jsonb_typeof(c) is distinct from 'object'

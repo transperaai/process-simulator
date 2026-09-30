@@ -187,7 +187,8 @@ export function promoteInput(d: DetectedIssue, processId: string | null, scenari
     role_id: d.roleId,
     person_id: d.personId,
     owner_person_id: null,
-    scenario_id: d.fix ? (matchingScenario(d.fix.patch, scenarios)?.id ?? null) : null,
+    // A broken-scenario issue links the scenario it is about (issue #16).
+    scenario_id: d.scenarioId ?? (d.fix ? (matchingScenario(d.fix.patch, scenarios)?.id ?? null) : null),
   };
 }
 

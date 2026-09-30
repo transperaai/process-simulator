@@ -13,6 +13,7 @@ import type { Change, DraftDiff } from "@/lib/drafts/diff";
 import type { DraftSession, DraftState } from "@/lib/drafts/session";
 import { describeValue, fieldLabel } from "@/lib/editor/describe";
 import type { ProcessEditor } from "@/lib/editor/editor";
+import type { BreakingScenario } from "@/lib/scenarios/broken";
 import type { Table } from "@/lib/editor/ops";
 
 export type DraftView = "draft" | "live";
@@ -33,6 +34,7 @@ export function DraftBar({
   compare,
   onCompare,
   onReview,
+  breaks = [],
 }: {
   session: DraftSession;
   drafts: DraftState;
@@ -50,6 +52,8 @@ export function DraftBar({
   onCompare: (on: boolean) => void;
   /** Show a step in the inspector. */
   onReview: (stepId: string) => void;
+  /** Saved scenarios that publishing would break (issue #16). */
+  breaks?: BreakingScenario[];
 }) {
   const [confirming, setConfirming] = useState<"publish" | "discard" | null>(null);
   const hasDraft = drafts.draft !== null || drafts.opening;
@@ -89,7 +93,7 @@ export function DraftBar({
             : view === "live"
               ? `The live model, as simulation, forecasts and reports use it. The draft has ${plural(changes, "change")}.`
               : changes
-                ? `${plural(changes, "change")} against live${conflicts ? ` · ${plural(conflicts, "conflict")}` : ""}${unresolved.length - conflicts ? ` · ${plural(unresolved.length - conflicts, "unconfirmed estimate")}` : ""}.`
+                ? `${plural(changes, "change")} against live${conflicts ? ` · ${plural(conflicts, "conflict")}` : ""}${unresolved.length - conflicts ? ` · ${plural(unresolved.length - conflicts, "unconfirmed estimate")}` : ""}${breaks.length ? ` · publishing breaks ${plural(breaks.length, "saved scenario")}` : ""}.`
                 : "No changes against live yet."}
         </p>
         {hasDraft && (
@@ -193,6 +197,7 @@ export function DraftBar({
             </button>
           </div>
           {blocked && <p className="text-fg-2">{blocked}</p>}
+          {breaks.length > 0 && <BreaksWarning breaks={breaks} />}
         </div>
       )}
 
@@ -384,5 +389,31 @@ export function DraftCompare({
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * Saved scenarios this draft would break (issue #16): published, each needs
+ * attention, is left out of comparisons and reports, and raises an issue until
+ * its changes are re-pointed.
+ */
+function BreaksWarning({ breaks }: { breaks: BreakingScenario[] }) {
+  return (
+    <div role="note" data-publish-breaks className="flex flex-col gap-1 rounded-token border border-crit bg-crit-soft p-2">
+      <p>
+        <strong>
+          Publishing breaks {plural(breaks.length, "saved scenario")}.
+        </strong>{" "}
+        {breaks.length === 1 ? "It" : "Each"} will need attention: left out of comparisons and reports, with an issue raised, until its changes are
+        re-pointed under Scenarios.
+      </p>
+      <ul className="flex flex-col gap-0.5">
+        {breaks.map(({ scenario, broken }) => (
+          <li key={scenario.id}>
+            <strong>“{scenario.name}”</strong>: {broken.map((b) => b.message).join(" ")}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

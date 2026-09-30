@@ -29,6 +29,21 @@ export {
   type PatchedModel,
   type ScenarioPatch,
 } from "./scenario";
+export {
+  BrokenScenarioError,
+  brokenScenarioKey,
+  checkScenario,
+  detectBrokenScenarios,
+  replacementsFor,
+  repointPatch,
+  resolveScenario,
+  type BrokenPatch,
+  type NamedPatchSet,
+  type RetiredStep,
+  type RetiredSteps,
+  type ScenarioCheck,
+  type ScenarioStatus,
+} from "./broken";
 export { compareHeadline, compareRuns, type Comparison, type Delta, type Headline, type HeadlineInput } from "./compare";
 export {
   DEFAULT_ISSUE_THRESHOLDS,
@@ -86,3 +101,28 @@ export {
   type RobustnessRequest,
   type RobustnessResponse,
 } from "./robustness-pool";
+export {
+  compareTable,
+  formatMoneyText,
+  formatNumberText,
+  headlineSubject,
+  type CompareMetric,
+  type CompareRow,
+  type CompareTableOptions,
+} from "./compare-table";
+export {
+  WEEKS_PER_QUARTER,
+  completions,
+  shadowPrice,
+  shadowPriceText,
+  type ShadowPrice,
+  type ShadowPriceOptions,
+} from "./shadow-price";
+export {
+  rankBottlenecks,
+  type BottleneckOptions,
+  type Bottlenecks,
+  type PersonConstraint,
+  type RoleConstraint,
+  type StepConstraint,
+} from "./bottlenecks";

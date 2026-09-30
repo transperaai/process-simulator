@@ -9337,10 +9337,15 @@ revoke all on public.narrations from anon;
 --        select indexname from pg_indexes where indexname='roles_workspace_name_key';
 --   6. Triggers on roles. Expect only `set_updated_at` and `audit_company`:
 --        select tgname from pg_trigger where tgrelid='public.roles'::regclass and not tgisinternal;
+--      Triggers on workspaces. Expect `audit_company`, `needs_review`, `seed_scenario_library`, `set_updated_at` and
+--      `stamp_settings_provenance`, and no `needs_review_insert`:
+--        select tgname from pg_trigger where tgrelid='public.workspaces'::regclass and not tgisinternal;
 --   7. Nothing of ours is applied past narration. Expect only `20261020000000`:
 --        select version from supabase_migrations.schema_migrations where version >= '20261020000000';
 --   8. Informational: anything non-zero means a token has been writing roles and will now be refused:
 --        select count(*) from public.audit_log where target_table='roles' and actor_kind='mcp';
+--   9. Informational: anything non-zero means a token has been inserting workspaces and will now be refused:
+--        select count(*) from public.audit_log where target_table='workspaces' and action='insert' and actor_kind='mcp';
 --
 -- Rollback (run as one transaction; newest migration first):
 --
@@ -9735,10 +9740,15 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --        select indexname from pg_indexes where indexname=''roles_workspace_name_key'';
 --   6. Triggers on roles. Expect only `set_updated_at` and `audit_company`:
 --        select tgname from pg_trigger where tgrelid=''public.roles''::regclass and not tgisinternal;
+--      Triggers on workspaces. Expect `audit_company`, `needs_review`, `seed_scenario_library`, `set_updated_at` and
+--      `stamp_settings_provenance`, and no `needs_review_insert`:
+--        select tgname from pg_trigger where tgrelid=''public.workspaces''::regclass and not tgisinternal;
 --   7. Nothing of ours is applied past narration. Expect only `20261020000000`:
 --        select version from supabase_migrations.schema_migrations where version >= ''20261020000000'';
 --   8. Informational: anything non-zero means a token has been writing roles and will now be refused:
 --        select count(*) from public.audit_log where target_table=''roles'' and actor_kind=''mcp'';
+--   9. Informational: anything non-zero means a token has been inserting workspaces and will now be refused:
+--        select count(*) from public.audit_log where target_table=''workspaces'' and action=''insert'' and actor_kind=''mcp'';
 --
 -- Rollback (run as one transaction; newest migration first):
 --

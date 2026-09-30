@@ -1,0 +1,118 @@
+// The company model's change log (issue #25; docs/PRD.md §4.1 "Everything is
+// audit-logged", D19): audit_log entries written by the database for every
+// company-model write, told in plain words. Framework-free.
+
+import { fieldMeta, formatCompanyValue, MONTH_NAMES, type CompanyModel, type CompanyTable } from "@transpera-flow/db";
+
+export interface AuditEntry {
+  id: string;
+  created_at: string;
+  actor_id: string | null;
+  actor_kind: "user" | "mcp" | "system";
+  action: string;
+  target_table: string;
+  target_id: string | null;
+  diff: { old?: Record<string, unknown>; new?: Record<string, unknown>; suggestion_id?: string; role_id?: string; service_id?: string };
+}
+
+/** The tables whose writes the change log shows. */
+export const COMPANY_AUDIT_TABLES = [
+  "workspaces",
+  "roles",
+  "services",
+  "people",
+  "person_roles",
+  "person_skills",
+  "person_leave",
+  "clients",
+  "client_services",
+  "client_assignments",
+  "lead_sources",
+  "seasonality",
+  "demand_settings",
+  "suggestions",
+] as const;
+
+const NOUN: Record<string, string> = {
+  roles: "role",
+  services: "service",
+  people: "person",
+  clients: "client",
+  lead_sources: "lead source",
+  seasonality: "seasonality",
+  demand_settings: "demand growth",
+  person_leave: "leave",
+};
+
+/** Tables with labelled fields (COMPANY_FIELDS). */
+const FIELD_TABLES = new Set<string>(["services", "people", "clients", "lead_sources", "seasonality", "demand_settings", "roles"]);
+
+const SKIP = new Set(["updated_at", "created_at", "created_by", "provenance", "id", "workspace_id"]);
+
+/** One entry as the change log shows it. */
+export function describeAuditEntry(e: AuditEntry, model: CompanyModel): string {
+  const currency = model.workspace.settings.currency || "GBP";
+  const row = { ...(e.diff.old ?? {}), ...(e.diff.new ?? {}) } as Record<string, unknown>;
+  const name = (list: { id: string; name: string }[], id: unknown) => list.find((x) => x.id === id)?.name ?? "someone or something since removed";
+  const who = (table: string) => {
+    if (table === "people" || table === "person_roles" || table === "person_skills" || table === "person_leave") {
+      return String(row.name ?? name(model.people, row.person_id ?? e.target_id));
+    }
+    if (table.startsWith("client")) return String(row.name ?? name(model.clients, row.client_id ?? e.target_id));
+    if (table === "services") return String(row.name ?? name(model.services, e.target_id));
+    if (table === "roles") return String(row.name ?? name(model.roles, e.target_id));
+    if (table === "lead_sources") return String(row.name ?? model.leadSources.find((l) => l.id === e.target_id)?.name ?? "a lead source");
+    if (table === "seasonality") return MONTH_NAMES[Number(row.month) - 1] ?? "a month";
+    return "";
+  };
+
+  switch (e.target_table) {
+    case "suggestions": {
+      const target = String(row.target_table ?? "company model").replace(/_/g, " ");
+      if (e.action === "insert") return `Suggested a change to the ${target}`;
+      if (e.action === "accepted") return `Accepted a suggested change to the ${target}`;
+      if (e.action === "rejected") return `Rejected a suggested change to the ${target}${e.diff.new?.review_note ? `: “${String(e.diff.new.review_note)}”` : ""}`;
+      return `Updated a suggestion`;
+    }
+    case "person_roles":
+      return `${who("person_roles")}: role ${name(model.roles, e.diff.role_id ?? row.role_id)} ${e.action === "insert" ? "added" : "removed"}`;
+    case "client_services":
+      return `${who("client_services")}: service ${name(model.services, e.diff.service_id ?? row.service_id)} ${e.action === "insert" ? "added" : "removed"}`;
+    case "client_assignments": {
+      const role = name(model.roles, e.diff.role_id ?? row.role_id);
+      if (e.action === "delete") return `${who("client_assignments")}: ${role} unassigned`;
+      return `${who("client_assignments")}: ${role} → ${name(model.people, e.diff.new?.person_id ?? row.person_id)}`;
+    }
+    case "person_skills":
+      return `${who("person_skills")}: a skill ${e.action === "insert" ? "added" : e.action === "delete" ? "removed" : "changed"}`;
+    case "person_leave":
+      return `${who("person_leave")}: leave ${String(row.start_date ?? "")} to ${String(row.end_date ?? "")} ${e.action === "insert" ? "added" : e.action === "delete" ? "removed" : "changed"}`;
+  }
+
+  const table = e.target_table as CompanyTable;
+  const noun = NOUN[e.target_table] ?? e.target_table.replace(/_/g, " ");
+  if (e.action === "insert") return `Added ${noun} ${who(e.target_table)}`.trim();
+  if (e.action === "delete") return `Removed ${noun} ${who(e.target_table)}`.trim();
+
+  const changes: string[] = [];
+  const oldRow = e.diff.old ?? {};
+  const newRow = e.diff.new ?? {};
+  if (e.target_table === "workspaces") {
+    const before = (oldRow.settings ?? {}) as Record<string, unknown>;
+    const after = (newRow.settings ?? {}) as Record<string, unknown>;
+    for (const k of new Set([...Object.keys(before), ...Object.keys(after)])) {
+      if (JSON.stringify(before[k]) === JSON.stringify(after[k])) continue;
+      const meta = fieldMeta("workspaces", k);
+      changes.push(`${meta.label} ${formatCompanyValue(meta.format, before[k], currency)} → ${formatCompanyValue(meta.format, after[k], currency)}`);
+    }
+    if (newRow.name !== undefined) changes.push(`name → ${String(newRow.name)}`);
+    return changes.length ? `Company settings: ${changes.join(", ")}` : "Company settings updated";
+  }
+  for (const k of Object.keys(newRow)) {
+    if (SKIP.has(k)) continue;
+    const meta = FIELD_TABLES.has(table) ? fieldMeta(table, k) : { label: k.replace(/_/g, " "), format: "text" as const };
+    changes.push(`${meta.label} ${formatCompanyValue(meta.format, oldRow[k], currency)} → ${formatCompanyValue(meta.format, newRow[k], currency)}`);
+  }
+  const subject = e.target_table === "demand_settings" ? "Demand growth" : `${noun[0]!.toUpperCase()}${noun.slice(1)} ${who(e.target_table)}`.trim();
+  return changes.length ? `${subject}: ${changes.join(", ")}` : `${subject}: provenance updated`;
+}

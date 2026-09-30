@@ -26,6 +26,12 @@ export default async function DemoPage(props: PageProps<"/demo">) {
         <Link href="/demo/sources" className="text-fg-2 hover:underline">
           Sources
         </Link>
+        <Link href="/demo/suggestions" className="text-fg-2 hover:underline">
+          Suggestions
+        </Link>
+        <Link href="/demo/runs" className="text-fg-2 hover:underline">
+          Runs
+        </Link>
       </div>
       <ProcessView
         live={bundle}

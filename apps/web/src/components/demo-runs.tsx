@@ -1,0 +1,34 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { changesSinceRun, snapshotModel, type RunRow } from "@transpera-flow/db";
+import { useDemoCompany } from "@/lib/demo/company-store";
+import { demoProcesses } from "@/lib/suggestions/demo";
+import { ModelChangedBanner, RunResultsTiles, RunsTable, runDate } from "./runs-view";
+
+/** The demo's saved runs: the sample baseline and any saved on /demo in this tab, compared with the demo's model now. */
+export function DemoRuns({ baseline }: { baseline: RunRow }) {
+  const demo = useDemoCompany();
+  const runs = useMemo(() => [...demo.runs, baseline], [demo.runs, baseline]);
+  const now = useMemo(() => snapshotModel(demo.model, demoProcesses()), [demo.model]);
+  const [open, setOpen] = useState(runs[0]!.id);
+  const run = runs.find((r) => r.id === open) ?? runs[0]!;
+  const changes = changesSinceRun(run, now);
+  return (
+    <div className="flex flex-col gap-4">
+      <RunsTable runs={runs.map((r) => ({ ...r, changes: changesSinceRun(r, now).length }))} onOpen={setOpen} />
+      <section aria-labelledby="run-heading" className="flex flex-col gap-3">
+        <div>
+          <h2 id="run-heading" className="text-lg font-bold">
+            {run.name}
+          </h2>
+          <p className="text-fg-2">
+            Saved {runDate(run.created_at)} · {run.reps} replications, seed {run.seed}
+          </p>
+        </div>
+        <ModelChangedBanner changes={changes} rerunHref="/demo" />
+        <RunResultsTiles results={run.results} />
+      </section>
+    </div>
+  );
+}

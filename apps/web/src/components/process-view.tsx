@@ -23,6 +23,7 @@ import { AssumptionChecklist } from "./evidence";
 import { ConflictPrompt } from "./fields";
 import { KpiStrip } from "./kpi-strip";
 import { PresenceBar } from "./presence-bar";
+import { SaveRunBar } from "./save-run";
 import { NO_SELECTION, ProcessCanvas, type CanvasCommands, type Selection } from "./process-canvas";
 import { useProcessIssues } from "./process-issues";
 import { ScenarioPanel } from "./scenario-panel";
@@ -337,6 +338,17 @@ export function ProcessView({
           durationMs={sim.run?.durationMs}
         />
       ) : null}
+      {shownModel && mode !== "readonly" && (!hasDraft || showingLive) && (
+        // Saved runs are of the live model (issue #25).
+        <SaveRunBar
+          mode={mode}
+          bundle={live}
+          model={shownModel}
+          result={sim.status === "done" ? result : null}
+          durationMs={sim.run?.durationMs ?? null}
+          runsHref={registerHref ? registerHref.replace(/\/issues$/, "/runs") : "/demo/runs"}
+        />
+      )}
       {resolved.error && (
         <p role="alert" className="rounded-token border border-crit bg-crit-soft p-3">
           This process can&apos;t be simulated yet: {resolved.error}.

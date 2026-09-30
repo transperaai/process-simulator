@@ -14,6 +14,37 @@ export {
 export { isRetiredStep, partitionSteps } from "./retired";
 export { seedSql } from "./seed";
 export {
+  COMPANY_FIELDS,
+  companyOf,
+  diffSnapshots,
+  fieldMeta,
+  formatCompanyValue,
+  MONTH_NAMES,
+  snapshotModel,
+  type ChangeSection,
+  type CompanyModel,
+  type CompanyTable,
+  type FieldFormat,
+  type FieldMeta,
+  type ModelChange,
+  type ModelSnapshot,
+  type SnapshotProcess,
+} from "./company";
+export {
+  applySuggestion,
+  describeSuggestion,
+  patchProblem,
+  PLAIN_COLUMNS,
+  SUGGESTION_COLUMNS,
+  SuggestionError,
+  suggestionProvenance,
+  suggestionTarget,
+  type ApplyOptions,
+  type SuggestionChange,
+  type SuggestionView,
+} from "./suggestions";
+export { changesSinceRun, runResults, type RunResults, type RunRow } from "./runs";
+export {
   NORTHBEAM_DOMAIN,
   NORTHBEAM_PROCESS_ID,
   NORTHBEAM_REVISION_ID,
@@ -47,6 +78,13 @@ export {
   loadScenarios,
   loadSources,
   loadCitingRows,
+  loadCompanyModel,
+  loadLiveRevisions,
+  loadRun,
+  loadRuns,
+  loadSuggestions,
+  RUN_COLUMNS,
+  SUGGESTION_ROW_COLUMNS,
   SOURCE_COLUMNS,
   SCENARIO_COLUMNS,
   SEASONALITY_COLUMNS,

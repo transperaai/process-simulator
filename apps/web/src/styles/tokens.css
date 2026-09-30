@@ -8,7 +8,7 @@
   --line-2: #c2c6bf;
   --fg: #15181a;
   --fg-2: #4d5451;
-  --fg-3: #6b736d;
+  --fg-3: #5f6761;
   --accent: #1c5cab;
   --accent-soft: #dbe7f7;
   --accent-fg: #ffffff;
@@ -22,6 +22,32 @@
   /* Work items in playback, and those heading to a lost end. */
   --token: #2a78d6;
   --token-lost: #9aa09a;
+  --destructive: #c93534; /* 5.2:1 on white; the report already uses it */
+  --shadow-overlay: 0 8px 24px rgba(20, 24, 30, 0.12), 0 2px 6px rgba(20, 24, 30, 0.06);
+  /* shadcn/ui semantic aliases: point at our tokens, never at raw values */
+  --background: var(--bg);
+  --foreground: var(--fg);
+  --card: var(--panel);
+  --card-foreground: var(--fg);
+  --popover: var(--panel);
+  --popover-foreground: var(--fg);
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-fg);
+  --secondary: var(--panel-2);
+  --secondary-foreground: var(--fg);
+  --muted: var(--panel-2);
+  --muted-foreground: var(--fg-2);
+  --border: var(--line);
+  --input: var(--line-2);
+  --ring: var(--accent);
+  --sidebar: var(--bg);
+  --sidebar-foreground: var(--fg-2);
+  --sidebar-primary: var(--accent);
+  --sidebar-primary-foreground: var(--accent-fg);
+  --sidebar-accent: var(--panel-2);
+  --sidebar-accent-foreground: var(--fg);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--accent);
   --radius: 6px;
   --shadow: 0 1px 2px rgba(20, 24, 30, 0.06), 0 4px 14px rgba(20, 24, 30, 0.05);
   /* Motion: durations only; every animation stops under prefers-reduced-motion. */
@@ -52,6 +78,8 @@
     --token: #5598e7;
     --token-lost: #6a726d;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.3);
+    --destructive: #e66767;
+    --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
     color-scheme: dark;
   }
 }
@@ -78,5 +106,7 @@
   --token: #5598e7;
   --token-lost: #6a726d;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.3);
+  --destructive: #e66767;
+  --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
   color-scheme: dark;
 }

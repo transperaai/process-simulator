@@ -68,7 +68,7 @@ export function AppSidebar(props: ShellProps) {
     const Icon = ICONS[i.icon];
     return (
       <SidebarMenuItem key={i.key}>
-        <SidebarMenuButton asChild isActive={i.active} tooltip={i.label}>
+        <SidebarMenuButton asChild isActive={i.active} tooltip={i.count ? `${i.label} · ${i.count} pending` : i.label}>
           <Link
             href={i.href}
             aria-current={i.active ? "page" : undefined}

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -230,5 +230,56 @@ describe.skipIf(!POSTGREST_URL)("extraction dry run (Tidewater Digital) over Pos
     expect(leave.data.suggestions).toHaveLength(1);
     expect(leave.data.suggestions[0]).toMatchObject({ status: "pending", target_table: "people" });
     await client.close();
+  });
+
+  it("the QA workspace scripts set up, reset and rerun cleanly (no extraction is run on the QA transcripts)", async () => {
+    const sql = (name: string) => readFileSync(new URL(`../../../docs/extraction/qa/${name}`, import.meta.url), "utf8");
+    const qa = async () => (await admin.query("select id from workspaces where slug = 'copperleaf-qa'")).rows as { id: string }[];
+    await admin.query(sql("reset-workspace.sql"));
+
+    // An agency admin, with a token and no email address, gets the membership.
+    const adminId = randomUUID();
+    await admin.query("insert into auth.users (id, raw_app_meta_data) values ($1, '{\"agency_admin\": true}')", [adminId]);
+    const { token, hash } = generateApiToken();
+    await admin.query("insert into api_tokens (user_id, token_hash, label) values ($1, $2, 'e2e-qa')", [adminId, hash]);
+
+    await admin.query(sql("setup-workspace.sql"));
+    const [ws] = await qa();
+    expect((await admin.query("select role from memberships where workspace_id = $1 and user_id = $2", [ws!.id, adminId])).rows).toEqual([{ role: "agency_admin" }]);
+    // The slug guard: a second run fails and changes nothing.
+    await expect(admin.query(sql("setup-workspace.sql"))).rejects.toThrow(/already exists/);
+    await admin.query("rollback"); // the script's own begin is still open on this connection, as in an editor tab
+    expect(await qa()).toHaveLength(1);
+
+    const client = await connect(token, options);
+    const summary = await call<{ workspace: { settings: { hours_per_week: number } }; roles: { name: string }[]; people: { name: string }[]; processes: unknown[] }>(
+      client,
+      "get_workspace_summary",
+      { workspace: "copperleaf-qa" },
+    );
+    expect(summary.ok, JSON.stringify(summary.error)).toBe(true);
+    expect(summary.data.workspace.settings.hours_per_week).toBe(37.5);
+    expect(summary.data.roles.map((r) => r.name)).toEqual(["Account director", "Finance", "Managing director", "Paid media specialist"]);
+    expect(summary.data.people.map((p) => p.name)).toEqual(["Ellie Marsh", "Grace Adeyemi", "Kofi Mensah", "Nadia Sharp", "Tom Whitfield"]);
+    // Content of its own, so the reset has a process and a suggestion to clear.
+    expect(await call(client, "create_process", { workspace: "copperleaf-qa", name: "Reset check", kind: "pipeline" })).toMatchObject({ ok: true });
+    expect(await call(client, "upsert_person", { workspace: "copperleaf-qa", name: "Ellie Marsh", fte: 0.8, note: "Reset check" })).toMatchObject({ ok: true });
+    await client.close();
+
+    const others = async () => Number((await admin.query("select count(*) as n from workspaces where slug <> 'copperleaf-qa'")).rows[0].n);
+    const before = await others();
+    await admin.query(sql("reset-workspace.sql"));
+    expect(await qa()).toHaveLength(0);
+    expect(await others()).toBe(before);
+    expect((await admin.query("select 1 from people where name = 'Grace Adeyemi'")).rowCount).toBe(0);
+
+    // It can be rerun, and reset again; resetting when there is nothing to remove is harmless.
+    await admin.query(sql("setup-workspace.sql"));
+    expect(await qa()).toHaveLength(1);
+    await admin.query(sql("reset-workspace.sql"));
+    await admin.query(sql("reset-workspace.sql"));
+    expect(await qa()).toHaveLength(0);
+    await admin.query("delete from api_tokens where user_id = $1", [adminId]);
+    await admin.query("delete from auth.users where id = $1", [adminId]);
   });
 });

@@ -81,6 +81,8 @@ export interface DetectedIssue {
   roleId: string | null;
   personId: string | null;
   fix: SuggestedFix | null;
+  /** The saved scenario it is about (`broken_scenario` issues, see broken.ts). */
+  scenarioId?: string | null;
 }
 
 /** The detectors, in the order their issues are listed within a severity. */

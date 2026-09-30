@@ -3,6 +3,7 @@
 // them in memory for the public demo (lost on reload) and for tests.
 
 import type { ScenarioRow } from "@transpera-flow/db";
+import { parsePatches, type ScenarioPatch } from "@transpera-flow/engine";
 import { parseScenarioInput, type ScenarioInput } from "./validate";
 
 export type SaveScenarioResult = { status: "ok"; scenario: ScenarioRow } | { status: "error"; message: string };
@@ -11,6 +12,8 @@ export type RemoveScenarioResult = { status: "ok" } | { status: "error"; message
 export interface ScenarioStore {
   create(input: ScenarioInput): Promise<SaveScenarioResult>;
   remove(id: string): Promise<RemoveScenarioResult>;
+  /** Replace a scenario's patches, e.g. to re-point one whose target was split or deleted (issue #16). */
+  repoint(scenario: ScenarioRow, patch: ScenarioPatch[]): Promise<SaveScenarioResult>;
 }
 
 export class MemoryScenarioStore implements ScenarioStore {
@@ -24,5 +27,12 @@ export class MemoryScenarioStore implements ScenarioStore {
 
   async remove(): Promise<RemoveScenarioResult> {
     return { status: "ok" };
+  }
+
+  async repoint(scenario: ScenarioRow, patch: ScenarioPatch[]): Promise<SaveScenarioResult> {
+    const parsed = parsePatches(patch);
+    if (!parsed.ok) return { status: "error", message: parsed.error };
+    if (!parsed.patches.length) return { status: "error", message: "A scenario needs at least one change." };
+    return { status: "ok", scenario: { ...scenario, patch: parsed.patches } };
   }
 }

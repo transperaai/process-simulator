@@ -140,6 +140,14 @@ export interface StepRow {
    * accepted as estimates (docs/PRD.md §7.1b).
    */
   assumption: boolean;
+  /**
+   * Steps that took over this one's work when it was split or replaced in the
+   * editor (docs/PRD.md §4.1 "Stable step IDs"). A step with any is retired:
+   * its row stays in the revision so saved scenarios aimed at it can be
+   * re-pointed (issue #16), but it is never drawn or simulated; loaders put
+   * it in `ProcessBundle.retired`, not `steps`. Absent or empty on live steps.
+   */
+  replaced_by?: string[];
 }
 
 export interface EdgeRow {
@@ -294,6 +302,12 @@ export interface ProcessBundle {
   revision: ProcessRevisionRow;
   steps: StepRow[];
   edges: EdgeRow[];
+  /**
+   * Steps of this revision that were split or replaced (they have
+   * `replaced_by`). Kept apart from `steps` so nothing draws or simulates
+   * them; read to re-point scenarios that still target them (issue #16).
+   */
+  retired?: StepRow[];
   /** Named people. When empty, roles' head-counts are used instead. */
   people: PersonRow[];
   personRoles: PersonRoleRow[];
@@ -411,7 +425,8 @@ export type _SchemaDriftChecks = [
   Assert<Matches<PersonLeaveRow, "person_leave">>,
   Assert<Matches<ProcessRow, "processes">>,
   Assert<Matches<ProcessRevisionRow, "process_revisions">>,
-  Assert<Matches<StepRow, "steps">>,
+  // replaced_by defaults to '{}' in the table; the app leaves it out of new steps.
+  Assert<Matches<Omit<StepRow, "replaced_by">, "steps">>,
   Assert<Matches<EdgeRow, "edges">>,
   // fallback_ongoing_load is jsonb; FallbackLoad is its app-side shape.
   Assert<Matches<ServiceRow, "services">>,

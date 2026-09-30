@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AppHeader } from "@/components/app-header";
+import { ShellHeader } from "@/components/shell/shell-header";
 import { SummaryEditor } from "@/components/narration";
 import { narrationConfigured } from "@/lib/narration/anthropic";
 import { loadReportContent } from "@/lib/report/narration";
@@ -17,36 +16,33 @@ export default async function ReportPage(props: PageProps<"/w/[slug]/reports/[id
   const { content } = report;
   const base = `/w/${encodeURIComponent(slug)}`;
   return (
-    <main className="mx-auto w-full max-w-4xl px-4 pb-12">
-      <AppHeader workspace={content.workspace.name} signedIn />
-      <nav className="mt-4 text-fg-2">
-        <Link href={`${base}/reports`} className="hover:underline">
-          ← All reports
-        </Link>
-      </nav>
-      <h1 className="mt-2 mb-1 text-xl font-bold">{content.title}</h1>
-      <p className="mb-4 text-fg-2">
-        {content.run.reps} replications of {content.run.horizonWeeks} weeks from {content.run.startDate}
-        {report.hasPdf && (
-          <>
-            {" · "}
-            <a href={`/api/reports/${id}/pdf`} className="underline" target="_blank" rel="noreferrer">
-              Download PDF
-            </a>
-          </>
+    <div>
+      <ShellHeader title="Report" />
+      <div className="mx-auto w-full max-w-4xl px-4 pb-12 pt-6">
+        <h1 className="mt-2 mb-1 text-xl font-bold">{content.title}</h1>
+        <p className="mb-4 text-fg-2">
+          {content.run.reps} replications of {content.run.horizonWeeks} weeks from {content.run.startDate}
+          {report.hasPdf && (
+            <>
+              {" · "}
+              <a href={`/api/reports/${id}/pdf`} className="underline" target="_blank" rel="noreferrer">
+                Download PDF
+              </a>
+            </>
+          )}
+        </p>
+        {content.summary ? (
+          <SummaryEditor
+            reportId={id}
+            initial={content.summary}
+            configured={narrationConfigured()}
+            canNarrate={Boolean(content.run.id)}
+            printUrl={`${base}/reports/${id}/print`}
+          />
+        ) : (
+          <p className="text-fg-2">This report was generated without an executive summary.</p>
         )}
-      </p>
-      {content.summary ? (
-        <SummaryEditor
-          reportId={id}
-          initial={content.summary}
-          configured={narrationConfigured()}
-          canNarrate={Boolean(content.run.id)}
-          printUrl={`${base}/reports/${id}/print`}
-        />
-      ) : (
-        <p className="text-fg-2">This report was generated without an executive summary.</p>
-      )}
-    </main>
+      </div>
+    </div>
   );
 }

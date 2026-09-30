@@ -21,8 +21,8 @@ Tick a box when the **Expected** result happens. If it doesn't, don't stop: writ
 - [ ] Open https://transpera-flow.vercel.app in a private window. (#4) **Expected:** you are sent to a **Sign in** page with a **Continue with Google** button and "Use your work Google account."
 - [ ] Click Continue with Google and sign in with your agency admin account. (#4) **Expected:** you land on **Workspaces** with a card for **Northbeam Digital**. (Note: the ticket says magic link; the app uses Google sign-in. That is expected, but tell us if you'd prefer the ticket's wording.)
 - [ ] Click the Northbeam Digital card. (#4) **Expected:** you go to `/w/northbeam` and see the process name as the page title, a key results strip, and the process map.
-- [ ] Look at the header. (#4) **Expected:** "Transpera Flow", the workspace name, **API tokens** and **Sign out**.
-- [ ] Look at the links under the page title. (#4, #76) **Expected:** Issues, Clients, Sources, Suggestions, Runs, Report, People & settings, Access.
+- [ ] Look at the top of the sidebar and its foot. (#4, #93) **Expected:** the workspace name (it opens the list of workspaces), and at the foot your name and email; that menu has **API tokens** and **Sign out**.
+- [ ] Look at the sidebar. (#4, #76, #93) **Expected:** Map, Issues, Clients, People, Scenarios, Suggestions, Sources, Runs, Report, then Settings and Access at the bottom. (Report shows for editors, Access for managers.)
 - [ ] Optional, only if you have a second Google account with no access to any workspace: sign in with it. (#4) **Expected:** a **No workspace yet** page naming that account and offering **Sign out**; no workspace data is visible. Sign back in as yourself afterwards.
 - [ ] Click Sign out, then try to open `/w/northbeam` directly. (#4) **Expected:** you are sent back to the Sign in page. Sign in again to continue.
 
@@ -33,7 +33,7 @@ Tick a box when the **Expected** result happens. If it doesn't, don't stop: writ
 - [ ] Look at the Audit & proposal step. (#8) **Expected:** a coloured role stripe (Strategist), a queue count, and a wait badge or hands-on time. Steps with unconfirmed values also show an **Estimate** or **Assumption** marker.
 - [ ] Click **Swimlanes** in the toolbar. (#8) **Expected:** steps are grouped in lanes by role, with the role name at the left of each lane. Click it again to turn lanes off.
 - [ ] Scroll and drag the map background, then zoom. (#4) **Expected:** the map pans and zooms smoothly; nothing overlaps the toolbar.
-- [ ] Look under the map's process links (the "Processes" row). (#76, #19) **Expected:** chips for the pipeline process and two servicing processes (**Monthly report** and **Client check-in**, each marked "servicing"). The current one is highlighted.
+- [ ] Click the process name at the left of the map's top bar (the process picker). (#76, #19, #93) **Expected:** a menu listing the pipeline process and two servicing processes (**Monthly report** and **Client check-in**, each marked "servicing"). The current one has a check mark.
 - [ ] Click **Monthly report**. (#76, #19) **Expected:** the URL changes to `/w/northbeam/p/<id>`, the map switches to that process, and a **Servicing process** note says which service runs it. Click back to the pipeline.
 - [ ] Open `/demo` in a new tab. (#76) **Expected:** the public demo still loads and works without signing in. (Its edits are lost on reload; that's normal.)
 
@@ -77,7 +77,7 @@ Everything in this section lands in a draft. You'll see "Saved to draft" beside 
 - [ ] Click **Publish…**. (#9) **Expected:** a confirmation appears. If any step still holds unconfirmed estimates it says so, lists them ("Review <step>"), and offers **Publish, accepting N estimates**; otherwise **Publish revision N**. (Northbeam's sample steps are estimates, so expect the first.)
 - [ ] Click **Cancel** rather than publishing, unless you want to make a real change. (#9) **Expected:** nothing is published; live is unchanged. If you do publish, the revision number goes up (**Live · r…**) and the change is in the audit log.
 - [ ] Click **Discard draft…**. (#9) **Expected:** a warning "This can't be undone" with **Discard draft** and **Keep editing**; discarding returns to live.
-- [ ] On the process links row, click **+ Servicing process**, type a name (for example "QA test"), click **Create**. (#76) **Expected:** a new chip appears marked "servicing" and "not published"; opening it shows **Not published yet · Draft · r1** and "This process has never been published…".
+- [ ] In the process picker, choose **New servicing process…**, type a name (for example "QA test"), click **Create**. (#76, #93) **Expected:** the new process opens; it is marked "servicing" and "not published" in the picker, shows **Not published yet · Draft · r1** and "This process has never been published…".
 - [ ] In that new process, add a step, then click **Publish…** and publish. (#76, #9) **Expected:** it becomes live (r1) and the "not published" tag goes. This test process stays in Northbeam afterwards, so list it in your Notes and we'll remove it.
 
 ## 5. Simulation KPIs and ranges
@@ -127,7 +127,7 @@ Everything in this section lands in a draft. You'll see "Saved to draft" beside 
 
 Settings save as you type and change live data. Note each old value and restore it.
 
-- [ ] Open **People & settings**. (#6) **Expected:** a **Workspace settings** page with sections in this order: **Simulation**, **Services**, **Client health**, **Demand**, **People**.
+- [ ] Open **Settings** in the sidebar. (#6, #93) **Expected:** a **Workspace settings** page with sections in this order: **Simulation**, **Services**, **Client health**, **Demand**, **People**. (**People** in the sidebar opens the last of these.)
 - [ ] Simulation: read **Availability floor** and **Overtime cap**. (#6, #18) **Expected:** each shows a value or "(default)" placeholder and a one-line explanation. Change the availability floor (for example to 10), then put it back; the tiles re-run on the process page.
 - [ ] People: look at the list of 11 people. (#6) **Expected:** names such as Priya Shah, Maya Collins and Rosa Diaz, each with their role, status and details (Name, Email, Status, FTE, Capacity, Cost rate, Start date, End date, Notes, Roles, Skills, Leave).
 - [ ] Add a person with **Add person** (name and role). (#6) **Expected:** they appear in the list and in the Utilisation "people" view after the next run.
@@ -150,8 +150,8 @@ Settings save as you type and change live data. Note each old value and restore 
 
 ## 9. Servicing and health
 
-- [ ] On the process links row, open **Monthly report** and **Client check-in**. (#19) **Expected:** each is a servicing process built on the same canvas; the **Servicing process** note explains which service uses it and how often.
-- [ ] In **People & settings → Services**, look for the servicing links. (#19) **Expected:** a "Servicing processes" area per service with **How often, per client** and **On time within**, and a **Link** button; "None: each client needs the fallback load below" for services with no link.
+- [ ] In the process picker, open **Monthly report** and **Client check-in**. (#19, #93) **Expected:** each is a servicing process built on the same canvas; the **Servicing process** note explains which service uses it and how often.
+- [ ] In **Settings → Services**, look for the servicing links. (#19, #93) **Expected:** a "Servicing processes" area per service with **How often, per client** and **On time within**, and a **Link** button; "None: each client needs the fallback load below" for services with no link.
 - [ ] Read **Ongoing load per client (hours a month, by role)** on a service. (#19, #18) **Expected:** editable hours per role; blank means none.
 - [ ] Read the **Client health** settings. (#19) **Expected:** rules for how on-time, late and missed work move health, each with an "(estimated)" placeholder and an explanation of the churn formula.
 - [ ] On the Clients page, read **Simulated health and churn**. (#19) **Expected:** **Clients at risk**, **Churned**, **Touchpoints on time** (a percentage) and **Late · missed**, plus **Lowest simulated health at week N**.
@@ -179,7 +179,7 @@ Settings save as you type and change live data. Note each old value and restore 
 - [ ] Open **Edit** on it, change Status, Severity, Type, Owner and Evidence. (#17) **Expected:** each saves as you go; **Done editing** closes the form.
 - [ ] Use each filter (Process, Person, Severity, Source, Status). (#17) **Expected:** the list narrows to match; "No issues match these filters." appears when nothing does.
 - [ ] Click **Run the fix →** on "Every proposal is built by hand". (#17) **Expected:** you go to the process page with the linked scenario (Automate proposals) applied and the compare area open.
-- [ ] On the process page, open the **Issues** tab beside the map. (#17) **Expected:** the tab shows the open count ("Issues · N") and the same list; **Open the full register →** goes to the full page.
+- [ ] On the process page, open the panel beside the map (the panel button at the right of the top bar), then **Insights → Issues**. (#17, #93) **Expected:** the tab shows the open count ("Issues · N") and the same list; **Open the full register →** goes to the full page.
 - [ ] Look at Audit & proposal on the map. (#17) **Expected:** a small badge for its issues; clicking it opens that step's issues in the tab.
 - [ ] Delete or close your test issue. (#17) **Expected:** it disappears or moves to closed.
 
@@ -202,7 +202,7 @@ Settings save as you type and change live data. Note each old value and restore 
 ## 13. Suggestions
 
 - [ ] Open **Suggestions** with nothing pending. (#25) **Expected:** "Nothing waiting for review. When Claude changes people, clients, services, demand or company settings over MCP, its suggestions appear here." and the link shows no number badge.
-- [ ] In **People & settings**, change a person's cost rate, then open **Recent changes to the company model** on the Suggestions page. (#25) **Expected:** your edit applied immediately and is logged with your name and the time.
+- [ ] In **Settings**, change a person's cost rate, then open **Recent changes to the company model** on the Suggestions page. (#25, #93) **Expected:** your edit applied immediately and is logged with your name and the time.
 - [ ] Open the saved run from section 5. (#25) **Expected:** a **Model changed since this run** notice lists the change (grouped under People) with a link **Run the model as it is now**. Restore the cost rate.
 - [ ] [Claude] After section 15 has created suggestions, open **Suggestions**. (#25) **Expected:** each reads like "Claude suggests lead volume 15/wk, was 12" with old and new values, reasoning and any cited source, in tabs **Pending**, **Accepted**, **Rejected**, **All**, with counts.
 - [ ] [Claude] Click **Accept** on one. (#25) **Expected:** the value now shows in settings, marked with the source's provenance; if no source was cited it is recorded as an assumption to confirm.
@@ -226,13 +226,13 @@ Use two windows: Chrome plus a private window, or two browsers. Sign in to both.
 
 ## 15. MCP (needs an API token and Claude)
 
-- [ ] Click **API tokens** in the header. (#23) **Expected:** an **API tokens** page listing tokens with Created, Last used and Status.
+- [ ] Open the menu at the foot of the sidebar and click **API tokens**. (#23, #93) **Expected:** an **API tokens** page listing tokens with Created, Last used and Status.
 - [ ] Type a name (for example "Claude Code on my laptop") and click **Create token**. (#23) **Expected:** the token is shown once, with a ready-made `claude mcp add --transport http transpera-flow …` command. Copy it now; it can't be shown again. Never paste the token into a chat or an issue.
 - [ ] [API token] Run that command in a terminal, then start Claude Code and ask it to list the transpera-flow tools. (#23) **Expected:** the five starter tools, list_workspaces, set_active_workspace, get_workspace_summary, get_process and run_scenario, plus the later ones below.
 - [ ] [API token][Claude] Ask: "List my workspaces, then set Northbeam active and summarise it." (#23) **Expected:** Northbeam is listed and summarised (roles, people).
 - [ ] [API token][Claude] Ask: "Run the baseline scenario for Northbeam." (#23) **Expected:** a summary with averages and ranges, close to what the browser tiles show (small differences can come from settings such as the seed or replication count).
 - [ ] [API token][Claude] Ask it to build a small process: "Create a draft process called QA test with three steps and connect them." (#24) **Expected:** it works and reports any defaulted values as assumptions. Nothing goes live.
-- [ ] In the browser, open that process from the process links row. (#24, #76) **Expected:** a chip marked "not published"; it opens in Draft view with the steps Claude added, and assumption markers on defaulted values.
+- [ ] In the browser, open that process from the process picker. (#24, #76, #93) **Expected:** an entry marked "not published"; it opens in Draft view with the steps Claude added, and assumption markers on defaulted values.
 - [ ] [API token][Claude] Ask it to publish without accepting estimates. (#24) **Expected:** it refuses because of unresolved assumptions unless it says it accepts them as estimates.
 - [ ] [API token][Claude] Ask it to update a step by an ambiguous name. (#24) **Expected:** it comes back with candidates rather than picking one.
 - [ ] [API token][Claude] Ask it to import a process over an existing one. (#24) **Expected:** it returns a diff against live and keeps values you already entered, flagging conflicts instead of overwriting.

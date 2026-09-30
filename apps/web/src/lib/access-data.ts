@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import type { AccessEmailRow, MembershipRole, WorkspaceDomainRow } from "@transpera-flow/db";
 import { createClient } from "./supabase/server";
 
@@ -89,7 +90,7 @@ export async function currentUserId(): Promise<string | null> {
 }
 
 /** The signed-in user as others see them in presence (issue #10): id, a display name and email. */
-export async function currentViewer(): Promise<{ userId: string; name: string; email: string | null } | null> {
+export const currentViewer = cache(async (): Promise<{ userId: string; name: string; email: string | null } | null> => {
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
   const claims = data?.claims;
@@ -98,20 +99,20 @@ export async function currentViewer(): Promise<{ userId: string; name: string; e
   const meta = (claims.user_metadata ?? {}) as Record<string, unknown>;
   const given = [meta.full_name, meta.name].find((v): v is string => typeof v === "string" && v.trim() !== "");
   return { userId: claims.sub, name: given?.trim() ?? email?.split("@")[0] ?? "Someone", email };
-}
+});
 
 /** Whether the signed-in user can edit the workspace's processes and people (RLS helper). */
-export async function canEditWorkspace(workspaceId: string): Promise<boolean> {
+export const canEditWorkspace = cache(async (workspaceId: string): Promise<boolean> => {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("can_edit_workspace", { ws: workspaceId });
   if (error) throw error;
   return data === true;
-}
+});
 
 /** Whether the signed-in user can manage the workspace's access (RLS helper). */
-export async function canManageWorkspace(workspaceId: string): Promise<boolean> {
+export const canManageWorkspace = cache(async (workspaceId: string): Promise<boolean> => {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("can_manage_workspace", { ws: workspaceId });
   if (error) throw error;
   return Boolean(data);
-}
+});

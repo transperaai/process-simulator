@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { companyOf, runResults, snapshotModel, type ProcessBundle } from "@transpera-flow/db";
 import type { EngineModel, SimulationResult } from "@transpera-flow/engine";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { saveRun } from "@/app/w/[slug]/run-actions";
 import { saveDemoRun } from "@/lib/demo/company-store";
 import { defaultRunName, type SaveRunInput, type SaveRunResult } from "@/lib/runs/runs";
@@ -79,19 +81,20 @@ export function SaveRunBar({
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-2 text-sm">
+    <div className="flex flex-wrap items-center gap-2 text-xs">
       {naming === null ? (
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
           disabled={!result}
           onClick={() => {
             setOutcome(null);
             setNaming(defaultRunName(new Date()));
           }}
-          className="rounded-token border border-line bg-panel px-2.5 py-1 font-semibold hover:bg-panel-2 disabled:opacity-50"
         >
           Save this run
-        </button>
+        </Button>
       ) : (
         <form
           className="flex flex-wrap items-center gap-2"
@@ -101,24 +104,18 @@ export function SaveRunBar({
           }}
         >
           <label className="flex items-center gap-2">
-            <span className="text-fg-2">Name</span>
-            <input
-              autoFocus
-              value={naming}
-              maxLength={200}
-              onChange={(e) => setNaming(e.target.value)}
-              className="w-64 rounded-token border border-line bg-panel px-2 py-1"
-            />
+            <span className="text-muted-foreground">Name</span>
+            <Input autoFocus value={naming} maxLength={200} onChange={(e) => setNaming(e.target.value)} className="h-8 w-56 text-xs" />
           </label>
-          <button type="submit" disabled={busy || !naming.trim() || !result} className="rounded-token bg-accent px-3 py-1 font-semibold text-accent-fg disabled:opacity-50">
+          <Button type="submit" size="sm" disabled={busy || !naming.trim() || !result}>
             Save
-          </button>
-          <button type="button" onClick={() => setNaming(null)} className="rounded-token px-2 py-1 text-fg-2 hover:bg-panel-2">
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setNaming(null)}>
             Cancel
-          </button>
+          </Button>
         </form>
       )}
-      <span role="status" aria-live="polite" className={outcome?.tone === "error" ? "text-crit" : "text-fg-2"}>
+      <span role="status" aria-live="polite" className={outcome?.tone === "error" ? "text-destructive" : "text-muted-foreground"}>
         {outcome?.tone === "ok" ? (
           <>
             Saved “{outcome.name}”.{" "}
@@ -130,11 +127,6 @@ export function SaveRunBar({
           outcome?.text
         )}
       </span>
-      {!outcome && naming === null && (
-        <Link href={runsHref} className="text-fg-3 hover:underline">
-          Saved runs
-        </Link>
-      )}
     </div>
   );
 }

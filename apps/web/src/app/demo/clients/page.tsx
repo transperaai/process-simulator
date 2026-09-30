@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { northbeamBundle } from "@transpera-flow/db";
-import { AppHeader } from "@/components/app-header";
+import { ShellHeader } from "@/components/shell/shell-header";
 import { DemoRoster } from "@/components/roster-views";
 import type { RosterData } from "@/lib/clients/roster";
 import { demoBundle } from "@/lib/sources/demo";
@@ -23,20 +22,17 @@ export default function DemoClientsPage() {
     simulation: demoBundle(),
   };
   return (
-    <main className="mx-auto w-full max-w-5xl px-4 pb-12">
-      <AppHeader workspace={`${b.workspace.name} · demo`} signedIn={false} />
-      <nav className="mt-4 text-fg-2">
-        <Link href="/demo" className="hover:underline">
-          ← Back to the process
-        </Link>
-      </nav>
-      <h1 className="mt-2 mb-1 text-xl font-bold">Clients</h1>
-      <p className="mb-3 rounded-token border border-line bg-panel-2 px-3 py-2 text-fg-2">
-        Demo mode: Northbeam&apos;s sample roster. Add, edit, reassign or paste clients; changes stay in this tab and are
-        gone when you reload. Simulated health and churn follow your edits here; the process page simulates the seeded
-        roster.
-      </p>
-      <DemoRoster initial={data} />
-    </main>
+    <div>
+      <ShellHeader title="Clients" />
+      <div className="mx-auto w-full max-w-5xl px-4 pb-12 pt-6">
+        <h1 className="mt-2 mb-1 text-xl font-bold">Clients</h1>
+        <p className="mb-3 rounded-token border border-line bg-panel-2 px-3 py-2 text-fg-2">
+          Demo mode: Northbeam&apos;s sample roster. Add, edit, reassign or paste clients; changes stay in this tab and are
+          gone when you reload. Simulated health and churn follow your edits here; the process page simulates the seeded
+          roster.
+        </p>
+        <DemoRoster initial={data} />
+      </div>
+    </div>
   );
 }

@@ -1008,7 +1008,7 @@ function Canvas({
           tabIndex={-1}
           onDoubleClick={onDoubleClick}
           onKeyDownCapture={onKeyDownCapture}
-          className="relative h-[28rem] w-full rounded-token border border-line bg-panel md:h-[34rem]"
+          className="relative isolate min-h-[24rem] min-w-0 flex-1 rounded-lg border bg-card"
           role="region"
           aria-label={`${bundle.process.name} process map`}
         >
@@ -1294,6 +1294,7 @@ const KEYS: [string, string][] = [
   ["mod+A", "select every step"],
   ["Delete", "delete what is selected"],
   ["mod+Z / mod+Y", "undo / redo"],
+  ["mod+B", "show or hide the sidebar"],
   ["Esc", "clear the selection"],
   ["Space (playback bar)", "play or pause"],
   ["Arrows (scrubber)", "an hour (Shift: a day); Page Up/Down: a week"],

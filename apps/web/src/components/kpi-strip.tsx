@@ -1,4 +1,7 @@
+import { Info } from "lucide-react";
 import type { EngineModel, SimulationResult } from "@transpera-flow/engine";
+import { Card } from "@/components/ui/card";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatCurrency, formatDays, formatInitialState, formatNumber, formatPercent, formatRange } from "@/lib/format";
 
 interface KpiStripProps {
@@ -13,7 +16,7 @@ interface Tile {
   label: string;
   value: string;
   detail: string;
-  /** What the figure means (docs/PRD.md §13), shown on hover. */
+  /** What the figure means (docs/PRD.md §13), shown in a tooltip. */
   definition?: string;
   tone?: "crit";
 }
@@ -116,15 +119,33 @@ export function KpiStrip({ model, currency, result, status, durationMs }: KpiStr
   }
 
   return (
-    <section aria-label="Key results" className={`grid grid-cols-2 gap-2 md:grid-cols-4 ${tiles.length > 10 ? "xl:grid-cols-6" : "xl:grid-cols-5"}`}>
-      {tiles.map((t) => (
-        <div key={t.label} title={t.definition} className="min-w-0 rounded-token border border-line bg-panel px-3 py-2 shadow-token">
-          <p className="font-mono text-[11px] uppercase tracking-widest text-fg-3">{t.label}</p>
-          <p className={`truncate font-display text-xl font-bold tabular-nums ${t.tone === "crit" ? "text-crit" : ""}`}>{t.value}</p>
-          <p className="text-xs text-fg-2 tabular-nums">{t.detail}&nbsp;</p>
-        </div>
-      ))}
-      <p role="status" aria-live="polite" className="col-span-full text-xs text-fg-3">
+    <div>
+      <section
+        aria-label="Key results"
+        tabIndex={0}
+        className={`flex snap-x gap-2 overflow-x-auto pb-1 xl:grid xl:overflow-visible ${tiles.length > 10 ? "xl:grid-cols-6" : "xl:grid-cols-5"}`}
+      >
+        {tiles.map((t) => (
+          <Card key={t.label} className="min-w-40 shrink-0 snap-start gap-0.5 rounded-lg px-3 py-2.5 shadow-token xl:min-w-0">
+            <p className="flex items-center justify-between gap-1 font-mono text-2xs uppercase tracking-widest text-muted-foreground">
+              <span className="truncate">{t.label}</span>
+              {t.definition && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" aria-label={`What ${t.label} means`} className="shrink-0 rounded-sm text-muted-foreground hover:text-foreground">
+                      <Info className="size-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-64 normal-case tracking-normal">{t.definition}</TooltipContent>
+                </Tooltip>
+              )}
+            </p>
+            <p className={`truncate font-display text-xl font-bold tabular-nums ${t.tone === "crit" ? "text-crit" : ""}`}>{t.value}</p>
+            <p className="text-xs text-muted-foreground tabular-nums">{t.detail}&nbsp;</p>
+          </Card>
+        ))}
+      </section>
+      <p role="status" aria-live="polite" className="mt-1.5 text-xs text-muted-foreground">
         {status === "running"
           ? "Simulating…"
           : status === "error"
@@ -132,6 +153,6 @@ export function KpiStrip({ model, currency, result, status, durationMs }: KpiStr
             : `Average of ${result?.reps} replications; ranges are the 10th–90th percentile · ${formatNumber(durationMs ?? 0, 0)} ms`}
         {status === "done" && result && ` · ${formatInitialState(result.initialState, model.hoursPerWeek)}`}
       </p>
-    </section>
+    </div>
   );
 }

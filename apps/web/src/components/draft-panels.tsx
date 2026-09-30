@@ -5,6 +5,9 @@
 // Discard, Restore or Revert), and the draft-vs-live KPI comparison.
 
 import { useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Toggle } from "@/components/ui/toggle";
 import type { ProcessBundle, StepRow } from "@transpera-flow/db";
 import type { EngineModel, SimulationResult } from "@transpera-flow/engine";
 import { compareRuns } from "@/lib/drafts/compare";
@@ -67,76 +70,80 @@ export function DraftBar({
   // Never published (issue #76): there is no live model yet, only the draft.
   const unpublished = liveNumber === 0;
 
+  // The one-line state of the draft. It truncates in the top bar; the title carries the whole sentence.
+  const status =
+    unpublished
+      ? hasDraft
+        ? `This process has never been published: it exists only as this draft${changes ? ` (${plural(changes, "change")})` : ""}. ${canEdit ? "Publish it to make it live." : "It goes live when an editor publishes it."}`
+        : canEdit
+          ? "This process has never been published. Add steps to start its draft."
+          : "This process has never been published."
+      : !hasDraft
+      ? canEdit
+        ? "Edits open a draft; the live model only changes when you publish."
+        : "The live model."
+      : view === "live"
+        ? `The live model, as simulation, forecasts and reports use it. The draft has ${plural(changes, "change")}.`
+        : changes
+          ? `${plural(changes, "change")} against live${conflicts ? ` · ${plural(conflicts, "conflict")}` : ""}${unresolved.length - conflicts ? ` · ${plural(unresolved.length - conflicts, "unconfirmed estimate")}` : ""}${breaks.length ? ` · publishing breaks ${plural(breaks.length, "saved scenario")}` : ""}.`
+          : "No changes against live yet.";
+
   return (
-    <section aria-label="Draft controls" className="flex flex-col gap-2 rounded-token border border-line bg-panel p-2 text-xs shadow-token">
-      <div className="flex flex-wrap items-center gap-2">
-        {unpublished ? (
-          <span className="rounded-token border border-warn bg-warn-soft px-2.5 py-1 font-semibold">
-            Not published yet{hasDraft ? ` · Draft · r${draftNumber}` : ""}
-          </span>
-        ) : hasDraft ? (
-          <div role="group" aria-label="Show revision" className="flex overflow-hidden rounded-token border border-line">
-            {(["live", "draft"] as const).map((v) => (
-              <button
-                key={v}
+    <section aria-label="Draft controls" className="contents text-xs">
+      {unpublished ? (
+        <Badge variant="outline" className="border-warn bg-warn-soft py-1 text-xs text-fg">
+          Not published yet{hasDraft ? ` · Draft · r${draftNumber}` : ""}
+        </Badge>
+      ) : hasDraft ? (
+        <div role="group" aria-label="Show revision" className="flex overflow-hidden rounded-md border border-input bg-panel shadow-xs">
+          {(["live", "draft"] as const).map((v) => (
+            <Toggle
+              key={v}
+              size="sm"
+              pressed={view === v}
+              onPressedChange={() => onView(v)}
+              className="h-7 rounded-none px-2.5 text-xs font-semibold [&+&]:border-l"
+            >
+              {v === "live" ? `Live · r${liveNumber}` : `Draft · r${draftNumber}`}
+            </Toggle>
+          ))}
+        </div>
+      ) : (
+        <Badge variant="outline" className="py-1 text-xs text-fg">
+          Live · r{liveNumber}
+        </Badge>
+      )}
+      <p title={status} className="order-last min-w-0 basis-full truncate text-xs text-muted-foreground xl:order-none xl:basis-0 xl:flex-1" aria-live="polite">
+        {status}
+      </p>
+      {hasDraft && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {!unpublished && (
+            <Button type="button" variant="outline" size="sm" aria-pressed={compare} onClick={() => onCompare(!compare)} className={compare ? "border-accent bg-accent-soft text-accent" : ""}>
+              Compare with live
+            </Button>
+          )}
+          {canEdit && (
+            <>
+              <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => setConfirming("discard")} className="border-crit/60 text-destructive hover:bg-crit-soft">
+                Discard draft…
+              </Button>
+              <Button
                 type="button"
-                aria-pressed={view === v}
-                onClick={() => onView(v)}
-                className={`px-2.5 py-1 font-semibold ${view === v ? "bg-accent text-accent-fg" : "bg-panel text-fg hover:bg-panel-2"}`}
+                size="sm"
+                disabled={busy || !!blocked || !changes || !drafts.draft}
+                title={blocked ?? (!changes ? "Nothing to publish yet." : undefined)}
+                onClick={() => setConfirming("publish")}
               >
-                {v === "live" ? `Live · r${liveNumber}` : `Draft · r${draftNumber}`}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <span className="rounded-token border border-line px-2.5 py-1 font-semibold">Live · r{liveNumber}</span>
-        )}
-        <p className="text-fg-2" aria-live="polite">
-          {unpublished
-            ? hasDraft
-              ? `This process has never been published: it exists only as this draft${changes ? ` (${plural(changes, "change")})` : ""}. ${canEdit ? "Publish it to make it live." : "It goes live when an editor publishes it."}`
-              : canEdit
-                ? "This process has never been published. Add steps to start its draft."
-                : "This process has never been published."
-            : !hasDraft
-            ? canEdit
-              ? "Edits open a draft; the live model only changes when you publish."
-              : "The live model."
-            : view === "live"
-              ? `The live model, as simulation, forecasts and reports use it. The draft has ${plural(changes, "change")}.`
-              : changes
-                ? `${plural(changes, "change")} against live${conflicts ? ` · ${plural(conflicts, "conflict")}` : ""}${unresolved.length - conflicts ? ` · ${plural(unresolved.length - conflicts, "unconfirmed estimate")}` : ""}${breaks.length ? ` · publishing breaks ${plural(breaks.length, "saved scenario")}` : ""}.`
-                : "No changes against live yet."}
-        </p>
-        {hasDraft && (
-          <div className="ml-auto flex flex-wrap items-center gap-1.5">
-            {!unpublished && (
-              <button type="button" aria-pressed={compare} onClick={() => onCompare(!compare)} className={`${button} ${compare ? "!border-accent !bg-accent-soft" : ""}`}>
-                Compare with live
-              </button>
-            )}
-            {canEdit && (
-              <>
-                <button type="button" disabled={busy} onClick={() => setConfirming("discard")} className={danger}>
-                  Discard draft…
-                </button>
-                <button
-                  type="button"
-                  disabled={busy || !!blocked || !changes || !drafts.draft}
-                  title={blocked ?? (!changes ? "Nothing to publish yet." : undefined)}
-                  onClick={() => setConfirming("publish")}
-                  className={primary}
-                >
-                  Publish…
-                </button>
-              </>
-            )}
-          </div>
-        )}
-      </div>
+                Publish…
+              </Button>
+            </>
+          )}
+        </div>
+      )}
 
       {confirming === "discard" && (
-        <div role="alertdialog" aria-label="Discard the draft" className="flex flex-wrap items-center gap-2 rounded-token border border-crit bg-crit-soft p-2">
+        <div role="alertdialog" aria-label="Discard the draft" className="order-last flex basis-full flex-wrap items-center gap-2 rounded-token border border-crit bg-crit-soft p-2 text-xs">
           <p className="grow">
             Discard all {plural(changes, "change")} in this draft and go back to live (r{liveNumber})? This can&apos;t be undone.
           </p>
@@ -157,7 +164,7 @@ export function DraftBar({
       )}
 
       {confirming === "publish" && (
-        <div role="alertdialog" aria-label="Publish the draft" className="flex flex-col gap-2 rounded-token border border-accent bg-accent-soft p-2">
+        <div role="alertdialog" aria-label="Publish the draft" className="order-last flex max-h-[45svh] basis-full flex-col gap-2 overflow-y-auto rounded-token border border-accent bg-accent-soft p-2 text-xs">
           {estimates.length ? (
             <>
               <p>
@@ -216,7 +223,7 @@ export function DraftBar({
       )}
 
       {drafts.notice && (
-        <p role="status" className="flex items-center justify-between gap-2 rounded-token border border-good bg-good-soft px-2 py-1">
+        <p role="status" className="order-last flex basis-full items-center justify-between gap-2 rounded-token border border-good bg-good-soft px-2 py-1">
           {drafts.notice}
           <button type="button" onClick={() => session.dismiss()} className="underline">
             Dismiss
@@ -224,7 +231,7 @@ export function DraftBar({
         </p>
       )}
       {drafts.error && (
-        <p role="alert" className="flex items-center justify-between gap-2 rounded-token border border-crit bg-crit-soft px-2 py-1">
+        <p role="alert" className="order-last flex basis-full items-center justify-between gap-2 rounded-token border border-crit bg-crit-soft px-2 py-1">
           {drafts.error}
           <button type="button" onClick={() => session.dismiss()} className="underline">
             Dismiss
@@ -262,7 +269,7 @@ export function ChangesPanel({
     return `${names.get(e.from_step_id) ?? "a step"} → ${names.get(e.to_step_id) ?? "a step"}`;
   };
   return (
-    <section aria-label="Changes in this draft" className="flex max-h-72 flex-col gap-2 overflow-y-auto rounded-token border border-line bg-panel p-3 text-xs shadow-token">
+    <section aria-label="Changes in this draft" className="flex flex-col gap-2 rounded-token border border-line bg-panel p-3 text-xs shadow-token">
       <h2 className="text-sm font-bold">Changes in this draft ({diff.list.length})</h2>
       <ul className="flex flex-col gap-1.5">
         {diff.list.map((c) => {

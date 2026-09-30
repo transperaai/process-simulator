@@ -1,5 +1,6 @@
 "use server";
 
+import { refresh } from "next/cache";
 import { loadCompanyModel, loadSuggestions } from "@transpera-flow/db";
 import { parseReview, type ReviewOutcome, type ReviewResult } from "@/lib/suggestions/review";
 import { createClient } from "@/lib/supabase/server";
@@ -30,5 +31,7 @@ export async function reviewSuggestions(workspaceId: unknown, ids: unknown, deci
     .maybeSingle();
   if (wsError || !workspace) return { status: "error", message: "That workspace isn't available." };
   const [suggestions, model] = await Promise.all([loadSuggestions(supabase, workspaceId), loadCompanyModel(supabase, workspace)]);
+  // The sidebar's pending count lives in the shared layout, which navigation doesn't re-render.
+  refresh();
   return { status: "ok", results: data as unknown as ReviewResult[], suggestions, model };
 }

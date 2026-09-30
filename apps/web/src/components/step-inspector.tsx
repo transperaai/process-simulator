@@ -134,7 +134,7 @@ export function StepInspector({
         onClose();
         document.querySelector<HTMLElement>(`.react-flow__node[data-id="${id}"]`)?.focus();
       }}
-      className="flex max-h-[34rem] flex-col gap-3 overflow-y-auto rounded-token border border-line bg-panel p-3 shadow-token"
+      className="flex flex-col gap-3"
     >
       <div className="flex items-baseline justify-between gap-2">
         <h2 className="text-base font-bold">Step</h2>

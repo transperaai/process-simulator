@@ -54,8 +54,13 @@ export interface ReportExportResult {
   url: string;
   expires_at: string;
   run_id: string;
+  /** False when Chromium couldn't print the PDF (format pdf); the report is stored anyway. */
   pdf: boolean;
   pdf_error: string | null;
+  /** The printable report in the app (same document; a signed-in editor can Save as PDF from it). */
+  print_url: string;
+  /** When the PDF failed: what to do instead, in a sentence to pass on. */
+  pdf_fallback: string | null;
   included: string[];
   omitted: { section: string; reason: string }[];
   excluded_scenarios: { name: string; reason: string }[];
@@ -87,7 +92,8 @@ export function registerReportTool(server: McpServer, ctx: ToolContext): void {
         "summary when `narrate` is true: Claude drafts it from the report's figures server-side, every number in it is checked against them, " +
         "one redraft names any that failed, and otherwise the templated summary prints (the reason comes back in `narration`). Narration is " +
         "cached per run. `summary` prints your own paragraphs instead, checked the same way: any figure not in the report refuses the export. " +
-        "Can take a minute or two with several scenarios.",
+        "Can take a minute or two with several scenarios. If the server can't print the PDF, the report is still stored: pdf is false, " +
+        "pdf_error says why and pdf_fallback points at the printable report (print_url) and the JSON; pass that on.",
       inputSchema: {
         format: z.enum(["pdf", "json"]).describe("'pdf' (default) or 'json'.").optional(),
         scenarios: z

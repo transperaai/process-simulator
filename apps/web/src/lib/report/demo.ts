@@ -40,8 +40,11 @@ export function demoRequest(params: URLSearchParams): { sections: ReportSectionI
  * public), and `summary` is a visitor's edit, checked against the report's
  * figures like any edit and recorded as "edited by Demo visitor".
  */
-export async function demoReportContent(params: URLSearchParams, today = new Date().toISOString()): Promise<{ ok: true; content: ReportContent } | { ok: false; problems: NumberProblem[] }> {
-  let { content } = buildDemoReport({ ...demoRequest(params), today });
+export async function demoReportContent(
+  params: URLSearchParams,
+  { today = new Date().toISOString(), reps }: { today?: string; reps?: number } = {},
+): Promise<{ ok: true; content: ReportContent } | { ok: false; problems: NumberProblem[] }> {
+  let { content } = buildDemoReport({ ...demoRequest(params), today, ...(reps ? { reps } : {}) });
   if (params.get("narrate") === "1") content = await demoNarratedContent(content, today);
   const edited = params.get("summary");
   if (edited?.trim() && content.summary) {

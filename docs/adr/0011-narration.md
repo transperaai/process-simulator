@@ -75,7 +75,10 @@ on demand only, editable before export with the edit recorded in the provenance 
   next report of the same run reuses it), and the PDF is re-printed. The appendix says which summary printed ("drafted
   by claude-opus-5-5 on …; all N numbers in it matched those figures", or "templated text …; a narrated summary was
   asked for but not used: <reason>"), and "Edited by <user> on <date>; the edit was checked the same way". The
-  methodology's last paragraph says whether a language model wrote the summary.
+  methodology's last paragraph says whether a language model wrote the summary, and a line under the summary says who
+  drafted and who edited it. Because narrating or editing a stored report re-prints its PDF, `/api/narrate` and the
+  summary page (`/w/[slug]/reports/[id]`, whose Server Action saves the edit) ship Chromium like the other printing
+  routes (`outputFileTracingIncludes` in `next.config.ts`).
 - **MCP.** `export_report` takes `narrate` (Claude injected by the web app's MCP route) and `summary` (paragraphs to
   print instead, checked like an edit; any figure not in the report refuses the export, naming it), and returns
   `summary_source` and `narration {used, cached, model, checked, fallback_reason}`.

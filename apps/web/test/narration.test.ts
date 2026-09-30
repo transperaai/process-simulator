@@ -211,15 +211,15 @@ describe("the demo", () => {
       ["sections", "summary"],
       ["narrate", "1"],
     ]);
-    const plain = await demoReportContent(params, `${START}T10:00:00.000Z`);
+    const plain = await demoReportContent(params, { today: `${START}T10:00:00.000Z` });
     if (!plain.ok) throw new Error("expected the demo report");
     const first = plain.content.summary!.paragraphs[0]!;
     params.set("summary", `${first}\n\nOur take: start with the bottleneck.`);
-    const ok = await demoReportContent(params, `${START}T10:00:00.000Z`);
+    const ok = await demoReportContent(params, { today: `${START}T10:00:00.000Z` });
     expect(ok.ok).toBe(true);
     if (ok.ok) expect(ok.content.summary).toMatchObject({ source: "narration", editedBy: "Demo visitor", paragraphs: [first, "Our take: start with the bottleneck."] });
     params.set("summary", "Wins avg 9.9.");
-    const bad = await demoReportContent(params, `${START}T10:00:00.000Z`);
+    const bad = await demoReportContent(params, { today: `${START}T10:00:00.000Z` });
     expect(bad.ok).toBe(false);
   }, 120_000);
 });

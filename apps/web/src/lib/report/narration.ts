@@ -13,6 +13,7 @@ import { cachedNarration, recordEdit, summaryFromNarration, type StoredNarration
 import { withSummary } from "./assemble";
 import { toByteaHex } from "./bytea";
 import { REPORT_CONTENT_VERSION, type ReportContent } from "./content";
+import { logPdfFailure, pdfFailureReason } from "./pdf-failure";
 import { renderReportHtml } from "./render";
 import type { PdfRenderer } from "./server";
 
@@ -83,7 +84,8 @@ export async function storeReportContent(db: Db, reportId: string, content: Repo
     if (up.error) throw new Error(up.error.message);
     return { pdf: true, pdfError: null };
   } catch (err) {
-    return { pdf: false, pdfError: err instanceof Error ? err.message : String(err) };
+    logPdfFailure(`report ${reportId} (re-print)`, err);
+    return { pdf: false, pdfError: pdfFailureReason(err) };
   }
 }
 

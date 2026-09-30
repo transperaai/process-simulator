@@ -33,6 +33,7 @@ import { REPORT_ROBUSTNESS_BUDGET_MS, REPORT_SHADOW_PRICE_BUDGET_MS } from "./op
 import type { NarrationModel } from "@/lib/narration/narrate";
 import type { StoredNarration } from "@/lib/narration/service";
 import { editSummary, narrateReportContent } from "./narration";
+import { logPdfFailure, pdfFailureReason } from "./pdf-failure";
 import { renderReportHtml } from "./render";
 import { loadRobustnessCache, robustnessCheckKey, saveRobustnessCache } from "./robustness-cache";
 
@@ -84,9 +85,12 @@ export interface GeneratedReport {
   url: string;
   jsonUrl: string;
   expiresAt: string;
-  /** False when the PDF couldn't be printed; the report route's "Save as PDF" still works. */
+  /** False when the PDF couldn't be printed; the printable report's "Save as PDF" still works. */
   pdf: boolean;
+  /** Why the PDF couldn't be printed, in one line (the full error goes to the function log). */
   pdfError: string | null;
+  /** The printable report (same document; needs a signed-in editor): the fallback when there is no PDF. */
+  printUrl: string;
   content: ReportContent;
   /** How the summary was narrated, when asked (#29). */
   narration: StoredNarration | null;
@@ -283,10 +287,12 @@ export async function generateReport(db: Db, input: GenerateReportInput, renderP
       if (error) throw new Error(error.message);
       pdf = true;
     } catch (err) {
-      pdfError = err instanceof Error ? err.message : String(err);
+      logPdfFailure(`report ${id}`, err);
+      pdfError = pdfFailureReason(err);
     }
   }
-  return { id, title: content.title, runId: run.id, ...reportLinks(input.origin, id, token), expiresAt, pdf, pdfError, content, narration };
+  const printUrl = `${input.origin.replace(/\/$/, "")}/w/${ws.slug}/reports/${id}/print`;
+  return { id, title: content.title, runId: run.id, ...reportLinks(input.origin, id, token), expiresAt, pdf, pdfError, printUrl, content, narration };
 }
 
 /** A fresh download link for an existing report (the old one stops working). */

@@ -66,6 +66,9 @@ importers:
       '@types/node':
         specifier: ^20
         version: 20.19.43
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
       '@types/react':
         specifier: ^19
         version: 19.3.0
@@ -78,6 +81,9 @@ importers:
       eslint-config-next:
         specifier: 16.3.6
         version: 16.3.6(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
+      pg:
+        specifier: ^8.23.0
+        version: 8.23.0
       tailwindcss:
         specifier: ^4
         version: 4.3.3

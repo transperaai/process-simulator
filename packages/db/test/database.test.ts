@@ -44,7 +44,18 @@ describe("seed", () => {
       const one = async (sql: string, params: unknown[]) => (await c.query(sql, params)).rows[0];
       const many = async (sql: string, params: unknown[]) => (await c.query(sql, params)).rows;
       const workspace = await one("select id, name, slug, settings from workspaces where id = $1", [NORTHBEAM_WORKSPACE_ID]);
-      const process = await one("select * from processes where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]);
+      const process = await one("select * from processes where workspace_id = $1 and kind = 'pipeline'", [NORTHBEAM_WORKSPACE_ID]);
+      // Its servicing processes at their live revisions (issue #19).
+      const servicing = await many("select * from processes where workspace_id = $1 and kind = 'servicing' order by id", [NORTHBEAM_WORKSPACE_ID]);
+      const otherProcesses = [];
+      for (const p of servicing) {
+        otherProcesses.push({
+          process: p,
+          revision: await one("select * from process_revisions where id = $1", [p.live_revision_id]),
+          steps: await many("select * from steps where revision_id = $1", [p.live_revision_id]),
+          edges: await many("select * from edges where revision_id = $1", [p.live_revision_id]),
+        });
+      }
       return {
         workspace,
         process,
@@ -69,6 +80,8 @@ describe("seed", () => {
         ),
         clientServices: await many("select * from client_services where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
         clientAssignments: await many("select * from client_assignments where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
+        servicingLinks: await many("select * from service_servicing where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
+        otherProcesses,
       } as ProcessBundle;
     });
     expect(bundle.process.live_revision_id).toBe(NORTHBEAM_REVISION_ID);
@@ -93,7 +106,8 @@ describe("row-level security", () => {
   it("lets an agency admin see every workspace", async () => {
     const admin = await createUser(db, "agency@example.com", { agency_admin: true });
     const visible = await db.as(admin.claims, countVisible);
-    expect(visible).toMatchObject({ workspaces: 1, roles: 6, processes: 1, steps: 12, edges: 14, people: 11, person_roles: 11 });
+    // The pipeline and its two servicing processes (issue #19).
+    expect(visible).toMatchObject({ workspaces: 1, roles: 6, processes: 3, steps: 22, edges: 23, people: 11, person_roles: 11 });
   });
 
   it("lets a member with an agency_admin membership see the workspace", async () => {
@@ -102,7 +116,7 @@ describe("row-level security", () => {
       NORTHBEAM_WORKSPACE_ID,
       user.id,
     ]);
-    expect(await db.as(user.claims, countVisible)).toMatchObject({ workspaces: 1, steps: 12 });
+    expect(await db.as(user.claims, countVisible)).toMatchObject({ workspaces: 1, steps: 22 });
   });
 
   it("hides everything from a signed-in user with no membership", async () => {

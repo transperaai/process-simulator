@@ -11,14 +11,17 @@ import type {
   DemandSettingsRow,
   IssueRow,
   LeadSourceRow,
+  EdgeRow,
   PersonRow,
   ProcessBundle,
+  ProcessPart,
   ProcessRevisionRow,
   ProcessRow,
   ProvenanceMap,
   ScenarioRow,
   SeasonalityRow,
   ServiceRow,
+  ServiceServicingRow,
   SourceRow,
   StepRow,
   SuggestionRow,
@@ -41,7 +44,58 @@ function rows<T>(r: { data: T | null; error: unknown }): T {
 
 /** The `ServiceRow` columns. */
 export const SERVICE_COLUMNS =
-  "id, workspace_id, name, pricing_model, price, margin, tenure_months, churn_monthly_base, mix_share, entry_process_id, path_tags, fallback_ongoing_load, active" as const;
+  "id, workspace_id, name, pricing_model, price, margin, tenure_months, churn_monthly_base, churn_health_sensitivity, mix_share, entry_process_id, path_tags, fallback_ongoing_load, active" as const;
+
+/** The `ServiceServicingRow` columns. */
+export const SERVICE_SERVICING_COLUMNS = "id, workspace_id, service_id, process_id, recurrence, sla_hours, provenance" as const;
+
+/**
+ * What a run of `process` needs of the workspace's other processes (issue
+ * #19): the servicing links, and the other processes at their live
+ * revisions: every servicing process, and for a servicing process the
+ * pipeline it runs beside (the first pipeline with a live revision, as
+ * `/w/[slug]` opens). Processes never published aren't simulated.
+ */
+export async function loadServicingContext(
+  db: Db,
+  workspaceId: string,
+  process: Pick<ProcessRow, "id" | "kind">,
+): Promise<{ servicingLinks: ServiceServicingRow[]; otherProcesses: ProcessPart[] }> {
+  const [processes, links] = await Promise.all([
+    listProcesses(db, workspaceId),
+    db.from("service_servicing").select(SERVICE_SERVICING_COLUMNS).eq("workspace_id", workspaceId).order("id"),
+  ]);
+  const live = processes.filter((p) => p.id !== process.id && p.live_revision_id);
+  const pipeline = process.kind === "servicing" ? live.find((p) => p.kind !== "servicing") : undefined;
+  const wanted = live.filter((p) => p.kind === "servicing" || p === pipeline);
+  const revisionIds = wanted.map((p) => p.live_revision_id!);
+  const [revisions, steps, edges] = revisionIds.length
+    ? await Promise.all([
+        db.from("process_revisions").select("id, workspace_id, process_id, number, status").in("id", revisionIds),
+        db.from("steps").select("*").in("revision_id", revisionIds),
+        db.from("edges").select("*").in("revision_id", revisionIds),
+      ])
+    : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }];
+  const stepRows = (rows(steps) ?? []) as StepRow[];
+  const edgeRows = (rows(edges) ?? []) as EdgeRow[];
+  const revisionRows = (rows(revisions) ?? []) as ProcessRevisionRow[];
+  const otherProcesses: ProcessPart[] = [];
+  // The pipeline first: a servicing bundle runs beside it.
+  for (const p of pipeline ? [pipeline, ...wanted.filter((w) => w !== pipeline)] : wanted) {
+    const revision = revisionRows.find((r) => r.id === p.live_revision_id);
+    if (!revision) continue;
+    const { draft_revision_id: _draft, ...row } = p;
+    otherProcesses.push({
+      process: row,
+      revision,
+      // Split or replaced steps are never simulated (./retired.ts).
+      steps: partitionSteps(stepRows.filter((s) => s.revision_id === revision.id)).steps,
+      edges: edgeRows.filter((e) => e.revision_id === revision.id),
+    });
+  }
+  // recurrence and provenance are jsonb; the table's check limits recurrence to RecurrenceJson.
+  return { servicingLinks: (rows(links) ?? []) as unknown as ServiceServicingRow[], otherProcesses };
+}
 
 /** The `ClientRow`, `ClientServiceRow` and `ClientAssignmentRow` columns. */
 export const CLIENT_COLUMNS = "id, workspace_id, name, start_date, mrr, health, provenance, notes, active" as const;
@@ -79,7 +133,7 @@ export async function loadProcessBundle(
   revisionId: string,
 ): Promise<ProcessBundle> {
   const ws = workspace.id;
-  const [revision, roles, steps, edges, people, personRoles, personSkills, personLeave, services, leadSources, seasonality, demand, roster] =
+  const [revision, roles, steps, edges, people, personRoles, personSkills, personLeave, services, leadSources, seasonality, demand, roster, servicing] =
     await Promise.all([
       db.from("process_revisions").select("id, workspace_id, process_id, number, status").eq("id", revisionId).single(),
       db.from("roles").select("*").eq("workspace_id", ws),
@@ -94,6 +148,7 @@ export async function loadProcessBundle(
       db.from("seasonality").select(SEASONALITY_COLUMNS).eq("workspace_id", ws),
       db.from("demand_settings").select(DEMAND_SETTINGS_COLUMNS).eq("workspace_id", ws).maybeSingle(),
       loadClients(db, ws),
+      loadServicingContext(db, ws, process),
     ]);
 
   // Split or replaced steps stay in the revision for scenarios to re-point, never drawn or simulated (./retired.ts).
@@ -118,6 +173,7 @@ export async function loadProcessBundle(
     seasonality: (rows(seasonality) ?? []) as SeasonalityRow[],
     demand: rows(demand) as DemandSettingsRow | null,
     ...roster,
+    ...servicing,
   };
 }
 
@@ -142,26 +198,70 @@ export async function loadLiveProcessBySlug(db: Db, slug: string): Promise<Proce
   return (await loadProcessBySlug(db, slug, { draft: false }))?.live ?? null;
 }
 
+/** A workspace's process as the process picker lists it (issue #76). */
+export interface ProcessListing {
+  id: string;
+  name: string;
+  kind: ProcessRow["kind"];
+  /** Published at least once. */
+  live: boolean;
+  /** Has an open draft. */
+  draft: boolean;
+}
+
 /**
- * The workspace's first process at its live revision, and its draft revision
- * if one is open (for the editor; issue #9). Null if not visible.
+ * The live revision of a process that has never been published: no steps,
+ * number 0, and the nil uuid for an id (it matches no rows). The editor shows
+ * the process's draft against it, so everything in the draft is new, and
+ * publishing makes the draft the first live revision (issue #76).
+ */
+export const UNPUBLISHED_REVISION_ID = "00000000-0000-0000-0000-000000000000";
+
+export function unpublishedLive(draft: ProcessBundle): ProcessBundle {
+  return {
+    ...draft,
+    revision: { id: UNPUBLISHED_REVISION_ID, workspace_id: draft.workspace.id, process_id: draft.process.id, number: 0, status: "published" },
+    steps: [],
+    edges: [],
+    retired: [],
+  };
+}
+
+/** True for the stand-in live revision of a never-published process. */
+export const isUnpublished = (bundle: Pick<ProcessBundle, "revision">) => bundle.revision.id === UNPUBLISHED_REVISION_ID;
+
+/**
+ * A workspace's process at its live revision, and its draft revision if one
+ * is open (for the editor; issue #9), with the workspace's processes for the
+ * picker. Without `processId`, the first process with a live revision (the
+ * default at `/w/[slug]`). A process never published (issue #76) comes with
+ * an empty stand-in live revision (`unpublishedLive`) and its draft. Null if
+ * not visible, or if there is nothing to show.
  */
 export async function loadProcessBySlug(
   db: Db,
   slug: string,
-  { draft = true }: { draft?: boolean } = {},
-): Promise<{ live: ProcessBundle; draft: ProcessBundle | null } | null> {
+  { draft = true, processId }: { draft?: boolean; processId?: string } = {},
+): Promise<{ live: ProcessBundle; draft: ProcessBundle | null; processes: ProcessListing[] } | null> {
   const { data: workspace, error } = await db.from("workspaces").select("id, name, slug, settings").eq("slug", slug).maybeSingle();
   if (error) throw error;
   if (!workspace) return null;
-  const process = (await listProcesses(db, workspace.id)).find((p) => p.live_revision_id);
+  const all = await listProcesses(db, workspace.id);
+  const process = processId ? all.find((p) => p.id === processId) : all.find((p) => p.live_revision_id);
   if (!process) return null;
+  const processes = all.map((p) => ({ id: p.id, name: p.name, kind: p.kind, live: Boolean(p.live_revision_id), draft: Boolean(p.draft_revision_id) }));
   const { draft_revision_id: draftId, ...row } = process;
+  if (!process.live_revision_id) {
+    // Never published: only its draft exists.
+    if (!draftId) return null;
+    const drafted = await loadProcessBundle(db, workspace, row, draftId);
+    return { live: unpublishedLive(drafted), draft: draft ? drafted : null, processes };
+  }
   const [live, drafted] = await Promise.all([
-    loadProcessBundle(db, workspace, row, process.live_revision_id as string),
+    loadProcessBundle(db, workspace, row, process.live_revision_id),
     draft && draftId ? loadProcessBundle(db, workspace, row, draftId) : null,
   ]);
-  return { live, draft: drafted };
+  return { live, draft: drafted, processes };
 }
 
 export const SCENARIO_COLUMNS = "id, workspace_id, name, description, patch, parent_scenario_id" as const;

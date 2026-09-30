@@ -15,6 +15,7 @@
 // it as scenario patches (`fix`), which the app can run and compare.
 
 import type { EngineModel, EnginePerson, EngineStep, SimulationResult } from "./model";
+import { churnRiskIssues } from "./churn-issues";
 import { overtimeIssues } from "./overtime-issues";
 import { offeredLoad, type ScenarioPatch } from "./scenario";
 
@@ -83,10 +84,12 @@ export interface DetectedIssue {
   fix: SuggestedFix | null;
   /** The saved scenario it is about (`broken_scenario` issues, see broken.ts). */
   scenarioId?: string | null;
+  /** The client it is about (`churn_risk` issues, see churn-issues.ts). */
+  clientId?: string | null;
 }
 
 /** The detectors, in the order their issues are listed within a severity. */
-export const DETECTORS = ["capacity", "overtime", "queue", "wait", "spof", "rework", "sla"] as const;
+export const DETECTORS = ["capacity", "overtime", "queue", "wait", "spof", "rework", "sla", "churn"] as const;
 export type Detector = (typeof DETECTORS)[number];
 
 /**
@@ -172,7 +175,7 @@ export function detectIssues(
         ? `${roleName(rid)}${who}: client work alone exceeds capacity${overCap}`
         : `${roleName(rid)}${who} at ${pct(r.util)} utilisation`,
       evidence:
-        `Simulated: ${num(r.ongoingHours)} h/wk client work + ${num(r.pipelineHours)} h/wk pipeline work against ` +
+        `Simulated: ${num(r.ongoingHours + r.servicingHours)} h/wk client work + ${num(r.pipelineHours)} h/wk pipeline work against ` +
         `${num(cap)} h/wk capacity (${pct(r.util)}${range ? `, range ${pct(range.p10)}–${pct(range.p90)}` : ""}). ` +
         `Queues grow sharply above ${pct(t.utilisation)}.`,
       metrics: {
@@ -180,6 +183,7 @@ export function detectIssues(
         ...(range ? { utilisation_p10: range.p10, utilisation_p90: range.p90 } : {}),
         pipeline_hours_week: r.pipelineHours,
         ongoing_hours_week: r.ongoingHours,
+        ...(r.servicingHours ? { servicing_hours_week: r.servicingHours } : {}),
         capacity_hours_week: cap,
       },
       stepId: heaviest(staffed.filter((s) => roleOf(s) === rid)),
@@ -209,7 +213,7 @@ export function detectIssues(
       severity: alone || r.util > OVER_FULL ? "critical" : r.util >= 0.95 ? "serious" : "warning",
       title: alone ? `${who}: client work alone exceeds capacity${overCap}` : `${who} at ${pct(r.util)} utilisation`,
       evidence:
-        `Simulated: ${num(r.ongoingHours)} h/wk client work + ${num(r.pipelineHours)} h/wk pipeline work against ` +
+        `Simulated: ${num(r.ongoingHours + r.servicingHours)} h/wk client work + ${num(r.pipelineHours)} h/wk pipeline work against ` +
         `${num(p.capacity)} h/wk capacity (${pct(r.util)}${range ? `, range ${pct(range.p10)}–${pct(range.p90)}` : ""}), ` +
         `while the rest of their role has room.`,
       metrics: {
@@ -217,6 +221,7 @@ export function detectIssues(
         ...(range ? { utilisation_p10: range.p10, utilisation_p90: range.p90 } : {}),
         pipeline_hours_week: r.pipelineHours,
         ongoing_hours_week: r.ongoingHours,
+        ...(r.servicingHours ? { servicing_hours_week: r.servicingHours } : {}),
         capacity_hours_week: p.capacity,
       },
       stepId: heaviest(mine),
@@ -341,6 +346,9 @@ export function detectIssues(
       }
     }
   }
+
+  // --- Clients whose health ends the run below 50 (docs/PRD.md §6.3.5).
+  for (const issue of churnRiskIssues(model, result)) out.push({ detector: "churn", ...issue });
 
   const rank = (i: { severity: IssueSeverity; detector: Detector; key: string }) =>
     [ISSUE_SEVERITIES.indexOf(i.severity), DETECTORS.indexOf(i.detector)] as const;

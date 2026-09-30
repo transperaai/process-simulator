@@ -64,11 +64,17 @@ export function DraftBar({
   const estimates = drafts.unresolved ?? unresolved.map((s) => ({ id: s.id, name: s.name }));
   // Steps where sources disagree (issue #21); publishing counts them with the estimates.
   const conflicts = unresolved.filter((s) => s.conflict).length;
+  // Never published (issue #76): there is no live model yet, only the draft.
+  const unpublished = liveNumber === 0;
 
   return (
     <section aria-label="Draft controls" className="flex flex-col gap-2 rounded-token border border-line bg-panel p-2 text-xs shadow-token">
       <div className="flex flex-wrap items-center gap-2">
-        {hasDraft ? (
+        {unpublished ? (
+          <span className="rounded-token border border-warn bg-warn-soft px-2.5 py-1 font-semibold">
+            Not published yet{hasDraft ? ` · Draft · r${draftNumber}` : ""}
+          </span>
+        ) : hasDraft ? (
           <div role="group" aria-label="Show revision" className="flex overflow-hidden rounded-token border border-line">
             {(["live", "draft"] as const).map((v) => (
               <button
@@ -86,7 +92,13 @@ export function DraftBar({
           <span className="rounded-token border border-line px-2.5 py-1 font-semibold">Live · r{liveNumber}</span>
         )}
         <p className="text-fg-2" aria-live="polite">
-          {!hasDraft
+          {unpublished
+            ? hasDraft
+              ? `This process has never been published: it exists only as this draft${changes ? ` (${plural(changes, "change")})` : ""}. ${canEdit ? "Publish it to make it live." : "It goes live when an editor publishes it."}`
+              : canEdit
+                ? "This process has never been published. Add steps to start its draft."
+                : "This process has never been published."
+            : !hasDraft
             ? canEdit
               ? "Edits open a draft; the live model only changes when you publish."
               : "The live model."
@@ -98,9 +110,11 @@ export function DraftBar({
         </p>
         {hasDraft && (
           <div className="ml-auto flex flex-wrap items-center gap-1.5">
-            <button type="button" aria-pressed={compare} onClick={() => onCompare(!compare)} className={`${button} ${compare ? "!border-accent !bg-accent-soft" : ""}`}>
-              Compare with live
-            </button>
+            {!unpublished && (
+              <button type="button" aria-pressed={compare} onClick={() => onCompare(!compare)} className={`${button} ${compare ? "!border-accent !bg-accent-soft" : ""}`}>
+                Compare with live
+              </button>
+            )}
             {canEdit && (
               <>
                 <button type="button" disabled={busy} onClick={() => setConfirming("discard")} className={danger}>

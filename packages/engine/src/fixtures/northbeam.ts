@@ -1,7 +1,9 @@
 import type { EngineModel } from "../model";
 import { NORTHBEAM_FALLBACK_LOAD, NORTHBEAM_ROSTER, NORTHBEAM_TEAM, northbeamClientKey } from "./northbeam-roster";
+import { NORTHBEAM_SERVICING } from "./northbeam-servicing";
 
 export { NORTHBEAM_FALLBACK_LOAD, NORTHBEAM_ROSTER, NORTHBEAM_TEAM, northbeamClientKey, type NorthbeamClient } from "./northbeam-roster";
+export { NORTHBEAM_SERVICING, type NorthbeamServicingProcess, type NorthbeamServicingStep } from "./northbeam-servicing";
 
 /**
  * Northbeam Digital: fictional SEO/PPC agency, lead-to-live pipeline.
@@ -118,4 +120,46 @@ export function northbeamWithClients(): EngineModel {
     overtimeCap: 0.1,
     clients,
   };
+}
+
+/**
+ * Northbeam as seeded since issue #19: its roster runs two servicing
+ * processes (NORTHBEAM_SERVICING), a monthly report and a fortnightly
+ * check-in, on both services. They replace the services' fallback load, which
+ * is sized the same, so client work is now tasks that queue for each client's
+ * assigned people beside the pipeline, and late or missed ones wear its
+ * health down. Churn follows health at the database's default sensitivity of
+ * 3 (docs/PRD.md §6.3.5).
+ */
+export function northbeamWithServicing(): EngineModel {
+  const base = northbeamWithClients();
+  const steps = [...base.steps];
+  const ends: NonNullable<EngineModel["ends"]> = {};
+  const servicingProcesses: NonNullable<EngineModel["servicingProcesses"]> = {};
+  for (const proc of NORTHBEAM_SERVICING) {
+    const working = proc.steps.filter((s) => s.kind !== "start" && s.kind !== "end");
+    const start = proc.steps.find((s) => s.kind === "start")!;
+    for (const s of working) {
+      steps.push({
+        id: s.key,
+        name: s.name,
+        role: s.role,
+        work: s.work,
+        wait: s.wait,
+        rework: 0,
+        next: proc.edges.filter(([from]) => from === s.key).map(([, to, p, tag]) => ({ to, p, ...(tag ? { tag } : {}) })),
+      });
+    }
+    for (const s of proc.steps.filter((st) => st.kind === "end")) ends[s.key] = { outcome: "done" };
+    servicingProcesses[proc.key] = {
+      name: proc.name,
+      entry: proc.edges.find(([from]) => from === start.key)![1],
+      steps: working.map((s) => s.key),
+    };
+  }
+  const servicing = NORTHBEAM_SERVICING.map((p) => ({ process: p.key, recurrence: { ...p.recurrence }, sla: p.slaHours }));
+  const services = Object.fromEntries(
+    Object.entries(base.services!).map(([id, sv]) => [id, { ...sv, churnSensitivity: 3, servicing: servicing.map((l) => ({ ...l })) }]),
+  );
+  return { ...base, services, ends, servicingProcesses, steps };
 }

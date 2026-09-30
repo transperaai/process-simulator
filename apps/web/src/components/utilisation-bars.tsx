@@ -11,12 +11,13 @@ interface Row {
   id: string;
   label: string;
   sublabel?: string;
-  band?: { util: Stat; ongoing: Stat };
+  band?: { util: Stat; ongoing: Stat; servicing?: Stat };
 }
 
 function Bar({ row, stacked }: { row: Row; stacked: boolean }) {
   const util = row.band?.util.mean ?? 0;
-  const ongoing = row.band?.ongoing.mean ?? 0;
+  // Client work: servicing tasks (issue #19) and the fallback ongoing load.
+  const ongoing = (row.band?.ongoing.mean ?? 0) + (row.band?.servicing?.mean ?? 0);
   const hot = util > THRESHOLD;
   return (
     <li
@@ -111,7 +112,7 @@ export function UtilisationBars({ model, result }: { model: EngineModel; result:
         ))}
       </ul>
       <p className="mt-2 text-xs text-fg-3">
-        Grey: ongoing client work · colour: pipeline · dark line: 10th–90th percentile range · tick: 85% ceiling · over 100%: more work than the week and any overtime allowed
+        Grey: client work (servicing tasks and ongoing load) · colour: pipeline · dark line: 10th–90th percentile range · tick: 85% ceiling · over 100%: more work than the week and any overtime allowed
       </p>
     </section>
   );

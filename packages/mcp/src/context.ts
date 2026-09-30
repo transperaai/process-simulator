@@ -67,7 +67,11 @@ export async function resolveWorkspace(ctx: ToolContext, ref: string | undefined
 
 export type ProcessWithDraft = ProcessRow & { draft_revision_id: string | null };
 
-/** Find a process by id or name; with no ref, the workspace's only (or first live) process. */
+/**
+ * Find a process by id or name; with no ref, the workspace's only process, or
+ * its only pipeline (servicing processes run beside it, and a run of the
+ * pipeline includes them; issue #19).
+ */
 export async function resolveProcess(
   ctx: ToolContext,
   workspace: WorkspaceRef,
@@ -78,6 +82,11 @@ export async function resolveProcess(
   const list = () => processes.map((p) => ({ id: p.id, name: p.name }));
   if (!processes.length) throw new ToolError("not_found", `Workspace '${workspace.name}' has no processes`);
   if (!ref) {
+    const pipelines = processes.filter((p) => p.kind !== "servicing");
+    if (processes.length > 1 && pipelines.length === 1) {
+      assumptions.push(`No process given; using the workspace's only pipeline ('${pipelines[0]!.name}'), whose runs include its servicing processes.`);
+      return pipelines[0]!;
+    }
     if (processes.length > 1) {
       throw new ToolError("ambiguous", "This workspace has more than one process; pass `process`", list());
     }

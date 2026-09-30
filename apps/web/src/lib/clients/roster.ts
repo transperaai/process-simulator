@@ -3,15 +3,18 @@
 // tested. The checks only reject malformed input early: every write still runs
 // as the signed-in user through RLS and the tables' check constraints.
 
-import type {
-  ClientAssignmentRow,
-  ClientRow,
-  ClientServiceRow,
-  PersonRoleRow,
-  PersonRow,
-  RoleRow,
-  ServiceRow,
-  WorkspaceSettings,
+import {
+  engineRecurrence,
+  type ClientAssignmentRow,
+  type ClientRow,
+  type ClientServiceRow,
+  type PersonRoleRow,
+  type PersonRow,
+  type ProcessBundle,
+  type RoleRow,
+  type ServiceRow,
+  type ServiceServicingRow,
+  type WorkspaceSettings,
 } from "@transpera-flow/db";
 import { rosterLoads, type EngineModel, type EnginePerson } from "@transpera-flow/engine";
 
@@ -30,6 +33,14 @@ export interface RosterData {
   clients: ClientRow[];
   clientServices: ClientServiceRow[];
   clientAssignments: ClientAssignmentRow[];
+  /** Which servicing processes each service's clients run (issue #19): those services need no fallback load. */
+  servicingLinks?: ServiceServicingRow[];
+  /**
+   * The workspace's pipeline at its live revision, with its servicing
+   * processes, to simulate the roster as it stands on this page (issue #19).
+   * Null or omitted: no simulated health.
+   */
+  simulation?: ProcessBundle | null;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -167,6 +178,15 @@ export function personClientLoads(data: RosterData): PersonClientLoad[] {
     };
   }
   const services: NonNullable<EngineModel["services"]> = {};
+  // A service with a servicing process needs no fallback load: its tasks are the client work (docs/PRD.md §6.3.4).
+  const servicingProcesses: NonNullable<EngineModel["servicingProcesses"]> = {};
+  const linksOf = (serviceId: string) =>
+    (data.servicingLinks ?? []).flatMap((l) => {
+      const recurrence = l.service_id === serviceId ? engineRecurrence(l.recurrence) : null;
+      if (!recurrence) return [];
+      servicingProcesses[l.process_id] = { name: "", entry: "", steps: [] };
+      return [{ process: l.process_id, recurrence, sla: Number(l.sla_hours) }];
+    });
   for (const sv of data.services.filter((sv) => sv.active)) {
     // A cleared value is stored as null: left out, as model resolution does.
     const entries = Object.entries(sv.fallback_ongoing_load ?? {}).filter(
@@ -182,6 +202,7 @@ export function personClientLoads(data: RosterData): PersonClientLoad[] {
       mixShare: Number(sv.mix_share),
       pathTags: [],
       ...(entries.length ? { fallbackOngoing: Object.fromEntries(entries.map(([rid, h]) => [rid, Number(h)])) } : {}),
+      servicing: linksOf(sv.id),
     };
   }
   const clients: NonNullable<EngineModel["clients"]> = {};
@@ -208,6 +229,7 @@ export function personClientLoads(data: RosterData): PersonClientLoad[] {
     services,
     people,
     clients,
+    servicingProcesses,
     entry: "",
     sinks: { won: "", lost: "" },
     steps: [],

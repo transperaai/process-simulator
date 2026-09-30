@@ -12,6 +12,16 @@ export {
   type ModelOptions,
 } from "./model";
 export { isRetiredStep, partitionSteps } from "./retired";
+export {
+  MAX_POISSON_PER_MONTH,
+  MAX_RECURRENCE_TIMES,
+  MAX_SLA_HOURS,
+  bundleForProcess,
+  engineRecurrence,
+  parseRecurrence,
+  partOf,
+  processesOf,
+} from "./servicing";
 export { seedSql } from "./seed";
 export {
   COMPANY_FIELDS,
@@ -58,6 +68,8 @@ export {
   northbeamRoleIds,
   northbeamScenarios,
   northbeamServiceIds,
+  northbeamServicingProcessIds,
+  northbeamServicingStepIds,
   northbeamStepIds,
   northbeamSourceIds,
   northbeamSources,
@@ -75,6 +87,12 @@ export {
   loadLiveProcessBySlug,
   loadProcessBundle,
   loadProcessBySlug,
+  loadServicingContext,
+  isUnpublished,
+  unpublishedLive,
+  UNPUBLISHED_REVISION_ID,
+  SERVICE_SERVICING_COLUMNS,
+  type ProcessListing,
   loadScenarios,
   loadSources,
   loadCitingRows,

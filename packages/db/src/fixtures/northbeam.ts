@@ -1,4 +1,5 @@
 import { NORTHBEAM_FALLBACK_LOAD, NORTHBEAM_ROSTER, NORTHBEAM_TEAM, northbeamClientKey } from "@transpera-flow/engine/northbeam-roster";
+import { NORTHBEAM_SERVICING } from "@transpera-flow/engine/northbeam-servicing";
 import type {
   ClientAssignmentRow,
   ClientRow,
@@ -10,10 +11,12 @@ import type {
   PersonRoleRow,
   PersonRow,
   ProcessBundle,
+  ProcessPart,
   Provenance,
   RoleRow,
   ScenarioRow,
   ServiceRow,
+  ServiceServicingRow,
   SourceRow,
   StepRow,
   WorkspaceAccess,
@@ -23,9 +26,9 @@ import type {
 // fixed so the seed is reproducible, and they sort in the prototype's order so
 // the resolved engine model matches the engine's northbeamWithServices()
 // exactly (and, without the services, its golden northbeamModel()).
-// Each table has its own id prefix: 2 clients, 3 sources, 4 issues, 5
-// scenarios, 6 lead sources, 7 access, 8 services, 9 people, a workspace,
-// b roles, c process, d revision, e steps, f edges.
+// Each table has its own id prefix: 1 service servicing links, 2 clients, 3
+// sources, 4 issues, 5 scenarios, 6 lead sources, 7 access, 8 services, 9
+// people, a workspace, b roles, c processes, d revisions, e steps, f edges.
 
 const id = (prefix: string, n: number) => `${prefix}0000000-0000-4000-8000-${n.toString(16).padStart(12, "0")}`;
 
@@ -171,6 +174,7 @@ function services(): ServiceRow[] {
     margin,
     tenure_months: tenure,
     churn_monthly_base: churn,
+    churn_health_sensitivity: 3,
     mix_share: mix,
     entry_process_id: proc,
     path_tags: [key],
@@ -362,8 +366,99 @@ function withEvidence(steps: StepRow[]): StepRow[] {
   return steps.map((s) => (byId.has(s.id) ? { ...s, provenance: byId.get(s.id)! } : s));
 }
 
+/**
+ * Northbeam's servicing processes (issue #19), both published: a monthly
+ * report and a fortnightly check-in (NORTHBEAM_SERVICING), after the
+ * pipeline in id order. Their step and edge ids carry on from the pipeline's.
+ */
+export const northbeamServicingProcessIds: Record<string, string> = Object.fromEntries(
+  NORTHBEAM_SERVICING.map((p, i) => [p.key, id("c", i + 2)]),
+);
+
+/** Servicing step ids by NORTHBEAM_SERVICING's keys ("report_seo" …), in the order they are listed. */
+export const northbeamServicingStepIds: Record<string, string> = Object.fromEntries(
+  NORTHBEAM_SERVICING.flatMap((p) => p.steps).map((s, i) => [s.key, id("e", Object.keys(northbeamStepIds).length + i + 1)]),
+);
+
+function servicingProcesses(firstEdge: number): { parts: ProcessPart[]; links: ServiceServicingRow[] } {
+  let edgeNo = firstEdge;
+  const parts = NORTHBEAM_SERVICING.map((p, i): ProcessPart => {
+    const processId = northbeamServicingProcessIds[p.key]!;
+    const revisionId = id("d", i + 2);
+    return {
+      process: {
+        id: processId,
+        workspace_id: ws,
+        name: p.name,
+        kind: "servicing",
+        entity_name: p.entityName,
+        description: p.description,
+        live_revision_id: revisionId,
+      },
+      revision: { id: revisionId, workspace_id: ws, process_id: processId, number: 1, status: "published" },
+      steps: p.steps.map((s): StepRow => ({
+        id: northbeamServicingStepIds[s.key]!,
+        revision_id: revisionId,
+        workspace_id: ws,
+        process_id: processId,
+        name: s.name,
+        kind: s.kind,
+        outcome: s.kind === "end" ? "done" : null,
+        role_id: s.role ? northbeamRoleIds[s.role as RoleKey] : null,
+        person_id: null,
+        work_hours: s.work,
+        work_dist: "lognormal",
+        work_params: {},
+        wait_hours: s.wait,
+        wait_dist: "lognormal",
+        wait_params: {},
+        rework_rate: 0,
+        rework_to_step_id: null,
+        tool: s.tool,
+        notes: null,
+        sla_hours: null,
+        current_wip: null,
+        x: s.x,
+        y: s.y,
+        assumption: false,
+        conflict: false,
+        provenance: {},
+      })),
+      edges: p.edges.map(([from, to, probability, tag]): EdgeRow => ({
+        id: id("f", ++edgeNo),
+        revision_id: revisionId,
+        workspace_id: ws,
+        process_id: processId,
+        from_step_id: northbeamServicingStepIds[from]!,
+        to_step_id: northbeamServicingStepIds[to]!,
+        probability,
+        condition_tag: tag,
+        label: null,
+      })),
+    };
+  });
+  // Every client on either service runs both, estimated as the audit's first pass would.
+  let linkNo = 0;
+  const links = (["seo", "ppc"] as const).flatMap((sv) =>
+    NORTHBEAM_SERVICING.map(
+      (p): ServiceServicingRow => ({
+        id: id("1", ++linkNo),
+        workspace_id: ws,
+        service_id: northbeamServiceIds[sv],
+        process_id: northbeamServicingProcessIds[p.key]!,
+        recurrence: { ...p.recurrence },
+        sla_hours: p.slaHours,
+        provenance: { recurrence: ESTIMATE, sla_hours: ESTIMATE },
+      }),
+    ),
+  );
+  return { parts, links };
+}
+
 export function northbeamBundle(): ProcessBundle {
   edgeN = 0;
+  const pipelineEdges = pipelineEdgeRows();
+  const servicing = servicingProcesses(edgeN);
   return {
     workspace: {
       id: ws,
@@ -412,22 +507,7 @@ export function northbeamBundle(): ProcessBundle {
       step("won", "Won", null, 0, 0, 0, null, 980, 290, "end"),
       step("lost", "Lost", null, 0, 0, 0, null, 640, 170, "end"),
     ]),
-    edges: [
-      edge("start", "qualify", 1),
-      edge("qualify", "discovery", 0.55),
-      edge("qualify", "lost", 0.45),
-      edge("discovery", "audit", 0.7),
-      edge("discovery", "lost", 0.3),
-      edge("audit", "decision", 1),
-      edge("decision", "onboard", 0.32),
-      edge("decision", "lost", 0.68),
-      edge("onboard", "kickoff", 1),
-      edge("kickoff", "seo", 0.55, "seo"),
-      edge("kickoff", "ppc", 0.45, "ppc"),
-      edge("seo", "live", 1),
-      edge("ppc", "live", 1),
-      edge("live", "won", 1),
-    ],
+    edges: pipelineEdges,
     people: PEOPLE.map(
       ([, name]): PersonRow => ({
         id: northbeamPersonIds[name]!,
@@ -455,7 +535,28 @@ export function northbeamBundle(): ProcessBundle {
     seasonality: [],
     demand: demandSettings(),
     ...roster(),
+    servicingLinks: servicing.links,
+    otherProcesses: servicing.parts,
   };
+}
+
+function pipelineEdgeRows(): EdgeRow[] {
+  return [
+    edge("start", "qualify", 1),
+    edge("qualify", "discovery", 0.55),
+    edge("qualify", "lost", 0.45),
+    edge("discovery", "audit", 0.7),
+    edge("discovery", "lost", 0.3),
+    edge("audit", "decision", 1),
+    edge("decision", "onboard", 0.32),
+    edge("decision", "lost", 0.68),
+    edge("onboard", "kickoff", 1),
+    edge("kickoff", "seo", 0.55, "seo"),
+    edge("kickoff", "ppc", 0.45, "ppc"),
+    edge("seo", "live", 1),
+    edge("ppc", "live", 1),
+    edge("live", "won", 1),
+  ];
 }
 
 export const NORTHBEAM_DOMAIN = "northbeam.example";

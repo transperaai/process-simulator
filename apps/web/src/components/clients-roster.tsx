@@ -8,6 +8,9 @@ import { parseRosterCsv, type ParsedImport } from "@/lib/clients/csv";
 import { DEFAULT_HEALTH, personClientLoads, rosterSummary, type PersonClientLoad, type RosterData } from "@/lib/clients/roster";
 import type { SaveOutcome, Saver } from "@/lib/fields/field-controller";
 import { formatNumber, formatPercent, formatWholeCurrency } from "@/lib/format";
+import type { ClientRetention } from "@/lib/servicing";
+import type { SimulationResult } from "@transpera-flow/engine";
+import { RetentionPanel, useRosterRetention } from "./roster-retention";
 
 type Scalar = string | number | boolean | null;
 
@@ -19,6 +22,9 @@ export function ClientsRoster({ data, backend }: { data: RosterData; backend: Ro
   const currency = data.workspace.settings.currency;
   const [query, setQuery] = useState("");
   const shown = data.clients.filter((c) => c.name.toLowerCase().includes(query.trim().toLowerCase()));
+  // Simulated health and churn risk per client (issue #19), re-run as the roster changes.
+  const retention = useRosterRetention(data);
+  const names = useMemo(() => new Map(data.clients.map((c) => [c.id, c.name])), [data.clients]);
   return (
     <>
       <p className="mb-4 text-fg-2">
@@ -34,7 +40,8 @@ export function ClientsRoster({ data, backend }: { data: RosterData; backend: Ro
           ))}
         {summary.inactive ? <span className="text-fg-3"> · {summary.inactive} inactive</span> : null}
       </p>
-      <LoadPanel data={data} />
+      <RetentionPanel retention={retention} names={names} />
+      <LoadPanel data={data} servicing={retention.result ? servicingHours(retention.result) : null} />
       <section className={sectionClass} aria-labelledby="roster-heading">
         <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-2">
           <h2 id="roster-heading" className="text-base font-bold">
@@ -68,7 +75,7 @@ export function ClientsRoster({ data, backend }: { data: RosterData; backend: Ro
           <ul className="flex flex-col divide-y divide-line border-y border-line">
             {shown.map((c) => (
               <li key={c.id}>
-                <ClientItem client={c} data={data} backend={backend} />
+                <ClientItem client={c} data={data} backend={backend} simulated={retention.byClient.get(c.id)} />
               </li>
             ))}
             {!shown.length && <li className="py-3 text-fg-3">No client matches “{query}”.</li>}
@@ -81,8 +88,12 @@ export function ClientsRoster({ data, backend }: { data: RosterData; backend: Ro
 
 const STATUS_LABEL: Record<PersonClientLoad["status"], string> = { ok: "Fits", overtime: "Needs overtime", over: "Over capacity" };
 
-function LoadPanel({ data }: { data: RosterData }) {
+/** Simulated servicing hands-on hours a week per person (issue #19). */
+const servicingHours = (result: SimulationResult) => Object.fromEntries(Object.entries(result.people).map(([id, p]) => [id, p.servicingHours]));
+
+function LoadPanel({ data, servicing }: { data: RosterData; servicing: Record<string, number> | null }) {
   const loads = useMemo(() => personClientLoads(data), [data]);
+  const anyServicing = servicing !== null && Object.values(servicing).some((h) => h > 0.05);
   const cap = Number(data.workspace.settings.overtime_cap ?? 0);
   const roleName = new Map(data.roles.map((r) => [r.id, r.name]));
   const width = (share: number) => `${Math.max(0, Math.min(100, (share / 1.5) * 100))}%`;
@@ -93,14 +104,17 @@ function LoadPanel({ data }: { data: RosterData }) {
           Client load by person
         </h2>
         <p className="text-fg-3">
-          Ongoing hours a week from the clients each person looks after, before any pipeline work. Services without a
-          servicing process use their fallback load per client (Settings → Services).
+          Hours a week from the clients each person looks after, before any pipeline work. Services without a servicing
+          process use their fallback load per client (Settings → Services)
+          {anyServicing ? "; the rest is their simulated servicing tasks (darker)" : ""}.
           {cap > 0 ? ` Overtime cap: ${formatPercent(cap)} of a person's week.` : " No overtime allowed (Settings → Simulation)."}
         </p>
       </div>
       <ul className="flex flex-col gap-2">
         {loads.map((l) => {
+          const svc = servicing?.[l.personId] ?? 0;
           const share = l.capacity > 0 ? l.hours / l.capacity : 0;
+          const svcShare = l.capacity > 0 ? svc / l.capacity : 0;
           const tone = l.status === "over" ? "bg-crit" : l.status === "overtime" ? "bg-warn" : "bg-fg-3/50";
           return (
             <li
@@ -117,13 +131,15 @@ function LoadPanel({ data }: { data: RosterData }) {
               <span className="relative order-last col-span-2 h-4 sm:order-none sm:col-span-1" aria-hidden>
                 <span className="absolute inset-x-0 top-0.5 h-3 overflow-hidden rounded-sm bg-panel-2">
                   <span className={`absolute inset-y-0 left-0 ${tone}`} style={{ width: width(share) }} />
+                  {svc > 0 && <span className="absolute inset-y-0 bg-fg-2/70" style={{ left: width(share), width: width(svcShare) }} />}
                 </span>
                 {/* Ticks: a full week, and the week with the overtime cap. */}
                 <span className="absolute inset-y-0 w-px bg-fg" style={{ left: width(1) }} />
                 {cap > 0 && <span className="absolute inset-y-0 w-px bg-fg-3" style={{ left: width(1 + cap) }} />}
               </span>
               <span className="text-right text-xs tabular-nums sm:text-sm">
-                {formatNumber(l.hours)} of {formatNumber(l.capacity, 0)} h/wk{" "}
+                {anyServicing ? `${formatNumber(l.hours)} + ${formatNumber(svc)} servicing` : formatNumber(l.hours)} of{" "}
+                {formatNumber(l.capacity, 0)} h/wk{" "}
                 <span
                   className={`ml-1 rounded-token px-1.5 py-0.5 text-xs ${
                     l.status === "over" ? "bg-crit-soft text-crit" : l.status === "overtime" ? "bg-warn-soft" : "text-fg-3"
@@ -304,7 +320,18 @@ function healthTone(health: number | null) {
   return h < 50 ? "bg-crit-soft text-crit" : h < 70 ? "bg-warn-soft" : "bg-good-soft";
 }
 
-function ClientItem({ client: c, data, backend }: { client: ClientRow; data: RosterData; backend: RosterBackend }) {
+function ClientItem({
+  client: c,
+  data,
+  backend,
+  simulated,
+}: {
+  client: ClientRow;
+  data: RosterData;
+  backend: RosterBackend;
+  /** Its simulated health and churn risk, when the page simulates (issue #19). */
+  simulated?: ClientRetention;
+}) {
   const disabled = !data.canEdit;
   const currency = data.workspace.settings.currency;
   const services = data.clientServices.filter((cs) => cs.client_id === c.id).map((cs) => cs.service_id);
@@ -338,6 +365,16 @@ function ClientItem({ client: c, data, backend }: { client: ClientRow; data: Ros
           Health {formatNumber(c.health === null ? DEFAULT_HEALTH : Number(c.health), 0)}
           {estimated ? " (est.)" : ""}
         </span>
+        {simulated && (
+          <span
+            className={`rounded-token px-1.5 text-xs tabular-nums ${healthTone(simulated.end)}`}
+            title={`Simulated over the horizon: health ${formatNumber(simulated.start, 0)} → ${formatNumber(simulated.end, 0)} (range ${formatNumber(simulated.endLow, 0)}–${formatNumber(simulated.endHigh, 0)}); touchpoints ${formatNumber(simulated.onTime)} on time, ${formatNumber(simulated.late)} late, ${formatNumber(simulated.missed)} missed; churned in ${formatPercent(simulated.churned)} of runs.`}
+          >
+            Simulated {formatNumber(simulated.end, 0)}
+            {simulated.end < simulated.start - 0.5 ? " ↓" : simulated.end > simulated.start + 0.5 ? " ↑" : ""} · churn risk{" "}
+            {formatNumber(simulated.churnMonthly * 100, 1)}%/mo
+          </span>
+        )}
         {!c.active && <span className="rounded-token bg-panel-2 px-1.5 text-xs text-fg-2">Inactive</span>}
         <span className="w-full truncate pl-5 text-xs text-fg-3 sm:w-auto sm:pl-0">{assignedText}</span>
       </summary>

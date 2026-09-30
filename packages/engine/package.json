@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./northbeam-roster": "./src/fixtures/northbeam-roster.ts"
+    "./northbeam-roster": "./src/fixtures/northbeam-roster.ts",
+    "./northbeam-servicing": "./src/fixtures/northbeam-servicing.ts"
   },
   "scripts": {
     "lint": "eslint .",

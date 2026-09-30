@@ -4,12 +4,15 @@ import {
   type Distribution as EngineDistribution,
   type EngineClient,
   type EngineEnd,
+  type EngineHealthRules,
   type EngineModel,
   type EnginePerson,
   type EngineService,
+  type EngineServicingProcess,
   type EngineStep,
 } from "@transpera-flow/engine";
-import type { DistParams, Distribution, LeadSourceRow, ProcessBundle, SeasonalityRow, StepRow } from "./types";
+import { engineRecurrence } from "./servicing";
+import type { DistParams, Distribution, EdgeRow, LeadSourceRow, ProcessBundle, ProcessPart, SeasonalityRow, StepRow, WorkspaceSettings } from "./types";
 
 const WORKING_DAYS_PER_WEEK = 5;
 const DAY_MS = 86_400_000;
@@ -36,30 +39,23 @@ export interface ModelOptions {
 
 export class ModelError extends Error {}
 
-/**
- * Resolve a stored process revision into the engine's model.
- *
- * - The single `start` step marks the entry: its one outgoing edge points at
- *   the first real step.
- * - `end` steps by outcome: the first `won` and first `lost` (by id) become
- *   the engine's sinks; any further `won`/`lost` ends and every `done` end go
- *   to `ends`.
- * - Services (see `engineServices`) and, only when there are some, the edges'
- *   condition tags. A process with no services maps exactly as it did before
- *   services existed.
- * - Arrivals (see `arrivalsPerWeek` and `engineDemand`): the lead sources'
- *   qualified leads split by the services mix, with seasonality and growth
- *   placed in the calendar from the start date. Flat demand is left out.
- * - The client roster (see `engineClients`) and the overtime cap. A
- *   workspace with no clients maps exactly as before the roster existed.
- * - Steps and roles are ordered by id so the result, and therefore the
- *   simulation, doesn't depend on database row order.
- */
-export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {}): EngineModel {
-  const { workspace, roles, steps, edges } = bundle;
-  const s = workspace.settings;
-  const byId = new Map(steps.map((step) => [step.id, step]));
+/** The graph of one process revision, resolved for the engine. */
+interface Graph {
+  /** The step (or end) the start step leads to. */
+  entry: string;
+  /** Working steps, by id. */
+  working: EngineStep[];
+  /** End steps, by id. */
+  endSteps: StepRow[];
+}
 
+/**
+ * A process revision's graph: its single start step's edge is the entry, and
+ * every edge leads to a working step or an end step of the same revision.
+ * `tags`: whether edges keep their condition tags (only when there are services).
+ */
+function resolveGraph(steps: StepRow[], edges: EdgeRow[], tags: boolean): Graph {
+  const byId = new Map(steps.map((step) => [step.id, step]));
   const starts = steps.filter((step) => step.kind === "start");
   if (starts.length !== 1) throw new ModelError(`Process needs exactly one start step, found ${starts.length}`);
   const startEdges = edges.filter((e) => e.from_step_id === starts[0]!.id);
@@ -74,19 +70,8 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
   };
   checkTarget(starts[0]!.name, entry);
 
-  const endSteps = steps.filter((step) => step.kind === "end").sort(byIdAsc);
-  const sinkFor = (outcome: "won" | "lost") => endSteps.find((step) => step.outcome === outcome)?.id ?? `__${outcome}__`;
-  const sinks = { won: sinkFor("won"), lost: sinkFor("lost") };
-  const ends: Record<string, EngineEnd> = {};
-  for (const step of endSteps) {
-    // The database requires an outcome on every end step; "done" is the harmless reading of a missing one.
-    if (step.id !== sinks.won && step.id !== sinks.lost) ends[step.id] = { outcome: step.outcome ?? "done" };
-  }
-
-  const services = engineServices(bundle);
   // Tags route only entities whose service carries them, so without services they are left out.
-  const tagOf = (tag: string | null) => (services && tag?.trim() ? { tag: tag.trim() } : {});
-
+  const tagOf = (tag: string | null) => (tags && tag?.trim() ? { tag: tag.trim() } : {});
   const working = steps
     .filter((step) => step.kind !== "start" && step.kind !== "end")
     .sort(byIdAsc)
@@ -114,6 +99,65 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
         next,
       };
     });
+  return { entry, working, endSteps: steps.filter((step) => step.kind === "end").sort(byIdAsc) };
+}
+
+/**
+ * The pipeline a run simulates: the bundle's own process, or, for a
+ * servicing process, the pipeline it runs beside (the first of the other
+ * processes that is one).
+ */
+function pipelineOf(bundle: ProcessBundle): ProcessPart {
+  if (bundle.process.kind !== "servicing") {
+    return { process: bundle.process, revision: bundle.revision, steps: bundle.steps, edges: bundle.edges };
+  }
+  const pipeline = (bundle.otherProcesses ?? []).find((p) => p.process.kind !== "servicing");
+  if (!pipeline) throw new ModelError("A servicing process runs beside a pipeline; publish a pipeline process to simulate it");
+  return pipeline;
+}
+
+/**
+ * Resolve a stored process revision into the engine's model.
+ *
+ * - The single `start` step marks the entry: its one outgoing edge points at
+ *   the first real step.
+ * - Client servicing (see `engineServicing`): the servicing processes the
+ *   services' clients run, their steps beside the pipeline's. A servicing
+ *   process's bundle simulates the whole business too: the pipeline it runs
+ *   beside, with this process at the bundle's revision (its draft, say).
+ * - `end` steps by outcome: the first `won` and first `lost` (by id) become
+ *   the engine's sinks; any further `won`/`lost` ends and every `done` end go
+ *   to `ends`.
+ * - Services (see `engineServices`) and, only when there are some, the edges'
+ *   condition tags. A process with no services maps exactly as it did before
+ *   services existed.
+ * - Arrivals (see `arrivalsPerWeek` and `engineDemand`): the lead sources'
+ *   qualified leads split by the services mix, with seasonality and growth
+ *   placed in the calendar from the start date. Flat demand is left out.
+ * - The client roster (see `engineClients`) and the overtime cap. A
+ *   workspace with no clients maps exactly as before the roster existed.
+ * - Steps and roles are ordered by id so the result, and therefore the
+ *   simulation, doesn't depend on database row order.
+ */
+export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {}): EngineModel {
+  const { workspace, roles } = bundle;
+  const s = workspace.settings;
+  const pipeline = pipelineOf(bundle);
+  const baseServices = engineServices(bundle, pipeline.process.id);
+  const { entry, working: pipelineSteps, endSteps } = resolveGraph(pipeline.steps, pipeline.edges, Boolean(baseServices));
+
+  const sinkFor = (outcome: "won" | "lost") => endSteps.find((step) => step.outcome === outcome)?.id ?? `__${outcome}__`;
+  const sinks = { won: sinkFor("won"), lost: sinkFor("lost") };
+  const ends: Record<string, EngineEnd> = {};
+  for (const step of endSteps) {
+    // The database requires an outcome on every end step; "done" is the harmless reading of a missing one.
+    if (step.id !== sinks.won && step.id !== sinks.lost) ends[step.id] = { outcome: step.outcome ?? "done" };
+  }
+
+  const servicing = engineServicing(bundle, baseServices);
+  const services = servicing.services;
+  const working = [...pipelineSteps, ...servicing.steps];
+  Object.assign(ends, servicing.ends);
 
   const engineRoles: EngineModel["roles"] = {};
   for (const role of [...roles].sort(byIdAsc)) {
@@ -144,6 +188,8 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
     ...(s.availability_floor !== undefined ? { availabilityFloor: s.availability_floor } : {}),
     ...(s.overtime_cap !== undefined && s.overtime_cap !== null ? { overtimeCap: Number(s.overtime_cap) } : {}),
     ...(clients ? { clients } : {}),
+    ...(Object.keys(servicing.processes).length ? { servicingProcesses: servicing.processes } : {}),
+    ...optional("health", healthRules(s)),
     entry,
     sinks,
     ...(Object.keys(ends).length ? { ends } : {}),
@@ -160,9 +206,9 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
  * don't arrive here. Undefined when none apply: then the interim `retainer`
  * prices every win, as before services existed.
  */
-function engineServices(bundle: ProcessBundle): Record<string, EngineService> | undefined {
+function engineServices(bundle: ProcessBundle, processId: string): Record<string, EngineService> | undefined {
   const here = bundle.services
-    .filter((sv) => sv.active && (sv.entry_process_id === null || sv.entry_process_id === bundle.process.id))
+    .filter((sv) => sv.active && (sv.entry_process_id === null || sv.entry_process_id === processId))
     .sort(byIdAsc);
   if (!here.length) return undefined;
   if (!(here.reduce((sum, sv) => sum + Number(sv.mix_share), 0) > 0)) {
@@ -179,6 +225,10 @@ function engineServices(bundle: ProcessBundle): Record<string, EngineService> | 
       margin: Number(sv.margin),
       tenureMonths: Number(sv.tenure_months),
       churnMonthly: Number(sv.churn_monthly_base),
+      // Rows written before it existed may not carry it: then health doesn't move churn.
+      ...(sv.churn_health_sensitivity != null && Number.isFinite(Number(sv.churn_health_sensitivity))
+        ? { churnSensitivity: Number(sv.churn_health_sensitivity) }
+        : {}),
       mixShare: Number(sv.mix_share),
       pathTags: sv.path_tags.map((t) => t.trim()).filter(Boolean),
       ...(fallback ? { fallbackOngoing: fallback } : {}),
@@ -200,6 +250,79 @@ function fallbackLoad(stored: unknown, roleIds: Set<string>): Record<string, num
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   return entries.length ? Object.fromEntries(entries) : undefined;
 }
+
+/**
+ * Client servicing for the engine (docs/PRD.md §6.2 `servicing`, §6.3.5):
+ * the servicing processes the services' clients run, at their live revision
+ * (or, for the bundle's own process, the bundle's revision), with their
+ * working steps (after the pipeline's, by process id and then step id) and
+ * their ends (all `done`: a task books nothing), and each service's links.
+ * Links to processes that aren't servicing or have no revision here, or with
+ * a malformed recurrence, are left out. Nothing when there are no links, so
+ * a workspace without servicing maps exactly as before.
+ */
+function engineServicing(
+  bundle: ProcessBundle,
+  services: Record<string, EngineService> | undefined,
+): {
+  services: Record<string, EngineService> | undefined;
+  steps: EngineStep[];
+  ends: Record<string, EngineEnd>;
+  processes: Record<string, EngineServicingProcess>;
+} {
+  const none = { services, steps: [], ends: {}, processes: {} };
+  if (!services) return none;
+  const parts = new Map<string, ProcessPart>();
+  for (const p of bundle.otherProcesses ?? []) if (p.process.kind === "servicing") parts.set(p.process.id, p);
+  if (bundle.process.kind === "servicing") {
+    parts.set(bundle.process.id, { process: bundle.process, revision: bundle.revision, steps: bundle.steps, edges: bundle.edges });
+  }
+  const links = (bundle.servicingLinks ?? [])
+    .filter((l) => l.service_id in services && parts.has(l.process_id))
+    .map((l) => ({ l, recurrence: engineRecurrence(l.recurrence), sla: Number(l.sla_hours) }))
+    .filter((x) => x.recurrence !== null && x.sla > 0)
+    .sort((a, b) => cmp(a.l.process_id, b.l.process_id) || cmp(a.l.id, b.l.id));
+  // The bundle's own servicing process is simulated even before it is linked, so its steps show results.
+  const used = [...new Set([...links.map((x) => x.l.process_id), ...(bundle.process.kind === "servicing" ? [bundle.process.id] : [])])].sort(cmp);
+  if (!used.length) return none;
+
+  const steps: EngineStep[] = [];
+  const ends: Record<string, EngineEnd> = {};
+  const processes: Record<string, EngineServicingProcess> = {};
+  for (const pid of used) {
+    const part = parts.get(pid)!;
+    let graph: Graph;
+    try {
+      graph = resolveGraph(part.steps, part.edges, true);
+    } catch (err) {
+      if (err instanceof ModelError && pid !== bundle.process.id) throw new ModelError(`Servicing process '${part.process.name}': ${err.message}`);
+      throw err;
+    }
+    steps.push(...graph.working);
+    for (const end of graph.endSteps) ends[end.id] = { outcome: "done" };
+    processes[pid] = { name: part.process.name, entry: graph.entry, steps: graph.working.map((st) => st.id) };
+  }
+  const withLinks: Record<string, EngineService> = {};
+  for (const [sid, sv] of Object.entries(services)) {
+    const mine = links.filter((x) => x.l.service_id === sid);
+    withLinks[sid] = mine.length ? { ...sv, servicing: mine.map((x) => ({ process: x.l.process_id, recurrence: x.recurrence!, sla: x.sla })) } : sv;
+  }
+  return { services: withLinks, steps, ends, processes };
+}
+
+/** Health rules from the workspace settings; undefined when none is set, so the engine's estimated defaults apply. */
+function healthRules(s: WorkspaceSettings): EngineHealthRules | undefined {
+  const pick = (v: unknown) => (v !== undefined && v !== null && Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : undefined);
+  const rules: EngineHealthRules = {
+    ...optional("initial", pick(s.health_initial)),
+    ...optional("recover", pick(s.health_recover)),
+    ...optional("latePenalty", pick(s.health_late_penalty)),
+    ...optional("missedPenalty", pick(s.health_missed_penalty)),
+  };
+  return Object.keys(rules).length ? rules : undefined;
+}
+
+const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
  * The client roster for the engine (docs/PRD.md §6.2, decision D13): active

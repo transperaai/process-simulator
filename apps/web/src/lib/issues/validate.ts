@@ -45,6 +45,8 @@ export interface PromoteInput extends Links {
   title: string;
   evidence: string | null;
   evidence_metrics: Record<string, number>;
+  /** The client it is about: a churn risk (issue #19). */
+  client_id?: string | null;
 }
 
 const object = (input: unknown): Record<string, unknown> | null =>
@@ -89,12 +91,18 @@ export function parsePromoteInput(input: unknown): Parsed<PromoteInput> {
   ) {
     return { ok: false, error: "That detected issue isn't valid." };
   }
+  if (!optionalId(o.client_id)) return { ok: false, error: "That detected issue isn't valid." };
   // A tracked detection always starts open.
   const rest: Partial<IssueInput> = { ...base.value };
   delete rest.status;
   return {
     ok: true,
-    value: { ...(rest as Omit<IssueInput, "status">), detected_key: o.detected_key, evidence_metrics: metrics as Record<string, number> },
+    value: {
+      ...(rest as Omit<IssueInput, "status">),
+      detected_key: o.detected_key,
+      evidence_metrics: metrics as Record<string, number>,
+      ...(o.client_id ? { client_id: o.client_id as string } : {}),
+    },
   };
 }
 

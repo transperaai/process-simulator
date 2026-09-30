@@ -189,6 +189,8 @@ export function promoteInput(d: DetectedIssue, processId: string | null, scenari
     owner_person_id: null,
     // A broken-scenario issue links the scenario it is about (issue #16).
     scenario_id: d.scenarioId ?? (d.fix ? (matchingScenario(d.fix.patch, scenarios)?.id ?? null) : null),
+    // A churn risk links the client it is about (issue #19).
+    ...(d.clientId ? { client_id: d.clientId } : {}),
   };
 }
 

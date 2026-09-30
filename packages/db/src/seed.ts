@@ -40,7 +40,9 @@ export function seedSql(
     out.push(insert("people", b.people.map((r) => ({ ...r }))));
     out.push(insert("person_roles", b.personRoles.map((r) => ({ ...r }))));
     const { live_revision_id, ...process } = b.process;
-    out.push(insert("processes", [process]));
+    // The workspace's other processes (servicing, issue #19), each linked to its live revision last, like the main one.
+    const others = b.otherProcesses ?? [];
+    out.push(insert("processes", [process, ...others.map(({ process: { live_revision_id: _live, ...p } }) => p)]));
     out.push(insert("services", b.services.map((r) => ({ ...r }))));
     out.push(insert("lead_sources", (b.leadSources ?? []).map((r) => ({ ...r }))));
     out.push(insert("seasonality", (b.seasonality ?? []).map((r) => ({ ...r }))));
@@ -48,12 +50,21 @@ export function seedSql(
     out.push(insert("process_revisions", [{ ...b.revision, published_at: b.revision.status === "published" ? "2026-09-29T00:00:00Z" : null }]));
     out.push(insert("steps", b.steps.map((s) => ({ ...s }))));
     out.push(insert("edges", b.edges.map((e) => ({ ...e }))));
+    for (const part of others) {
+      out.push(insert("process_revisions", [{ ...part.revision, published_at: part.revision.status === "published" ? "2026-09-29T00:00:00Z" : null }]));
+      out.push(insert("steps", part.steps.map((s) => ({ ...s }))));
+      out.push(insert("edges", part.edges.map((e) => ({ ...e }))));
+    }
+    out.push(insert("service_servicing", (b.servicingLinks ?? []).map((r) => ({ ...r }))));
     out.push(insert("person_skills", b.personSkills.map((r) => ({ ...r }))));
     out.push(insert("person_leave", b.personLeave.map((r) => ({ ...r }))));
     out.push(insert("clients", (b.clients ?? []).map((r) => ({ ...r }))));
     out.push(insert("client_services", (b.clientServices ?? []).map((r) => ({ ...r }))));
     out.push(insert("client_assignments", (b.clientAssignments ?? []).map((r) => ({ ...r }))));
     out.push(`update public.processes set live_revision_id = ${literal(live_revision_id)} where id = ${literal(b.process.id)};\n`);
+    for (const { process: p } of others) {
+      if (p.live_revision_id) out.push(`update public.processes set live_revision_id = ${literal(p.live_revision_id)} where id = ${literal(p.id)};\n`);
+    }
   }
   for (const a of access) {
     out.push("-- Access: allowed domains and pre-assigned emails\n");

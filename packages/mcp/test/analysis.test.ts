@@ -112,7 +112,8 @@ describe("compareScenarios", () => {
 });
 
 describe("checkScenarioRobustness", () => {
-  const steps = northbeamBundle().steps;
+  // The pipeline's steps and its servicing processes' (issue #19).
+  const steps = [...northbeamBundle().steps, ...northbeamBundle().otherProcesses!.flatMap((p) => p.steps)];
 
   it("returns the templated verdict when it finishes within the budget", () => {
     // Only the audit step's hands-on time is estimated: every other input is entered.

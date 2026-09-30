@@ -151,7 +151,8 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
       runTool(async (assumptions) => {
         const ws = await resolveWorkspace(ctx, args.workspace, assumptions);
         const processes = await listProcesses(ctx.db, ws.id);
-        if (args.process || processes.length === 1) {
+        // One process, or one pipeline with its servicing processes (issue #19), is checked by default.
+        if (args.process || processes.length === 1 || processes.filter((p) => p.kind !== "servicing").length === 1) {
           const proc = await resolveProcess(ctx, ws, args.process, assumptions);
           if (proc.live_revision_id) {
             const bundle = await loadProcessBundle(ctx.db, ws, proc, proc.live_revision_id);
@@ -265,7 +266,11 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
         const { result, ...out } = checkScenarioRobustness({
           model: loaded.model,
           scenario,
-          steps: loaded.bundle.steps as unknown as { id: string; provenance?: unknown }[],
+          // The servicing processes' steps too (issue #19): their provenance decides whether they are perturbed.
+          steps: [...loaded.bundle.steps, ...(loaded.bundle.otherProcesses ?? []).flatMap((p) => p.steps)] as unknown as {
+            id: string;
+            provenance?: unknown;
+          }[],
           metric,
           currency: loaded.bundle.workspace.settings.currency,
           timeBudgetMs: seconds * 1000,

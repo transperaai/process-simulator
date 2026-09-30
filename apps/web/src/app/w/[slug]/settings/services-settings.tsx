@@ -8,6 +8,7 @@ import { mapOutcome, type SaveOutcome, type Saver } from "@/lib/fields/field-con
 import { formatCurrency, formatPercent } from "@/lib/format";
 import { formatTags, mixPercentages, parseTags, PRICING_LABELS, PRICING_MODELS, type ServiceField } from "@/lib/services";
 import { createService, removeService, saveServiceFallback, saveServiceField, saveServiceTags, type ActionResult } from "./actions";
+import { ServicingLinks } from "./servicing-settings";
 
 type Scalar = string | number | boolean | null;
 
@@ -201,7 +202,17 @@ function ServiceItem({ service: sv, share, data }: { service: ServiceRow; share:
           max={100}
           step={0.5}
           disabled={disabled}
-          hint="Share of clients leaving each month; revenue billed in the horizon is net of it."
+          hint="Monthly churn of a client in full health; revenue billed in the horizon stops when a client leaves."
+        />
+        <NumberField
+          label="Churn sensitivity to health"
+          value={sv.churn_health_sensitivity === undefined ? null : Number(sv.churn_health_sensitivity)}
+          save={serviceSaver(sv.id, "churn_health_sensitivity")}
+          min={0}
+          max={100}
+          step={0.5}
+          disabled={disabled}
+          hint="Monthly churn = base × (1 + this × (100 − health) / 100). The default 3 is an estimate: a client at health 50 churns 2.5× the base."
         />
         <NumberField
           label="Mix share"
@@ -243,6 +254,7 @@ function ServiceItem({ service: sv, share, data }: { service: ServiceRow; share:
             hint={`${tagHint} A lead on this service takes the connections tagged with one of these.`}
           />
         </div>
+        <ServicingLinks service={sv} data={data} />
         <FallbackLoad service={sv} data={data} />
         {!disabled && (
           <div className="sm:col-span-2 lg:col-span-3">

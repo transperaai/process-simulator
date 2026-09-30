@@ -174,6 +174,8 @@ describe.skipIf(!POSTGREST_URL)("company-model suggestion tools over PostgREST",
     const before = await call(editor, "import_process", { process_json });
     expect(before.ok, JSON.stringify(before)).toBe(false);
     expect(before.error).toMatchObject({ code: "not_found", message: expect.stringMatching(/No role .* matches .Copywriter./) });
+    // It checks before it writes: no process (or draft) is left behind.
+    expect((await admin.query("select count(*)::int as n from processes where workspace_id = $1", [ids.ws])).rows[0].n).toBe(0);
 
     const rows = (await admin.query("select id from suggestions where workspace_id = $1 and target_table = 'roles' and status = 'pending'", [ids.ws])).rows;
     expect(rows).toHaveLength(1);
@@ -190,8 +192,7 @@ describe.skipIf(!POSTGREST_URL)("company-model suggestion tools over PostgREST",
 
     const summary = await call<{ roles: { id: string; name: string; active: boolean }[] }>(editor, "get_workspace_summary", {});
     expect(summary.data.roles).toEqual(expect.arrayContaining([expect.objectContaining({ id: role.id, name: "Copywriter", active: true })]));
-    // The failed import left an empty process behind, so the retry targets it.
-    const after = await call(editor, "import_process", { target: "Copywriting", process_json });
+    const after = await call(editor, "import_process", { process_json });
     expect(after.ok, JSON.stringify(after)).toBe(true);
     const step = (await admin.query("select role_id from steps where workspace_id = $1 and name = 'Write copy'", [ids.ws])).rows[0];
     expect(step.role_id).toBe(role.id);

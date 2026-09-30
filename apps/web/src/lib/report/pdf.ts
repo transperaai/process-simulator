@@ -4,9 +4,14 @@
 // the first call; locally (and in tests) `CHROMIUM_PATH` points at any
 // Chrome or Chromium. The page's own print stylesheet (render.ts) sets the
 // paper size, margins, page breaks and page numbers, so the browser's
-// "Save as PDF" of the report route gives the same document.
+// "Save as PDF" of the report route gives the same document. Failures come
+// out as a PdfError naming the stage (pdf-failure.ts).
 
 import type { Browser } from "puppeteer-core";
+import { PdfError, pdfFailureReason } from "./pdf-failure";
+
+/** Starts a browser; tests inject one that fails. */
+export type BrowserLauncher = (executablePath?: string) => Promise<Browser>;
 
 export interface PdfOptions {
   /** Give up waiting for web fonts after this long and print with the fallbacks (default 4 s). */
@@ -15,9 +20,11 @@ export interface PdfOptions {
   loadTimeoutMs?: number;
   /** A local Chrome or Chromium (default: `CHROMIUM_PATH`, else the serverless build). */
   executablePath?: string;
+  /** How to start the browser (default: puppeteer-core with CHROMIUM_PATH or @sparticuz/chromium). */
+  launch?: BrowserLauncher;
 }
 
-async function launch(executablePath?: string): Promise<Browser> {
+async function defaultLaunch(executablePath?: string): Promise<Browser> {
   const puppeteer = (await import("puppeteer-core")).default;
   const local = executablePath || process.env.CHROMIUM_PATH;
   if (local) {
@@ -31,9 +38,14 @@ async function launch(executablePath?: string): Promise<Browser> {
   });
 }
 
-/** Print a complete HTML document to an A4 PDF. */
-export async function htmlToPdf(html: string, { fontTimeoutMs = 4000, loadTimeoutMs = 20_000, executablePath }: PdfOptions = {}): Promise<Uint8Array> {
-  const browser = await launch(executablePath);
+/** Print a complete HTML document to an A4 PDF. Throws a PdfError. */
+export async function htmlToPdf(html: string, { fontTimeoutMs = 4000, loadTimeoutMs = 20_000, executablePath, launch = defaultLaunch }: PdfOptions = {}): Promise<Uint8Array> {
+  let browser: Browser;
+  try {
+    browser = await launch(executablePath);
+  } catch (err) {
+    throw new PdfError("launch", `Chromium couldn't start: ${pdfFailureReason(err)}`, { cause: err });
+  }
   try {
     const page = await browser.newPage();
     // Web fonts load from Google Fonts; if that's slow or blocked, the stack's fallbacks print instead.
@@ -44,6 +56,8 @@ export async function htmlToPdf(html: string, { fontTimeoutMs = 4000, loadTimeou
     await page.emulateMediaType("print");
     const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true, format: "A4", timeout: loadTimeoutMs });
     return new Uint8Array(pdf);
+  } catch (err) {
+    throw new PdfError("print", `Chromium couldn't print the report: ${pdfFailureReason(err)}`, { cause: err });
   } finally {
     await browser.close().catch(() => undefined);
   }

@@ -189,10 +189,13 @@ export function ReportBuilder({
                   Download PDF
                 </a>
               ) : (
-                <span className="text-crit">The PDF couldn&apos;t be printed ({outcome.pdfError}); use Save as PDF on the printable report.</span>
+                <span className="text-crit">
+                  The report is saved, but the server couldn&apos;t print the PDF ({outcome.pdfError ?? "unknown error"}). Open the printable report and use Print → Save as PDF; it&apos;s the same
+                  document.
+                </span>
               )}
-              <a href={`/w/${slug}/reports/${outcome.id}/print`} className="underline" target="_blank" rel="noreferrer">
-                Open printable report
+              <a href={`/w/${slug}/reports/${outcome.id}/print`} className={outcome.pdf ? "underline" : "font-semibold underline"} target="_blank" rel="noreferrer">
+                {outcome.pdf ? "Open printable report" : "Open printable report (Save as PDF)"}
               </a>
             </span>
           )}

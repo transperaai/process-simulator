@@ -3,7 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { createClient } from "@supabase/supabase-js";
 import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { NORTHBEAM_PROCESS_ID, NORTHBEAM_WORKSPACE_ID, type Database } from "@transpera-flow/db";
 import { generateApiToken, handleMcpRequest, type McpHandlerOptions } from "@transpera-flow/mcp";
 import type { ReportContent } from "@/lib/report/content";
@@ -139,6 +139,33 @@ describe.skipIf(!POSTGREST_URL)("export_report over PostgREST", () => {
     const content = (await admin.query("select content from reports where id = $1", [res.data.id])).rows[0].content as ReportContent;
     const r = content.scenarios![0]!.robustness!;
     expect(r.cached).toBe(r.jobs);
+  }, 180_000);
+
+  it("stores the report and points at the printable one when Chromium can't print", async () => {
+    const failing = reportExporter(ORIGIN, {
+      renderPdf: async () => {
+        throw new Error('Chromium couldn\'t start: The input directory "/var/task/bin" does not exist.');
+      },
+    });
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const saved = options;
+    options = { ...options, reports: failing };
+    try {
+      const client = await connect(editorToken);
+      const res = await call<Export & { pdf_error: string; print_url: string; pdf_fallback: string }>(client, "export_report", { reps: 5, sections: ["summary"] });
+      await client.close();
+      expect(res.ok).toBe(true);
+      expect(res.data.pdf).toBe(false);
+      expect(res.data.pdf_error).toContain("does not exist");
+      expect(res.data.print_url).toBe(`${ORIGIN}/w/northbeam/reports/${res.data.id}/print`);
+      expect(res.data.pdf_fallback).toContain(res.data.print_url);
+      expect(log).toHaveBeenCalledWith(expect.stringContaining(res.data.id), expect.any(Error));
+      const stored = (await admin.query("select pdf, content is not null as has_content from reports where id = $1", [res.data.id])).rows[0];
+      expect(stored).toMatchObject({ pdf: null, has_content: true });
+    } finally {
+      options = saved;
+      log.mockRestore();
+    }
   }, 180_000);
 
   it("refuses viewers: reports hold per-person utilisation", async () => {

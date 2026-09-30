@@ -194,12 +194,16 @@ describe("row-level security", () => {
   });
 
   it("keeps updated_at current", async () => {
-    const { id, created_at } = (
-      await db.client.query("insert into scenarios (workspace_id, name) values ($1, 'Timed') returning id, created_at", [NORTHBEAM_WORKSPACE_ID])
+    const { id } = (
+      await db.client.query("insert into scenarios (workspace_id, name) values ($1, 'Timed') returning id", [NORTHBEAM_WORKSPACE_ID])
     ).rows[0];
-    const { updated_at } = (await db.client.query("update scenarios set description = 'x' where id = $1 returning updated_at", [id])).rows[0];
+    // Compared in SQL: the two timestamps can fall in the same millisecond, and
+    // a JS Date drops the microseconds.
+    const { later } = (
+      await db.client.query("update scenarios set description = 'x' where id = $1 returning updated_at > created_at as later", [id])
+    ).rows[0];
     await db.client.query("delete from scenarios where id = $1", [id]);
-    expect(updated_at.getTime()).toBeGreaterThan(created_at.getTime());
+    expect(later).toBe(true);
   });
 });
 

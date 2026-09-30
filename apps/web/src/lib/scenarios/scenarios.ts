@@ -27,6 +27,11 @@ const FIELD_LABELS: Record<string, string> = {
   work_hours: "hands-on time",
   wait_hours: "wait",
   rework_rate: "rework",
+  churn_health_sensitivity: "churn sensitivity to health",
+  initial: "Starting client health",
+  recover: "Health gained per task on time",
+  late_penalty: "Health lost per late task",
+  missed_penalty: "Health lost per missed task",
 };
 
 const SHARES = new Set(["churn_monthly", "rework_rate", "mix_share"]);
@@ -38,7 +43,7 @@ export function describePatch(model: EngineModel, patch: ScenarioPatch, retired:
   if (!target) return patch.path;
   const field = target.field;
   let subject: string;
-  if (target.kind === "demand" || target.kind === "finances") subject = FIELD_LABELS[field]!;
+  if (target.kind === "demand" || target.kind === "finances" || target.kind === "health") subject = FIELD_LABELS[field]!;
   else {
     const id = target.id;
     const name =

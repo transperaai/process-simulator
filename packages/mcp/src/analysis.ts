@@ -13,6 +13,7 @@ import {
   estimatedParameters,
   headlineSubject,
   isBlocking,
+  provenanceFromRows,
   rankBottlenecks,
   robustness,
   robustnessVerdict,
@@ -20,7 +21,7 @@ import {
   shadowPriceText,
   simulate,
   type EngineModel,
-  type ProvenanceLookup,
+  type ProvenanceRows,
   type RobustnessMetric,
   type RobustnessParameter,
   type ScenarioPatch,
@@ -144,25 +145,22 @@ export function compareScenarios({ model, a, b, reps, seed, currency }: CompareI
 // ---------------------------------------------------------------------------
 
 /**
- * Parameters to perturb: every estimated one. Step rows carry provenance
- * (entered or measured values are not perturbed); demand, roles and services
- * have none yet, so theirs are all estimated. The same rule as the app's
- * (apps/web lib/robustness/session.ts `robustnessParameters`).
+ * Parameters to perturb: every estimated one. Steps, services and the
+ * workspace settings (the health rules; issue #79) carry provenance, and
+ * entered or measured values are not perturbed; a health rule the workspace
+ * hasn't set is the estimated default. Demand and roles carry none the check
+ * reads, so theirs are all estimated. The same rule as the app's (apps/web
+ * lib/robustness/session.ts `robustnessParameters`).
  */
-export function robustnessParameters(
-  model: EngineModel,
-  steps: readonly { id: string; provenance?: unknown }[],
-  metric: RobustnessMetric = "won",
-): RobustnessParameter[] {
-  const byStep = new Map(steps.map((s) => [s.id, s.provenance]));
-  const provenance: ProvenanceLookup = (t) => (t.kind === "steps" ? byStep.get(t.id) : undefined);
-  return estimatedParameters(model, { provenance, metric });
+export function robustnessParameters(model: EngineModel, rows: ProvenanceRows, metric: RobustnessMetric = "won"): RobustnessParameter[] {
+  return estimatedParameters(model, { provenance: provenanceFromRows(rows), metric });
 }
 
 export interface RobustnessInput {
   model: EngineModel;
   scenario: readonly NamedScenario[];
-  steps: readonly { id: string; provenance?: unknown }[];
+  /** The rows whose provenance says which values are estimated. */
+  provenance: ProvenanceRows;
   metric: RobustnessMetric;
   currency: string;
   timeBudgetMs: number;
@@ -170,10 +168,10 @@ export interface RobustnessInput {
 }
 
 /** The robustness check on this thread, capped at `timeBudgetMs`; a capped check is flagged partial. */
-export function checkScenarioRobustness({ model, scenario, steps, metric, currency, timeBudgetMs, now }: RobustnessInput) {
+export function checkScenarioRobustness({ model, scenario, provenance, metric, currency, timeBudgetMs, now }: RobustnessInput) {
   if (!scenario.length) throw new ToolError("invalid_input", "Name a scenario to check (`scenario`).");
   const patches = stackPatches(model, scenario);
-  const parameters = robustnessParameters(model, steps, metric);
+  const parameters = robustnessParameters(model, provenance, metric);
   const { subject, plural } = headlineSubject(
     scenario.map((s) => s.name),
     false,

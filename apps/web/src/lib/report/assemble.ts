@@ -202,14 +202,15 @@ export function buildReportContent(input: ReportInput): BuiltReport {
   // --- Scenario comparisons and their robustness (run automatically for every included scenario, §6.5).
   const now = input.robustness.now ?? (() => performance.now());
   const deadline = now() + input.robustness.timeBudgetMs;
-  const stepsWithProvenance = allSteps as unknown as { id: string; provenance?: unknown }[];
+  // What is estimated, and so perturbed: steps, services and the health rules (issues #20, #79).
+  const provenanceRows = { steps: allSteps, services: bundle.services, workspace: bundle.workspace.provenance };
   const scenarios: ScenarioView[] = runnable.map((s, i) => {
     const cmp = compareScenarios({ model, a: [], b: [{ id: s.id, name: s.name, patch: s.patch }], reps: run.reps, seed: run.seed, currency });
     let robust: RobustnessView;
     {
       const left = Math.max(0, deadline - now());
       const budget = left / (runnable.length - i);
-      const parameters = robustnessParameters(model, stepsWithProvenance, "won");
+      const parameters = robustnessParameters(model, provenanceRows, "won");
       const { subject, plural } = headlineSubject([s.name], false);
       if (parameters.length) {
         const result = robustness(model, s.patch, {

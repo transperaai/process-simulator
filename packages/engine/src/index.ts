@@ -43,7 +43,10 @@ export {
 } from "./clients";
 export { overtimeIssues } from "./overtime-issues";
 export {
+  HEALTH_RULE_KEYS,
   HIRE_PREFIX,
+  MAX_CHURN_SENSITIVITY,
+  MAX_HEALTH_RULE,
   MAX_PATCHES,
   MAX_REWORK,
   PATCH_FIELDS,
@@ -108,6 +111,7 @@ export {
   localExecutor,
   parameterLabel,
   plannedReplications,
+  provenanceFromRows,
   provenanceSource,
   robustness,
   robustnessJobKey,
@@ -117,6 +121,7 @@ export {
   type ChunkResult,
   type CheckRobustnessOptions,
   type ProvenanceLookup,
+  type ProvenanceRows,
   type ProvenanceSource,
   type RobustnessCache,
   type RobustnessExecutor,

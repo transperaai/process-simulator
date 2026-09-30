@@ -144,7 +144,7 @@ export async function generateReport(db: Db, input: GenerateReportInput, renderP
     loadIssues(db, ws.id),
     loadSources(db, ws.id),
   ]);
-  bundle.workspace.provenance = (ws.provenance ?? {}) as ProvenanceMap;
+  bundle.workspace.provenance ??= (ws.provenance ?? {}) as ProvenanceMap;
   const currency = bundle.workspace.settings.currency;
 
   // The run: a saved one (only if the model is unchanged and it reproduces exactly), or a new one.

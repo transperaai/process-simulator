@@ -17,10 +17,11 @@ import {
   checkRobustness,
   estimatedParameters,
   poolSize,
+  provenanceFromRows,
   robustness,
   type EngineModel,
   type PoolWorker,
-  type ProvenanceLookup,
+  type ProvenanceRows,
   type RobustnessCache,
   type RobustnessOptions,
   type RobustnessParameter,
@@ -33,21 +34,22 @@ import {
 export const sessionCache: RobustnessCache = new MemoryRobustnessCache(20_000);
 
 /**
- * The parameters to perturb, given the step rows' `provenance` jsonb.
+ * The parameters to perturb, given the rows' `provenance` jsonb: steps',
+ * services' and the workspace's (its settings, for the health rules; issue
+ * #79).
  *
  * Rule: a parameter is estimated, and so perturbed, unless its provenance
  * says `entered` or `measured` (see `provenanceSource` in the engine for the
- * per-column and per-row shapes). Only steps carry provenance on this branch;
- * demand, roles and services have none yet, so theirs are all estimated.
+ * per-column and per-row shapes); a health rule the workspace hasn't set is
+ * the estimated default. Demand and roles carry no provenance the check
+ * reads, so theirs are all estimated.
  */
 export function robustnessParameters(
   model: EngineModel,
-  steps: readonly { id: string; provenance?: unknown }[],
+  rows: ProvenanceRows,
   opts: Pick<RobustnessOptions, "perturbation" | "metric"> = {},
 ): RobustnessParameter[] {
-  const byStep = new Map(steps.map((s) => [s.id, s.provenance]));
-  const provenance: ProvenanceLookup = (t) => (t.kind === "steps" ? byStep.get(t.id) : undefined);
-  return estimatedParameters(model, { ...opts, provenance });
+  return estimatedParameters(model, { ...opts, provenance: provenanceFromRows(rows) });
 }
 
 export interface RobustnessRequestInput {

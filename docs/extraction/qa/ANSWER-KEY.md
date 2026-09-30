@@ -51,6 +51,8 @@ Step names may differ; what matters is one step per piece of work, exactly one s
 | A leading question | "So four hours for the audit?" then "Yeah, roughly." at `[00:08:05]` and `[00:08:10]` | Audit hands-on time 4 hours, cited with Grace as speaker. The quote may be the two lines together (exactly as they appear, contiguous) or Grace's "Yeah, roughly." with the interviewer's "four hours" recorded in the notes. Either way the value is 4, on the Paid media specialist role. |
 | An unstated time, qualify | "It's quick. It's a coffee-length thing" at `[00:03:55]` | Qualify enquiry hands-on time is an assumption with reasoning; Grace declines to give a number. |
 
+**Also accept for Contracts:** Grace says Tom "does them in batches", so a run may reasonably treat the two days (and Tom's working day) as elapsed time rather than hands-on time: `wait_hours` on Contracts, or a timing note about batching with an assumed hands-on time. Mark it correct if the choice is explained; the perception-gap count then drops by one.
+
 Also on every task step: a wait and a rework value nobody stated are given explicitly with reasoning, never left to the server default. The checklist must show your own reasoning against each, never "Server default for a task step".
 
 ### Not to be modelled

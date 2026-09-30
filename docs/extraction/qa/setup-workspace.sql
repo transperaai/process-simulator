@@ -23,7 +23,9 @@ begin
 
   insert into public.workspaces (name, slug, settings)
   values ('Copperleaf Marketing (QA)', 'copperleaf-qa',
-          '{"hours_per_week": 37.5, "currency": "GBP", "horizon_weeks": 13, "overtime_cap": 0}')
+          -- The engine reads every key below (the same defaults as create_workspace).
+          '{"hours_per_week": 37.5, "currency": "GBP", "horizon_weeks": 13, "overtime_cap": 0,
+            "leads_per_week": 0, "active_clients": 0, "churn_monthly": 0, "retainer": 0}')
   returning id into ws;
 
   -- Four roles. There is deliberately no Designer role.

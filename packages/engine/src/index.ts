@@ -5,13 +5,32 @@ export { mulberry32 } from "./random";
 export {
   NORTHBEAM_FALLBACK_LOAD,
   NORTHBEAM_ROSTER,
+  NORTHBEAM_SERVICING,
   NORTHBEAM_TEAM,
   northbeamClientKey,
   northbeamModel,
   northbeamWithClients,
   northbeamWithServices,
+  northbeamWithServicing,
   type NorthbeamClient,
+  type NorthbeamServicingProcess,
+  type NorthbeamServicingStep,
 } from "./fixtures/northbeam";
+export {
+  AT_RISK_HEALTH,
+  DEFAULT_CHURN_SENSITIVITY,
+  DEFAULT_HEALTH_RULES,
+  churnProbability,
+  clientChurnSensitivity,
+  hasServicing,
+  healthRules,
+  modelHasServicing,
+  recurrenceLabel,
+  servicingLinks,
+  servicingStepIds,
+  tasksPerWeek,
+} from "./servicing";
+export { churnRiskIssues } from "./churn-issues";
 export {
   LOAD_WEEKS_PER_MONTH,
   carriersFor,
@@ -38,6 +57,7 @@ export {
   isBlocking,
   isScenarioPatch,
   offeredLoad,
+  servicingTasksPerWeek,
   parsePatchPath,
   parsePatches,
   type OfferedLoad,

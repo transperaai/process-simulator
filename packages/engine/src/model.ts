@@ -1,6 +1,6 @@
 // Engine input and output shapes. This is the prototype's model, extended so
 // far with named people, services, end-step outcomes, seasonal demand, a client
-// roster and overtime; a later ticket adds servicing (docs/PRD.md §6).
+// roster, overtime, and client servicing with health and churn (docs/PRD.md §6).
 
 /** Times are in working hours. */
 export interface EngineRole {
@@ -95,9 +95,70 @@ export interface EngineService {
    * Fallback ongoing load (docs/PRD.md §6.3.4): hours per month each client
    * on this service needs from each role id, for services with no servicing
    * process. Omitted: the roles' `ongoing` hours per client apply instead.
-   * Used only when the model has a client roster (`EngineModel.clients`).
+   * Used only when the model has a client roster (`EngineModel.clients`), and
+   * ignored while the service has `servicing` processes: their tasks are the
+   * client work then.
    */
   fallbackOngoing?: Record<string, number>;
+  /**
+   * How much a client's health raises its churn (docs/PRD.md §6.3.5): monthly
+   * churn = `churnMonthly` × (1 + sensitivity × (100 − health) / 100).
+   * Omitted: 0, so churn is the base rate whatever the health (as before
+   * health existed). The database's default is the PRD's estimated 3.
+   */
+  churnSensitivity?: number;
+  /**
+   * Servicing processes each client on this service runs, and how often
+   * (docs/PRD.md §5 `service_servicing`, §6.3.5). Only with a client roster.
+   */
+  servicing?: EngineServicingLink[];
+}
+
+/**
+ * How often a client generates a servicing task (docs/PRD.md §5
+ * `service_servicing.recurrence`): `times` tasks evenly spaced in every week
+ * or month (a fortnightly check-in is `{every: "week", times: 0.5}`), or
+ * ad-hoc requests at random, `poissonPerMonth` a month on average.
+ */
+export type Recurrence = { every: "week" | "month"; times: number } | { poissonPerMonth: number };
+
+/** One servicing process a service's clients run (a monthly report, a fortnightly check-in). */
+export interface EngineServicingLink {
+  /** Key of `EngineModel.servicingProcesses`. */
+  process: string;
+  recurrence: Recurrence;
+  /**
+   * Working hours from a task's creation to its completion that count as on
+   * time. Completed later is late; not completed within 2 × `sla` is missed.
+   */
+  sla: number;
+}
+
+/**
+ * A servicing process: its working steps are in `EngineModel.steps` and its
+ * end steps in `EngineModel.ends` (outcome `done`), beside the pipeline's. Its
+ * tasks compete for the same people as the pipeline; at a step whose role the
+ * client has an assigned person for, a task queues for that person only,
+ * falling back to the role's pool while they are on leave (docs/PRD.md §6.3.3).
+ */
+export interface EngineServicingProcess {
+  name: string;
+  /** Step (or end) a task starts at. */
+  entry: string;
+  /** Ids of its working steps. */
+  steps: string[];
+}
+
+/** How servicing moves client health (docs/PRD.md §6.3.5, decision D9). The defaults are estimates. */
+export interface EngineHealthRules {
+  /** Health of a client with none entered, and of clients won during the run (default 80). */
+  initial?: number;
+  /** Added for a task completed within its SLA, up to 100 (default 2). */
+  recover?: number;
+  /** Taken off for a task completed late (default 5). */
+  latePenalty?: number;
+  /** Taken off for a task not completed within 2 × its SLA (default 12). */
+  missedPenalty?: number;
 }
 
 /**
@@ -108,9 +169,9 @@ export interface EngineClient {
   name: string;
   /** Service ids it takes. Ids the model doesn't know are ignored. */
   services: string[];
-  /** Monthly recurring revenue (reported; billing follows with servicing, issue #19). */
+  /** Monthly recurring revenue: what it bills a month while active. */
   mrr: number;
-  /** Health 0–100 (carried for servicing and churn, issue #19). */
+  /** Health 0–100 at the start of the run. Omitted: `EngineHealthRules.initial` (80). */
   health?: number;
   /**
    * The person looking after it, per role id. A role with no assignment, or
@@ -218,6 +279,13 @@ export interface EngineModel {
    */
   clients?: Record<string, EngineClient>;
   /**
+   * Servicing processes by id (see `EngineService.servicing`). Omitted or
+   * empty: no servicing, and the model runs exactly as before it existed.
+   */
+  servicingProcesses?: Record<string, EngineServicingProcess>;
+  /** How servicing moves client health. Omitted: `DEFAULT_HEALTH_RULES`. */
+  health?: EngineHealthRules;
+  /**
    * Warm-up run before measuring, in weeks, discarded from every reported
    * metric. Omitted means automatic: 4 weeks, or 2x the P90 cycle time of a
    * pilot run if longer (capped at 52 weeks). 0 starts from an empty business.
@@ -262,6 +330,8 @@ export interface TraceEntity {
   outcome?: Outcome;
   /** Its service id, when the model has services. */
   service?: string;
+  /** A servicing task: its servicing process, and the client it is for (a roster id, or `won:<n>`). */
+  servicing?: { process: string; client: string };
 }
 
 export interface StepResult {
@@ -294,12 +364,16 @@ export interface StepResult {
 export interface RoleResult {
   /** Share of capacity spent on pipeline work. */
   pipeline: number;
-  /** Share of capacity spent on ongoing client work. */
+  /** Share of capacity spent on ongoing (fallback) client work. */
   ongoing: number;
-  /** Total utilisation: (pipeline + ongoing hours) / (capacity + overtime hours). */
+  /** Share of capacity spent on servicing tasks, hands-on. */
+  servicing: number;
+  /** Total utilisation: (pipeline + servicing + ongoing hours) / (capacity + overtime hours). */
   util: number;
   pipelineHours: number;
   ongoingHours: number;
+  /** Servicing hands-on hours a week. */
+  servicingHours: number;
   /** Overtime as a share of capacity. */
   overtime: number;
   /** Overtime hours a week. */
@@ -307,12 +381,14 @@ export interface RoleResult {
 }
 
 export interface PersonResult {
-  /** Total utilisation: (pipeline + ongoing hours) / (capacity + overtime hours). */
+  /** Total utilisation: (pipeline + servicing + ongoing hours) / (capacity + overtime hours). */
   util: number;
   pipeline: number;
   ongoing: number;
+  servicing: number;
   pipelineHours: number;
   ongoingHours: number;
+  servicingHours: number;
   /** Overtime as a share of capacity. */
   overtime: number;
   /** Overtime hours a week. */
@@ -321,6 +397,25 @@ export interface PersonResult {
   completed: number;
   /** With a client roster: clients assigned to them in any role, averaged over the window. */
   clients?: number;
+}
+
+/** Servicing touchpoints (docs/PRD.md §6.3.5): tasks completed on time, late, or not within 2 × their SLA. */
+export interface Touchpoints {
+  onTime: number;
+  late: number;
+  missed: number;
+}
+
+/** One roster client in one replication. */
+export interface ClientReplication {
+  /** Health at t = 0 and after each week of the horizon (frozen once it churns). */
+  health: number[];
+  /** Touchpoints decided in the measured window. */
+  touchpoints: Touchpoints;
+  /** Whether it churned in the measured window. */
+  churned: boolean;
+  /** Monthly churn probability from its health at the horizon (or when it churned). */
+  churnMonthly: number;
 }
 
 /** Per-service counts in one replication. */
@@ -350,6 +445,12 @@ export interface ReplicationResult {
   overtimeCost: number;
   /** With a client roster: clients that churned in the measured window. */
   clientsChurned?: number;
+  /** With a client roster: active clients (roster and won) with health below 50 at the horizon. */
+  clientsAtRisk?: number;
+  /** With a client roster: every client's servicing touchpoints in the measured window. */
+  touchpoints?: Touchpoints;
+  /** With a client roster: each roster client, by id. */
+  clients?: Record<string, ClientReplication>;
   /** Cycle times of won and done entities. */
   cycle: number[];
   steps: Record<string, StepResult>;
@@ -385,11 +486,12 @@ export interface Kpis {
   /** New MRR: Σ over entities reaching their first `won` end of their service's price (retainers only). */
   mrrAdded: Stat;
   /**
-   * Revenue billed in the horizon: Σ over clients won in the measured window
-   * of weeks active before the horizon × weekly price (monthly / 4.33), net of
-   * the service's churn (the weekly decay the engine applies to active
-   * clients); a one-off bills its price when won. The starting clients are not
-   * included until the engine has a client roster (docs/PRD.md decision D13).
+   * Revenue billed in the horizon (docs/PRD.md §13): Σ over clients of weeks
+   * active in the horizon × weekly price (monthly / 4.33); a one-off bills its
+   * price when won. With a client roster: every client, the roster's at its
+   * MRR and those won at their service's price, each until it churns.
+   * Without one: the clients won in the horizon, net of the expected weekly
+   * churn decay.
    */
   billed: Stat;
   /** LTV added: Σ over new wins of price × expected tenure (retainers) or price (one-off). */
@@ -403,10 +505,33 @@ export interface Kpis {
   overtimeCost: Stat;
   /** Over every completed item in every replication. */
   cycle: { mean: number; p50: number; p90: number };
-  roles: Record<string, { util: Stat; pipeline: Stat; ongoing: Stat; overtime: Stat }>;
-  people: Record<string, { util: Stat; pipeline: Stat; ongoing: Stat; overtime: Stat }>;
+  roles: Record<string, { util: Stat; pipeline: Stat; ongoing: Stat; servicing: Stat; overtime: Stat }>;
+  people: Record<string, { util: Stat; pipeline: Stat; ongoing: Stat; servicing: Stat; overtime: Stat }>;
   /** By service id; empty when the model has no services. */
   services: Record<string, { arrivals: Stat; won: Stat; lost: Stat }>;
+  /** With a client roster: clients that churned in the horizon. */
+  clientsChurned?: Stat;
+  /** With a client roster: clients at risk, health below 50, at the horizon (docs/PRD.md §13). */
+  clientsAtRisk?: Stat;
+  /** With a client roster: servicing touchpoints in the horizon. */
+  touchpoints?: { onTime: Stat; late: Stat; missed: Stat };
+}
+
+/** A roster client across replications (docs/PRD.md §6.4 "Per client"). */
+export interface ClientResult {
+  name: string;
+  /** Health at the horizon (frozen when it churns). */
+  health: Stat;
+  /** Mean health at t = 0 and after each week. */
+  trajectory: number[];
+  /** Mean touchpoints per replication. */
+  touchpoints: Touchpoints;
+  /** Monthly churn probability from its health at the horizon. */
+  churnMonthly: Stat;
+  /** Share of replications in which it churned. */
+  churned: number;
+  /** Share of replications in which its health ended below 50. */
+  atRisk: number;
 }
 
 /**
@@ -458,4 +583,6 @@ export interface SimulationResult {
   wipEnd: number;
   /** Whether the run started from entered WIP, a warm-up, or empty. */
   initialState: InitialState;
+  /** With a client roster: each roster client, by id. */
+  clients?: Record<string, ClientResult>;
 }

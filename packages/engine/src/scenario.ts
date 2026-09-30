@@ -20,6 +20,21 @@
 // Framework-free and dependency-free, like the rest of the engine.
 
 import type { EngineModel, EnginePerson, EngineStep } from "./model";
+import { servicingLinks, tasksPerWeek } from "./servicing";
+
+/** Servicing tasks a week per servicing process from the roster's clients, in process id order. */
+export function servicingTasksPerWeek(m: EngineModel): Map<string, number> {
+  const out = new Map<string, number>();
+  if (!m.clients) return out;
+  for (const client of Object.values(m.clients)) {
+    for (const sid of client.services) {
+      const service = m.services?.[sid];
+      if (!service) continue;
+      for (const link of servicingLinks(m, service)) out.set(link.process, (out.get(link.process) ?? 0) + tasksPerWeek(link.recurrence));
+    }
+  }
+  return new Map([...out].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+}
 
 export const PATCH_OPS = ["set", "multiply", "add"] as const;
 export type PatchOp = (typeof PATCH_OPS)[number];
@@ -322,13 +337,13 @@ export interface OfferedLoad {
   roles: Record<string, { hours: number; capacity: number; load: number }>;
 }
 
-export function offeredLoad(m: EngineModel): OfferedLoad {
-  const index = new Map(m.steps.map((s, i) => [s.id, i]));
-  // Visits without rework: v = entry + Σ v(from) × p(from → to), by fixed-point iteration.
+/** Expected visits to each step (by index) of one item entering at `entry`, rework left out. */
+function visitsFrom(m: EngineModel, index: Map<string, number>, entry: string): number[] {
+  // v = entry + Σ v(from) × p(from → to), by fixed-point iteration.
   let v = new Array<number>(m.steps.length).fill(0);
   for (let iter = 0; iter < 500; iter++) {
     const nv = new Array<number>(m.steps.length).fill(0);
-    const e = index.get(m.entry);
+    const e = index.get(entry);
     if (e !== undefined) nv[e] = 1;
     m.steps.forEach((s, i) => {
       for (const edge of s.next) {
@@ -340,6 +355,12 @@ export function offeredLoad(m: EngineModel): OfferedLoad {
     v = nv;
     if (delta < 1e-9) break;
   }
+  return v;
+}
+
+export function offeredLoad(m: EngineModel): OfferedLoad {
+  const index = new Map(m.steps.map((s, i) => [s.id, i]));
+  const v = visitsFrom(m, index, m.entry);
   const visits: Record<string, number> = {};
   const stepHours: Record<string, number> = {};
   m.steps.forEach((s, i) => {
@@ -347,6 +368,16 @@ export function offeredLoad(m: EngineModel): OfferedLoad {
     visits[s.id] = v[i]! * repeats;
     stepHours[s.id] = s.role || s.person ? m.leadsPerWeek * visits[s.id]! * s.work : 0;
   });
+  // Servicing tasks from the roster as it stands (docs/PRD.md §6.3.5): each
+  // process's tasks a week times the visits one task makes to each step.
+  const tasks = servicingTasksPerWeek(m);
+  for (const [pid, rate] of tasks) {
+    const sv = visitsFrom(m, index, m.servicingProcesses![pid]!.entry);
+    m.steps.forEach((s, i) => {
+      if (!(sv[i]! > 0) || !(s.role || s.person)) return;
+      stepHours[s.id]! += (rate * sv[i]! * s.work) / (1 - Math.min(s.rework, MAX_REWORK));
+    });
+  }
 
   const roles: OfferedLoad["roles"] = {};
   const named = m.people && Object.keys(m.people).length ? m.people : null;

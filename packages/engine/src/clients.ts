@@ -7,6 +7,7 @@
 // shows each person's starting load without running anything).
 
 import type { EngineClient, EngineModel, EnginePerson } from "./model";
+import { hasServicing } from "./servicing";
 
 /** Weeks in a month for monthly loads, as elsewhere in the engine (4.33). */
 export const LOAD_WEEKS_PER_MONTH = 4.33;
@@ -14,15 +15,22 @@ export const LOAD_WEEKS_PER_MONTH = 4.33;
 /**
  * Hours a week a client needs from each role id. For each of its services
  * that has a fallback ongoing load: that service's hours per month / 4.33.
- * When none of its services has one (or it has no services the model knows),
- * the roles' `ongoing` hours per client a week, as the pooled model uses.
- * Roles the model doesn't have, and zero loads, are left out.
+ * A service with servicing processes adds none: its tasks are the work
+ * (docs/PRD.md §6.3.4, §6.3.5). When none of its services has either (or it
+ * has no services the model knows), the roles' `ongoing` hours per client a
+ * week, as the pooled model uses. Roles the model doesn't have, and zero
+ * loads, are left out.
  */
 export function clientRoleLoads(model: EngineModel, client: Pick<EngineClient, "services">): Record<string, number> {
   const out: Record<string, number> = {};
   let fromServices = false;
   for (const sid of client.services) {
-    const fallback = model.services?.[sid]?.fallbackOngoing;
+    const service = model.services?.[sid];
+    if (service && hasServicing(model, service)) {
+      fromServices = true;
+      continue;
+    }
+    const fallback = service?.fallbackOngoing;
     if (!fallback) continue;
     fromServices = true;
     for (const rid of Object.keys(fallback).sort()) {

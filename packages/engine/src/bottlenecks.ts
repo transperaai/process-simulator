@@ -14,7 +14,7 @@ export interface RoleConstraint {
   id: string;
   name: string;
   util: Stat;
-  /** Shares of capacity on pipeline and ongoing client work (means). */
+  /** Shares of capacity on pipeline and client work (ongoing load and servicing tasks; means). */
   pipeline: number;
   ongoing: number;
   /** Hours of work a week asked of the role (pipeline + ongoing, means). */
@@ -94,11 +94,11 @@ export function rankBottlenecks(model: EngineModel, result: SimulationResult, { 
         if (s.role !== id || !q || q.avgQueue <= 0) continue;
         if (!queueStep || q.avgQueue > queueStep.avgQueue) queueStep = { id: s.id, name: s.name, avgQueue: q.avgQueue };
       }
-      const hours = r.pipelineHours + r.ongoingHours;
+      const hours = r.pipelineHours + r.ongoingHours + r.servicingHours;
       const name = model.roles[id]!.name;
       let evidence =
         `${name} is ${pct(util.mean)} utilised (range ${range(util)}): ${num(hours)} h/week of work across ` +
-        `${members} ${members === 1 ? "person" : "people"}, ${pct(r.pipeline)} on the pipeline and ${pct(r.ongoing)} on client work.`;
+        `${members} ${members === 1 ? "person" : "people"}, ${pct(r.pipeline)} on the pipeline and ${pct(r.ongoing + r.servicing)} on client work.`;
       if (queueStep) evidence += ` Work queues longest at “${queueStep.name}” (avg ${num(queueStep.avgQueue)} items waiting).`;
       return {
         kind: "role" as const,
@@ -106,7 +106,7 @@ export function rankBottlenecks(model: EngineModel, result: SimulationResult, { 
         name,
         util,
         pipeline: r.pipeline,
-        ongoing: r.ongoing,
+        ongoing: r.ongoing + r.servicing,
         hoursPerWeek: hours,
         people: members,
         queueStep,
@@ -125,7 +125,7 @@ export function rankBottlenecks(model: EngineModel, result: SimulationResult, { 
       const p = people[id]!;
       const util = result.kpi.people[id]!.util;
       const r = result.people[id]!;
-      const hours = r.pipelineHours + r.ongoingHours;
+      const hours = r.pipelineHours + r.ongoingHours + r.servicingHours;
       const roleNames = p.roles.map((rid) => model.roles[rid]?.name ?? rid);
       return {
         kind: "person" as const,

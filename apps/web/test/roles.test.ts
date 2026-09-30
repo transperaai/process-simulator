@@ -74,11 +74,21 @@ describe("roleUsage", () => {
         { person_id: "p1", role_id: "r2" },
       ],
       [{ client_id: "c1", role_id: "r2" }],
+      [
+        { id: "v1", fallback_ongoing_load: { r3: 2 } },
+        { id: "v2", fallback_ongoing_load: {} },
+      ],
     );
-    expect(usage).toEqual({ r1: { steps: 2, people: 1, clients: 0 }, r2: { steps: 0, people: 1, clients: 1 } });
+    expect(usage).toEqual({
+      r1: { steps: 2, people: 1, clients: 0, services: 0 },
+      r2: { steps: 0, people: 1, clients: 1, services: 0 },
+      r3: { steps: 0, people: 0, clients: 0, services: 1 },
+    });
     expect(inUse(usage.r1)).toBe(true);
+    // Only a service's fallback load names r3: the database refuses its delete too.
+    expect(inUse(usage.r3)).toBe(true);
     expect(inUse(undefined)).toBe(false);
-    expect(inUse({ steps: 0, people: 0, clients: 0 })).toBe(false);
+    expect(inUse({ steps: 0, people: 0, clients: 0, services: 0 })).toBe(false);
   });
 });
 
@@ -143,7 +153,7 @@ describe("the role actions", () => {
     expect(await removeRole(ROLE)).toEqual({});
     expect(db.refreshed).toBe(1);
     db.result = { data: null, error: { code: "23503" } };
-    expect(await removeRole(ROLE)).toEqual({ error: "That role is still used by steps, people or clients. Make it inactive instead." });
+    expect(await removeRole(ROLE)).toEqual({ error: "That role is still used by steps, people, clients or a service's fallback load. Make it inactive instead." });
     db.result = { data: [], error: null };
     expect(await removeRole(ROLE)).toEqual({ error: "That role was already removed, or you can't edit it." });
     expect(db.refreshed).toBe(1);

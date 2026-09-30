@@ -131,7 +131,7 @@ export interface WorkspaceSettingsData {
   /** agency_admin or owner: may change workspace settings. */
   canManage: boolean;
   roles: Pick<RoleRow, "id" | "name" | "color" | "active">[];
-  /** How many steps (any revision), people and clients name each role, by role id. */
+  /** How many steps (any revision), people, clients and services name each role, by role id. */
   roleUsage: Record<string, RoleUsage>;
   /** Steps someone does (working steps with a role) in the workspace's live processes, for skills. */
   steps: Pick<StepRow, "id" | "name" | "role_id">[];
@@ -218,7 +218,7 @@ export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSett
     canEdit: canEdit.data === true,
     canManage: canManage.data === true,
     roles: roles.data ?? [],
-    roleUsage: roleUsage(roleSteps.data ?? [], personRoles.data ?? [], assignments.data ?? []),
+    roleUsage: roleUsage(roleSteps.data ?? [], personRoles.data ?? [], assignments.data ?? [], (services.data ?? []) as ServiceRow[]),
     steps: steps.data ?? [],
     people: people.data ?? [],
     personRoles: personRoles.data ?? [],

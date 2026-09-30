@@ -17,7 +17,7 @@ const roleSaver =
     saveRoleField(roleId, field, base, next) as Promise<SaveOutcome<T>>;
 
 const sectionClass = "mb-8 rounded-token border border-line bg-panel p-4 shadow-token";
-const noUsage: RoleUsage = { steps: 0, people: 0, clients: 0 };
+const noUsage: RoleUsage = { steps: 0, people: 0, clients: 0, services: 0 };
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 export function RolesSettings({ data }: { data: WorkspaceSettingsData }) {
@@ -96,6 +96,7 @@ function RoleItem({ role, usage, canEdit }: { role: Pick<RoleRow, "id" | "name" 
         />
         <p className="text-fg-2 sm:col-span-2">
           Used by {plural(usage.steps, "step")} · {plural(usage.people, "person", "people")} · {plural(usage.clients, "client")}
+          {usage.services > 0 && <> · {plural(usage.services, "service")} (fallback load)</>}
         </p>
         {canEdit && !inUse(usage) && (
           <div className="sm:col-span-2">

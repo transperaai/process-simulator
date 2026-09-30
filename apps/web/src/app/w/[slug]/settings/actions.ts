@@ -262,7 +262,7 @@ export async function removeRole(roleId: string): Promise<ActionResult> {
   const supabase = await createClient();
   const { data, error } = await supabase.from("roles").delete().eq("id", roleId).select("id");
   if (error) {
-    return error.code === "23503" ? { error: "That role is still used by steps, people or clients. Make it inactive instead." } : failure(error);
+    return error.code === "23503" ? { error: "That role is still used by steps, people, clients or a service's fallback load. Make it inactive instead." } : failure(error);
   }
   if (!data.length) return { error: "That role was already removed, or you can't edit it." };
   refresh();

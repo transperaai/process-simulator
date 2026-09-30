@@ -43,30 +43,40 @@ export interface RoleUsage {
   steps: number;
   people: number;
   clients: number;
+  /** Services whose fallback load (hours per client, by role) names it. */
+  services: number;
 }
 
-/** How many steps, people and clients name each role. */
+/** How many steps, people, clients and services name each role: what the database's `in_use` trigger checks. */
 export function roleUsage(
   steps: readonly { id: string; role_id: string | null }[],
   personRoles: readonly { person_id: string; role_id: string }[],
   clientAssignments: readonly { client_id: string; role_id: string }[],
+  services: readonly { id: string; fallback_ongoing_load: Record<string, unknown> | null }[] = [],
 ): Record<string, RoleUsage> {
   const stepIds = new Map<string, Set<string>>();
   const people = new Map<string, Set<string>>();
   const clients = new Map<string, Set<string>>();
+  const serviceIds = new Map<string, Set<string>>();
   const add = (m: Map<string, Set<string>>, role: string, id: string) => (m.get(role) ?? m.set(role, new Set()).get(role)!).add(id);
   for (const s of steps) if (s.role_id) add(stepIds, s.role_id, s.id);
   for (const p of personRoles) add(people, p.role_id, p.person_id);
   for (const c of clientAssignments) add(clients, c.role_id, c.client_id);
+  for (const sv of services) for (const role of Object.keys(sv.fallback_ongoing_load ?? {})) add(serviceIds, role, sv.id);
   const out: Record<string, RoleUsage> = {};
-  for (const role of new Set([...stepIds.keys(), ...people.keys(), ...clients.keys()])) {
-    out[role] = { steps: stepIds.get(role)?.size ?? 0, people: people.get(role)?.size ?? 0, clients: clients.get(role)?.size ?? 0 };
+  for (const role of new Set([...stepIds.keys(), ...people.keys(), ...clients.keys(), ...serviceIds.keys()])) {
+    out[role] = {
+      steps: stepIds.get(role)?.size ?? 0,
+      people: people.get(role)?.size ?? 0,
+      clients: clients.get(role)?.size ?? 0,
+      services: serviceIds.get(role)?.size ?? 0,
+    };
   }
   return out;
 }
 
 /** Whether anything names the role (so it can be made inactive but not deleted). */
-export const inUse = (usage: RoleUsage | undefined): boolean => !!usage && usage.steps + usage.people + usage.clients > 0;
+export const inUse = (usage: RoleUsage | undefined): boolean => !!usage && usage.steps + usage.people + usage.clients + usage.services > 0;
 
 /** The roles a picker offers: the active ones, and any in `keep` (what is already chosen). */
 export function selectableRoles<T extends { id: string; active: boolean }>(roles: readonly T[], keep: readonly (string | null)[] = []): T[] {

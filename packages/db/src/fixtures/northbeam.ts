@@ -182,6 +182,10 @@ function services(): ServiceRow[] {
       Object.entries(NORTHBEAM_FALLBACK_LOAD[key]).map(([roleKey, hours]) => [northbeamRoleIds[roleKey as RoleKey], hours]),
     ),
     active: true,
+    // The churn sensitivity is the PRD's estimated default (§6.3.5), so the
+    // robustness check perturbs it (issue #79); the other values are stamped
+    // entered on insert.
+    provenance: { churn_health_sensitivity: { source: "estimated", at: "2026-09-29T00:00:00Z", note: "Northbeam sample data" } },
   });
   return [
     service("seo", "SEO retainer", 3500, 0.45, 18, 0.03, 0.55),

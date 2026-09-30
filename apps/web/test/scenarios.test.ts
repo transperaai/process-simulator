@@ -69,16 +69,32 @@ describe("levers are generated from the model", () => {
     expect(applyPatches(model(), leverPatches(levers, all)).issues.filter((i) => i.problem !== "clamped")).toEqual([]);
   });
 
-  it("re-running after a lever move stays within the PRD §6.7 target for this model (< 150 ms for 30 replications)", () => {
-    const patched = applyPatches(model(), [{ path: `steps.${northbeamStepIds.audit}.work_hours`, op: "multiply", value: 0.5 }]).model;
+  // Re-running after a lever move: warm up on a patched model, then the best of 3 re-runs, each rebuilding the levers and patches.
+  const rerunBest = (base: () => ReturnType<typeof model>) => {
+    const patched = applyPatches(base(), [{ path: `steps.${northbeamStepIds.audit}.work_hours`, op: "multiply", value: 0.5 }]).model;
     simulate(patched, 30, 1);
     let best = Infinity;
     for (let i = 0; i < 3; i++) {
       const t = performance.now();
-      simulate(applyPatches(model(), leverPatches(buildLevers(model()), { "demand.leads_per_week": 8 + i })).model, 30, 1);
+      simulate(applyPatches(base(), leverPatches(buildLevers(base()), { "demand.leads_per_week": 8 + i })).model, 30, 1);
       best = Math.min(best, performance.now() - t);
     }
-    expect(best).toBeLessThan(150);
+    return best;
+  };
+
+  it("re-running a pipeline-only Northbeam after a lever move stays within the PRD §6.7 target (< 150 ms for 30 replications)", () => {
+    // The seeded bundle without its servicing processes and links: the pipeline model §6.7's first target describes.
+    const pipelineOnly = () => {
+      const b = northbeamBundle();
+      return toEngineModel({ ...b, servicingLinks: [], otherProcesses: (b.otherProcesses ?? []).filter((p) => p.process.kind !== "servicing") }, START);
+    };
+    expect(pipelineOnly().servicingProcesses).toBeUndefined();
+    expect(rerunBest(pipelineOnly)).toBeLessThan(150);
+  });
+
+  it("re-running the full seeded Northbeam (client roster and servicing) after a lever move stays within its PRD §6.7 target (< 250 ms for 30 replications)", () => {
+    expect(model().servicingProcesses).toBeDefined();
+    expect(rerunBest(model)).toBeLessThan(250);
   });
 });
 

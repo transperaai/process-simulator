@@ -18,8 +18,17 @@ is Austin's QA:
   already set up in production. He has no real transcripts, so the Copperleaf interviews are the test material.
   Findings go on #27.
 
-**Milestones B (#2) and C (#3):** not started. Tickets #30–#43 are `ready-for-agent`; #44 is `ready-for-human`.
-Work the frontier: any open ticket whose `Blocked by` issues are all closed.
+- **#93 A30: shadcn/ui and a sidebar app shell.** PR 1 (#94: shadcn setup, theme tokens aliased to ours, sidebar
+  shell, map page with a docked right-hand panel) is merged. **PR 2 (restyle the remaining pages) is paused** until
+  Austin's QA list is triaged: no point restyling pages he may remove. Austin is happy with the direction "for now";
+  he plans to build a UI kit and we'll refine against it later. Known visual follow-ups for the map page (agreed
+  worth doing, not yet ticketed): fit the map to the canvas with bigger nodes; show 5–6 headline KPI cards with the
+  rest behind "More"; make the demo notice a small dismissible line; restyle the canvas toolbar as a floating
+  shadcn toolbar.
+
+**Milestones B (#2) and C (#3):** not started, and **on hold** until Austin's QA list is triaged (see Next steps).
+Tickets #30–#43 are `ready-for-agent`; #44 is `ready-for-human`. Their specs predate Austin using the product, so
+expect some to be rewritten or closed.
 
 **Production database:** every migration in `packages/db/supabase/migrations/` is applied (up to
 `20261021000000_roles_and_workspaces`). See `docs/production-migrations.md`.
@@ -91,9 +100,23 @@ password to `postgres`.
 
 ## Next steps
 
-1. Support Austin's QA: answer questions, and when findings arrive, triage them into tickets (don't fix mid-review
-   unless he asks). Then plan the next wave with him before starting it (Milestone B frontier, the follow-ups below).
-2. Keep `docs/qa/milestone-a.md` and the QA pack current if behaviour changes.
+Agreed with Austin on 30 Sep: **refine Milestone A before building Milestone B.** B builds directly on A's screens
+and data (B1 roles, B2 People/Clients views, B6/B7 forecast), so building it first and then removing or reworking A
+features would pay twice. Git conflicts aren't the risk (we build wave by wave); stale ticket specs are.
+
+1. **Austin is writing a QA list** from `docs/qa/milestone-a.md`: things to **remove**, **refine** and **add**. He'll
+   paste it into the new chat, possibly rough. Don't fix anything mid-list.
+2. **Triage it** (Opus-level work) against `docs/PRD.md` and the open tickets:
+   - removals and refinements → new tickets under #1 as a final Milestone A **polish wave** (numbered on from A30);
+   - additions → tickets in the right milestone (A if it's needed to be audit-ready, otherwise B or C);
+   - every B/C ticket the list affects → rewrite its spec, or close it `wontfix` with the reason;
+   - record the decisions in the PRD decision log, and update `docs/qa/milestone-a.md` for anything removed;
+   - fold in #93 PR 2 (restyle remaining pages) and the map-page visual follow-ups above, skipping removed pages.
+3. **Show Austin the revised plan** (tickets per wave, what was cut or rewritten) and get his approval before
+   building anything.
+4. **Build:** the polish wave first (plan with Opus, build with Sonnet, review with Opus; apply any migrations to
+   production as we go), then Milestone B on the corrected tickets.
+5. Keep `docs/qa/milestone-a.md` and the #27 QA pack current as behaviour changes.
 
 ## Decisions from Austin (30 Sep)
 

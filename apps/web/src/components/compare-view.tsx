@@ -5,8 +5,8 @@
 // person side by side. Every sentence comes from compareHeadline's templates.
 
 import { useState, type ReactNode } from "react";
-import type { Comparison, Delta, EnginePerson, Headline, Stat } from "@transpera-flow/engine";
-import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
+import { compareTable, type Comparison, type CompareRow, type EnginePerson, type Headline, type Stat } from "@transpera-flow/engine";
+import { formatNumber, formatPercent } from "@/lib/format";
 
 const THRESHOLD = 0.85;
 const MINUS = "−";
@@ -17,22 +17,8 @@ const signed = (v: number, format: (x: number) => string) => {
   return v > 0 ? `+${s}` : `${MINUS}${s}`;
 };
 
-function band(stat: Stat, format: (v: number) => string, isDelta = false) {
-  const f = isDelta ? (v: number) => signed(v, format) : format;
-  const lo = f(stat.p10);
-  const hi = f(stat.p90);
-  return lo === hi ? lo : `${lo} to ${hi}`;
-}
-
-interface Row {
-  label: string;
-  delta: Delta;
-  format: (v: number) => string;
-  /** Whether a rise is good news (colours the change). */
-  better: "up" | "down" | null;
-}
-
-function KpiDeltaTable({ rows }: { rows: Row[] }) {
+/** Rows from the engine's compareTable, which MCP `compare_scenarios` returns too, so both read the same. */
+function KpiDeltaTable({ rows }: { rows: CompareRow[] }) {
   return (
     <table className="w-full text-sm">
       <caption className="sr-only">Key results, baseline and scenario, with 10th–90th percentile ranges</caption>
@@ -54,26 +40,23 @@ function KpiDeltaTable({ rows }: { rows: Row[] }) {
       </thead>
       <tbody>
         {rows.map((r) => {
-          const d = r.delta.delta;
-          const up = d.p10 > 0 || (d.p10 >= 0 && d.mean > 0);
-          const down = d.p90 < 0 || (d.p90 <= 0 && d.mean < 0);
-          const tone = !r.better || (!up && !down) ? "" : (up && r.better === "up") || (down && r.better === "down") ? "text-good" : "text-crit";
+          const tone = r.tone === "good" ? "text-good" : r.tone === "bad" ? "text-crit" : "";
           return (
             <tr key={r.label} className="border-b border-line/60 align-top">
               <th scope="row" className="py-1.5 pr-2 text-left font-normal">
                 {r.label}
               </th>
               <td className="py-1.5 pr-2 text-right tabular-nums">
-                {r.format(r.delta.baseline.mean)}
-                <span className="block text-xs text-fg-3">{band(r.delta.baseline, r.format)}</span>
+                {r.text.baseline}
+                <span className="block text-xs text-fg-3">{r.text.baselineRange}</span>
               </td>
               <td className="py-1.5 pr-2 text-right tabular-nums">
-                {r.format(r.delta.scenario.mean)}
-                <span className="block text-xs text-fg-3">{band(r.delta.scenario, r.format)}</span>
+                {r.text.scenario}
+                <span className="block text-xs text-fg-3">{r.text.scenarioRange}</span>
               </td>
               <td className={`py-1.5 text-right font-semibold tabular-nums ${tone}`}>
-                {signed(d.mean, r.format)}
-                <span className="block text-xs font-normal text-fg-3">{band(d, r.format, true)}</span>
+                {r.text.change}
+                <span className="block text-xs font-normal text-fg-3">{r.text.changeRange}</span>
               </td>
             </tr>
           );
@@ -199,17 +182,7 @@ export function CompareView({
   /** The robustness check, shown under a comparison (issue #20). */
   robustness?: ReactNode;
 }) {
-  const whole = (v: number) => formatNumber(v, 1);
-  const days = (h: number) => `${formatNumber(h / (hoursPerWeek / 5), 1)} d`;
-  const money = (v: number) => formatCurrency(v, currency);
-  const rows: Row[] | null = comparison && [
-    { label: `Wins / ${horizonWeeks} wks`, delta: comparison.won, format: whole, better: "up" },
-    { label: "Lost", delta: comparison.lost, format: whole, better: "down" },
-    { label: "Cycle time", delta: comparison.cycle, format: days, better: "down" },
-    { label: "New MRR", delta: comparison.mrrAdded, format: money, better: "up" },
-    { label: "Pipeline labour cost", delta: comparison.labour, format: money, better: null },
-    { label: "WIP at horizon end", delta: comparison.wipEnd, format: whole, better: "down" },
-  ];
+  const rows = comparison ? compareTable(comparison, { horizonWeeks, hoursPerWeek, currency }) : null;
   return (
     <section aria-labelledby="compare-heading" aria-busy={running} className="flex flex-col gap-3 rounded-token border border-line bg-panel p-3 shadow-token">
       <div className="flex items-baseline justify-between gap-2">

@@ -1,0 +1,492 @@
+// Analysis tools (docs/PRD.md §7.1; issue #26): save_scenario,
+// compare_scenarios, check_robustness, get_bottlenecks, log_issue and
+// list_issues. Like the v1 read tools they act as the token's user: every
+// query goes through the context's Supabase client, so RLS decides what is
+// visible and who may write (docs/adr/0002-mcp-acts-as-user-via-pre-request.md).
+// Simulations use the live revision only (the PRD gives these tools no
+// `revision`), run on this thread, and are capped in time where they can run
+// long. Text comes from the engine's templates, never a language model.
+
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import {
+  ISSUE_COLUMNS,
+  listProcesses,
+  loadIssues,
+  loadProcessBundle,
+  loadScenarios,
+  ModelError,
+  SCENARIO_COLUMNS,
+  toEngineModel,
+  type IssueRow,
+  type Json,
+  type ProcessBundle,
+  type ScenarioRow,
+} from "@transpera-flow/db";
+import { applyPatches, detectIssues, isBlocking, ISSUE_SEVERITIES, ISSUE_TYPES, MAX_PATCHES, PATCH_OPS, simulate, type EngineModel } from "@transpera-flow/engine";
+import { bottleneckReport, checkScenarioRobustness, compareScenarios, matchNamed, type NamedScenario } from "./analysis";
+import { resolveProcess, resolveWorkspace, revisionIdFor, type ProcessWithDraft, type ToolContext, type WorkspaceRef } from "./context";
+import { runTool, ToolError } from "./result";
+
+export const ANALYSIS_TOOL_NAMES = ["save_scenario", "compare_scenarios", "check_robustness", "get_bottlenecks", "log_issue", "list_issues"] as const;
+
+const DEFAULT_REPS = 30;
+const DEFAULT_SEED = 1;
+const MAX_REPS = 200;
+/** The route allows 60 s (apps/web/src/app/api/mcp/route.ts `maxDuration`); stay well inside it. */
+export const DEFAULT_ROBUSTNESS_SECONDS = 20;
+export const MAX_ROBUSTNESS_SECONDS = 45;
+export const SHADOW_PRICE_BUDGET_MS = 15_000;
+const MAX_TITLE = 200;
+const MAX_EVIDENCE = 5000;
+
+const workspaceArg = z.string().optional().describe("Workspace id, slug or name. Defaults to the active workspace (set_active_workspace).");
+const processArg = z.string().optional().describe("Process id or name. Defaults to the workspace's only process.");
+const scenarioRefs = z
+  .union([z.string().min(1), z.array(z.string().min(1)).min(1).max(10)])
+  .describe("A saved scenario's id or name, or several to stack in order (as applying them in the app does).");
+const repsArg = z.number().int().min(1).max(MAX_REPS).optional().describe(`Replications (default ${DEFAULT_REPS}, as in the app)`);
+const seedArg = z.number().int().min(0).optional().describe(`Random seed (default ${DEFAULT_SEED}, as in the app)`);
+const startDateArg = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .optional()
+  .describe("ISO date the run starts on; people's start/end dates and leave are measured from it (default today)");
+
+function check<T>(r: { data: T | null; error: unknown }): T {
+  if (r.error) throw r.error;
+  return r.data as T;
+}
+
+/** A write RLS or a check constraint refused, as a ToolError the caller can act on. */
+function writeError(error: { code?: string; message?: string }, what: string): ToolError {
+  if (error.code === "42501") return new ToolError("forbidden", `You don't have permission to ${what} in this workspace (editors and owners can).`);
+  if (error.code === "23514") return new ToolError("invalid_input", `Some of those values aren't allowed: ${error.message ?? ""}`.trim());
+  if (error.code === "23503") return new ToolError("not_found", "Something the issue links to no longer exists.");
+  return new ToolError("write_failed", `Couldn't ${what}: ${error.message ?? "unknown error"}`);
+}
+
+const refs = (v: string | string[] | undefined) => (v === undefined ? [] : Array.isArray(v) ? v : [v]);
+
+interface Loaded {
+  ws: WorkspaceRef;
+  proc: ProcessWithDraft;
+  bundle: ProcessBundle;
+  model: EngineModel;
+  startDate: string;
+}
+
+/** The live revision as an engine model, run from `start_date` (default today). */
+async function loadLiveModel(
+  ctx: ToolContext,
+  args: { workspace?: string; process?: string; start_date?: string },
+  assumptions: string[],
+): Promise<Loaded> {
+  const ws = await resolveWorkspace(ctx, args.workspace, assumptions);
+  const proc = await resolveProcess(ctx, ws, args.process, assumptions);
+  const startDate = args.start_date ?? ctx.today;
+  if (!args.start_date) assumptions.push(`start_date defaulted to today (${ctx.today}).`);
+  const bundle = await loadProcessBundle(ctx.db, ws, proc, revisionIdFor(proc, "live"));
+  try {
+    return { ws, proc, bundle, model: toEngineModel(bundle, { startDate }), startDate };
+  } catch (err) {
+    if (err instanceof ModelError) throw new ToolError("invalid_model", `This process can't be simulated yet: ${err.message}`);
+    throw err;
+  }
+}
+
+function runSettings(args: { reps?: number; seed?: number }, assumptions: string[]) {
+  if (args.reps === undefined) assumptions.push(`reps defaulted to ${DEFAULT_REPS}.`);
+  if (args.seed === undefined) assumptions.push(`seed defaulted to ${DEFAULT_SEED}.`);
+  return { reps: args.reps ?? DEFAULT_REPS, seed: args.seed ?? DEFAULT_SEED };
+}
+
+async function resolveScenarios(ctx: ToolContext, ws: WorkspaceRef, names: string[]): Promise<ScenarioRow[]> {
+  if (!names.length) return [];
+  const all = await loadScenarios(ctx.db, ws.id);
+  return names.map((n) => matchNamed(all, n, "saved scenario", ` in '${ws.name}'`));
+}
+
+const scenarioSummary = (s: NamedScenario) => ({ id: s.id, name: s.name, patch: s.patch });
+
+const header = (l: Loaded) => ({
+  workspace: { id: l.ws.id, name: l.ws.name },
+  process: { id: l.proc.id, name: l.proc.name },
+  revision: { id: l.bundle.revision.id, number: l.bundle.revision.number, status: l.bundle.revision.status, which: "live" as const },
+  start_date: l.startDate,
+});
+
+/** Stable-id steps of a process (live revision, then the draft's for steps only drafted so far). */
+async function processSteps(ctx: ToolContext, proc: ProcessWithDraft): Promise<{ id: string; name: string }[]> {
+  const ids = [proc.live_revision_id, proc.draft_revision_id].filter((id): id is string => !!id);
+  if (!ids.length) return [];
+  const rows = check(await ctx.db.from("steps").select("id, name, revision_id").in("revision_id", ids));
+  const byId = new Map<string, { id: string; name: string }>();
+  for (const r of rows.filter((r) => r.revision_id === proc.live_revision_id)) byId.set(r.id, { id: r.id, name: r.name });
+  for (const r of rows) if (!byId.has(r.id)) byId.set(r.id, { id: r.id, name: r.name });
+  return [...byId.values()];
+}
+
+export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void {
+  server.registerTool(
+    "save_scenario",
+    {
+      title: "Save scenario",
+      description:
+        "Save a named scenario (a list of {path, op, value} patches) to the workspace's library, where the app and compare_scenarios can use it. " +
+        "The patches are checked against the process's live model first; one whose target doesn't exist is refused.",
+      inputSchema: {
+        name: z.string().trim().min(1).max(120).describe("Scenario name, unique in the workspace"),
+        description: z.string().max(2000).optional(),
+        overrides: z
+          .array(z.object({ path: z.string(), op: z.enum(PATCH_OPS), value: z.number() }).strict())
+          .min(1)
+          .max(MAX_PATCHES)
+          .describe("Patches in the run_scenario `overrides` grammar, applied in order."),
+        process: z.string().optional().describe("Process to check the patches against (default: the workspace's only process)."),
+        workspace: workspaceArg,
+      },
+    },
+    (args) =>
+      runTool(async (assumptions) => {
+        const ws = await resolveWorkspace(ctx, args.workspace, assumptions);
+        const processes = await listProcesses(ctx.db, ws.id);
+        if (args.process || processes.length === 1) {
+          const proc = await resolveProcess(ctx, ws, args.process, assumptions);
+          if (proc.live_revision_id) {
+            const bundle = await loadProcessBundle(ctx.db, ws, proc, proc.live_revision_id);
+            let model: EngineModel | null = null;
+            try {
+              model = toEngineModel(bundle, { startDate: ctx.today });
+            } catch (err) {
+              if (!(err instanceof ModelError)) throw err;
+              assumptions.push(`Not checked against '${proc.name}': it can't be simulated yet (${err.message}).`);
+            }
+            if (model) {
+              const { issues } = applyPatches(model, args.overrides);
+              const blocking = issues.filter(isBlocking);
+              if (blocking.length) {
+                throw new ToolError("invalid_overrides", `These changes can't be applied to '${proc.name}': ${blocking.map((i) => i.message).join(" ")}`, blocking);
+              }
+              for (const i of issues) assumptions.push(`Override ${i.index + 1}: ${i.message}`);
+            }
+          }
+        } else {
+          assumptions.push("The workspace has several processes and none was given, so the patches were not checked against a model.");
+        }
+        const existing = await loadScenarios(ctx.db, ws.id);
+        const clash = existing.find((s) => s.name.trim().toLowerCase() === args.name.trim().toLowerCase());
+        if (clash) throw new ToolError("name_taken", `A scenario called '${clash.name}' already exists`, [{ id: clash.id, name: clash.name }]);
+        const { data, error } = await ctx.db
+          .from("scenarios")
+          .insert({ workspace_id: ws.id, name: args.name.trim(), description: args.description?.trim() || null, patch: args.overrides as unknown as Json })
+          .select(SCENARIO_COLUMNS)
+          .single();
+        if (error) throw writeError(error, "save scenarios");
+        const row = data as unknown as ScenarioRow;
+        return { workspace: { id: ws.id, name: ws.name }, scenario: { id: row.id, name: row.name, description: row.description, patch: row.patch } };
+      }),
+  );
+
+  server.registerTool(
+    "compare_scenarios",
+    {
+      title: "Compare scenarios",
+      description:
+        "Baseline vs saved scenario(s) on the live process: the app's compare view as data. Returns the KPI delta table (means with 10th–90th " +
+        "percentile ranges, paired replication by replication), utilisation per role and person on both sides, and the templated headline. " +
+        "`a` defaults to the baseline (the model as it is); `b` is the scenario. Each side's scenarios are applied to the live model in order.",
+      inputSchema: {
+        b: scenarioRefs,
+        a: scenarioRefs.optional().describe("The other side's scenario(s); omit to compare against the baseline, as the app does."),
+        process: processArg,
+        workspace: workspaceArg,
+        reps: repsArg,
+        seed: seedArg,
+        start_date: startDateArg,
+      },
+      annotations: { readOnlyHint: true },
+    },
+    (args) =>
+      runTool(async (assumptions) => {
+        const loaded = await loadLiveModel(ctx, args, assumptions);
+        const { reps, seed } = runSettings(args, assumptions);
+        if (!args.a) assumptions.push("a defaulted to the baseline (the live model with no scenario applied).");
+        const [a, b] = await Promise.all([resolveScenarios(ctx, loaded.ws, refs(args.a)), resolveScenarios(ctx, loaded.ws, refs(args.b))]);
+        const started = performance.now();
+        const { runs, ...out } = compareScenarios({ model: loaded.model, a, b, reps, seed, currency: loaded.bundle.workspace.settings.currency });
+        return {
+          ...header(loaded),
+          reps,
+          seed,
+          currency: loaded.bundle.workspace.settings.currency,
+          a: a.length ? a.map(scenarioSummary) : "baseline",
+          b: b.map(scenarioSummary),
+          ...out,
+          kpi: { baseline: runs.baseline.kpi, scenario: runs.scenario.kpi },
+          duration_ms: Math.round(performance.now() - started),
+        };
+      }),
+  );
+
+  server.registerTool(
+    "check_robustness",
+    {
+      title: "Check robustness",
+      description:
+        "Does the scenario's conclusion hold if the estimates are off? Re-runs baseline and scenario with every estimated input 25% lower and " +
+        "higher (conflicting estimates across their range), one at a time, then refines the most sensitive (docs/PRD.md §6.5). Server-side and " +
+        `time-capped (default ${DEFAULT_ROBUSTNESS_SECONDS} s, at most ${MAX_ROBUSTNESS_SECONDS} s): a check that runs out of time returns ` +
+        "`partial: true` with the inputs it covered.",
+      inputSchema: {
+        scenario: scenarioRefs,
+        metric: z.enum(["won", "mrrAdded"]).optional().describe("The conclusion checked: wins (default) or new MRR."),
+        time_budget_seconds: z
+          .number()
+          .min(1)
+          .max(MAX_ROBUSTNESS_SECONDS)
+          .optional()
+          .describe(`Stop starting new runs after this long (default ${DEFAULT_ROBUSTNESS_SECONDS}).`),
+        process: processArg,
+        workspace: workspaceArg,
+        start_date: startDateArg,
+      },
+      annotations: { readOnlyHint: true },
+    },
+    (args) =>
+      runTool(async (assumptions) => {
+        const loaded = await loadLiveModel(ctx, args, assumptions);
+        const scenario = await resolveScenarios(ctx, loaded.ws, refs(args.scenario));
+        const metric = args.metric ?? "won";
+        if (!args.metric) assumptions.push("metric defaulted to wins.");
+        const seconds = args.time_budget_seconds ?? DEFAULT_ROBUSTNESS_SECONDS;
+        if (args.time_budget_seconds === undefined) assumptions.push(`time_budget_seconds defaulted to ${DEFAULT_ROBUSTNESS_SECONDS}.`);
+        const started = performance.now();
+        const { result, ...out } = checkScenarioRobustness({
+          model: loaded.model,
+          scenario,
+          steps: loaded.bundle.steps as unknown as { id: string; provenance?: unknown }[],
+          metric,
+          currency: loaded.bundle.workspace.settings.currency,
+          timeBudgetMs: seconds * 1000,
+        });
+        return {
+          ...header(loaded),
+          scenario: scenario.map(scenarioSummary),
+          metric,
+          time_budget_seconds: seconds,
+          ...out,
+          text: [out.verdict, ...out.details].join(" "),
+          ...(result
+            ? {
+                nominal: result.nominal,
+                bottleneck_holds: result.bottleneckHolds,
+                sign_holds: result.signHolds,
+                sensitivities: result.sensitivities,
+                seed: result.seed,
+                perturbation: result.perturbation,
+              }
+            : {}),
+          duration_ms: Math.round(performance.now() - started),
+        };
+      }),
+  );
+
+  server.registerTool(
+    "get_bottlenecks",
+    {
+      title: "Get bottlenecks",
+      description:
+        "Ranked constraints of the live process's baseline run: roles and people by utilisation, steps by queue, each with its evidence, and the " +
+        "shadow price of the top bottleneck: the extra completed units (wins or finished items) per quarter from one more FTE in that role, " +
+        "from an automatic extra replication set paired with the baseline (mean and 10th–90th percentile range).",
+      inputSchema: {
+        process: processArg,
+        workspace: workspaceArg,
+        reps: repsArg,
+        seed: seedArg,
+        start_date: startDateArg,
+        limit: z.number().int().min(1).max(50).optional().describe("Keep at most this many of each kind (default 5)."),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    (args) =>
+      runTool(async (assumptions) => {
+        const loaded = await loadLiveModel(ctx, args, assumptions);
+        const { reps, seed } = runSettings(args, assumptions);
+        const started = performance.now();
+        const { result, ...report } = bottleneckReport({ model: loaded.model, reps, seed, limit: args.limit ?? 5, timeBudgetMs: SHADOW_PRICE_BUDGET_MS });
+        if (report.shadow_price && !report.shadow_price.complete) {
+          assumptions.push(`The shadow price ran out of time after ${report.shadow_price.reps} of ${reps} replication pairs.`);
+        }
+        return {
+          ...header(loaded),
+          reps,
+          seed,
+          bottleneck: {
+            role: result.bnRole,
+            step: result.bnStep,
+            person: result.bnPerson,
+          },
+          ...report,
+          duration_ms: Math.round(performance.now() - started),
+        };
+      }),
+  );
+
+  server.registerTool(
+    "log_issue",
+    {
+      title: "Log issue",
+      description:
+        "Log a finding in the workspace's issues register (a manual issue), linked to a step, person, role, owner and/or the saved scenario that " +
+        "fixes it, each by id or name. Steps are looked up in the process (default: the workspace's only process).",
+      inputSchema: {
+        title: z.string().trim().min(1).max(MAX_TITLE),
+        type: z.enum(ISSUE_TYPES),
+        severity: z.enum(ISSUE_SEVERITIES).optional().describe("Default warning."),
+        evidence: z.string().max(MAX_EVIDENCE).optional().describe("What was seen or said, and where."),
+        process: z.string().optional().describe("Process the issue is about (id or name)."),
+        step: z.string().optional().describe("Step id or name."),
+        person: z.string().optional().describe("Person the issue is about (id or name)."),
+        role: z.string().optional().describe("Role the issue is about (id or name)."),
+        client: z.string().optional().describe("Client the issue is about (id or name)."),
+        owner: z.string().optional().describe("Person who owns the fix (id or name)."),
+        scenario: z.string().optional().describe("Saved scenario that tests the fix (id or name)."),
+        status: z.enum(["open", "in_progress", "done", "dismissed"]).optional().describe("Default open."),
+        workspace: workspaceArg,
+      },
+    },
+    (args) =>
+      runTool(async (assumptions) => {
+        const ws = await resolveWorkspace(ctx, args.workspace, assumptions);
+        if (args.client) {
+          throw new ToolError(
+            "not_supported",
+            "This workspace has no client roster yet, so an issue can't link to a client. Name the client in `evidence`, or link a step, person or scenario.",
+          );
+        }
+        let proc: ProcessWithDraft | null = null;
+        if (args.process || args.step) proc = await resolveProcess(ctx, ws, args.process, assumptions);
+        const step = args.step && proc ? matchNamed(await processSteps(ctx, proc), args.step, "step", ` in '${proc.name}'`) : null;
+        const needPeople = args.person || args.owner;
+        const people = needPeople
+          ? check(await ctx.db.from("people").select("id, name").eq("workspace_id", ws.id).order("name"))
+          : [];
+        const person = args.person ? matchNamed(people, args.person, "person", ` in '${ws.name}'`) : null;
+        const owner = args.owner ? matchNamed(people, args.owner, "person", ` in '${ws.name}'`) : null;
+        const role = args.role
+          ? matchNamed(check(await ctx.db.from("roles").select("id, name").eq("workspace_id", ws.id).order("name")), args.role, "role", ` in '${ws.name}'`)
+          : null;
+        const scenario = args.scenario ? matchNamed(await loadScenarios(ctx.db, ws.id), args.scenario, "saved scenario", ` in '${ws.name}'`) : null;
+        if (!args.severity) assumptions.push("severity defaulted to warning.");
+        const { data, error } = await ctx.db
+          .from("issues")
+          .insert({
+            workspace_id: ws.id,
+            title: args.title.trim(),
+            type: args.type,
+            severity: args.severity ?? "warning",
+            evidence: args.evidence?.trim() || null,
+            status: args.status ?? "open",
+            source: "manual",
+            process_id: proc?.id ?? null,
+            step_id: step?.id ?? null,
+            person_id: person?.id ?? null,
+            role_id: role?.id ?? null,
+            owner_person_id: owner?.id ?? null,
+            scenario_id: scenario?.id ?? null,
+          })
+          .select(ISSUE_COLUMNS)
+          .single();
+        if (error) throw writeError(error, "log issues");
+        const row = data as unknown as IssueRow;
+        return {
+          workspace: { id: ws.id, name: ws.name },
+          issue: {
+            ...row,
+            process: proc ? { id: proc.id, name: proc.name } : null,
+            step: step ? { id: step.id, name: step.name } : null,
+            person: person ? { id: person.id, name: person.name } : null,
+            role: role ? { id: role.id, name: role.name } : null,
+            owner: owner ? { id: owner.id, name: owner.name } : null,
+            scenario: scenario ? { id: scenario.id, name: scenario.name } : null,
+          },
+        };
+      }),
+  );
+
+  server.registerTool(
+    "list_issues",
+    {
+      title: "List issues",
+      description:
+        "The workspace's issues register: tracked issues (logged by hand or promoted from a detection), newest first, with the names of what " +
+        "each links to. Filter by status, type or process. With include_detected, also runs the live process and lists what the run detects " +
+        "that isn't tracked yet.",
+      inputSchema: {
+        status: z.enum(["open", "in_progress", "done", "dismissed"]).optional(),
+        type: z.enum(ISSUE_TYPES).optional(),
+        process: z.string().optional().describe("Only issues about this process (id or name)."),
+        include_detected: z.boolean().optional().describe("Also list the live run's untracked detections (default false)."),
+        workspace: workspaceArg,
+      },
+      annotations: { readOnlyHint: true },
+    },
+    (args) =>
+      runTool(async (assumptions) => {
+        const ws = await resolveWorkspace(ctx, args.workspace, assumptions);
+        const proc = args.process || args.include_detected ? await resolveProcess(ctx, ws, args.process, assumptions) : null;
+        const [issues, scenarios, people, roles, processes] = await Promise.all([
+          loadIssues(ctx.db, ws.id),
+          loadScenarios(ctx.db, ws.id),
+          ctx.db.from("people").select("id, name").eq("workspace_id", ws.id),
+          ctx.db.from("roles").select("id, name").eq("workspace_id", ws.id),
+          listProcesses(ctx.db, ws.id),
+        ]);
+        const filtered = issues.filter(
+          (i) => (!args.status || i.status === args.status) && (!args.type || i.type === args.type) && (!args.process || i.process_id === proc?.id),
+        );
+        const stepNames = new Map<string, string>();
+        for (const p of processes.filter((p) => filtered.some((i) => i.process_id === p.id))) {
+          for (const s of await processSteps(ctx, p)) stepNames.set(s.id, s.name);
+        }
+        const nameIn = (list: { id: string; name: string }[] | null) => (id: string | null) => {
+          if (!id) return null;
+          return { id, name: list?.find((x) => x.id === id)?.name ?? null };
+        };
+        const personOf = nameIn(check(people));
+        const roleOf = nameIn(check(roles));
+        const scenarioOf = nameIn(scenarios);
+        const processOf = nameIn(processes);
+        const tracked = filtered.map((i) => ({
+          ...i,
+          process: processOf(i.process_id),
+          step: i.step_id ? { id: i.step_id, name: stepNames.get(i.step_id) ?? null } : null,
+          person: personOf(i.person_id),
+          role: roleOf(i.role_id),
+          owner: personOf(i.owner_person_id),
+          scenario: scenarioOf(i.scenario_id),
+        }));
+
+        let detected: unknown[] | undefined;
+        if (args.include_detected && proc) {
+          const loaded = await loadLiveModel(ctx, { workspace: ws.id, process: proc.id }, assumptions);
+          assumptions.push(`Detections come from a run of the live model at ${DEFAULT_REPS} replications, seed ${DEFAULT_SEED}.`);
+          const run = simulate(loaded.model, DEFAULT_REPS, DEFAULT_SEED);
+          const keys = new Set(issues.map((i) => i.detected_key).filter(Boolean));
+          detected = detectIssues(loaded.model, run)
+            .filter((d) => !keys.has(d.key) && (!args.type || d.type === args.type))
+            .map((d) => ({ ...d, source: "detected", status: null }));
+          if (args.status && args.status !== "open") detected = [];
+        }
+        return {
+          workspace: { id: ws.id, name: ws.name },
+          filters: { status: args.status ?? null, type: args.type ?? null, process: proc && args.process ? { id: proc.id, name: proc.name } : null },
+          count: tracked.length,
+          issues: tracked,
+          ...(detected ? { detected } : {}),
+        };
+      }),
+  );
+}

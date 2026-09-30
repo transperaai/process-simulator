@@ -6,7 +6,7 @@ export function ShellHeader({ title }: { title: string }) {
   return (
     <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur">
       <SidebarTrigger className="-ml-1" />
-      <Separator orientation="vertical" className="h-4" />
+      <Separator orientation="vertical" className="data-[orientation=vertical]:h-4" />
       <span className="text-sm font-medium text-muted-foreground">{title}</span>
     </header>
   );

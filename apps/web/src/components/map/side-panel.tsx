@@ -58,7 +58,7 @@ export function MapSidePanel({
       data-wide={wide || undefined}
       hidden={open === false}
       className={[
-        "flex w-96 shrink-0 flex-col overflow-hidden rounded-lg border bg-card shadow-token",
+        "flex w-96 shrink-0 flex-col overflow-hidden rounded-lg border bg-card shadow-token lg:sticky lg:top-16 lg:max-h-[calc(100svh-5rem)]",
         wide ? "lg:w-[32rem] xl:w-[40rem]" : "",
         "max-lg:absolute max-lg:inset-y-4 max-lg:right-4 max-lg:z-30 max-lg:w-[min(24rem,calc(100%-2rem))] max-lg:shadow-lg",
         open === "auto" ? "max-lg:hidden" : "",

@@ -89,7 +89,7 @@ export function DraftBar({
           : "No changes against live yet.";
 
   return (
-    <section aria-label="Draft controls" className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-xs">
+    <section aria-label="Draft controls" className="contents text-xs">
       {unpublished ? (
         <Badge variant="outline" className="border-warn bg-warn-soft py-1 text-xs text-fg">
           Not published yet{hasDraft ? ` · Draft · r${draftNumber}` : ""}
@@ -113,11 +113,11 @@ export function DraftBar({
           Live · r{liveNumber}
         </Badge>
       )}
-      <p title={status} className="order-last min-w-0 basis-full truncate text-muted-foreground xl:order-none xl:basis-auto xl:flex-1" aria-live="polite">
+      <p title={status} className="order-last min-w-0 basis-full truncate text-xs text-muted-foreground xl:order-none xl:basis-auto xl:flex-1" aria-live="polite">
         {status}
       </p>
       {hasDraft && (
-        <div className="ml-auto flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           {!unpublished && (
             <Button type="button" variant="outline" size="sm" aria-pressed={compare} onClick={() => onCompare(!compare)} className={compare ? "border-accent bg-accent-soft text-accent" : ""}>
               Compare with live
@@ -143,7 +143,7 @@ export function DraftBar({
       )}
 
       {confirming === "discard" && (
-        <div role="alertdialog" aria-label="Discard the draft" className="flex basis-full flex-wrap items-center gap-2 rounded-token border border-crit bg-crit-soft p-2">
+        <div role="alertdialog" aria-label="Discard the draft" className="order-last flex basis-full flex-wrap items-center gap-2 rounded-token border border-crit bg-crit-soft p-2 text-xs">
           <p className="grow">
             Discard all {plural(changes, "change")} in this draft and go back to live (r{liveNumber})? This can&apos;t be undone.
           </p>
@@ -164,7 +164,7 @@ export function DraftBar({
       )}
 
       {confirming === "publish" && (
-        <div role="alertdialog" aria-label="Publish the draft" className="flex basis-full flex-col gap-2 rounded-token border border-accent bg-accent-soft p-2">
+        <div role="alertdialog" aria-label="Publish the draft" className="order-last flex basis-full flex-col gap-2 rounded-token border border-accent bg-accent-soft p-2 text-xs">
           {estimates.length ? (
             <>
               <p>
@@ -223,7 +223,7 @@ export function DraftBar({
       )}
 
       {drafts.notice && (
-        <p role="status" className="flex basis-full items-center justify-between gap-2 rounded-token border border-good bg-good-soft px-2 py-1">
+        <p role="status" className="order-last flex basis-full items-center justify-between gap-2 rounded-token border border-good bg-good-soft px-2 py-1">
           {drafts.notice}
           <button type="button" onClick={() => session.dismiss()} className="underline">
             Dismiss
@@ -231,7 +231,7 @@ export function DraftBar({
         </p>
       )}
       {drafts.error && (
-        <p role="alert" className="flex basis-full items-center justify-between gap-2 rounded-token border border-crit bg-crit-soft px-2 py-1">
+        <p role="alert" className="order-last flex basis-full items-center justify-between gap-2 rounded-token border border-crit bg-crit-soft px-2 py-1">
           {drafts.error}
           <button type="button" onClick={() => session.dismiss()} className="underline">
             Dismiss

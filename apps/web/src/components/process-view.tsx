@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { PanelRight } from "lucide-react";
 import { isUnpublished, ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow, type SourceRow } from "@transpera-flow/db";
@@ -374,8 +374,9 @@ export function ProcessView({
     <div className="flex min-h-svh flex-1 flex-col">
       <div className="sticky top-0 z-20 flex flex-wrap items-center gap-x-2 gap-y-2 border-b bg-background/95 px-4 py-2 backdrop-blur">
         <SidebarTrigger className="-ml-1" />
-        <Separator orientation="vertical" className="h-4" />
-        {processPicker ?? <h1 className="truncate px-1 font-display text-base font-bold">{live.process.name}</h1>}
+        <Separator orientation="vertical" className="data-[orientation=vertical]:h-4" />
+        {/* Slots arrive from a Server Component; a keyed Fragment keeps React from asking them for keys. */}
+        <Fragment key="picker">{processPicker ?? <h1 className="truncate px-1 font-display text-base font-bold">{live.process.name}</h1>}</Fragment>
         <DraftBar
           session={session}
           drafts={drafts}
@@ -393,40 +394,42 @@ export function ProcessView({
           onReview={(id) => select("steps", id)}
           breaks={breaks}
         />
-        <PresenceBar
-          variant="compact"
-          sync={sync}
-          state={realtime}
-          me={me}
-          processName={live.process.name}
-          colleague={connection.colleague}
-          selectedStep={selected.steps.length === 1 ? selected.steps[0]! : null}
-        />
-        {shownModel && mode !== "readonly" && (!hasDraft || showingLive) && (
-          // Saved runs are of the live model (issue #25).
-          <SaveRunBar
-            mode={mode}
-            bundle={live}
-            model={shownModel}
-            result={sim.status === "done" ? result : null}
-            durationMs={sim.run?.durationMs ?? null}
-            runsHref={registerHref ? registerHref.replace(/\/issues$/, "/runs") : "/demo/runs"}
+        <div className="ml-auto flex items-center gap-2">
+          <PresenceBar
+            variant="compact"
+            sync={sync}
+            state={realtime}
+            me={me}
+            processName={live.process.name}
+            colleague={connection.colleague}
+            selectedStep={selected.steps.length === 1 ? selected.steps[0]! : null}
           />
-        )}
-        <Button
-          type="button"
-          variant="outline"
-          size="icon-sm"
-          aria-label={panelShown ? "Hide panel" : "Show panel"}
-          aria-expanded={panelShown}
-          aria-controls="map-panel"
-          onClick={() => setPanelOpen(!panelShown)}
-        >
-          <PanelRight />
-        </Button>
+          {shownModel && mode !== "readonly" && (!hasDraft || showingLive) && (
+            // Saved runs are of the live model (issue #25).
+            <SaveRunBar
+              mode={mode}
+              bundle={live}
+              model={shownModel}
+              result={sim.status === "done" ? result : null}
+              durationMs={sim.run?.durationMs ?? null}
+              runsHref={registerHref ? registerHref.replace(/\/issues$/, "/runs") : "/demo/runs"}
+            />
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            aria-label={panelShown ? "Hide panel" : "Show panel"}
+            aria-expanded={panelShown}
+            aria-controls="map-panel"
+            onClick={() => setPanelOpen(!panelShown)}
+          >
+            <PanelRight />
+          </Button>
+        </div>
       </div>
       <div className="flex flex-col gap-2 px-4 pt-3 empty:hidden">
-        {notice}
+        <Fragment key="notice">{notice}</Fragment>
         {working.process.kind === "servicing" && <ServicingBanner bundle={working} settingsHref={settingsHref} />}
         {compare && hasDraft && (
           <DraftCompare
@@ -451,7 +454,7 @@ export function ProcessView({
           <KpiStrip model={shownModel} currency={bundle.workspace.settings.currency} result={result} status={sim.status} durationMs={sim.run?.durationMs} />
         </div>
       ) : null}
-      <div className="relative flex min-h-[28rem] flex-1 gap-3 p-4">
+      <div className="relative flex min-h-[28rem] flex-1 gap-3 p-4 lg:min-h-[calc(100svh-4rem)]">
         <ProcessCanvas
           bundle={bundle}
           result={result}

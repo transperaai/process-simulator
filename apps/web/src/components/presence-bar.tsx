@@ -55,6 +55,8 @@ export function PresenceBar({
   /** `compact` is one quiet row for the map's top bar; `card` the full boxed bar. */
   variant?: "card" | "compact";
 }) {
+  // The colleague controls' last message lives here, not in the popover: it stays open or closed without losing it.
+  const [last, setLast] = useState<string | null>(null);
   if (!sync) return null;
   const list = people(state.others, me);
   const latest = state.activity[0];
@@ -97,7 +99,7 @@ export function PresenceBar({
             {sync.activityText(latest)} · {ago(latest.at)}
           </p>
         )}
-        {colleague && <ColleagueMenu colleague={colleague} selectedStep={selectedStep} />}
+        {colleague && <ColleagueMenu colleague={colleague} selectedStep={selectedStep} last={last} onLast={setLast} />}
       </section>
     );
   }
@@ -129,7 +131,7 @@ export function PresenceBar({
           </p>
         )}
       </div>
-      {colleague && <ColleagueControls colleague={colleague} selectedStep={selectedStep} />}
+      {colleague && <ColleagueControls colleague={colleague} selectedStep={selectedStep} last={last} onLast={setLast} />}
     </section>
   );
 }
@@ -144,10 +146,20 @@ function ago(at: number): string {
 }
 
 /**
- * Demo only, in the compact bar: the colleague controls in a popover. It stays mounted while closed, so the 5-second
- * timer and the last message survive, and a click on the map doesn't close it (you select a step for Tom to edit).
+ * Demo only, in the compact bar: the colleague controls in a popover. A click on the map doesn't close it (you select a
+ * step for Tom to edit); its message is kept by the caller, so closing it doesn't lose the 5-second countdown's.
  */
-function ColleagueMenu({ colleague, selectedStep }: { colleague: DemoColleague; selectedStep: string | null }) {
+function ColleagueMenu({
+  colleague,
+  selectedStep,
+  last,
+  onLast,
+}: {
+  colleague: DemoColleague;
+  selectedStep: string | null;
+  last: string | null;
+  onLast: (message: string | null) => void;
+}) {
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -155,20 +167,29 @@ function ColleagueMenu({ colleague, selectedStep }: { colleague: DemoColleague; 
           <UserRoundPlus /> Colleague
         </Button>
       </PopoverTrigger>
-      <PopoverContent forceMount align="end" className="w-80 data-[state=closed]:hidden" onInteractOutside={(e) => e.preventDefault()}>
-        <ColleagueControls colleague={colleague} selectedStep={selectedStep} />
+      <PopoverContent align="end" className="w-80" onInteractOutside={(e) => e.preventDefault()}>
+        <ColleagueControls colleague={colleague} selectedStep={selectedStep} last={last} onLast={onLast} />
       </PopoverContent>
     </Popover>
   );
 }
 
 /** Demo only: a pretend colleague, "Tom", in the same process. */
-function ColleagueControls({ colleague, selectedStep }: { colleague: DemoColleague; selectedStep: string | null }) {
+function ColleagueControls({
+  colleague,
+  selectedStep,
+  last,
+  onLast,
+}: {
+  colleague: DemoColleague;
+  selectedStep: string | null;
+  last: string | null;
+  onLast: (message: string | null) => void;
+}) {
   // Re-read on each render: Tom stops racing once he has beaten a save.
   const [, rerender] = useState(0);
   const present = colleague.present;
   const racing = colleague.isRacing;
-  const [last, setLast] = useState<string | null>(null);
   return (
     <div role="group" aria-label="Simulate a colleague" className="flex flex-wrap items-center gap-2">
       <label className="flex items-center gap-1 font-semibold">
@@ -185,7 +206,7 @@ function ColleagueControls({ colleague, selectedStep }: { colleague: DemoColleag
       </label>
       {present && (
         <>
-          <Button variant="outline" size="sm" onClick={async () => setLast(await colleague.editSomething(selectedStep ?? undefined))}>
+          <Button variant="outline" size="sm" onClick={async () => onLast(await colleague.editSomething(selectedStep ?? undefined))}>
             {selectedStep ? "Tom edits the selected step" : "Tom edits a step"}
           </Button>
           {selectedStep && (
@@ -194,8 +215,8 @@ function ColleagueControls({ colleague, selectedStep }: { colleague: DemoColleag
               size="sm"
               onClick={() => {
                 // Time to start typing a new hands-on time for the step, to see his save arrive mid-edit.
-                setLast("In 5 seconds Tom changes this step's hands-on time: start typing a new one in the inspector.");
-                setTimeout(async () => setLast(await colleague.editSomething(selectedStep)), 5000);
+                onLast("In 5 seconds Tom changes this step's hands-on time: start typing a new one in the inspector.");
+                setTimeout(async () => onLast(await colleague.editSomething(selectedStep)), 5000);
               }}
             >
               …in 5 s

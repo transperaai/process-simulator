@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Privacy policy · Transpera Flow" };
 
-const UPDATED = "29 September 2026";
+const UPDATED = "30 September 2026";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -65,7 +65,11 @@ export default function PrivacyPage() {
           <li>Supabase: database, sign-in and file storage, hosted in Sydney, Australia.</li>
           <li>Vercel: web hosting.</li>
           <li>Google: sign-in.</li>
-          <li>Anthropic: AI features such as report summaries, processed on request and not used for training.</li>
+          <li>
+            Anthropic: drafts a report&rsquo;s executive summary or explains a saved run, only when someone asks. It receives the
+            figures being described and the names of the process, its steps, roles and scenarios; the names of your staff and
+            clients are replaced with labels before anything is sent. Anthropic doesn&rsquo;t use it to train models.
+          </li>
         </ul>
       </Section>
 

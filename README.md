@@ -82,3 +82,13 @@ RLS and uses only `NEXT_PUBLIC_SUPABASE_URL` and
 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; no extra environment variables. How it
 does that without the service-role key:
 [`docs/adr/0002-mcp-acts-as-user-via-pre-request.md`](docs/adr/0002-mcp-acts-as-user-via-pre-request.md).
+
+## Narration (Claude)
+
+The report's executive summary and "explain this run" can be drafted by Claude
+(`claude-opus-5-5`), server-side only, when `ANTHROPIC_API_KEY` is set in the
+server's environment (Vercel: Production and Preview). Without it the templated
+text prints and the UI says narration needs the key. Every number in a draft is
+checked against the report's figures; one redraft, then the template. Tests use
+fakes and never call the API. The public `/demo` uses a stand-in writer, never
+the API. See [`docs/adr/0011-narration.md`](docs/adr/0011-narration.md).

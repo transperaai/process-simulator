@@ -8,7 +8,10 @@ import { NORTHBEAM_PROCESS_ID, NORTHBEAM_WORKSPACE_ID, type Database } from "@tr
 import { generateApiToken, handleMcpRequest, type McpHandlerOptions } from "@transpera-flow/mcp";
 import type { ReportContent } from "@/lib/report/content";
 import { reportDownload } from "@/lib/report/download";
+import { explainRun } from "@/lib/narration/explain";
+import type { DraftRequest, NarrationModel } from "@/lib/narration/narrate";
 import { reportExporter } from "@/lib/report/exporter";
+import { saveSummaryEdit } from "@/lib/report/narration";
 
 // MCP export_report end to end, as in production (issue #28): MCP client →
 // handleMcpRequest → the report pipeline → supabase-js → PostgREST (with the
@@ -48,6 +51,34 @@ let admin: pg.Client;
 let options: McpHandlerOptions;
 let editorToken: string;
 let viewerToken: string;
+const ids: Record<string, string> = {};
+
+/** The narrator export_report gets (#29): a deterministic fake, counting its calls. Never the real API. */
+let narrator: NarrationModel | null = null;
+let narratorCalls = 0;
+const templateOf = (req: DraftRequest) => (JSON.parse(req.facts.slice(req.facts.indexOf("{"))) as { templatedSummary?: string[]; templatedExplanation?: string[] });
+const copying: NarrationModel = {
+  name: "fake-model",
+  async draft(req) {
+    narratorCalls++;
+    const facts = templateOf(req);
+    return { paragraphs: facts.templatedSummary ?? facts.templatedExplanation ?? [], model: "fake-model", usage: null };
+  },
+};
+const inventing: NarrationModel = {
+  name: "fake-model",
+  async draft() {
+    narratorCalls++;
+    return { paragraphs: ["Hiring adds £99k of new MRR."], model: "fake-model", usage: null };
+  },
+};
+
+/** A signed-in user's client (a Supabase session JWT), for the app's own paths. */
+const asUser = (role: string) =>
+  createClient<Database>(SUPABASE_URL, anonKey(), {
+    auth: { persistSession: false },
+    global: { fetch: toPostgrest, headers: { Authorization: `Bearer ${signJwt({ role: "authenticated", sub: ids[role], iss: "test" }, JWT_SECRET)}` } },
+  });
 const anonKey = () => signJwt({ role: "anon", iss: "test" }, JWT_SECRET);
 
 async function connect(token: string): Promise<Client> {
@@ -65,7 +96,17 @@ async function call<T>(client: Client, name: string, args: Record<string, unknow
   return JSON.parse((result.content as { text: string }[])[0]!.text);
 }
 
-type Export = { id: string; url: string; run_id: string; pdf: boolean; included: string[]; summary: string[]; expires_at: string };
+type Export = {
+  id: string;
+  url: string;
+  run_id: string;
+  pdf: boolean;
+  included: string[];
+  summary: string[];
+  expires_at: string;
+  summary_source: "template" | "narration" | null;
+  narration: { used: boolean; cached: boolean; model: string | null; checked: number; fallback_reason: string | null } | null;
+};
 
 describe.skipIf(!POSTGREST_URL)("export_report over PostgREST", () => {
   beforeAll(async () => {
@@ -79,11 +120,12 @@ describe.skipIf(!POSTGREST_URL)("export_report over PostgREST", () => {
       await admin.query("insert into memberships (workspace_id, user_id, role) values ($1, $2, $3)", [NORTHBEAM_WORKSPACE_ID, id, role]);
       const { token, hash } = generateApiToken();
       await admin.query("insert into api_tokens (user_id, token_hash, label) values ($1, $2, 'report e2e')", [id, hash]);
+      ids[role] = id;
       return token;
     };
     editorToken = await user("editor");
     viewerToken = await user("viewer");
-    options = { supabaseUrl: SUPABASE_URL, supabaseKey: anonKey(), fetch: toPostgrest, reports: reportExporter(ORIGIN, { renderPdf }) };
+    options = { supabaseUrl: SUPABASE_URL, supabaseKey: anonKey(), fetch: toPostgrest, reports: reportExporter(ORIGIN, { renderPdf, narrator: () => narrator }) };
   });
 
   afterAll(async () => {
@@ -139,6 +181,109 @@ describe.skipIf(!POSTGREST_URL)("export_report over PostgREST", () => {
     const content = (await admin.query("select content from reports where id = $1", [res.data.id])).rows[0].content as ReportContent;
     const r = content.scenarios![0]!.robustness!;
     expect(r.cached).toBe(r.jobs);
+  }, 180_000);
+
+  it("narrates the summary on demand, records it, and serves an unchanged run from the cache (#29)", async () => {
+    narrator = copying;
+    narratorCalls = 0;
+    const client = await connect(editorToken);
+    const args = { scenarios: ["Hire a strategist"], reps: 10, format: "json", sections: ["summary", "scenarios"], narrate: true };
+    const first = await call<Export>(client, "export_report", args);
+    expect(first.error).toBeUndefined();
+    expect(first.data).toMatchObject({ summary_source: "narration", narration: { used: true, cached: false, model: "fake-model", fallback_reason: null } });
+    expect(first.data.narration!.checked).toBeGreaterThan(5);
+    expect(narratorCalls).toBe(1);
+    const row = (await admin.query("select * from narrations where target_id = $1", [first.data.run_id])).rows;
+    expect(row).toHaveLength(1);
+    expect(row[0]).toMatchObject({ target: "run", purpose: "summary", validated: true, fallback: false, model: "fake-model", created_by: ids.editor });
+    const content = (await admin.query("select content from reports where id = $1", [first.data.id])).rows[0].content as ReportContent;
+    expect(content.summary).toMatchObject({ source: "narration", narration: { id: row[0].id, model: "fake-model" } });
+
+    // The same saved run, unchanged: from the cache, no second draft.
+    const again = await call<Export>(client, "export_report", { ...args, run: first.data.run_id });
+    expect(again.data).toMatchObject({ summary_source: "narration", narration: { used: true, cached: true } });
+    expect(again.data.summary).toEqual(first.data.summary);
+    expect(narratorCalls).toBe(1);
+
+    // Without `narrate`, the templated text; nothing drafted.
+    const plain = await call<Export>(client, "export_report", { ...args, narrate: false, run: first.data.run_id });
+    expect(plain.data).toMatchObject({ summary_source: "template", narration: null });
+    await client.close();
+  }, 180_000);
+
+  it("records a fallback when both drafts invent a figure, and prints the template (#29)", async () => {
+    narrator = inventing;
+    narratorCalls = 0;
+    const client = await connect(editorToken);
+    const res = await call<Export>(client, "export_report", { reps: 10, format: "json", sections: ["summary"], narrate: true });
+    await client.close();
+    expect(res.data).toMatchObject({ summary_source: "template", narration: { used: false } });
+    expect(res.data.narration!.fallback_reason).toContain("“£99k”");
+    expect(narratorCalls).toBe(2);
+    const row = (await admin.query("select validated, fallback, fallback_kind, rejected from narrations where target_id = $1", [res.data.run_id])).rows[0];
+    expect(row).toMatchObject({ validated: false, fallback: true, fallback_kind: "invalid" });
+    expect(row.rejected).toHaveLength(2);
+    const content = (await admin.query("select content from reports where id = $1", [res.data.id])).rows[0].content as ReportContent;
+    expect(content.appendix?.provenance ?? []).toEqual([]); // appendix not asked for
+    expect(content.summary!.narration!.fallbackReason).toContain("£99k");
+  }, 180_000);
+
+  it("export_report's `summary` is checked: an invented figure refuses the export; a good one is recorded as edited (#29)", async () => {
+    narrator = null;
+    const client = await connect(editorToken);
+    const bad = await call<Export>(client, "export_report", { reps: 10, format: "json", sections: ["summary"], summary: ["Hiring adds £99k of new MRR."] });
+    expect(bad.ok).toBe(false);
+    expect(bad.error?.code).toBe("invalid_input");
+    expect(bad.error?.message).toContain("£99k");
+    const template = await call<Export>(client, "export_report", { reps: 10, format: "json", sections: ["summary", "appendix"] });
+    const good = await call<Export>(client, "export_report", {
+      reps: 10,
+      format: "json",
+      sections: ["summary", "appendix"],
+      run: template.data.run_id,
+      summary: [template.data.summary[0]!, "Start with the bottleneck."],
+    });
+    await client.close();
+    expect(good.error).toBeUndefined();
+    const content = (await admin.query("select content from reports where id = $1", [good.data.id])).rows[0].content as ReportContent;
+    expect(content.summary).toMatchObject({ source: "template", editedBy: "Claude via MCP export_report" });
+    expect(content.appendix!.provenance.at(-1)).toContain("Edited by Claude via MCP export_report");
+  }, 180_000);
+
+  it("a person's edit on a stored report is checked, recorded on the report and the narration, and re-printed (#29)", async () => {
+    narrator = copying;
+    const client = await connect(editorToken);
+    const res = await call<Export>(client, "export_report", { reps: 10, format: "json", sections: ["summary", "appendix"], narrate: true });
+    await client.close();
+    const db = asUser("editor");
+    const bad = await saveSummaryEdit(db, res.data.id, ["It adds £99k."], { id: ids.editor!, name: "editor@example.com" }, { renderPdf });
+    expect(bad).toMatchObject({ ok: false });
+    const saved = await saveSummaryEdit(db, res.data.id, [res.data.summary[0]!, "Our advice: hire."], { id: ids.editor!, name: "editor@example.com" }, { renderPdf });
+    expect(saved).toMatchObject({ ok: true, pdf: true });
+    const report = (await admin.query("select content, pdf from reports where id = $1", [res.data.id])).rows[0];
+    expect((report.content as ReportContent).summary).toMatchObject({ source: "narration", editedBy: "editor@example.com" });
+    expect((report.content as ReportContent).appendix!.provenance.at(-1)).toMatch(/drafted by fake-model .* Edited by editor@example\.com/);
+    const row = (await admin.query("select text, edited_by, edited_by_name from narrations where target_id = $1 and purpose = 'summary'", [res.data.run_id])).rows[0];
+    expect(row).toMatchObject({ edited_by: ids.editor, edited_by_name: "editor@example.com" });
+    expect(row.text).toContain("Our advice: hire.");
+    // A viewer can't edit: RLS hides the report.
+    expect(await saveSummaryEdit(asUser("viewer"), res.data.id, ["x"], { id: ids.viewer!, name: "viewer" })).toMatchObject({ ok: false });
+  }, 180_000);
+
+  it("explains a run for editors, from the cache afterwards; viewers read a cached explanation but can't draft one (#29)", async () => {
+    narrator = copying;
+    narratorCalls = 0;
+    const client = await connect(editorToken);
+    const res = await call<Export>(client, "export_report", { reps: 10, format: "json", sections: ["summary"] });
+    await client.close();
+    const first = await explainRun(asUser("editor"), res.data.run_id, { model: copying });
+    expect(first).toMatchObject({ status: "ok", narration: { source: "narration", cached: false, validated: true } });
+    expect(narratorCalls).toBe(1);
+    const viewer = await explainRun(asUser("viewer"), res.data.run_id, { model: copying });
+    expect(viewer).toMatchObject({ status: "ok", narration: { cached: true } });
+    expect(narratorCalls).toBe(1);
+    expect(await explainRun(asUser("viewer"), res.data.run_id, { model: copying, regenerate: true })).toMatchObject({ status: "error", code: "forbidden" });
+    expect(await explainRun(asUser("editor"), randomUUID(), { model: copying })).toMatchObject({ status: "error", code: "not_found" });
   }, 180_000);
 
   it("refuses viewers: reports hold per-person utilisation", async () => {

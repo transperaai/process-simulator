@@ -30,6 +30,9 @@ import { buildReportContent } from "./assemble";
 import { toByteaHex } from "./bytea";
 import type { ReportContent, ReportSectionId } from "./content";
 import { REPORT_ROBUSTNESS_BUDGET_MS, REPORT_SHADOW_PRICE_BUDGET_MS } from "./options";
+import type { NarrationModel } from "@/lib/narration/narrate";
+import type { StoredNarration } from "@/lib/narration/service";
+import { editSummary, narrateReportContent } from "./narration";
 import { renderReportHtml } from "./render";
 import { loadRobustnessCache, robustnessCheckKey, saveRobustnessCache } from "./robustness-cache";
 
@@ -64,6 +67,13 @@ export interface GenerateReportInput {
   linkTtlSeconds?: number;
   /** Time for every robustness check together. */
   robustnessBudgetMs?: number;
+  /**
+   * Narrate the executive summary (#29), on demand: `model` is Claude, or null
+   * when the server has no key (the template prints, saying why).
+   */
+  narration?: { model: NarrationModel | null; regenerate?: boolean; budgetMs?: number } | null;
+  /** A summary to print instead (MCP `summary`), checked against the report's figures like a person's edit. */
+  summaryEdit?: { paragraphs: string[]; editor: string } | null;
 }
 
 export interface GeneratedReport {
@@ -78,6 +88,8 @@ export interface GeneratedReport {
   pdf: boolean;
   pdfError: string | null;
   content: ReportContent;
+  /** How the summary was narrated, when asked (#29). */
+  narration: StoredNarration | null;
 }
 
 export { fromByteaHex, toByteaHex } from "./bytea";
@@ -222,8 +234,24 @@ export async function generateReport(db: Db, input: GenerateReportInput, renderP
   }
   await saveRobustnessCache(db, ws.id, run.id, cache).catch(() => 0); // A cache write that fails only costs time next report.
 
+  // The executive summary: narrated on demand (#29), or a summary supplied and checked like an edit.
+  let content = built.content;
+  let narration: StoredNarration | null = null;
+  if (input.summaryEdit) {
+    if (!content.summary) throw new ReportError("invalid_input", "A summary was given but the report has no executive summary section.");
+    const edit = editSummary(content, input.summaryEdit.paragraphs, input.summaryEdit.editor, input.now);
+    if (!edit.ok) {
+      throw new ReportError(
+        "invalid_input",
+        `The summary cites figures that aren't in the report: ${edit.problems.map((p) => `“${p.text}” (${p.reason})`).join("; ")}.`,
+      );
+    }
+    content = edit.content;
+  } else if (input.narration) {
+    ({ content, narration } = await narrateReportContent(db, content, { workspaceId: ws.id, ...input.narration }));
+  }
+
   // Store the report, then print it.
-  const content = built.content;
   const { token, hash } = newLinkToken();
   const ttl = Math.min(Math.max(60, input.linkTtlSeconds ?? DAY), 7 * DAY);
   const expiresAt = new Date(Date.parse(input.now) + ttl * 1000).toISOString();
@@ -258,7 +286,7 @@ export async function generateReport(db: Db, input: GenerateReportInput, renderP
       pdfError = err instanceof Error ? err.message : String(err);
     }
   }
-  return { id, title: content.title, runId: run.id, ...reportLinks(input.origin, id, token), expiresAt, pdf, pdfError, content };
+  return { id, title: content.title, runId: run.id, ...reportLinks(input.origin, id, token), expiresAt, pdf, pdfError, content, narration };
 }
 
 /** A fresh download link for an existing report (the old one stops working). */

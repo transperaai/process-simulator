@@ -19,6 +19,8 @@ export interface ReportRequest {
   reps: number;
   sections: ReportSectionId[];
   scenarioIds: string[];
+  /** Narrate the executive summary with Claude (#29), checked number by number; off unless asked. */
+  narrate: boolean;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -46,6 +48,13 @@ export function parseReportRequest(input: unknown): { ok: true; value: ReportReq
   if (scenarioIds.length > REPORT_MAX_SCENARIOS) return { ok: false, message: `Choose at most ${REPORT_MAX_SCENARIOS} scenarios.` };
   return {
     ok: true,
-    value: { processId: i.processId, runId: (i.runId as string | null | undefined) ?? null, reps, sections: parseSections(i.sections), scenarioIds: scenarioIds as string[] },
+    value: {
+      processId: i.processId,
+      runId: (i.runId as string | null | undefined) ?? null,
+      reps,
+      sections: parseSections(i.sections),
+      scenarioIds: scenarioIds as string[],
+      narrate: i.narrate === true,
+    },
   };
 }

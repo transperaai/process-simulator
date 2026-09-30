@@ -3,8 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { demoCheckSummary, demoSummary } from "@/app/demo/report/actions";
 import { createReportLink } from "@/app/w/[slug]/reports/actions";
-import { REPORT_SECTIONS, sectionLabel, type ReportSectionId } from "@/lib/report/content";
+import { ProblemList, SummaryProvenance } from "@/components/narration";
+import type { NumberProblem } from "@/lib/narration/numbers";
+import { REPORT_SECTIONS, sectionLabel, type ExecutiveSummary, type ReportSectionId } from "@/lib/report/content";
 import { REPORT_DEFAULT_REPS, REPORT_MAX_REPS, REPORT_MAX_SCENARIOS } from "@/lib/report/options";
 import type { BuilderRun, BuilderScenario, StoredReport } from "@/lib/report/page-data";
 
@@ -93,7 +96,37 @@ function ScenarioPicker({ scenarios, selected, onChange }: { scenarios: BuilderS
 type Outcome =
   | { tone: "busy" }
   | { tone: "error"; message: string }
-  | { tone: "ok"; id: string; url: string; pdf: boolean; pdfError: string | null; omitted: { section: string; reason: string }[]; excluded: { name: string; reason: string }[] };
+  | {
+      tone: "ok";
+      id: string;
+      url: string;
+      pdf: boolean;
+      pdfError: string | null;
+      omitted: { section: string; reason: string }[];
+      excluded: { name: string; reason: string }[];
+      summary: { source: "template" | "narration"; fallbackReason: string | null; cached: boolean } | null;
+    };
+
+/** "Narrated executive summary": Claude drafts it from the report's figures, checked number by number (#29). */
+function NarrateOption({ checked, onChange, configured, name }: { checked: boolean; onChange?: (v: boolean) => void; configured: boolean; name?: string }) {
+  return (
+    <fieldset className={box}>
+      <legend className="px-1 text-sm font-bold">Executive summary</legend>
+      <label className="flex items-start gap-2 text-sm">
+        <input type="checkbox" name={name} value="1" className="mt-1" checked={checked} onChange={(e) => onChange?.(e.target.checked)} />
+        <span>
+          <span className="font-semibold">Narrated summary</span>
+          <span className="text-fg-2">
+            {" "}
+            · drafted from the report&apos;s figures and checked number by number; any figure not in the report and the templated summary prints instead.
+            Cached per run, so an unchanged run is never drafted twice. You can edit it before handing the report over.
+          </span>
+          {!configured && <span className="block text-xs text-fg-3">{"Narration needs the Anthropic API key on the server; without it the templated summary prints."}</span>}
+        </span>
+      </label>
+    </fieldset>
+  );
+}
 
 /** The live builder: generates on the server as the signed-in user. */
 export function ReportBuilder({
@@ -101,11 +134,13 @@ export function ReportBuilder({
   processId,
   scenarios,
   runs,
+  narrationConfigured,
 }: {
   slug: string;
   processId: string;
   scenarios: BuilderScenario[];
   runs: BuilderRun[];
+  narrationConfigured: boolean;
 }) {
   const router = useRouter();
   const [sections, setSections] = useState(() => new Set<ReportSectionId>(REPORT_SECTIONS.map((s) => s.id)));
@@ -113,6 +148,7 @@ export function ReportBuilder({
   const [runId, setRunId] = useState("");
   const [reps, setReps] = useState(REPORT_DEFAULT_REPS);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [narrate, setNarrate] = useState(narrationConfigured);
 
   const generate = async () => {
     setOutcome({ tone: "busy" });
@@ -120,14 +156,23 @@ export function ReportBuilder({
       const res = await fetch("/api/reports", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ processId, runId: runId || null, reps, sections: [...sections], scenarioIds: [...chosen] }),
+        body: JSON.stringify({ processId, runId: runId || null, reps, sections: [...sections], scenarioIds: [...chosen], narrate: narrate && sections.has("summary") }),
       });
       const body = await res.json().catch(() => null);
       if (!body || body.status !== "ok") {
         setOutcome({ tone: "error", message: body?.message ?? `The report couldn't be generated (${res.status}).` });
         return;
       }
-      setOutcome({ tone: "ok", id: body.id, url: body.url, pdf: body.pdf, pdfError: body.pdfError, omitted: body.omitted, excluded: body.excludedScenarios });
+      setOutcome({
+        tone: "ok",
+        id: body.id,
+        url: body.url,
+        pdf: body.pdf,
+        pdfError: body.pdfError,
+        omitted: body.omitted,
+        excluded: body.excludedScenarios,
+        summary: body.summary ?? null,
+      });
       router.refresh();
     } catch {
       setOutcome({ tone: "error", message: "The request failed. Check your connection and try again." });
@@ -146,6 +191,7 @@ export function ReportBuilder({
         <SectionPicker selected={sections} onChange={setSections} />
         <ScenarioPicker scenarios={scenarios} selected={chosen} onChange={setChosen} />
       </div>
+      {sections.has("summary") && <NarrateOption checked={narrate} onChange={setNarrate} configured={narrationConfigured} />}
       <fieldset className={box}>
         <legend className="px-1 text-sm font-bold">The run behind the numbers</legend>
         <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -194,10 +240,24 @@ export function ReportBuilder({
               <a href={`/w/${slug}/reports/${outcome.id}/print`} className="underline" target="_blank" rel="noreferrer">
                 Open printable report
               </a>
+              {outcome.summary && (
+                <Link href={`/w/${slug}/reports/${outcome.id}`} className="underline">
+                  Review or edit the summary
+                </Link>
+              )}
             </span>
           )}
         </span>
       </div>
+      {outcome?.tone === "ok" && outcome.summary && (
+        <p className="text-sm" data-summary-source={outcome.summary.source}>
+          {outcome.summary.source === "narration"
+            ? `The executive summary is narrated and every figure in it checked${outcome.summary.cached ? " (from the cache: this run was narrated before)" : ""}.`
+            : outcome.summary.fallbackReason
+              ? `The templated summary printed: ${outcome.summary.fallbackReason}.`
+              : "The executive summary is the templated text."}
+        </p>
+      )}
       {outcome?.tone === "ok" && (outcome.omitted.length > 0 || outcome.excluded.length > 0) && (
         <ul className="list-disc pl-5 text-sm text-fg-2">
           {outcome.omitted.map((o) => (
@@ -220,13 +280,114 @@ export function ReportBuilder({
 export function DemoReportBuilder({ scenarios, defaultScenarios }: { scenarios: BuilderScenario[]; defaultScenarios: string[] }) {
   const [sections, setSections] = useState(() => new Set<ReportSectionId>(REPORT_SECTIONS.map((s) => s.id)));
   const [chosen, setChosen] = useState(() => new Set(defaultScenarios));
+  const [narrate, setNarrate] = useState(true);
+  const [loaded, setLoaded] = useState<ExecutiveSummary | null>(null);
+  const [text, setText] = useState<string | null>(null);
+  const [busy, setBusy] = useState<null | "load" | "check">(null);
+  const [problems, setProblems] = useState<NumberProblem[]>([]);
+  const [note, setNote] = useState<string | null>(null);
+  const picked = (): [string[], string[]] => [[...sections].filter((s) => s !== "cover"), [...chosen]];
+  // What was loaded no longer matches what is ticked: drop the edit.
+  const reset = () => {
+    setLoaded(null);
+    setText(null);
+    setProblems([]);
+    setNote(null);
+  };
   return (
     <form method="get" action="/demo/report/print" target="_blank" className="flex flex-col gap-3">
       <div className="grid gap-3 md:grid-cols-2">
-        <SectionPicker selected={sections} onChange={setSections} />
-        <ScenarioPicker scenarios={scenarios} selected={chosen} onChange={setChosen} />
+        <SectionPicker
+          selected={sections}
+          onChange={(next) => {
+            setSections(next);
+            reset();
+          }}
+        />
+        <ScenarioPicker
+          scenarios={scenarios}
+          selected={chosen}
+          onChange={(next) => {
+            setChosen(next);
+            reset();
+          }}
+        />
       </div>
       <input type="hidden" name="sections" value="cover" />
+      {sections.has("summary") && (
+        <>
+          <NarrateOption
+            checked={narrate}
+            name="narrate"
+            configured
+            onChange={(v) => {
+              setNarrate(v);
+              reset();
+            }}
+          />
+          <p className="-mt-2 text-xs text-fg-3">
+            Demo: the narration is written by a stand-in that composes prose from the same facts Claude would get and goes through the same
+            number check. The public demo never calls the Anthropic API; workspaces do.
+          </p>
+          <fieldset className={box} data-demo-summary>
+            <legend className="px-1 text-sm font-bold">Edit the summary before printing</legend>
+            {text === null ? (
+              <button
+                type="button"
+                className={button}
+                disabled={busy !== null}
+                onClick={async () => {
+                  setBusy("load");
+                  const [sec, sc] = picked();
+                  const res = await demoSummary(sec, sc, narrate);
+                  setBusy(null);
+                  setLoaded(res.summary);
+                  setText(res.summary?.paragraphs.join("\n\n") ?? "");
+                }}
+              >
+                {busy === "load" ? "Loading the summary…" : "Load the summary to edit"}
+              </button>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {loaded && <SummaryProvenance summary={loaded} />}
+                <textarea
+                  name={loaded && text === loaded.paragraphs.join("\n\n") ? undefined : "summary"}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  rows={14}
+                  aria-label="Executive summary"
+                  className="rounded-token border border-line bg-panel px-2 py-1 text-base"
+                />
+                <ProblemList problems={problems} />
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className={button}
+                    disabled={busy !== null}
+                    onClick={async () => {
+                      setBusy("check");
+                      const [sec, sc] = picked();
+                      const res = await demoCheckSummary(sec, sc, text);
+                      setBusy(null);
+                      setProblems(res.status === "invalid" ? res.problems : []);
+                      setNote(res.status === "ok" ? `All ${res.checked} figures match the report.` : res.status === "error" ? res.message : null);
+                    }}
+                  >
+                    {busy === "check" ? "Checking…" : "Check figures"}
+                  </button>
+                  <button type="button" className={button} onClick={reset}>
+                    Discard the edit
+                  </button>
+                  <span role="status" className="text-sm text-fg-2">
+                    {note}
+                  </span>
+                </div>
+                <p className="text-xs text-fg-3">The edit prints as “edited by Demo visitor” in the appendix, and is checked again when the report is generated.</p>
+              </div>
+            )}
+          </fieldset>
+        </>
+      )}
       <div className="flex flex-wrap items-center gap-3">
         <button type="submit" formAction="/demo/report/pdf" className={primary}>
           Generate PDF
@@ -279,6 +440,9 @@ export function StoredReports({ slug, reports }: { slug: string; reports: Stored
                 <a href={`/w/${slug}/reports/${r.id}/print`} className="underline" target="_blank" rel="noreferrer">
                   Printable
                 </a>
+                <Link href={`/w/${slug}/reports/${r.id}`} className="underline">
+                  Summary
+                </Link>
                 {r.hasPdf &&
                   (links[r.id] ? (
                     <input readOnly value={links[r.id]} onFocus={(e) => e.target.select()} className="w-56 rounded-token border border-line px-1 text-xs" aria-label="Share link" />

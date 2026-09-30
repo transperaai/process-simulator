@@ -249,7 +249,8 @@ describe("report HTML", () => {
 describe("report requests and links", () => {
   it("checks what the builder sends", () => {
     const processId = "5a000000-0000-4000-8000-000000000001";
-    expect(parseReportRequest({ processId })).toEqual({ ok: true, value: { processId, runId: null, reps: 200, sections: [...SECTION_IDS], scenarioIds: [] } });
+    expect(parseReportRequest({ processId })).toEqual({ ok: true, value: { processId, runId: null, reps: 200, sections: [...SECTION_IDS], scenarioIds: [], narrate: false } });
+    expect(parseReportRequest({ processId, narrate: true })).toMatchObject({ ok: true, value: { narrate: true } });
     expect(parseReportRequest({ processId, reps: 0 }).ok).toBe(false);
     expect(parseReportRequest({ processId, scenarioIds: ["nope"] }).ok).toBe(false);
     expect(parseReportRequest({ processId: "x" }).ok).toBe(false);

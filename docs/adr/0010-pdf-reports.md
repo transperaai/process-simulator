@@ -42,6 +42,11 @@ Options for the PDF:
   `apps/web/node_modules` symlink shipped the files somewhere Chromium never looked (production 500s, fixed on
   `fix/pdf-on-vercel`). `outputFileTracingRoot` is the monorepo root. Web fonts load from Google Fonts with a 4 s cap; the fallback stack prints otherwise (the
   serverless Chromium ships Open Sans).
+- **A failed print is never an empty 500.** `htmlToPdf` throws a `PdfError` naming the stage (`launch`: unpacking or
+  starting Chromium; `print`) with a one-line reason (pdf-failure.ts); the full error goes to `console.error` for the
+  function logs. `/demo/report/pdf` answers with a 500 that says why and links the printable report (a page for a
+  browser, JSON otherwise). `POST /api/reports` and MCP `export_report` still store the report and return `pdf: false`,
+  the reason and the printable report's URL (`printUrl` / `print_url`, plus `pdf_fallback` for MCP).
 - **Reports come from a saved run.** Either a new run of the live model (saved to `runs` with its snapshot, 200
   replications by default) or a saved run whose model is unchanged (`changesSinceRun` is empty) and which re-runs to the
   numbers it saved (`sameResults`); otherwise generation is refused with the reason. The run's id, seed, replications,

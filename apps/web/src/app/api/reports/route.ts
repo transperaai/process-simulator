@@ -45,12 +45,15 @@ export async function POST(request: Request): Promise<Response> {
       expiresAt: report.expiresAt,
       pdf: report.pdf,
       pdfError: report.pdfError,
+      printUrl: report.printUrl,
       included: report.content.included,
       omitted: report.content.omitted,
       excludedScenarios: report.content.excludedScenarios,
     });
   } catch (err) {
     if (err instanceof ReportError) return Response.json({ status: "error", code: err.code, message: err.message }, { status: STATUS[err.code] });
-    throw err;
+    // Anything else is a bug or an outage: log it for the function logs and say so, rather than an empty 500.
+    console.error("[reports] POST /api/reports failed", err);
+    return Response.json({ status: "error", code: "internal", message: "The report couldn't be generated because of a server error (the details are in the server log). Try again." }, { status: 500 });
   }
 }

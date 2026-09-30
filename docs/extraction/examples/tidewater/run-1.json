@@ -48,6 +48,8 @@
               "role": "SEO specialist",
               "tool": "Rank tracker",
               "work_hours": 1,
+              "wait_hours": 0,
+              "rework_rate": 0,
               "evidence": [
                 {
                   "field": "work_hours",
@@ -79,6 +81,8 @@
                 "mode": 2.5,
                 "max": 3
               },
+              "wait_hours": 0,
+              "rework_rate": 0,
               "current_wip": 4,
               "notes": "Hana: two hours in a quiet month, three when something has dropped and needs explaining.",
               "evidence": [
@@ -113,9 +117,10 @@
             {
               "name": "Director review",
               "role": "Director",
+              "work_hours": 0.5,
+              "wait_hours": 0,
               "rework_rate": 0.2,
               "rework_to": "Write commentary",
-              "work_hours": 0.5,
               "notes": "Callum Reid reviews every report. Hana: 'It sits in Callum's inbox a day or two, because he's always in meetings.' That is queueing behind his other work, which the engine simulates, so it is a timing note and not a wait.",
               "evidence": [
                 {
@@ -142,6 +147,8 @@
               "name": "Send report",
               "role": "Account manager",
               "work_hours": 0.25,
+              "wait_hours": 0,
+              "rework_rate": 0,
               "notes": "Routing: Hana at 00:04:38 said 'But about one in ten has questions, and then it turns into a follow-up call.' So 0.1 goes to Follow-up call and 0.9 to Report sent. The app keeps no evidence on routing.",
               "evidence": [
                 {
@@ -168,6 +175,8 @@
               "name": "Follow-up call",
               "role": "Account manager",
               "work_hours": 0.5,
+              "wait_hours": 0,
+              "rework_rate": 0,
               "evidence": [
                 {
                   "field": "work_hours",

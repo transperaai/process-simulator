@@ -106,7 +106,7 @@ export function lintRun(run: Run): string[] {
       }
       if (isNew) {
         const need = kind === "task" ? ["work_hours", "wait_hours", "rework_rate"] : kind === "wait" ? ["wait_hours"] : [];
-        for (const f of need) if (!cited(f) && !reasoned.has(f)) problems.push(`${where}: ${f} would fall to the server default`);
+        for (const f of need) if (!cited(f) && !(given(f) && reasoned.has(f))) problems.push(`${where}: ${f} would fall to the server default (give the value and its reasoning)`);
       }
       for (const phase of ["work", "wait"] as const) {
         const p = params(phase);

@@ -40,7 +40,7 @@ Leading words, used throughout: **cited**, **assumed**, **ledger** (one line per
    - Read `warnings`, `checklist`, `conflicts`, `not_overwritten` and the response's `assumptions`.
    - Fix branch sums or "Nothing leaves this step yet" with `set_routing {step, routes: [{to, probability}]}` (routes sum to 1) or `connect_steps`.
    - For any checklist assumption with no evidence whose `reasoning` starts "Server default for a" or "Given without a cited source", call `update_step {process, step, assumptions: [{field, reasoning}]}`.
-   - Optional: when an interviewee stated an end-to-end time, call `run_scenario {process, revision: "draft"}` and put `kpi.cycle.mean` (working hours) beside the stated time in the timing notes. On `invalid_model`, note it and move on.
+   - Optional: when an interviewee stated an end-to-end time, call `run_scenario {process, revision: "draft"}` and put `kpi.cycle.mean` (working hours) beside the stated time in the timing notes. A servicing process alone returns `invalid_model` (it runs beside a pipeline): note that and move on.
    - Done when `warnings` is empty and every assumption carries your reasoning.
 6. **Submit suggestions** (see "Suggestions"). Done when every ledger line marked suggestion has a stored suggestion or an open question that explains why not.
 7. **Report** (see "Summary"). Done when the summary has every section, the empty ones included.
@@ -95,8 +95,8 @@ Give the field value and a citation `{field, source, speaker, quote, timestamp, 
 
 ## Assumed numbers
 
-- Every value no source states carries a step-level `assumptions: [{field, reasoning}]`. The reasoning says why this number: an analogy to a cited step, what the speaker implied, or typical practice, naming the ledger evidence where there is some.
-- Task steps always cover `work_hours`, `wait_hours` and `rework_rate`, by citation or assumption. Wait steps cover `wait_hours`. A value left to the server default is a wrong value with a label, so state one.
+- Every value no source states is given explicitly, with a step-level `assumptions: [{field, reasoning}]` entry. The reasoning says why this number: an analogy to a cited step, what the speaker implied, or typical practice, naming the ledger evidence where there is some.
+- Task steps always cover `work_hours`, `wait_hours` and `rework_rate`, by citation or by value plus reasoning (a zero is a value). Wait steps cover `wait_hours`. A field left out is filled by the server default whatever reasoning accompanies it, and that default is a number nobody chose.
 - `sla_hours` and `current_wip` appear only when stated.
 
 ## Disagreements and conflicts
@@ -156,12 +156,12 @@ An invented "Example Co" (roles Account manager and Copywriter exist; 40-hour we
 {"process_json": {"name": "Client brief", "kind": "servicing", "entity_name": "brief",
  "steps": [
   {"name": "Start", "kind": "start"},
-  {"name": "Draft brief", "role": "Copywriter", "work_dist": "triangular", "work_params": {"min": 2, "mode": 3, "max": 4},
+  {"name": "Draft brief", "role": "Copywriter", "work_dist": "triangular", "work_params": {"min": 2, "mode": 3, "max": 4}, "wait_hours": 0, "rework_rate": 0,
    "evidence": [{"field": "work_hours", "source": "<source id>", "speaker": "Sam", "quote": "the brief takes me two to four hours", "timestamp": "00:03:10", "value": 3}],
    "assumptions": [
     {"field": "wait_hours", "reasoning": "Sam names no wait after drafting; 0 because the brief goes straight to sending."},
     {"field": "rework_rate", "reasoning": "Nobody said the draft comes back; 0 until a second speaker says otherwise."}]},
-  {"name": "Send brief", "role": "Account manager", "work_hours": 0.5,
+  {"name": "Send brief", "role": "Account manager", "work_hours": 0.5, "wait_hours": 0, "rework_rate": 0,
    "notes": "Routing: Sam said 'about one in five ask for changes', so 0.2 goes back to Draft brief. The app keeps no evidence on routing.",
    "evidence": [
     {"field": "work_hours", "source": "<source id>", "speaker": "Sam", "quote": "sending it is half an hour", "timestamp": "00:05:42", "value": 0.5}],

@@ -863,6 +863,130 @@ export type Database = {
           },
         ]
       }
+      reports: {
+        Row: {
+          content: Json
+          content_version: number
+          created_at: string
+          created_by: string | null
+          id: string
+          link_expires_at: string | null
+          link_hash: string | null
+          options: Json
+          pdf: string | null
+          pdf_generated_at: string | null
+          process_id: string | null
+          run_id: string | null
+          title: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          content: Json
+          content_version?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          link_expires_at?: string | null
+          link_hash?: string | null
+          options?: Json
+          pdf?: string | null
+          pdf_generated_at?: string | null
+          process_id?: string | null
+          run_id?: string | null
+          title: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          content?: Json
+          content_version?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          link_expires_at?: string | null
+          link_hash?: string | null
+          options?: Json
+          pdf?: string | null
+          pdf_generated_at?: string | null
+          process_id?: string | null
+          run_id?: string | null
+          title?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reports_process_id_workspace_id_fkey"
+            columns: ["process_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "reports_run_id_workspace_id_fkey"
+            columns: ["run_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "reports_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      robustness_results: {
+        Row: {
+          cache_key: string
+          check_key: string
+          created_at: string
+          created_by: string | null
+          id: string
+          results: Json
+          run_id: string | null
+          workspace_id: string
+        }
+        Insert: {
+          cache_key: string
+          check_key: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          results: Json
+          run_id?: string | null
+          workspace_id: string
+        }
+        Update: {
+          cache_key?: string
+          check_key?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          results?: Json
+          run_id?: string | null
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "robustness_results_run_id_workspace_id_fkey"
+            columns: ["run_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "robustness_results_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       roles: {
         Row: {
           color: string | null
@@ -1596,6 +1720,17 @@ export type Database = {
         Returns: boolean
       }
       reconcile_access: { Args: { uid: string }; Returns: undefined }
+      report_download: {
+        Args: { token: string }
+        Returns: {
+          content: Json
+          expires_at: string
+          id: string
+          pdf: string | null
+          title: string
+          workspace_id: string
+        }[]
+      }
       resolve_my_access: {
         Args: never
         Returns: {

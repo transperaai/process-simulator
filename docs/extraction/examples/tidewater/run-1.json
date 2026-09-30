@@ -1,0 +1,341 @@
+{
+  "calls": [
+    {
+      "tool": "set_active_workspace",
+      "arguments": {
+        "workspace": "Tidewater Digital"
+      }
+    },
+    {
+      "tool": "get_workspace_summary",
+      "arguments": {}
+    },
+    {
+      "tool": "list_suggestions",
+      "arguments": {
+        "status": "pending"
+      }
+    },
+    {
+      "tool": "add_source",
+      "arguments": {
+        "title": "Tidewater Digital interview: Hana Iqbal, account manager (2026-10-05)",
+        "kind": "transcript",
+        "speakers": [
+          "Interviewer",
+          "Hana Iqbal"
+        ],
+        "recorded_at": "2026-10-05",
+        "body": "$file:interview-1.txt"
+      },
+      "save": "source1"
+    },
+    {
+      "tool": "import_process",
+      "arguments": {
+        "process_json": {
+          "name": "Monthly client report",
+          "kind": "servicing",
+          "entity_name": "report",
+          "description": "Month end to a reviewed report in the client's inbox. Retainer terms promise the report within five working days of month end (40 h at 8 h a day); that promise belongs on the service's servicing link in Settings.",
+          "steps": [
+            {
+              "name": "Month end",
+              "kind": "start"
+            },
+            {
+              "name": "Pull ranking data",
+              "role": "SEO specialist",
+              "tool": "Rank tracker",
+              "work_hours": 1,
+              "evidence": [
+                {
+                  "field": "work_hours",
+                  "source": "$source1",
+                  "speaker": "Hana Iqbal",
+                  "quote": "about an hour a client",
+                  "timestamp": "00:01:16",
+                  "value": 1
+                }
+              ],
+              "assumptions": [
+                {
+                  "field": "wait_hours",
+                  "reasoning": "Hana says of the pull 'It just gets done': the data lands in the shared folder and she gets a ping. No wait is described, so 0."
+                },
+                {
+                  "field": "rework_rate",
+                  "reasoning": "Nobody says the ranking pull is sent back. Hana mentions the tracker export timing out about once a fortnight but declines to guess its cost, so 0 here; Owen is the person to ask."
+                }
+              ]
+            },
+            {
+              "name": "Write commentary",
+              "role": "Account manager",
+              "tool": "Google Docs",
+              "work_dist": "triangular",
+              "work_params": {
+                "min": 2,
+                "mode": 2.5,
+                "max": 3
+              },
+              "current_wip": 4,
+              "notes": "Hana: two hours in a quiet month, three when something has dropped and needs explaining.",
+              "evidence": [
+                {
+                  "field": "work_hours",
+                  "source": "$source1",
+                  "speaker": "Hana Iqbal",
+                  "quote": "call it two, three hours",
+                  "timestamp": "00:02:00",
+                  "value": 2.5
+                },
+                {
+                  "field": "current_wip",
+                  "source": "$source1",
+                  "speaker": "Hana Iqbal",
+                  "quote": "I've got four half-written right now",
+                  "timestamp": "00:02:16",
+                  "value": 4
+                }
+              ],
+              "assumptions": [
+                {
+                  "field": "wait_hours",
+                  "reasoning": "The ranking data 'lands in the shared folder' and Hana gets a ping, so nothing is described as delaying the start of writing: 0."
+                },
+                {
+                  "field": "rework_rate",
+                  "reasoning": "Hana says Callum sends reports back to her, which is modelled as Director review's rework going to this step, so this step has no rework of its own: 0."
+                }
+              ]
+            },
+            {
+              "name": "Director review",
+              "role": "Director",
+              "rework_rate": 0.2,
+              "rework_to": "Write commentary",
+              "work_hours": 0.5,
+              "notes": "Callum Reid reviews every report. Hana: 'It sits in Callum's inbox a day or two, because he's always in meetings.' That is queueing behind his other work, which the engine simulates, so it is a timing note and not a wait.",
+              "evidence": [
+                {
+                  "field": "rework_rate",
+                  "source": "$source1",
+                  "speaker": "Hana Iqbal",
+                  "quote": "One in five, I'd say",
+                  "timestamp": "00:03:38",
+                  "value": 0.2
+                }
+              ],
+              "assumptions": [
+                {
+                  "field": "work_hours",
+                  "reasoning": "Hana does not know ('You'd have to ask him') but says he reads fast. 0.5 h is a guess for reading one report and editing the wording: longer than Send report (0.25) and far shorter than writing it (2.5). Ask Callum."
+                },
+                {
+                  "field": "wait_hours",
+                  "reasoning": "The day or two in Callum's inbox is queueing, which the engine simulates from his workload, so no fixed wait is added: 0."
+                }
+              ]
+            },
+            {
+              "name": "Send report",
+              "role": "Account manager",
+              "work_hours": 0.25,
+              "notes": "Routing: Hana at 00:04:38 said 'But about one in ten has questions, and then it turns into a follow-up call.' So 0.1 goes to Follow-up call and 0.9 to Report sent. The app keeps no evidence on routing.",
+              "evidence": [
+                {
+                  "field": "work_hours",
+                  "source": "$source1",
+                  "speaker": "Hana Iqbal",
+                  "quote": "A quarter of an hour, tops",
+                  "timestamp": "00:04:24",
+                  "value": 0.25
+                }
+              ],
+              "assumptions": [
+                {
+                  "field": "wait_hours",
+                  "reasoning": "Exporting to PDF and emailing happen straight away: 0."
+                },
+                {
+                  "field": "rework_rate",
+                  "reasoning": "Nothing comes back to this step; client questions are modelled as routing to Follow-up call: 0."
+                }
+              ]
+            },
+            {
+              "name": "Follow-up call",
+              "role": "Account manager",
+              "work_hours": 0.5,
+              "evidence": [
+                {
+                  "field": "work_hours",
+                  "source": "$source1",
+                  "speaker": "Hana Iqbal",
+                  "quote": "Half an hour. Sometimes it runs over but it's half an hour in the diary.",
+                  "timestamp": "00:05:01",
+                  "value": 0.5
+                }
+              ],
+              "assumptions": [
+                {
+                  "field": "wait_hours",
+                  "reasoning": "Hana describes the call as booked in the diary; no wait is described, so 0."
+                },
+                {
+                  "field": "rework_rate",
+                  "reasoning": "A follow-up call does not send the report back to an earlier step: 0."
+                }
+              ]
+            },
+            {
+              "name": "Report sent",
+              "kind": "end",
+              "outcome": "done"
+            }
+          ],
+          "edges": [
+            {
+              "from": "Month end",
+              "to": "Pull ranking data"
+            },
+            {
+              "from": "Pull ranking data",
+              "to": "Write commentary"
+            },
+            {
+              "from": "Write commentary",
+              "to": "Director review"
+            },
+            {
+              "from": "Director review",
+              "to": "Send report"
+            },
+            {
+              "from": "Send report",
+              "to": "Follow-up call",
+              "probability": 0.1
+            },
+            {
+              "from": "Send report",
+              "to": "Report sent",
+              "probability": 0.9
+            },
+            {
+              "from": "Follow-up call",
+              "to": "Report sent"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "tool": "run_scenario",
+      "arguments": {
+        "process": "Monthly client report",
+        "revision": "draft"
+      }
+    },
+    {
+      "tool": "upsert_person",
+      "arguments": {
+        "name": "Priti Rao",
+        "fte": 0.6,
+        "evidence": [
+          {
+            "source_id": "$source1",
+            "speaker": "Hana Iqbal",
+            "quote": "she's three days a week now",
+            "timestamp": "00:05:36",
+            "value": 0.6
+          }
+        ],
+        "note": "Hana says Priti is now three days a week, since the start of the month: 3 of 5 days is 0.6 FTE."
+      }
+    },
+    {
+      "tool": "upsert_person",
+      "arguments": {
+        "name": "Jonah Pike",
+        "roles": [
+          "SEO specialist"
+        ],
+        "start_date": "2026-10-12",
+        "evidence": [
+          {
+            "source_id": "$source1",
+            "speaker": "Hana Iqbal",
+            "quote": "we've hired Jonah Pike, he's an SEO specialist, he starts on the twelfth of October",
+            "timestamp": "00:05:58"
+          }
+        ],
+        "note": "New hire, SEO specialist, starting 12 October 2026. FTE was not stated, so it takes the default of 1."
+      }
+    },
+    {
+      "tool": "upsert_client",
+      "arguments": {
+        "name": "Marlow Physio",
+        "mrr": 2900,
+        "services": [
+          "SEO retainer",
+          "Content add-on"
+        ],
+        "evidence": [
+          {
+            "source_id": "$source1",
+            "speaker": "Hana Iqbal",
+            "quote": "they were twenty-five hundred a month but they're on twenty-nine hundred now, because they took the content add-on as well as the SEO retainer",
+            "timestamp": "00:06:17",
+            "value": 2900
+          }
+        ],
+        "note": "Was 2500, now 2900 a month with both services."
+      }
+    },
+    {
+      "tool": "upsert_client",
+      "arguments": {
+        "name": "Quayside Vets",
+        "services": [
+          "SEO retainer"
+        ],
+        "assignments": {
+          "Account manager": "Hana Iqbal",
+          "SEO specialist": "Owen Hart"
+        },
+        "evidence": [
+          {
+            "source_id": "$source1",
+            "speaker": "Hana Iqbal",
+            "quote": "Quayside Vets, they signed on the SEO retainer. I'm their account manager and Owen's doing the SEO",
+            "timestamp": "00:06:43"
+          }
+        ],
+        "note": "New client on the SEO retainer. Monthly fee not stated: Hana says it was Callum's deal."
+      }
+    },
+    {
+      "tool": "set_demand",
+      "arguments": {
+        "lead_sources": [
+          {
+            "name": "Referrals",
+            "volume_week": 3,
+            "evidence": [
+              {
+                "source_id": "$source1",
+                "speaker": "Hana Iqbal",
+                "quote": "It's about three a week now, it was two for ages and it's crept up",
+                "timestamp": "00:07:08",
+                "value": 3
+              }
+            ],
+            "note": "Referrals were 2 a week and are now about 3."
+          }
+        ]
+      }
+    }
+  ]
+}

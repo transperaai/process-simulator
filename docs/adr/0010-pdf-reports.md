@@ -37,7 +37,10 @@ Options for the PDF:
   `preferCSSPageSize`. `CHROMIUM_PATH` (or an explicit path) points at a local Chrome for development and tests. Both
   packages are on Next's built-in `serverExternalPackages`; `outputFileTracingIncludes` ships
   `@sparticuz/chromium/bin` with the three routes that print (`/api/reports`, `/api/mcp`, `/demo/report/pdf`): about
-  75 MB traced per function. Web fonts load from Google Fonts with a 4 s cap; the fallback stack prints otherwise (the
+  75 MB traced per function. The glob names the package's real directory (resolved in `next.config.ts`, under
+  `node_modules/.pnpm`), because that is where the package looks for `bin/`; a glob through pnpm's
+  `apps/web/node_modules` symlink shipped the files somewhere Chromium never looked (production 500s, fixed on
+  `fix/pdf-on-vercel`). `outputFileTracingRoot` is the monorepo root. Web fonts load from Google Fonts with a 4 s cap; the fallback stack prints otherwise (the
   serverless Chromium ships Open Sans).
 - **Reports come from a saved run.** Either a new run of the live model (saved to `runs` with its snapshot, 200
   replications by default) or a saved run whose model is unchanged (`changesSinceRun` is empty) and which re-runs to the

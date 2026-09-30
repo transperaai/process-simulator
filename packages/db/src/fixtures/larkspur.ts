@@ -273,6 +273,7 @@ export function larkspurBundle(): ProcessBundle {
         default_cost_rate: cost,
         headcount: LARKSPUR_TEAM.filter((p) => p.roles[0] === key).length,
         ongoing_hours_per_client_week: 0,
+        active: true,
       }),
     ),
     process: pipeline.process,

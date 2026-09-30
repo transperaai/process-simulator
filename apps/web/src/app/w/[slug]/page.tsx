@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { ProcessView } from "@/components/process-view";
 import { canEditWorkspace, canManageWorkspace, currentViewer } from "@/lib/access-data";
+import { pendingSuggestionCount } from "@/lib/company-data";
 import { loadProcessForEditing, loadWorkspaceIssues, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
 
 export default async function WorkspacePage(props: PageProps<"/w/[slug]">) {
@@ -11,13 +12,14 @@ export default async function WorkspacePage(props: PageProps<"/w/[slug]">) {
   const process = await loadProcessForEditing(slug);
   if (!process) notFound();
   const { live, draft } = process;
-  const [canEdit, canManage, scenarios, issues, viewer, sources] = await Promise.all([
+  const [canEdit, canManage, scenarios, issues, viewer, sources, pendingSuggestions] = await Promise.all([
     canEditWorkspace(live.workspace.id),
     canManageWorkspace(live.workspace.id),
     loadWorkspaceScenarios(live.workspace.id),
     loadWorkspaceIssues(live.workspace.id),
     currentViewer(),
     loadWorkspaceSources(live.workspace.id),
+    pendingSuggestionCount(live.workspace.id),
   ]);
   return (
     <main className="mx-auto w-full max-w-7xl px-4 pb-8">
@@ -32,6 +34,15 @@ export default async function WorkspacePage(props: PageProps<"/w/[slug]">) {
         </Link>
         <Link href={`/w/${slug}/sources`} className="text-fg-2 hover:underline">
           Sources
+        </Link>
+        <Link href={`/w/${slug}/suggestions`} className="text-fg-2 hover:underline">
+          Suggestions
+          {pendingSuggestions > 0 && (
+            <span className="ml-1 rounded-full border border-warn bg-warn-soft px-1.5 text-[11px] font-semibold tabular-nums">{pendingSuggestions}</span>
+          )}
+        </Link>
+        <Link href={`/w/${slug}/runs`} className="text-fg-2 hover:underline">
+          Runs
         </Link>
         <Link href={`/w/${slug}/settings`} className="text-fg-2 hover:underline">
           People &amp; settings

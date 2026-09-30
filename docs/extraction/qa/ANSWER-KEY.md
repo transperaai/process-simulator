@@ -84,6 +84,8 @@ Each carries evidence in the suggestion shape (the source id, the speaker, the v
 
 This is a second interview on the same process. A correct run writes into the existing process (it does not create a second one), lists only the steps Tom speaks about plus the new one, cites only Tom's numbers, and leaves the field values out so the server combines Grace's evidence and Tom's into a range. The process list must still show one process, and the draft must show a diff.
 
+**Confirmed values.** The ranges below assume Grace's values were published as estimates. Confirming a value on the canvas makes it `entered`, and an entered value is never overwritten. So for any value Austin confirmed between the interviews, the step keeps Grace's number (Proposal keeps 2 / 2.5 / 3), is flagged with a conflict listing both speakers, and gets no range. The perception-gap issue is logged either way. The import's `not_overwritten` stays empty, because the run sends citations and no field values; the kept value shows up in `conflicts`.
+
 ### Numbers on steps
 
 | Planted item | Where | Expected handling |
@@ -93,7 +95,7 @@ This is a second interview on the same process. A correct run writes into the ex
 | A conflict with a ratio of 2 | "Half the time, yeah" for proposal rework at `[00:06:18]` | Cite 0.5 on Proposal rework, conflicting with Grace's 0.25; median 0.375, a perception gap (exactly 2 times apart). |
 | A new step | Pricing sign-off, "Twenty minutes" at `[00:07:06]` | A new task step, Pricing sign-off, Account director, hands-on 0.33 hours (twenty minutes), cited to Tom (he corrects himself from "fifteen, twenty" to twenty; cite the correction). It sits between Proposal and Client decision: Proposal now leads to Pricing sign-off and that leads to Client decision. Wait and rework are assumed with reasoning ("it's not a queue"). |
 | A routing conflict | "one in three, if we're honest" at `[00:08:42]` | Client decision to Won becomes the median of Grace's 0.5 and Tom's 0.33, about 0.42 (and 0.58 to Lost). Both quotes go in Client decision's notes. The summary lists it under "Routing conflicts (not tracked by the app)": routing has no evidence, so it cannot become a conflict in the app. |
-| A conflict, or a kept value | "They're out in a day" at `[00:10:30]` and "A working day" at `[00:11:26]` | Contracts hands-on 7.5 hours (one working day), cited to Tom. It conflicts with Grace's 15 (range 7.5 / 11.25 / 15, perception gap of 2 times). If Austin confirmed Contracts on the canvas between the interviews, the confirmed value is kept and reported as not overwritten, with Tom's 7.5 flagged as a conflict. |
+| A conflict, or a kept value | "They're out in a day" at `[00:10:30]` and "A working day" at `[00:11:26]` | Contracts hands-on 7.5 hours (one working day), cited to Tom. It conflicts with Grace's 15 (range 7.5 / 11.25 / 15, perception gap of 2 times). If Austin confirmed Contracts on the canvas between the interviews, the confirmed value is kept and Tom's 7.5 is flagged as a conflict against it (see "Confirmed values" above). |
 | A conflict | "Two hours with prep" at `[00:13:39]` | Onboarding call hands-on 2 hours cited to Tom, against Grace's 1. Range 1 / 1.5 / 2 and a perception gap of 2 times. "Half a day on top" for big accounts is a note. |
 | Work in progress | "Three contracts waiting on signatures" at `[00:11:39]` | Contracts current WIP 3, cited (he self-corrects to three). |
 
@@ -115,7 +117,7 @@ The report ends with these sections, in this order, each present even if empty: 
 
 ## Perception-gap issues to find on the Issues page after interview 2
 
-Four are expected: Proposal hands-on time, Proposal rework, Contracts hands-on time and Onboarding call hands-on time. Discovery call (agreement) and Client decision (routing) raise none. If Austin confirmed Contracts on the canvas, its issue may differ (the kept value stands against Tom's).
+Four are expected: Proposal hands-on time, Proposal rework, Contracts hands-on time and Onboarding call hands-on time. Discovery call (agreement) and Client decision (routing) raise none. A value Austin confirmed still raises its issue: the kept value stands against Tom's.
 
 ## Reading the checklist
 

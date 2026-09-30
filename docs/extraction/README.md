@@ -41,7 +41,7 @@ The prompt is a skill: [`.agents/skills/extract-process/SKILL.md`](../../.agents
 
 ## A second interview
 
-Same conversation or a new one; tell it the process name. Expect `created: false` and a diff against live, so publish after the first interview to make the diff meaningful. Speakers who disagree become a range and a conflict on the step; a value someone confirmed on the canvas is kept and the new one flagged.
+Same conversation or a new one; tell it the process name. Expect `created: false` and a diff against live, so publish after the first interview to make the diff meaningful. Speakers who disagree become a range and a conflict on the step while the value is still an estimate. A value someone confirmed on the canvas is kept: the new one is flagged as a conflict and no range is built.
 
 ## Troubleshooting
 

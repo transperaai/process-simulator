@@ -211,6 +211,13 @@ describe.skipIf(!POSTGREST_URL)("extraction dry run (Tidewater Digital) over Pos
       expect.objectContaining({ step: "Director review", field: "rework_rate", values: [expect.objectContaining({ value: 0.2, speaker: "Hana Iqbal" }), expect.objectContaining({ value: 0.5, speaker: "Owen Hart" })] }),
     ]);
     expect(imported.data.warnings).toEqual([]);
+    // The new step's unstated numbers are reasoned too (the fixture lint checks new processes only).
+    expect(imported.assumptions.filter((a: string) => /defaulted to/.test(a))).toEqual([]);
+    const technical = (imported.data.checklist as { step: { name: string }; field: string; evidence: unknown[]; reasoning: string | null }[]).filter(
+      (i) => i.step.name === "Technical check",
+    );
+    expect(technical.map((i) => i.field).sort()).toEqual(["rework_rate", "wait_hours", "work_hours"]);
+    for (const i of technical.filter((i) => !i.evidence.length)) expect(i.reasoning).not.toMatch(/^(Server default|Given without a cited source)/);
 
     // One process, and its draft holds the range the two speakers span.
     const all = await processes();
@@ -220,6 +227,8 @@ describe.skipIf(!POSTGREST_URL)("extraction dry run (Tidewater Digital) over Pos
     expect(pull).toMatchObject({ work_dist: "triangular", conflict: true });
     expect(pull.work_params).toEqual({ min: 1, mode: 2, max: 3 });
     expect(steps.find((s) => s.name === "Director review")).toMatchObject({ rework_rate: "0.35", conflict: true });
+    // What someone confirmed on the canvas carried into the new draft untouched.
+    expect(steps.find((s) => s.name === "Send report")!.provenance.work_hours).toMatchObject({ source: "entered" });
     const gaps = await admin.query("select title from issues where workspace_id = $1 and type = 'perception_gap' order by title", [workspaceId]);
     expect(gaps.rows).toEqual([{ title: "Sources disagree on Director review: rework rate" }, { title: "Sources disagree on Pull ranking data: hands-on time" }]);
 

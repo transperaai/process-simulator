@@ -39,7 +39,7 @@ Leading words, used throughout: **cited**, **assumed**, **ledger** (one line per
 5. **Check the draft.**
    - Read `warnings`, `checklist`, `conflicts`, `not_overwritten` and the response's `assumptions`.
    - Fix branch sums or "Nothing leaves this step yet" with `set_routing {step, routes: [{to, probability}]}` (routes sum to 1) or `connect_steps`.
-   - For any checklist assumption with no evidence whose `reasoning` starts "Server default for a" or "Given without a cited source", call `update_step {process, step, assumptions: [{field, reasoning}]}`.
+   - For any checklist assumption with no evidence whose `reasoning` starts "Server default for a" or "Given without a cited source", call `update_step {process, step, <field>: <the value you mean>, assumptions: [{field, reasoning}]}`. Reasoning alone keeps the default number.
    - Optional: when an interviewee stated an end-to-end time, call `run_scenario {process, revision: "draft"}` and put `kpi.cycle.mean` (working hours) beside the stated time in the timing notes. A servicing process alone returns `invalid_model` (it runs beside a pipeline): note that and move on.
    - Done when `warnings` is empty and every assumption carries your reasoning.
 6. **Submit suggestions** (see "Suggestions"). Done when every ledger line marked suggestion has a stored suggestion or an open question that explains why not.
@@ -89,9 +89,9 @@ Give the field value and a citation `{field, source, speaker, quote, timestamp, 
 - When the interviewer proposes a number and the interviewee agrees, quote the exchange verbatim with the interviewee as speaker.
 - When a speaker corrects themselves, cite only the correction and say so in the step's `notes`.
 - Hedges:
-  - Symmetric ("two, three hours", "a day or two"): `work_dist: "triangular"` with `work_params {min, mode, max}` where `mode` is the midpoint, and cite `value` equal to that midpoint. The mean equals the midpoint, so the range survives and can still conflict with another speaker. A cited `value` that differs from the current mean turns a range back into a plain value.
+  - Symmetric ("two, three hours", "a day or two"): `work_dist: "triangular"` with `work_params {min, mode, max}` (for a wait, `wait_dist` and `wait_params`) where `mode` is the midpoint, and cite `value` equal to that midpoint. The mean equals the midpoint, so the range survives and can still conflict with another speaker. A cited `value` that differs from the current mean turns a range back into a plain value.
   - Typical plus tail ("usually an hour, sometimes a half-day"): the field and `value` are the typical figure; the tail goes in `notes`.
-  - A hedge on `rework_rate` or `current_wip`: the midpoint is the value, the hedge goes in `notes`.
+  - A hedge on `rework_rate` or `current_wip`: the midpoint is the value (rounded to a whole number for `current_wip`), the hedge goes in `notes`.
 
 ## Assumed numbers
 
@@ -111,9 +111,10 @@ Give the field value and a citation `{field, source, speaker, quote, timestamp, 
 - Pass `target` as the process id (or exact name).
 - List only the steps this interview says something about, plus new steps, using the exact existing step names from `get_process` (or `id`).
 - For an existing step, send only the new speaker's citations (with `value`) and leave the field value out, so earlier and new evidence combine. The first interview's citations stay where they are.
+- `notes` replaces the step's whole notes. To add a quote (a routing disagreement, a correction), send the existing notes from `get_process` with the new text appended.
 - A new step between A and B: list edges `A to New` and `New to B`. Listing edges from A replaces all of A's outgoing edges, so include every branch A keeps, each with its probability.
 - `remove_missing` stays at its default. A step someone says no longer happens is an open question.
-- Report `created: false`, `diff.text`, `matched`, `conflicts` and `not_overwritten`. A value someone entered on the canvas is kept and the new value is flagged.
+- Report `created: false`, `diff.text`, `matched`, `conflicts` and `not_overwritten`. A value someone confirmed or entered on the canvas is kept: a disagreeing citation makes it a conflict in `conflicts` (no range is built), and `not_overwritten` lists only values or ranges you sent.
 
 ## Suggestions
 
@@ -133,7 +134,7 @@ Rules:
 - On `ambiguous`, pick from `candidates` when the transcript clearly means one of them. Pass `create: true` only when the row is clearly new; otherwise it is an open question.
 - If a matching pending suggestion already exists (from `list_suggestions`), do not create another: say which one to edit or reject.
 - `assignments` and `roles` must name existing rows. A pending new person cannot be assigned yet, so that is an open question.
-- `get_workspace_summary` lists no clients, services or lead sources. Names you have not seen are found by trying `upsert_*` without `create`: an exact match updates, a partial match returns `ambiguous` with candidates.
+- `get_workspace_summary` lists no clients, services or lead sources. `upsert_*` without `create` matches by name: an exact match updates, a partial match returns `ambiguous` with candidates, and a name that matches nothing becomes a suggestion to add a new row. Send only names you mean to update or add.
 
 ## Summary (the final message)
 

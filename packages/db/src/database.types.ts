@@ -582,6 +582,7 @@ export type Database = {
           id: string
           name: string
           notes: string | null
+          provenance: Json
           start_date: string | null
           updated_at: string
           workspace_id: string
@@ -598,6 +599,7 @@ export type Database = {
           id?: string
           name: string
           notes?: string | null
+          provenance?: Json
           start_date?: string | null
           updated_at?: string
           workspace_id: string
@@ -614,6 +616,7 @@ export type Database = {
           id?: string
           name?: string
           notes?: string | null
+          provenance?: Json
           start_date?: string | null
           updated_at?: string
           workspace_id?: string
@@ -907,6 +910,85 @@ export type Database = {
           },
         ]
       }
+      runs: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          duration_ms: number | null
+          engine_version: string | null
+          id: string
+          name: string
+          params_snapshot: Json
+          process_id: string | null
+          reps: number
+          results: Json
+          revision_ids: string[]
+          scenario_id: string | null
+          seed: number
+          trace_url: string | null
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          duration_ms?: number | null
+          engine_version?: string | null
+          id?: string
+          name: string
+          params_snapshot: Json
+          process_id?: string | null
+          reps: number
+          results?: Json
+          revision_ids?: string[]
+          scenario_id?: string | null
+          seed: number
+          trace_url?: string | null
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          duration_ms?: number | null
+          engine_version?: string | null
+          id?: string
+          name?: string
+          params_snapshot?: Json
+          process_id?: string | null
+          reps?: number
+          results?: Json
+          revision_ids?: string[]
+          scenario_id?: string | null
+          seed?: number
+          trace_url?: string | null
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "runs_process_id_workspace_id_fkey"
+            columns: ["process_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "runs_scenario_id_workspace_id_fkey"
+            columns: ["scenario_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "scenarios"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "runs_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       scenarios: {
         Row: {
           created_at: string
@@ -1015,6 +1097,7 @@ export type Database = {
           path_tags: string[]
           price: number
           pricing_model: string
+          provenance: Json
           tenure_months: number
           updated_at: string
           workspace_id: string
@@ -1034,6 +1117,7 @@ export type Database = {
           path_tags?: string[]
           price?: number
           pricing_model?: string
+          provenance?: Json
           tenure_months?: number
           updated_at?: string
           workspace_id: string
@@ -1053,6 +1137,7 @@ export type Database = {
           path_tags?: string[]
           price?: number
           pricing_model?: string
+          provenance?: Json
           tenure_months?: number
           updated_at?: string
           workspace_id?: string
@@ -1248,6 +1333,71 @@ export type Database = {
           },
         ]
       }
+      suggestions: {
+        Row: {
+          applied: Json | null
+          created_at: string
+          created_by: string | null
+          created_via: string
+          evidence: Json
+          id: string
+          note: string | null
+          patch: Json
+          review_note: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          target_id: string | null
+          target_table: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          applied?: Json | null
+          created_at?: string
+          created_by?: string | null
+          created_via?: string
+          evidence?: Json
+          id?: string
+          note?: string | null
+          patch: Json
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          target_id?: string | null
+          target_table: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          applied?: Json | null
+          created_at?: string
+          created_by?: string | null
+          created_via?: string
+          evidence?: Json
+          id?: string
+          note?: string | null
+          patch?: Json
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          target_id?: string | null
+          target_table?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "suggestions_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workspace_access_emails: {
         Row: {
           created_at: string
@@ -1335,6 +1485,7 @@ export type Database = {
           id: string
           name: string
           plan: string
+          provenance: Json
           settings: Json
           slug: string
           updated_at: string
@@ -1345,6 +1496,7 @@ export type Database = {
           id?: string
           name: string
           plan?: string
+          provenance?: Json
           settings?: Json
           slug: string
           updated_at?: string
@@ -1355,6 +1507,7 @@ export type Database = {
           id?: string
           name?: string
           plan?: string
+          provenance?: Json
           settings?: Json
           slug?: string
           updated_at?: string
@@ -1389,6 +1542,10 @@ export type Database = {
           source: string
           workspace_id: string
         }[]
+      }
+      review_suggestions: {
+        Args: { decision: string; ids: string[]; note?: string }
+        Returns: Json
       }
       save_fields: {
         Args: { base: Json; changes: Json; key: Json; target: string }

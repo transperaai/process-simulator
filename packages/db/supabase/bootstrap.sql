@@ -4800,13 +4800,15 @@ $$;
 -- The overtime cap (§5 `workspaces.settings.overtime_cap`, default 0) is a key
 -- of the settings jsonb, like `availability_floor`: no schema change.
 --
--- Strictly additive: three new tables; `save_fields` redefined with `clients`
--- and `client_assignments` appended to its allow-list, and `save_links` with
+-- Strictly additive: three new tables; a nullable `issues.client_id` linking an
+-- issue to a client; `save_fields` redefined with `clients` and
+-- `client_assignments` appended to its allow-list, and `save_links` with
 -- `client_services` added to its link tables (nothing else in either changes).
 --
 -- Rollback (run as one transaction):
 --
 --   begin;
+--   alter table public.issues drop column client_id;
 --   drop table public.client_assignments, public.client_services, public.clients;
 --   -- Restore save_fields' previous allow-list: re-run the `create or replace
 --   -- function public.save_fields ... $$;` block from 20261005000000_issues.sql,
@@ -4900,6 +4902,16 @@ $$;
 
 grant select, insert, update, delete on public.clients, public.client_services, public.client_assignments to authenticated;
 revoke all on public.clients, public.client_services, public.client_assignments from anon;
+
+-- ---------------------------------------------------------------------------
+-- An issue can be about a client (§5 `issues.client_id`: a churn risk, a
+-- complaint), linked within the workspace like its other subjects
+-- ---------------------------------------------------------------------------
+
+alter table public.issues add column client_id uuid;
+alter table public.issues
+  add foreign key (client_id, workspace_id) references public.clients (id, workspace_id) on delete set null (client_id);
+create index on public.issues (client_id);
 
 -- ---------------------------------------------------------------------------
 -- Per-field saves: `clients` and `client_assignments` join save_fields'
@@ -5105,13 +5117,15 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 -- The overtime cap (§5 `workspaces.settings.overtime_cap`, default 0) is a key
 -- of the settings jsonb, like `availability_floor`: no schema change.
 --
--- Strictly additive: three new tables; `save_fields` redefined with `clients`
--- and `client_assignments` appended to its allow-list, and `save_links` with
+-- Strictly additive: three new tables; a nullable `issues.client_id` linking an
+-- issue to a client; `save_fields` redefined with `clients` and
+-- `client_assignments` appended to its allow-list, and `save_links` with
 -- `client_services` added to its link tables (nothing else in either changes).
 --
 -- Rollback (run as one transaction):
 --
 --   begin;
+--   alter table public.issues drop column client_id;
 --   drop table public.client_assignments, public.client_services, public.clients;
 --   -- Restore save_fields'' previous allow-list: re-run the `create or replace
 --   -- function public.save_fields ... $$;` block from 20261005000000_issues.sql,
@@ -5205,6 +5219,16 @@ $$;
 
 grant select, insert, update, delete on public.clients, public.client_services, public.client_assignments to authenticated;
 revoke all on public.clients, public.client_services, public.client_assignments from anon;
+
+-- ---------------------------------------------------------------------------
+-- An issue can be about a client (§5 `issues.client_id`: a churn risk, a
+-- complaint), linked within the workspace like its other subjects
+-- ---------------------------------------------------------------------------
+
+alter table public.issues add column client_id uuid;
+alter table public.issues
+  add foreign key (client_id, workspace_id) references public.clients (id, workspace_id) on delete set null (client_id);
+create index on public.issues (client_id);
 
 -- ---------------------------------------------------------------------------
 -- Per-field saves: `clients` and `client_assignments` join save_fields''
@@ -5680,9 +5704,9 @@ insert into public.scenarios (id, workspace_id, name, description, patch, parent
 
 -- Issues register: audit findings and a promoted detection
 
-insert into public.issues (workspace_id, process_id, role_id, person_id, evidence_metrics, owner_person_id, scenario_id, detected_key, created_at, updated_at, id, step_id, type, severity, title, evidence, status, source) values
-  ('a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000002', null, '{}', '90000000-0000-4000-8000-00000000000b', '50000000-0000-4000-8000-000000000002', null, '2026-09-29T09:00:00Z', '2026-09-29T09:00:00Z', '40000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000003', 'manual', 'serious', 'Every proposal is built by hand', 'Audit interview, 12 Sep: 5–8 hours per proposal, and 15% go back for rework after sales review.', 'open', 'manual'),
-  ('a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000003', '{}', '90000000-0000-4000-8000-00000000000b', '50000000-0000-4000-8000-000000000001', 'spof:step:e0000000-0000-4000-8000-000000000003', '2026-09-29T09:00:00Z', '2026-09-29T09:00:00Z', '40000000-0000-4000-8000-000000000002', 'e0000000-0000-4000-8000-000000000003', 'spof', 'serious', 'Only Maya Collins can do Audit & proposal', 'Detected: nobody else can pick up audits when Maya is away. Proposals stalled for 9 days in July.', 'in_progress', 'promoted'),
-  ('a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', null, '{}', '90000000-0000-4000-8000-000000000001', null, null, '2026-09-29T09:00:00Z', '2026-09-29T09:00:00Z', '40000000-0000-4000-8000-000000000003', 'e0000000-0000-4000-8000-000000000001', 'idea', 'info', 'Lead scoring could skip unqualified discovery calls', '45% of leads drop out at qualification but still get a 4-hour response.', 'open', 'manual');
+insert into public.issues (workspace_id, process_id, role_id, person_id, client_id, evidence_metrics, owner_person_id, scenario_id, detected_key, created_at, updated_at, id, step_id, type, severity, title, evidence, status, source) values
+  ('a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000002', null, null, '{}', '90000000-0000-4000-8000-00000000000b', '50000000-0000-4000-8000-000000000002', null, '2026-09-29T09:00:00Z', '2026-09-29T09:00:00Z', '40000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000003', 'manual', 'serious', 'Every proposal is built by hand', 'Audit interview, 12 Sep: 5–8 hours per proposal, and 15% go back for rework after sales review.', 'open', 'manual'),
+  ('a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000003', null, '{}', '90000000-0000-4000-8000-00000000000b', '50000000-0000-4000-8000-000000000001', 'spof:step:e0000000-0000-4000-8000-000000000003', '2026-09-29T09:00:00Z', '2026-09-29T09:00:00Z', '40000000-0000-4000-8000-000000000002', 'e0000000-0000-4000-8000-000000000003', 'spof', 'serious', 'Only Maya Collins can do Audit & proposal', 'Detected: nobody else can pick up audits when Maya is away. Proposals stalled for 9 days in July.', 'in_progress', 'promoted'),
+  ('a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', null, null, '{}', '90000000-0000-4000-8000-000000000001', null, null, '2026-09-29T09:00:00Z', '2026-09-29T09:00:00Z', '40000000-0000-4000-8000-000000000003', 'e0000000-0000-4000-8000-000000000001', 'idea', 'info', 'Lead scoring could skip unqualified discovery calls', '45% of leads drop out at qualification but still get a 4-hour response.', 'open', 'manual');
 
 commit;

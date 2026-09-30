@@ -162,7 +162,7 @@ export async function loadScenarios(db: Db, workspaceId: string): Promise<Scenar
 }
 
 export const ISSUE_COLUMNS =
-  "id, workspace_id, process_id, step_id, role_id, person_id, type, severity, title, evidence, evidence_metrics, owner_person_id, status, scenario_id, source, detected_key, resolved_at, created_at, updated_at" as const;
+  "id, workspace_id, process_id, step_id, role_id, person_id, client_id, type, severity, title, evidence, evidence_metrics, owner_person_id, status, scenario_id, source, detected_key, resolved_at, created_at, updated_at" as const;
 
 /** A workspace's tracked issues (manual and promoted), newest first. */
 export async function loadIssues(db: Db, workspaceId: string): Promise<IssueRow[]> {

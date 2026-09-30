@@ -14,13 +14,15 @@
 -- The overtime cap (§5 `workspaces.settings.overtime_cap`, default 0) is a key
 -- of the settings jsonb, like `availability_floor`: no schema change.
 --
--- Strictly additive: three new tables; `save_fields` redefined with `clients`
--- and `client_assignments` appended to its allow-list, and `save_links` with
+-- Strictly additive: three new tables; a nullable `issues.client_id` linking an
+-- issue to a client; `save_fields` redefined with `clients` and
+-- `client_assignments` appended to its allow-list, and `save_links` with
 -- `client_services` added to its link tables (nothing else in either changes).
 --
 -- Rollback (run as one transaction):
 --
 --   begin;
+--   alter table public.issues drop column client_id;
 --   drop table public.client_assignments, public.client_services, public.clients;
 --   -- Restore save_fields' previous allow-list: re-run the `create or replace
 --   -- function public.save_fields ... $$;` block from 20261005000000_issues.sql,
@@ -114,6 +116,16 @@ $$;
 
 grant select, insert, update, delete on public.clients, public.client_services, public.client_assignments to authenticated;
 revoke all on public.clients, public.client_services, public.client_assignments from anon;
+
+-- ---------------------------------------------------------------------------
+-- An issue can be about a client (§5 `issues.client_id`: a churn risk, a
+-- complaint), linked within the workspace like its other subjects
+-- ---------------------------------------------------------------------------
+
+alter table public.issues add column client_id uuid;
+alter table public.issues
+  add foreign key (client_id, workspace_id) references public.clients (id, workspace_id) on delete set null (client_id);
+create index on public.issues (client_id);
 
 -- ---------------------------------------------------------------------------
 -- Per-field saves: `clients` and `client_assignments` join save_fields'

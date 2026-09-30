@@ -349,6 +349,8 @@ export interface IssueRow {
   step_id: string | null;
   role_id: string | null;
   person_id: string | null;
+  /** The client it is about (issue #18). */
+  client_id: string | null;
   type: IssueType;
   severity: IssueSeverity;
   title: string;

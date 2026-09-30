@@ -348,6 +348,7 @@ export type Database = {
       }
       issues: {
         Row: {
+          client_id: string | null
           created_at: string
           created_by: string | null
           detected_key: string | null
@@ -371,6 +372,7 @@ export type Database = {
           workspace_id: string
         }
         Insert: {
+          client_id?: string | null
           created_at?: string
           created_by?: string | null
           detected_key?: string | null
@@ -394,6 +396,7 @@ export type Database = {
           workspace_id: string
         }
         Update: {
+          client_id?: string | null
           created_at?: string
           created_by?: string | null
           detected_key?: string | null
@@ -417,6 +420,13 @@ export type Database = {
           workspace_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "issues_client_id_workspace_id_fkey"
+            columns: ["client_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id", "workspace_id"]
+          },
           {
             foreignKeyName: "issues_owner_person_id_workspace_id_fkey"
             columns: ["owner_person_id", "workspace_id"]

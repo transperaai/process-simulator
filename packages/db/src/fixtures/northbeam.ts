@@ -414,6 +414,7 @@ export function northbeamIssues(): IssueRow[] {
     process_id: proc,
     role_id: null,
     person_id: null,
+    client_id: null,
     evidence_metrics: {},
     owner_person_id: null,
     scenario_id: null,

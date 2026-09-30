@@ -32,9 +32,12 @@ export class MemoryIssueStore implements IssueStore {
     this.rows = new Map(initial.map((r) => [r.id, r]));
   }
 
-  private insert(fields: Omit<IssueRow, "id" | "workspace_id" | "created_at" | "updated_at" | "resolved_at">): IssueRow {
+  private insert(
+    fields: Omit<IssueRow, "id" | "workspace_id" | "created_at" | "updated_at" | "resolved_at" | "client_id"> & Partial<Pick<IssueRow, "client_id">>,
+  ): IssueRow {
     const at = this.now();
     const row: IssueRow = {
+      client_id: null,
       ...fields,
       id: crypto.randomUUID(),
       workspace_id: this.workspaceId,

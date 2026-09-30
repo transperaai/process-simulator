@@ -187,6 +187,28 @@ describe("row-level security", () => {
   });
 });
 
+describe("issues about a client", () => {
+  it("links an issue to a client in the workspace; deleting the client keeps the issue, unlinked", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      const client = (await c.query("insert into clients (workspace_id, name) values ($1, 'Short-lived Ltd') returning id", [ws])).rows[0].id;
+      const issue = (
+        await c.query("insert into issues (workspace_id, client_id, type, title) values ($1, $2, 'churn_risk', 'May leave') returning id", [ws, client])
+      ).rows[0].id;
+      await c.query("delete from clients where id = $1", [client]);
+      expect((await c.query("select client_id from issues where id = $1", [issue])).rows[0].client_id).toBeNull();
+    });
+  });
+
+  it("refuses a client from another workspace", async () => {
+    const theirs = (await db.client.query("insert into clients (workspace_id, name) values ($1, 'Their client') returning id", [otherWs])).rows[0].id;
+    await db.as(users.editor!.claims, async (c) => {
+      await expect(
+        c.query("insert into issues (workspace_id, client_id, type, title) values ($1, $2, 'churn_risk', 'Nope')", [ws, theirs]),
+      ).rejects.toThrow(/foreign key/);
+    });
+  });
+});
+
 describe("per-field saves", () => {
   it("saves a client's MRR and stamps it as entered by the person", async () => {
     await db.as(users.editor!.claims, async (c) => {

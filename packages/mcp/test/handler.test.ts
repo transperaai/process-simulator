@@ -40,7 +40,7 @@ describe("API tokens", () => {
 });
 
 describe("handleMcpRequest", () => {
-  it("lists the five tools to an MCP client with a valid token", async () => {
+  it("lists every tool to an MCP client with a valid token", async () => {
     const options = stub(ok);
     const { token } = generateApiToken();
     const client = await connect(token, options);

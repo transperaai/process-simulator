@@ -53,6 +53,8 @@ export interface WorkspaceRow {
   name: string;
   slug: string;
   settings: WorkspaceSettings;
+  /** Provenance of the settings, keyed `settings.<key>` (issue #25); loaded only where shown. */
+  provenance?: ProvenanceMap;
 }
 
 export interface RoleRow {
@@ -75,6 +77,8 @@ export interface PersonRow {
   active: boolean;
   start_date: string | null;
   end_date: string | null;
+  /** Provenance of fte, capacity, cost rate and dates (issue #25); loaded only where shown. */
+  provenance?: ProvenanceMap;
 }
 
 export interface PersonRoleRow {
@@ -217,6 +221,8 @@ export interface ServiceRow {
   fallback_ongoing_load: FallbackLoad;
   /** Inactive services are left out of simulations. */
   active: boolean;
+  /** Provenance of the pricing and churn values (issue #25); loaded only where shown. */
+  provenance?: ProvenanceMap;
 }
 
 /** Role id → hours a month per client. A type alias, so it stays assignable to the jsonb column. */
@@ -245,6 +251,8 @@ export type Provenance = {
   evidence?: EvidenceCitation[];
   /** Sources disagree on the value: what each said, and whether someone has settled it. */
   conflict?: ProvenanceConflict;
+  /** The accepted suggestion the value came from (issue #25). */
+  suggestion_id?: string;
 };
 
 /**
@@ -504,6 +512,58 @@ export interface IssueRow {
   updated_at: string;
 }
 
+/** The company-model tables a suggestion can change (docs/PRD.md §7.1c). */
+export type SuggestionTarget = "workspaces" | "services" | "people" | "clients" | "lead_sources" | "seasonality" | "demand_settings";
+export type SuggestionStatus = "pending" | "accepted" | "rejected";
+export type SuggestionValue = string | number | boolean | null;
+
+/**
+ * What a suggestion changes (issue #25). `set` holds column values (for
+ * `workspaces`, settings keys). People take `roles` (the full set, by id) and
+ * `leave` (periods to add); clients take `services` (the full set, by id) and
+ * `assignments` (role id → person id, or null to clear). A type alias, so it
+ * stays assignable to the jsonb column.
+ */
+export type SuggestionPatch = {
+  set: { [column: string]: SuggestionValue };
+  roles?: string[];
+  services?: string[];
+  assignments?: { [roleId: string]: string | null };
+  leave?: { start_date: string; end_date: string; note?: string | null }[];
+};
+
+/** What accepting a suggestion changed: the row, and its values before and after. */
+export type SuggestionApplied = {
+  target_id: string;
+  /** Null when the suggestion created the row. */
+  before: { [field: string]: unknown } | null;
+  after: { [field: string]: unknown };
+};
+
+/**
+ * A proposed change to the company model from the MCP server, awaiting a
+ * person's accept or reject (docs/PRD.md §3 Suggestion, §5 `suggestions`).
+ */
+export interface SuggestionRow {
+  id: string;
+  workspace_id: string;
+  target_table: SuggestionTarget;
+  /** The row it changes; null: a new row (workspaces and demand_settings: the workspace's own). */
+  target_id: string | null;
+  patch: SuggestionPatch;
+  evidence: EvidenceCitation[];
+  /** The suggester's reasoning. */
+  note: string | null;
+  status: SuggestionStatus;
+  created_via: "mcp";
+  applied: SuggestionApplied | null;
+  review_note: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  created_by: string | null;
+}
+
 /** An allowed email domain: managed Google accounts on it join as `member`. */
 export interface WorkspaceDomainRow {
   id: string;
@@ -538,9 +598,10 @@ type Assert<T extends true> = T;
 
 export type _SchemaDriftChecks = [
   // settings is jsonb; WorkspaceSettings is its app-side shape.
-  Assert<Matches<Omit<WorkspaceRow, "settings">, "workspaces">>,
+  // provenance is loaded only where shown (optional here, required in the table).
+  Assert<Matches<Omit<WorkspaceRow, "settings" | "provenance">, "workspaces">>,
   Assert<Matches<RoleRow, "roles">>,
-  Assert<Matches<PersonRow, "people">>,
+  Assert<Matches<Omit<PersonRow, "provenance">, "people">>,
   Assert<Matches<PersonRoleRow, "person_roles">>,
   Assert<Matches<PersonSkillRow, "person_skills">>,
   Assert<Matches<PersonLeaveRow, "person_leave">>,
@@ -550,7 +611,7 @@ export type _SchemaDriftChecks = [
   Assert<Matches<Omit<StepRow, "replaced_by">, "steps">>,
   Assert<Matches<EdgeRow, "edges">>,
   // fallback_ongoing_load is jsonb; FallbackLoad is its app-side shape.
-  Assert<Matches<ServiceRow, "services">>,
+  Assert<Matches<Omit<ServiceRow, "provenance">, "services">>,
   // provenance is jsonb; ProvenanceMap is its app-side shape.
   Assert<Matches<ClientRow, "clients">>,
   Assert<Matches<ClientServiceRow, "client_services">>,
@@ -567,4 +628,6 @@ export type _SchemaDriftChecks = [
   // evidence_metrics is jsonb; Record<string, number> is its app-side shape.
   Assert<Matches<Omit<IssueRow, "evidence_metrics">, "issues">>,
   Assert<Matches<SourceRow, "sources">>,
+  // patch, evidence and applied are jsonb; the check constraints limit the text columns.
+  Assert<Matches<Omit<SuggestionRow, "patch" | "evidence" | "applied">, "suggestions">>,
 ];

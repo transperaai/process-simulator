@@ -5,6 +5,7 @@ import { applyPatches, isBlocking, MAX_PATCHES, PATCH_OPS, simulate, type Engine
 import { resolveProcess, resolveWorkspace, revisionIdFor, visibleWorkspaces, matchWorkspace, type ToolContext } from "./context";
 import { runTool, ToolError } from "./result";
 import { ANALYSIS_TOOL_NAMES, registerAnalysisTools } from "./analysis-tools";
+import { registerSuggestionTools, SUGGESTION_TOOL_NAMES } from "./suggestion-tools";
 import { BUILDING_TOOL_NAMES, registerBuildingTools } from "./building-tools";
 
 /** The browser's defaults (apps/web useSimulation): 30 replications, seed 1. */
@@ -19,6 +20,7 @@ export const TOOL_NAMES = [
   "get_process",
   "run_scenario",
   ...ANALYSIS_TOOL_NAMES,
+  ...SUGGESTION_TOOL_NAMES,
   ...BUILDING_TOOL_NAMES,
 ] as const;
 
@@ -255,6 +257,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
   );
 
   registerAnalysisTools(server, ctx);
+  registerSuggestionTools(server, ctx);
   registerBuildingTools(server, ctx);
   return server;
 }

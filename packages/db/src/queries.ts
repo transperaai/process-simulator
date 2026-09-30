@@ -1,7 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "./database.types";
+import type { CompanyModel, SnapshotProcess } from "./company";
 import type { CitingRow } from "./evidence";
 import { partitionSteps } from "./retired";
+import type { RunRow } from "./runs";
 import type {
   ClientAssignmentRow,
   ClientRow,
@@ -10,16 +12,20 @@ import type {
   IssueRow,
   LeadSourceRow,
   EdgeRow,
+  PersonRow,
   ProcessBundle,
   ProcessPart,
   ProcessRevisionRow,
   ProcessRow,
+  ProvenanceMap,
   ScenarioRow,
   SeasonalityRow,
   ServiceRow,
   ServiceServicingRow,
   SourceRow,
   StepRow,
+  SuggestionRow,
+  SuggestionStatus,
   WorkspaceRow,
   WorkspaceSettings,
 } from "./types";
@@ -334,4 +340,94 @@ export async function loadCitingRows(db: Db, workspaceId: string): Promise<Citin
     })),
     ...rows(demand).map((d) => ({ table: "demand_settings", id: d.workspace_id, name: "Demand growth", provenance: d.provenance })),
   ];
+}
+
+// ---------------------------------------------------------------------------
+// Company model, suggestions and saved runs (issue #25)
+// ---------------------------------------------------------------------------
+
+const PERSON_COLUMNS = "id, workspace_id, name, fte, capacity_hours_week, cost_rate, active, start_date, end_date, provenance" as const;
+
+/** The workspace's company model: roles, people, services, clients and demand, with provenance. */
+export async function loadCompanyModel(
+  db: Db,
+  workspace: Pick<WorkspaceRow, "id" | "name" | "slug"> & { settings: unknown; provenance?: unknown },
+): Promise<CompanyModel> {
+  const ws = workspace.id;
+  const [roles, people, personRoles, personLeave, services, leadSources, seasonality, demand, roster] = await Promise.all([
+    db.from("roles").select("*").eq("workspace_id", ws).order("name"),
+    db.from("people").select(PERSON_COLUMNS).eq("workspace_id", ws).order("name"),
+    db.from("person_roles").select("person_id, role_id, workspace_id").eq("workspace_id", ws),
+    db.from("person_leave").select("id, person_id, workspace_id, start_date, end_date").eq("workspace_id", ws),
+    db.from("services").select(`${SERVICE_COLUMNS}, provenance`).eq("workspace_id", ws).order("name"),
+    db.from("lead_sources").select(LEAD_SOURCE_COLUMNS).eq("workspace_id", ws).order("created_at").order("id"),
+    db.from("seasonality").select(SEASONALITY_COLUMNS).eq("workspace_id", ws).order("month"),
+    db.from("demand_settings").select(DEMAND_SETTINGS_COLUMNS).eq("workspace_id", ws).maybeSingle(),
+    loadClients(db, ws),
+  ]);
+  // The casts give jsonb columns (settings, provenance) their shapes and narrow check-constrained text.
+  return {
+    workspace: {
+      id: workspace.id,
+      name: workspace.name,
+      slug: workspace.slug,
+      settings: workspace.settings as WorkspaceSettings,
+      ...(workspace.provenance ? { provenance: workspace.provenance as ProvenanceMap } : {}),
+    },
+    roles: rows(roles) ?? [],
+    people: (rows(people) ?? []) as PersonRow[],
+    personRoles: rows(personRoles) ?? [],
+    personLeave: rows(personLeave) ?? [],
+    services: (rows(services) ?? []) as ServiceRow[],
+    leadSources: (rows(leadSources) ?? []) as LeadSourceRow[],
+    seasonality: (rows(seasonality) ?? []) as SeasonalityRow[],
+    demand: rows(demand) as DemandSettingsRow | null,
+    ...roster,
+  };
+}
+
+/** Each process's live revision (for run snapshots and "model changed since this run"). */
+export async function loadLiveRevisions(db: Db, workspaceId: string): Promise<SnapshotProcess[]> {
+  const processes = await listProcesses(db, workspaceId);
+  const ids = processes.flatMap((p) => (p.live_revision_id ? [p.live_revision_id] : []));
+  if (!ids.length) return [];
+  const revisions = rows(await db.from("process_revisions").select("id, number").in("id", ids));
+  return processes.flatMap((p) => {
+    const r = revisions.find((x) => x.id === p.live_revision_id);
+    return r ? [{ id: p.id, name: p.name, revision_id: r.id, revision: r.number }] : [];
+  });
+}
+
+export const SUGGESTION_ROW_COLUMNS =
+  "id, workspace_id, target_table, target_id, patch, evidence, note, status, created_via, applied, review_note, reviewed_by, reviewed_at, created_at, created_by" as const;
+
+/** The workspace's suggestions, newest first; optionally only one status. */
+export async function loadSuggestions(db: Db, workspaceId: string, status?: SuggestionStatus): Promise<SuggestionRow[]> {
+  let q = db.from("suggestions").select(SUGGESTION_ROW_COLUMNS).eq("workspace_id", workspaceId);
+  if (status) q = q.eq("status", status);
+  const r = await q.order("created_at", { ascending: false }).order("id").limit(500);
+  // Check constraints limit the text columns; patch, evidence and applied are jsonb.
+  return rows(r) as unknown as SuggestionRow[];
+}
+
+export const RUN_COLUMNS =
+  "id, workspace_id, process_id, name, scenario_id, revision_ids, engine_version, reps, seed, params_snapshot, results, duration_ms, created_at, created_by" as const;
+
+/** The workspace's saved runs, newest first. */
+export async function loadRuns(db: Db, workspaceId: string): Promise<RunRow[]> {
+  const r = await db
+    .from("runs")
+    .select(RUN_COLUMNS)
+    .eq("workspace_id", workspaceId)
+    .order("created_at", { ascending: false })
+    .order("id")
+    .limit(200);
+  // params_snapshot and results are jsonb; RunRow gives them their shapes.
+  return rows(r) as unknown as RunRow[];
+}
+
+/** One saved run, or null if it isn't visible. */
+export async function loadRun(db: Db, id: string): Promise<RunRow | null> {
+  const r = await db.from("runs").select(RUN_COLUMNS).eq("id", id).maybeSingle();
+  return rows(r) as unknown as RunRow | null;
 }

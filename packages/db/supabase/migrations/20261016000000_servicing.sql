@@ -19,6 +19,11 @@
 -- the PRD's estimated defaults apply. `services.churn_health_sensitivity`
 -- (default 3) already exists and is now simulated.
 --
+-- A link is a company-model fact, like the service it belongs to: the MCP
+-- server can't write it directly (it suggests; decision D19) and every write
+-- is audited, with #25's `private.company_needs_review` and
+-- `private.audit_company_write` triggers (20261015000000_suggestions.sql).
+--
 -- Strictly additive: one new table with its check function and triggers, a
 -- trigger on `processes` that keeps linked processes of kind servicing, and
 -- `save_fields` redefined with `service_servicing` appended to its allow-list
@@ -28,6 +33,7 @@
 --
 --   begin;
 --   drop trigger if exists servicing_kind on public.processes;
+--   -- (dropping the table drops its needs_review, audit_company, stamp_provenance and set_updated_at triggers)
 --   drop table public.service_servicing;
 --   drop function if exists private.servicing_process_kind();
 --   drop function if exists private.servicing_link_kind();
@@ -141,6 +147,12 @@ create policy "delete service_servicing" on public.service_servicing for delete 
 
 grant select, insert, update, delete on public.service_servicing to authenticated;
 revoke all on public.service_servicing from anon;
+
+-- Company model (issue #25): the MCP server suggests changes rather than making them, and every write is audited.
+create trigger needs_review before insert or update or delete on public.service_servicing
+  for each row execute function private.company_needs_review();
+create trigger audit_company after insert or update or delete on public.service_servicing
+  for each row execute function private.audit_company_write();
 
 -- ---------------------------------------------------------------------------
 -- Per-field saves: `service_servicing` joins save_fields' allow-list

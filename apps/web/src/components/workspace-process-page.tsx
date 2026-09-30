@@ -5,6 +5,7 @@ import { AppHeader } from "@/components/app-header";
 import { ProcessNav } from "@/components/process-nav";
 import { ProcessView } from "@/components/process-view";
 import { canEditWorkspace, canManageWorkspace, currentViewer } from "@/lib/access-data";
+import { pendingSuggestionCount } from "@/lib/company-data";
 import { loadProcessForEditing, loadWorkspaceIssues, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
 
 /**
@@ -16,13 +17,14 @@ export async function WorkspaceProcessPage({ slug, processId, fix }: { slug: str
   const process = await loadProcessForEditing(slug, processId);
   if (!process) notFound();
   const { live, draft, processes } = process;
-  const [canEdit, canManage, scenarios, issues, viewer, sources] = await Promise.all([
+  const [canEdit, canManage, scenarios, issues, viewer, sources, pendingSuggestions] = await Promise.all([
     canEditWorkspace(live.workspace.id),
     canManageWorkspace(live.workspace.id),
     loadWorkspaceScenarios(live.workspace.id),
     loadWorkspaceIssues(live.workspace.id),
     currentViewer(),
     loadWorkspaceSources(live.workspace.id),
+    pendingSuggestionCount(live.workspace.id),
   ]);
   const base = `/w/${slug}`;
   const hrefs = Object.fromEntries(processes.map((p) => [p.id, `${base}/p/${p.id}`]));
@@ -39,6 +41,15 @@ export async function WorkspaceProcessPage({ slug, processId, fix }: { slug: str
         </Link>
         <Link href={`${base}/sources`} className="text-fg-2 hover:underline">
           Sources
+        </Link>
+        <Link href={`${base}/suggestions`} className="text-fg-2 hover:underline">
+          Suggestions
+          {pendingSuggestions > 0 && (
+            <span className="ml-1 rounded-full border border-warn bg-warn-soft px-1.5 text-[11px] font-semibold tabular-nums">{pendingSuggestions}</span>
+          )}
+        </Link>
+        <Link href={`${base}/runs`} className="text-fg-2 hover:underline">
+          Runs
         </Link>
         <Link href={`${base}/settings`} className="text-fg-2 hover:underline">
           People &amp; settings

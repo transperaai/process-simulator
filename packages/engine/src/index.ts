@@ -29,6 +29,21 @@ export {
   type PatchedModel,
   type ScenarioPatch,
 } from "./scenario";
+export {
+  BrokenScenarioError,
+  brokenScenarioKey,
+  checkScenario,
+  detectBrokenScenarios,
+  replacementsFor,
+  repointPatch,
+  resolveScenario,
+  type BrokenPatch,
+  type NamedPatchSet,
+  type RetiredStep,
+  type RetiredSteps,
+  type ScenarioCheck,
+  type ScenarioStatus,
+} from "./broken";
 export { compareHeadline, compareRuns, type Comparison, type Delta, type Headline, type HeadlineInput } from "./compare";
 export {
   DEFAULT_ISSUE_THRESHOLDS,

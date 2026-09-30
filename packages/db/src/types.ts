@@ -31,6 +31,11 @@ export interface WorkspaceSettings {
   retainer: number;
   /** Minimum share of a person's week left for pipeline work (default 0.08). */
   availability_floor?: number;
+  /**
+   * Overtime someone may work when their client work exceeds their week, as a
+   * share of their capacity (default 0: none; docs/PRD.md §6.3.4, decision D7).
+   */
+  overtime_cap?: number;
 }
 
 export interface WorkspaceRow {
@@ -189,9 +194,18 @@ export interface ServiceRow {
   entry_process_id: string | null;
   /** Condition tags its entities follow (`edges.condition_tag`). */
   path_tags: string[];
+  /**
+   * Hours a month each client on this service needs from each role (role id →
+   * hours), while no servicing process is mapped (docs/PRD.md §6.3.4). Empty:
+   * the roles' `ongoing_hours_per_client_week` apply.
+   */
+  fallback_ongoing_load: FallbackLoad;
   /** Inactive services are left out of simulations. */
   active: boolean;
 }
+
+/** Role id → hours a month per client. A type alias, so it stays assignable to the jsonb column. */
+export type FallbackLoad = { [roleId: string]: number };
 
 /** Where a parameter's value came from (docs/PRD.md §3 Parameter provenance). */
 export type ProvenanceSource = "estimated" | "entered" | "measured";
@@ -252,6 +266,45 @@ export type ProvenanceConflict = {
  * entry is an estimate.
  */
 export type ProvenanceMap = { [column: string]: Provenance | undefined };
+
+/**
+ * A client on the roster (docs/PRD.md §5 `clients`, decision D13). Real
+ * clients seed the simulation; per-person client counts come from
+ * `client_assignments`.
+ */
+export interface ClientRow {
+  id: string;
+  workspace_id: string;
+  name: string;
+  /** ISO date they became a client; null if not known. */
+  start_date: string | null;
+  /** Monthly recurring revenue. */
+  mrr: number;
+  /** 0–100; null: not entered (simulated from the estimated 80). */
+  health: number | null;
+  /** Provenance of `mrr` and `health`. */
+  provenance: ProvenanceMap;
+  notes: string | null;
+  /** Inactive clients (they left) are kept on record but not simulated. */
+  active: boolean;
+}
+
+/** A service a client takes. */
+export interface ClientServiceRow {
+  client_id: string;
+  service_id: string;
+  workspace_id: string;
+  /** When they started on it; null: with the client. */
+  start_date: string | null;
+}
+
+/** The person looking after a client for a role. No row: the role's people share it. */
+export interface ClientAssignmentRow {
+  client_id: string;
+  role_id: string;
+  person_id: string;
+  workspace_id: string;
+}
 
 export type SourceKind = "transcript" | "notes" | "screenshot";
 
@@ -334,6 +387,14 @@ export interface ProcessBundle {
   leadSources?: LeadSourceRow[];
   seasonality?: SeasonalityRow[];
   demand?: DemandSettingsRow | null;
+  /**
+   * The client roster (issue #18). With any clients, ongoing load is per
+   * client and assigned person; with none (or omitted), the interim
+   * `settings.active_clients` × the roles' hours per client, as before.
+   */
+  clients?: ClientRow[];
+  clientServices?: ClientServiceRow[];
+  clientAssignments?: ClientAssignmentRow[];
 }
 
 /**
@@ -366,6 +427,8 @@ export interface IssueRow {
   step_id: string | null;
   role_id: string | null;
   person_id: string | null;
+  /** The client it is about (issue #18). */
+  client_id: string | null;
   type: IssueType;
   severity: IssueSeverity;
   title: string;
@@ -429,7 +492,12 @@ export type _SchemaDriftChecks = [
   // replaced_by defaults to '{}' in the table; the app leaves it out of new steps.
   Assert<Matches<Omit<StepRow, "replaced_by">, "steps">>,
   Assert<Matches<EdgeRow, "edges">>,
+  // fallback_ongoing_load is jsonb; FallbackLoad is its app-side shape.
   Assert<Matches<ServiceRow, "services">>,
+  // provenance is jsonb; ProvenanceMap is its app-side shape.
+  Assert<Matches<ClientRow, "clients">>,
+  Assert<Matches<ClientServiceRow, "client_services">>,
+  Assert<Matches<ClientAssignmentRow, "client_assignments">>,
   Assert<Matches<LeadSourceRow, "lead_sources">>,
   Assert<Matches<SeasonalityRow, "seasonality">>,
   Assert<Matches<DemandSettingsRow, "demand_settings">>,

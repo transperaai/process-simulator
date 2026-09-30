@@ -2,6 +2,7 @@ import {
   isFlatDemand,
   type EngineDemand,
   type Distribution as EngineDistribution,
+  type EngineClient,
   type EngineEnd,
   type EngineModel,
   type EnginePerson,
@@ -49,6 +50,8 @@ export class ModelError extends Error {}
  * - Arrivals (see `arrivalsPerWeek` and `engineDemand`): the lead sources'
  *   qualified leads split by the services mix, with seasonality and growth
  *   placed in the calendar from the start date. Flat demand is left out.
+ * - The client roster (see `engineClients`) and the overtime cap. A
+ *   workspace with no clients maps exactly as before the roster existed.
  * - Steps and roles are ordered by id so the result, and therefore the
  *   simulation, doesn't depend on database row order.
  */
@@ -125,19 +128,22 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
   const startDate = options.startDate ?? new Date().toISOString().slice(0, 10);
   const people = resolvePeopleRows(bundle, working, startDate);
   const demand = engineDemand(bundle, startDate);
+  const clients = engineClients(bundle, services, startDate);
 
   return {
     horizonWeeks: s.horizon_weeks,
     hoursPerWeek: s.hours_per_week,
     leadsPerWeek: arrivalsPerWeek(bundle, services),
     ...(demand ? { demand } : {}),
-    activeClients: s.active_clients,
+    activeClients: clients ? Object.keys(clients).length : s.active_clients,
     churnMonthly: s.churn_monthly,
     retainer: s.retainer,
     roles: engineRoles,
     ...(services ? { services } : {}),
     ...(people ? { people } : {}),
     ...(s.availability_floor !== undefined ? { availabilityFloor: s.availability_floor } : {}),
+    ...(s.overtime_cap !== undefined && s.overtime_cap !== null ? { overtimeCap: Number(s.overtime_cap) } : {}),
+    ...(clients ? { clients } : {}),
     entry,
     sinks,
     ...(Object.keys(ends).length ? { ends } : {}),
@@ -163,7 +169,9 @@ function engineServices(bundle: ProcessBundle): Record<string, EngineService> | 
     throw new ModelError("The services' mix shares add up to 0; give at least one service a share");
   }
   const services: Record<string, EngineService> = {};
+  const roleIds = new Set(bundle.roles.map((r) => r.id));
   for (const sv of here) {
+    const fallback = fallbackLoad(sv.fallback_ongoing_load, roleIds);
     services[sv.id] = {
       name: sv.name,
       pricingModel: sv.pricing_model,
@@ -173,9 +181,64 @@ function engineServices(bundle: ProcessBundle): Record<string, EngineService> | 
       churnMonthly: Number(sv.churn_monthly_base),
       mixShare: Number(sv.mix_share),
       pathTags: sv.path_tags.map((t) => t.trim()).filter(Boolean),
+      ...(fallback ? { fallbackOngoing: fallback } : {}),
     };
   }
   return services;
+}
+
+/**
+ * A service's fallback ongoing load for the engine: hours a month by role id,
+ * for the workspace's roles, in id order. Undefined when none is entered, so
+ * the roles' hours per client apply (docs/PRD.md §6.3.4).
+ */
+function fallbackLoad(stored: unknown, roleIds: Set<string>): Record<string, number> | undefined {
+  if (!stored || typeof stored !== "object" || Array.isArray(stored)) return undefined;
+  const entries = Object.entries(stored as Record<string, unknown>)
+    .map(([rid, v]) => [rid, num(v)] as const)
+    .filter((e): e is readonly [string, number] => roleIds.has(e[0]) && e[1] !== null && e[1] >= 0)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
+/**
+ * The client roster for the engine (docs/PRD.md §6.2, decision D13): active
+ * clients that had started by the start date, in id order, with the services
+ * among this process's that they take and their assignments per role.
+ * Services entering other processes aren't in the engine model, so a client
+ * with only those carries the roles' hours per client. Undefined when the
+ * workspace has no clients at all: then the interim `active_clients` count
+ * applies, as before the roster existed.
+ */
+function engineClients(
+  bundle: ProcessBundle,
+  services: Record<string, EngineService> | undefined,
+  startDate: string,
+): Record<string, EngineClient> | undefined {
+  const rows = bundle.clients ?? [];
+  if (!rows.length) return undefined;
+  const roleIds = new Set(bundle.roles.map((r) => r.id));
+  const clients: Record<string, EngineClient> = {};
+  for (const c of [...rows].sort(byIdAsc)) {
+    if (!c.active || (c.start_date && c.start_date > startDate)) continue;
+    const assignments: Record<string, string> = {};
+    for (const a of (bundle.clientAssignments ?? [])
+      .filter((a) => a.client_id === c.id && roleIds.has(a.role_id))
+      .sort((a, b) => (a.role_id < b.role_id ? -1 : a.role_id > b.role_id ? 1 : 0))) {
+      assignments[a.role_id] = a.person_id;
+    }
+    clients[c.id] = {
+      name: c.name,
+      services: (bundle.clientServices ?? [])
+        .filter((cs) => cs.client_id === c.id && services && cs.service_id in services)
+        .map((cs) => cs.service_id)
+        .sort(),
+      mrr: Number(c.mrr),
+      ...(c.health !== null && c.health !== undefined ? { health: Number(c.health) } : {}),
+      assignments,
+    };
+  }
+  return clients;
 }
 
 /**
@@ -268,6 +331,7 @@ function resolvePeopleRows(bundle: ProcessBundle, working: EngineStep[], startDa
         .map((r) => r.role_id)
         .sort(),
       capacity: p.capacity_hours_week != null ? Number(p.capacity_hours_week) : Number(p.fte) * s.hours_per_week,
+      ...(p.cost_rate != null ? { cost: Number(p.cost_rate) } : {}),
       ...(skillRows.length ? { skills: skillRows.map((k) => k.step_id).filter((id) => stepIds.has(id)).sort() } : {}),
       ...(leave.length ? { leave } : {}),
     };

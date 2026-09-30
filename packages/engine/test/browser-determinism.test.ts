@@ -2,7 +2,7 @@ import { build } from "esbuild";
 import { chromium, type Browser } from "playwright-core";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { northbeamModel, northbeamWithServices, simulate } from "../src";
+import { northbeamModel, northbeamWithClients, northbeamWithServices, simulate } from "../src";
 import { largeModel } from "./fixtures/large-model";
 
 // The same model and seed must give byte-identical results in Node and in a
@@ -62,6 +62,11 @@ describe("determinism across hosts", () => {
 
   it("Northbeam with SEO and PPC services: Node and a browser worker agree byte for byte", async () => {
     const model = northbeamWithServices();
+    expect(await runInWorker(model, 30, 1)).toBe(JSON.stringify(simulate(model, 30, 1)));
+  }, 60_000);
+
+  it("Northbeam with its client roster and a 10% overtime cap: Node and a browser worker agree byte for byte", async () => {
+    const model = northbeamWithClients();
     expect(await runInWorker(model, 30, 1)).toBe(JSON.stringify(simulate(model, 30, 1)));
   }, 60_000);
 

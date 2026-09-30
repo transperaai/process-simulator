@@ -78,7 +78,11 @@ describe("port parity with the prototype engine", () => {
       const rel = (a: number, b: number) => Math.abs(a - b) / b;
       expect(rel(ours.won, theirs.won)).toBeLessThan(0.1);
       expect(rel(ours.lost, theirs.lost)).toBeLessThan(0.03);
-      expect(Math.abs(ours.roles.strat!.util - theirs.roles.strat!.util)).toBeLessThan(0.01);
+      // Pipeline share only: the prototype reports ongoing load from the
+      // starting client count, a bug we fixed (PRD §6.8 item 2; issue #18),
+      // so its total utilisation understates ours by the clients won.
+      expect(Math.abs(ours.roles.strat!.pipeline - theirs.roles.strat!.pipeline)).toBeLessThan(0.01);
+      expect(ours.roles.strat!.ongoing).toBeGreaterThan(theirs.roles.strat!.ongoing);
       expect(rel(ours.cycleP50, theirs.cycleP50)).toBeLessThan(0.05);
       expect(rel(ours.cycleP90, theirs.cycleP90)).toBeLessThan(0.05);
       expect(ours.bnRole).toBe(theirs.bnRole);

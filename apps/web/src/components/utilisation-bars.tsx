@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { EngineModel, SimulationResult, Stat } from "@transpera-flow/engine";
-import { formatPercent, formatRange } from "@/lib/format";
+import { formatNumber, formatPercent, formatRange } from "@/lib/format";
 
 const THRESHOLD = 0.85;
 const pctWidth = (share: number) => `${Math.max(0, Math.min(100, share * 100))}%`;
@@ -68,12 +68,20 @@ export function UtilisationBars({ model, result }: { model: EngineModel; result:
   const personRows: Row[] = result
     ? Object.entries(result.resolvedPeople)
         .sort(([, a], [, b]) => roleOrder.indexOf(a.roles[0] ?? "") - roleOrder.indexOf(b.roles[0] ?? "") || a.name.localeCompare(b.name))
-        .map(([id, p]) => ({
-          id,
-          label: p.name,
-          sublabel: p.roles.map((r) => model.roles[r]?.name).filter(Boolean).join(", "),
-          band: result.kpi.people[id],
-        }))
+        .map(([id, p]) => {
+          const r = result.people[id];
+          // With a client roster: how many clients they look after, and any overtime (issue #18).
+          const extra = [
+            r?.clients !== undefined ? `${formatNumber(r.clients, 0)} clients` : null,
+            r && r.overtimeHours > 0.05 ? `+${formatNumber(r.overtimeHours)} h/wk overtime` : null,
+          ].filter(Boolean);
+          return {
+            id,
+            label: p.name,
+            sublabel: [p.roles.map((rid) => model.roles[rid]?.name).filter(Boolean).join(", "), ...extra].join(" · "),
+            band: result.kpi.people[id],
+          };
+        })
     : [];
   const rows = view === "roles" ? roleRows : personRows;
 
@@ -103,7 +111,7 @@ export function UtilisationBars({ model, result }: { model: EngineModel; result:
         ))}
       </ul>
       <p className="mt-2 text-xs text-fg-3">
-        Grey: ongoing client work · colour: pipeline · dark line: 10th–90th percentile range · tick: 85% ceiling
+        Grey: ongoing client work · colour: pipeline · dark line: 10th–90th percentile range · tick: 85% ceiling · over 100%: more work than the week and any overtime allowed
       </p>
     </section>
   );

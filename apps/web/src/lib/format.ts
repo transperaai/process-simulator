@@ -33,6 +33,15 @@ export function formatCurrency(value: number, currency: string): string {
   });
 }
 
+/**
+ * Money in whole units, never compacted (e.g. £109,500). For text rendered on
+ * the server too: compact notation differs between Node's and browsers' ICU
+ * ("£109.5K" / "£109.5k"), which breaks hydration.
+ */
+export function formatWholeCurrency(value: number, currency: string): string {
+  return value.toLocaleString(LOCALE, { style: "currency", currency, maximumFractionDigits: 0 });
+}
+
 /** How a run started (PRD §6.3.1), for the results' footnote. */
 export function formatInitialState(start: InitialState, hoursPerWeek: number): string {
   switch (start.kind) {

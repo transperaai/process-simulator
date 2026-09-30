@@ -21,10 +21,12 @@ export type EditableTable =
   | "seasonality"
   | "demand_settings"
   | "issues"
-  | "sources";
+  | "sources"
+  | "clients"
+  | "client_assignments";
 
 /** Link tables `save_links` accepts, and their member column. */
-export const LINK_MEMBERS = { person_roles: "role_id", person_skills: "step_id" } as const;
+export const LINK_MEMBERS = { person_roles: "role_id", person_skills: "step_id", client_services: "service_id" } as const;
 export type LinkTable = keyof typeof LINK_MEMBERS;
 
 interface FieldsResult {

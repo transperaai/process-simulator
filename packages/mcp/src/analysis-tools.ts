@@ -339,8 +339,9 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
     {
       title: "Log issue",
       description:
-        "Log a finding in the workspace's issues register (a manual issue), linked to a step, person, role, owner and/or the saved scenario that " +
-        "fixes it, each by id or name. Steps are looked up in the process (default: the workspace's only process).",
+        "Log a finding in the workspace's issues register (a manual issue), linked to a step, person, role, client, owner and/or the saved " +
+        "scenario that fixes it, each by id or name. Steps are looked up in the process (default: the workspace's only process); clients in " +
+        "the workspace's client roster.",
       inputSchema: {
         title: z.string().trim().min(1).max(MAX_TITLE),
         type: z.enum(ISSUE_TYPES),
@@ -350,7 +351,7 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
         step: z.string().optional().describe("Step id or name."),
         person: z.string().optional().describe("Person the issue is about (id or name)."),
         role: z.string().optional().describe("Role the issue is about (id or name)."),
-        client: z.string().optional().describe("Client the issue is about (id or name)."),
+        client: z.string().optional().describe("Client on the roster the issue is about (id or name)."),
         owner: z.string().optional().describe("Person who owns the fix (id or name)."),
         scenario: z.string().optional().describe("Saved scenario that tests the fix (id or name)."),
         status: z.enum(["open", "in_progress", "done", "dismissed"]).optional().describe("Default open."),
@@ -360,12 +361,9 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
     (args) =>
       runTool(async (assumptions) => {
         const ws = await resolveWorkspace(ctx, args.workspace, assumptions);
-        if (args.client) {
-          throw new ToolError(
-            "not_supported",
-            "This workspace has no client roster yet, so an issue can't link to a client. Name the client in `evidence`, or link a step, person or scenario.",
-          );
-        }
+        const client = args.client
+          ? matchNamed(check(await ctx.db.from("clients").select("id, name").eq("workspace_id", ws.id).order("name")), args.client, "client", ` in '${ws.name}'`)
+          : null;
         let proc: ProcessWithDraft | null = null;
         if (args.process || args.step) proc = await resolveProcess(ctx, ws, args.process, assumptions);
         const step = args.step && proc ? matchNamed(await processSteps(ctx, proc), args.step, "step", ` in '${proc.name}'`) : null;
@@ -394,6 +392,7 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
             step_id: step?.id ?? null,
             person_id: person?.id ?? null,
             role_id: role?.id ?? null,
+            client_id: client?.id ?? null,
             owner_person_id: owner?.id ?? null,
             scenario_id: scenario?.id ?? null,
           })
@@ -409,6 +408,7 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
             step: step ? { id: step.id, name: step.name } : null,
             person: person ? { id: person.id, name: person.name } : null,
             role: role ? { id: role.id, name: role.name } : null,
+            client: client ? { id: client.id, name: client.name } : null,
             owner: owner ? { id: owner.id, name: owner.name } : null,
             scenario: scenario ? { id: scenario.id, name: scenario.name } : null,
           },
@@ -422,12 +422,13 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
       title: "List issues",
       description:
         "The workspace's issues register: tracked issues (logged by hand or promoted from a detection), newest first, with the names of what " +
-        "each links to. Filter by status, type or process. With include_detected, also runs the live process and lists what the run detects " +
+        "each links to. Filter by status, type, process or client. With include_detected, also runs the live process and lists what the run detects " +
         "that isn't tracked yet.",
       inputSchema: {
         status: z.enum(["open", "in_progress", "done", "dismissed"]).optional(),
         type: z.enum(ISSUE_TYPES).optional(),
         process: z.string().optional().describe("Only issues about this process (id or name)."),
+        client: z.string().optional().describe("Only issues about this client on the roster (id or name)."),
         include_detected: z.boolean().optional().describe("Also list the live run's untracked detections (default false)."),
         workspace: workspaceArg,
       },
@@ -437,15 +438,21 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
       runTool(async (assumptions) => {
         const ws = await resolveWorkspace(ctx, args.workspace, assumptions);
         const proc = args.process || args.include_detected ? await resolveProcess(ctx, ws, args.process, assumptions) : null;
-        const [issues, scenarios, people, roles, processes] = await Promise.all([
+        const [issues, scenarios, people, roles, processes, clients] = await Promise.all([
           loadIssues(ctx.db, ws.id),
           loadScenarios(ctx.db, ws.id),
           ctx.db.from("people").select("id, name").eq("workspace_id", ws.id),
           ctx.db.from("roles").select("id, name").eq("workspace_id", ws.id),
           listProcesses(ctx.db, ws.id),
+          ctx.db.from("clients").select("id, name").eq("workspace_id", ws.id).order("name"),
         ]);
+        const client = args.client ? matchNamed(check(clients), args.client, "client", ` in '${ws.name}'`) : null;
         const filtered = issues.filter(
-          (i) => (!args.status || i.status === args.status) && (!args.type || i.type === args.type) && (!args.process || i.process_id === proc?.id),
+          (i) =>
+            (!args.status || i.status === args.status) &&
+            (!args.type || i.type === args.type) &&
+            (!args.process || i.process_id === proc?.id) &&
+            (!client || i.client_id === client.id),
         );
         const stepNames = new Map<string, string>();
         for (const p of processes.filter((p) => filtered.some((i) => i.process_id === p.id))) {
@@ -457,6 +464,7 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
         };
         const personOf = nameIn(check(people));
         const roleOf = nameIn(check(roles));
+        const clientOf = nameIn(check(clients));
         const scenarioOf = nameIn(scenarios);
         const processOf = nameIn(processes);
         const tracked = filtered.map((i) => ({
@@ -465,6 +473,7 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
           step: i.step_id ? { id: i.step_id, name: stepNames.get(i.step_id) ?? null } : null,
           person: personOf(i.person_id),
           role: roleOf(i.role_id),
+          client: clientOf(i.client_id),
           owner: personOf(i.owner_person_id),
           scenario: scenarioOf(i.scenario_id),
         }));
@@ -476,13 +485,18 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
           const run = simulate(loaded.model, DEFAULT_REPS, DEFAULT_SEED);
           const keys = new Set(issues.map((i) => i.detected_key).filter(Boolean));
           detected = detectIssues(loaded.model, run)
-            .filter((d) => !keys.has(d.key) && (!args.type || d.type === args.type))
+            .filter((d) => !keys.has(d.key) && (!args.type || d.type === args.type) && !client)
             .map((d) => ({ ...d, source: "detected", status: null }));
           if (args.status && args.status !== "open") detected = [];
         }
         return {
           workspace: { id: ws.id, name: ws.name },
-          filters: { status: args.status ?? null, type: args.type ?? null, process: proc && args.process ? { id: proc.id, name: proc.name } : null },
+          filters: {
+            status: args.status ?? null,
+            type: args.type ?? null,
+            process: proc && args.process ? { id: proc.id, name: proc.name } : null,
+            client: client ? { id: client.id, name: client.name } : null,
+          },
           count: tracked.length,
           issues: tracked,
           ...(detected ? { detected } : {}),

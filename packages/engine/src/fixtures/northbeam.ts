@@ -1,4 +1,7 @@
 import type { EngineModel } from "../model";
+import { NORTHBEAM_FALLBACK_LOAD, NORTHBEAM_ROSTER, NORTHBEAM_TEAM, northbeamClientKey } from "./northbeam-roster";
+
+export { NORTHBEAM_FALLBACK_LOAD, NORTHBEAM_ROSTER, NORTHBEAM_TEAM, northbeamClientKey, type NorthbeamClient } from "./northbeam-roster";
 
 /**
  * Northbeam Digital: fictional SEO/PPC agency, lead-to-live pipeline.
@@ -85,5 +88,34 @@ export function northbeamWithServices(): EngineModel {
           }
         : s,
     ),
+  };
+}
+
+/**
+ * Northbeam with services, named people and its client roster, as seeded
+ * (issue #18): ongoing load comes from each client's services and goes to the
+ * people assigned to it, and the workspace allows 10% overtime. Wins become
+ * synthetic clients; clients churn one by one.
+ */
+export function northbeamWithClients(): EngineModel {
+  const base = northbeamWithServices();
+  const services = base.services!;
+  const clients: NonNullable<EngineModel["clients"]> = {};
+  NORTHBEAM_ROSTER.forEach((c, i) => {
+    const assignments: Record<string, string> = { am: c.am, fin: "rosa", strat: "maya" };
+    if (c.seo) assignments.seo = c.seo;
+    if (c.ppc) assignments.ppc = c.ppc;
+    clients[northbeamClientKey(i)] = { name: c.name, services: [...c.services].sort(), mrr: c.mrr, health: c.health, assignments };
+  });
+  return {
+    ...base,
+    activeClients: NORTHBEAM_ROSTER.length,
+    services: {
+      seo: { ...services.seo!, fallbackOngoing: NORTHBEAM_FALLBACK_LOAD.seo },
+      ppc: { ...services.ppc!, fallbackOngoing: NORTHBEAM_FALLBACK_LOAD.ppc },
+    },
+    people: Object.fromEntries(NORTHBEAM_TEAM.map(([key, name, role]) => [key, { name, roles: [role], capacity: base.hoursPerWeek }])),
+    overtimeCap: 0.1,
+    clients,
   };
 }

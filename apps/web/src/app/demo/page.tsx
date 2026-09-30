@@ -20,6 +20,9 @@ export default async function DemoPage(props: PageProps<"/demo">) {
       </p>
       <div className="mt-4 mb-3 flex items-baseline gap-4">
         <h1 className="text-xl font-bold">{bundle.process.name}</h1>
+        <Link href="/demo/clients" className="text-fg-2 hover:underline">
+          Clients
+        </Link>
         <Link href="/demo/sources" className="text-fg-2 hover:underline">
           Sources
         </Link>

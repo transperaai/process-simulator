@@ -5,7 +5,7 @@
 // the request's Supabase client; tests pass one talking to PostgREST.
 
 import type { Db } from "@transpera-flow/db";
-import { fromByteaHex } from "./server";
+import { fromByteaHex } from "./bytea";
 
 const filename = (title: string, ext: string) =>
   `${

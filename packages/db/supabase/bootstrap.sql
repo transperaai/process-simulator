@@ -8796,7 +8796,7 @@ $$;
 -- 20261019000000_reports.sql
 -- PDF reports and the server-side robustness cache (docs/PRD.md §5
 -- `robustness_results`, §6.5, §9 "PDF", §7.1 `export_report`; issue #28;
--- docs/adr/0009-pdf-reports.md).
+-- docs/adr/0010-pdf-reports.md).
 --
 -- A report is generated from a saved run: the server assembles its content
 -- (every number and sentence, as JSON), prints it to PDF with headless
@@ -8951,7 +8951,7 @@ grant execute on function public.report_download(text) to anon, authenticated;
 
 insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261019000000', 'reports', array['-- PDF reports and the server-side robustness cache (docs/PRD.md §5
 -- `robustness_results`, §6.5, §9 "PDF", §7.1 `export_report`; issue #28;
--- docs/adr/0009-pdf-reports.md).
+-- docs/adr/0010-pdf-reports.md).
 --
 -- A report is generated from a saved run: the server assembles its content
 -- (every number and sentence, as JSON), prints it to PDF with headless

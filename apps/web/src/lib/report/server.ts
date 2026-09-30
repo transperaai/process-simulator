@@ -1,5 +1,5 @@
 // Generating a report as the signed-in user or an API token's user (issue
-// #28; docs/PRD.md §9, §7.1 `export_report`; docs/adr/0009-pdf-reports.md).
+// #28; docs/PRD.md §9, §7.1 `export_report`; docs/adr/0010-pdf-reports.md).
 // One pipeline for the Reports page and MCP: load the live model under RLS,
 // take the saved run (or make and save one), run the comparisons and the
 // robustness checks (cached in `robustness_results`), assemble the content,
@@ -27,6 +27,7 @@ import {
   type RunResults,
 } from "@transpera-flow/db";
 import { buildReportContent } from "./assemble";
+import { toByteaHex } from "./bytea";
 import type { ReportContent, ReportSectionId } from "./content";
 import { REPORT_ENGINE_VERSION } from "./engine-version";
 import { REPORT_ROBUSTNESS_BUDGET_MS, REPORT_SHADOW_PRICE_BUDGET_MS } from "./options";
@@ -80,6 +81,8 @@ export interface GeneratedReport {
   content: ReportContent;
 }
 
+export { fromByteaHex, toByteaHex } from "./bytea";
+
 export type PdfRenderer = (html: string) => Promise<Uint8Array>;
 
 const DAY = 24 * 60 * 60;
@@ -92,12 +95,6 @@ export function newLinkToken(): { token: string; hash: string } {
 
 export const linkHash = (token: string) => createHash("sha256").update(token).digest("hex");
 
-/** Postgres `bytea` hex, as PostgREST reads and writes it. */
-export const toByteaHex = (bytes: Uint8Array) => `\\x${Buffer.from(bytes).toString("hex")}`;
-export function fromByteaHex(value: unknown): Uint8Array | null {
-  if (typeof value !== "string" || !value.startsWith("\\x")) return null;
-  return new Uint8Array(Buffer.from(value.slice(2), "hex"));
-}
 
 /** The download links for a report and token. */
 export function reportLinks(origin: string, id: string, token: string) {

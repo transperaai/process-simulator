@@ -1,5 +1,5 @@
 // HTML to PDF with headless Chromium (docs/PRD.md §9, §10: "Vercel function
-// with @sparticuz/chromium"; issue #28; docs/adr/0009-*). On Vercel the
+// with @sparticuz/chromium"; issue #28; docs/adr/0010-pdf-reports.md). On Vercel the
 // Chromium build that ships in @sparticuz/chromium is unpacked into /tmp on
 // the first call; locally (and in tests) `CHROMIUM_PATH` points at any
 // Chrome or Chromium. The page's own print stylesheet (render.ts) sets the

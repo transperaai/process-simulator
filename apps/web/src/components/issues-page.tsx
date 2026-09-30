@@ -9,6 +9,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow } from "@transpera-flow/db";
 import { detectBrokenScenarios, detectIssues } from "@transpera-flow/engine";
+import { perceptionGapDetections } from "@/lib/issues/perception";
 import { useIssues } from "@/lib/issues/use-issues";
 import { retiredSteps } from "@/lib/scenarios/broken";
 import { useSimulation } from "@/lib/sim/use-simulation";
@@ -45,7 +46,12 @@ export function IssuesPage({
   const result = sim.run?.result ?? null;
   // Saved scenarios that no longer resolve against the live model raise a broken_scenario issue each (issue #16).
   const broken = useMemo(() => (model ? detectBrokenScenarios(model, scenarios, retiredSteps(bundle)) : []), [model, scenarios, bundle]);
-  const detected = useMemo(() => (model && result ? [...broken, ...detectIssues(model, result)] : model ? null : []), [model, result, broken]);
+  // Perception gaps come from the steps' evidence, not the run (issue #21).
+  const gaps = useMemo(() => perceptionGapDetections(bundle.steps), [bundle.steps]);
+  const detected = useMemo(
+    () => (model && result ? [...broken, ...detectIssues(model, result), ...gaps] : model ? null : gaps),
+    [model, result, broken, gaps],
+  );
   const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);
 
   return (

@@ -26,6 +26,7 @@ export const FIELD_LABELS: Record<string, string> = {
   x: "position",
   y: "position",
   assumption: "estimate",
+  conflict: "conflict",
   probability: "branch probability",
   condition_tag: "condition tag",
   label: "label",

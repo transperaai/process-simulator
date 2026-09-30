@@ -14,6 +14,7 @@ import type {
   RoleRow,
   ScenarioRow,
   ServiceRow,
+  SourceRow,
   StepRow,
   WorkspaceAccess,
 } from "../types";
@@ -22,9 +23,9 @@ import type {
 // fixed so the seed is reproducible, and they sort in the prototype's order so
 // the resolved engine model matches the engine's northbeamWithServices()
 // exactly (and, without the services, its golden northbeamModel()).
-// Each table has its own id prefix: 3 clients, 4 issues, 5 scenarios, 6 lead
-// sources, 7 access, 8 services, 9 people, a workspace, b roles, c process,
-// d revision, e steps, f edges.
+// Each table has its own id prefix: 2 clients, 3 sources, 4 issues, 5
+// scenarios, 6 lead sources, 7 access, 8 services, 9 people, a workspace,
+// b roles, c process, d revision, e steps, f edges.
 
 const id = (prefix: string, n: number) => `${prefix}0000000-0000-4000-8000-${n.toString(16).padStart(12, "0")}`;
 
@@ -128,6 +129,8 @@ const step = (
   x,
   y,
   assumption: false,
+  conflict: false,
+  provenance: {},
 });
 
 let edgeN = 0;
@@ -216,7 +219,7 @@ function leadSources(): LeadSourceRow[] {
 
 /** Client ids, by the engine fixture's keys ("c01" …), in roster order. */
 export const northbeamClientIds: Record<string, string> = Object.fromEntries(
-  NORTHBEAM_ROSTER.map((_, i) => [northbeamClientKey(i), id("3", i + 1)]),
+  NORTHBEAM_ROSTER.map((_, i) => [northbeamClientKey(i), id("2", i + 1)]),
 );
 
 /** MRR comes from the invoices; health is the consultant's first estimate. */
@@ -229,7 +232,7 @@ function roster(): { clients: ClientRow[]; clientServices: ClientServiceRow[]; c
   const clientServices: ClientServiceRow[] = [];
   const clientAssignments: ClientAssignmentRow[] = [];
   NORTHBEAM_ROSTER.forEach((c, i) => {
-    const clientId = id("3", i + 1);
+    const clientId = id("2", i + 1);
     clients.push({
       id: clientId,
       workspace_id: ws,
@@ -257,6 +260,106 @@ function roster(): { clients: ClientRow[]; clientServices: ClientServiceRow[]; c
 
 function demandSettings(): DemandSettingsRow {
   return { workspace_id: ws, growth_monthly: 0, provenance: { growth_monthly: ESTIMATE } };
+}
+
+export const northbeamSourceIds = {
+  strategyInterview: id("3", 1),
+  salesNotes: id("3", 2),
+} as const;
+
+/**
+ * What the audit recorded (fictional): an interview transcript and a set of
+ * notes, which the sample's figures cite.
+ */
+export function northbeamSources(): SourceRow[] {
+  const at = "2026-09-29T09:00:00Z";
+  return [
+    {
+      id: northbeamSourceIds.strategyInterview,
+      workspace_id: ws,
+      kind: "transcript",
+      title: "Strategy walkthrough",
+      speakers: ["Maya Collins", "Rosa Diaz"],
+      recorded_at: "2026-09-12",
+      body: [
+        "[00:14:05] Maya Collins: A proper audit and proposal is a day's work, call it six hours, if nobody interrupts me.",
+        "[00:16:40] Rosa Diaz: From the time logs it looks more like twelve hours by the time it goes out.",
+        "[00:21:10] Maya Collins: Kickoffs are quicker, half a day.",
+      ].join("\n"),
+      file_url: null,
+      created_at: at,
+      updated_at: at,
+    },
+    {
+      id: northbeamSourceIds.salesNotes,
+      workspace_id: ws,
+      kind: "notes",
+      title: "Sales team notes",
+      speakers: ["Priya Shah", "Tom Reed"],
+      recorded_at: "2026-09-15",
+      body: [
+        "Priya: discovery calls get booked within three working days of qualifying.",
+        "Priya: about one proposal in seven comes back from sales review for changes.",
+        "Tom: clients take a week to decide, sometimes longer.",
+      ].join("\n"),
+      file_url: null,
+      created_at: at,
+      updated_at: at,
+    },
+  ];
+}
+
+/**
+ * The sample's step figures with the evidence behind them. Every cited value
+ * is the step's own, so the model simulates exactly as before; they stay
+ * estimates until someone confirms them.
+ */
+function withEvidence(steps: StepRow[]): StepRow[] {
+  const { strategyInterview: interview, salesNotes: notes } = northbeamSourceIds;
+  const cited: Partial<Record<StepKey, StepRow["provenance"]>> = {
+    audit: {
+      work_hours: {
+        ...ESTIMATE,
+        evidence: [
+          {
+            source_id: interview,
+            speaker: "Maya Collins",
+            quote: "A proper audit and proposal is a day's work, call it six hours.",
+            timestamp: "00:14:05",
+            value: 6,
+          },
+        ],
+      },
+      rework_rate: {
+        ...ESTIMATE,
+        evidence: [
+          {
+            source_id: notes,
+            speaker: "Priya Shah",
+            quote: "About one proposal in seven comes back from sales review for changes.",
+            timestamp: null,
+            value: 0.15,
+          },
+        ],
+      },
+    },
+    discovery: {
+      wait_hours: {
+        ...ESTIMATE,
+        evidence: [
+          { source_id: notes, speaker: "Priya Shah", quote: "Discovery calls get booked within three working days of qualifying.", timestamp: null, value: 24 },
+        ],
+      },
+    },
+    decision: {
+      wait_hours: {
+        ...ESTIMATE,
+        evidence: [{ source_id: notes, speaker: "Tom Reed", quote: "Clients take a week to decide, sometimes longer.", timestamp: null, value: 40 }],
+      },
+    },
+  };
+  const byId = new Map(Object.entries(cited).map(([key, prov]) => [northbeamStepIds[key as StepKey], prov]));
+  return steps.map((s) => (byId.has(s.id) ? { ...s, provenance: byId.get(s.id)! } : s));
 }
 
 export function northbeamBundle(): ProcessBundle {
@@ -295,7 +398,7 @@ export function northbeamBundle(): ProcessBundle {
       live_revision_id: rev,
     },
     revision: { id: rev, workspace_id: ws, process_id: proc, number: 1, status: "published" },
-    steps: [
+    steps: withEvidence([
       step("qualify", "Qualify lead", "sales", 0.5, 4, 0, "HubSpot", 60, 50),
       step("discovery", "Discovery call", "sales", 1.5, 24, 0, "Zoom + HubSpot", 290, 50),
       step("audit", "Audit & proposal", "strat", 6, 0, 0.15, "SEMrush, Google Docs", 520, 50),
@@ -308,7 +411,7 @@ export function northbeamBundle(): ProcessBundle {
       step("start", "Lead arrives", null, 0, 0, 0, null, -150, 50, "start"),
       step("won", "Won", null, 0, 0, 0, null, 980, 290, "end"),
       step("lost", "Lost", null, 0, 0, 0, null, 640, 170, "end"),
-    ],
+    ]),
     edges: [
       edge("start", "qualify", 1),
       edge("qualify", "discovery", 0.55),

@@ -1,14 +1,14 @@
 import Link from "next/link";
-import { northbeamBundle, northbeamIssues, northbeamScenarios, northbeamStepIds } from "@transpera-flow/db";
+import { northbeamIssues, northbeamScenarios } from "@transpera-flow/db";
 import { AppHeader } from "@/components/app-header";
 import { ProcessView } from "@/components/process-view";
+import { demoBundle, demoSources } from "@/lib/sources/demo";
 
 /** The Northbeam sample from the seed fixtures, no database needed. `?fix=<issue>` runs that issue's fix. */
 export default async function DemoPage(props: PageProps<"/demo">) {
   const { fix } = await props.searchParams;
-  const bundle = northbeamBundle();
-  // One step carries an unconfirmed estimate, so the publish check can be tried.
-  bundle.steps = bundle.steps.map((s) => (s.id === northbeamStepIds.audit ? { ...s, assumption: true } : s));
+  // Sources disagree on audit time (a conflict) and kickoff time is an assumption, so the checklist and the publish check can be tried.
+  const bundle = demoBundle();
   return (
     <main className="mx-auto w-full max-w-7xl px-4 pb-8">
       <AppHeader workspace={`${bundle.workspace.name} · demo`} signedIn={false} />
@@ -23,6 +23,9 @@ export default async function DemoPage(props: PageProps<"/demo">) {
         <Link href="/demo/clients" className="text-fg-2 hover:underline">
           Clients
         </Link>
+        <Link href="/demo/sources" className="text-fg-2 hover:underline">
+          Sources
+        </Link>
       </div>
       <ProcessView
         live={bundle}
@@ -30,6 +33,7 @@ export default async function DemoPage(props: PageProps<"/demo">) {
         mode="demo"
         scenarios={northbeamScenarios()}
         issues={northbeamIssues()}
+        sources={demoSources()}
         initialFix={typeof fix === "string" ? fix : null}
       />
     </main>

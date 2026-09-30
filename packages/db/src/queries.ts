@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "./database.types";
+import type { CitingRow } from "./evidence";
 import { partitionSteps } from "./retired";
 import type {
   ClientAssignmentRow,
@@ -14,6 +15,7 @@ import type {
   ScenarioRow,
   SeasonalityRow,
   ServiceRow,
+  SourceRow,
   StepRow,
   WorkspaceRow,
   WorkspaceSettings,
@@ -173,4 +175,63 @@ export async function loadIssues(db: Db, workspaceId: string): Promise<IssueRow[
   const r = await db.from("issues").select(ISSUE_COLUMNS).eq("workspace_id", workspaceId).order("created_at", { ascending: false }).order("id");
   // Check constraints limit type, severity, status and source to IssueRow's unions.
   return rows(r) as unknown as IssueRow[];
+}
+
+/** The `SourceRow` columns. */
+export const SOURCE_COLUMNS = "id, workspace_id, kind, title, speakers, recorded_at, body, file_url, created_at, updated_at" as const;
+
+/** The workspace's sources, most recent first (RLS: everyone in the workspace can read them). */
+export async function loadSources(db: Db, workspaceId: string): Promise<SourceRow[]> {
+  const r = await db
+    .from("sources")
+    .select(SOURCE_COLUMNS)
+    .eq("workspace_id", workspaceId)
+    .order("recorded_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .order("id");
+  // The check constraint limits kind to SourceRow's union.
+  return rows(r) as unknown as SourceRow[];
+}
+
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/**
+ * Every row of the workspace that can cite a source: the steps of each
+ * process's live revision and open draft, and the demand rows. For the Sources
+ * page's "what cites this" (evidence.ts `citationsBySource`).
+ */
+export async function loadCitingRows(db: Db, workspaceId: string): Promise<CitingRow[]> {
+  const processes = await listProcesses(db, workspaceId);
+  const revisions = new Map<string, "live" | "draft">();
+  for (const p of processes) {
+    if (p.live_revision_id) revisions.set(p.live_revision_id, "live");
+    if (p.draft_revision_id) revisions.set(p.draft_revision_id, "draft");
+  }
+  const [steps, leadSources, seasonality, demand] = await Promise.all([
+    revisions.size
+      ? db.from("steps").select("id, name, process_id, revision_id, provenance, replaced_by").in("revision_id", [...revisions.keys()])
+      : Promise.resolve({ data: [], error: null }),
+    db.from("lead_sources").select("id, name, provenance").eq("workspace_id", workspaceId),
+    db.from("seasonality").select("id, month, provenance").eq("workspace_id", workspaceId),
+    db.from("demand_settings").select("workspace_id, provenance").eq("workspace_id", workspaceId),
+  ]);
+  return [
+    // Retired steps (split or replaced, issue #16) are no longer part of the process.
+    ...partitionSteps(rows(steps)).steps.map((s) => ({
+      table: "steps",
+      id: s.id,
+      name: s.name,
+      processId: s.process_id,
+      revision: revisions.get(s.revision_id)!,
+      provenance: s.provenance,
+    })),
+    ...rows(leadSources).map((l) => ({ table: "lead_sources", id: l.id, name: l.name, provenance: l.provenance })),
+    ...rows(seasonality).map((m) => ({
+      table: "seasonality",
+      id: m.id,
+      name: `Seasonality: ${MONTHS[m.month - 1] ?? m.month}`,
+      provenance: m.provenance,
+    })),
+    ...rows(demand).map((d) => ({ table: "demand_settings", id: d.workspace_id, name: "Demand growth", provenance: d.provenance })),
+  ];
 }

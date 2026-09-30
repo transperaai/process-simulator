@@ -1074,6 +1074,56 @@ export type Database = {
           },
         ]
       }
+      sources: {
+        Row: {
+          body: string | null
+          created_at: string
+          created_by: string | null
+          file_url: string | null
+          id: string
+          kind: string
+          recorded_at: string | null
+          speakers: string[]
+          title: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string
+          created_by?: string | null
+          file_url?: string | null
+          id?: string
+          kind?: string
+          recorded_at?: string | null
+          speakers?: string[]
+          title: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          body?: string | null
+          created_at?: string
+          created_by?: string | null
+          file_url?: string | null
+          id?: string
+          kind?: string
+          recorded_at?: string | null
+          speakers?: string[]
+          title?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sources_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       steps: {
         Row: {
           assumption: boolean

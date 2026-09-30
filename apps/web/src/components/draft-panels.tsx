@@ -62,6 +62,8 @@ export function DraftBar({
   const busy = drafts.busy !== null;
   // What a refused publish reported, else what the draft shows now.
   const estimates = drafts.unresolved ?? unresolved.map((s) => ({ id: s.id, name: s.name }));
+  // Steps where sources disagree (issue #21); publishing counts them with the estimates.
+  const conflicts = unresolved.filter((s) => s.conflict).length;
 
   return (
     <section aria-label="Draft controls" className="flex flex-col gap-2 rounded-token border border-line bg-panel p-2 text-xs shadow-token">
@@ -91,7 +93,7 @@ export function DraftBar({
             : view === "live"
               ? `The live model, as simulation, forecasts and reports use it. The draft has ${plural(changes, "change")}.`
               : changes
-                ? `${plural(changes, "change")} against live${unresolved.length ? ` · ${plural(unresolved.length, "unconfirmed estimate")}` : ""}${breaks.length ? ` · publishing breaks ${plural(breaks.length, "saved scenario")}` : ""}.`
+                ? `${plural(changes, "change")} against live${conflicts ? ` · ${plural(conflicts, "conflict")}` : ""}${unresolved.length - conflicts ? ` · ${plural(unresolved.length - conflicts, "unconfirmed estimate")}` : ""}${breaks.length ? ` · publishing breaks ${plural(breaks.length, "saved scenario")}` : ""}.`
                 : "No changes against live yet."}
         </p>
         {hasDraft && (
@@ -145,8 +147,12 @@ export function DraftBar({
           {estimates.length ? (
             <>
               <p>
-                <strong>{plural(estimates.length, "step")} {estimates.length === 1 ? "holds" : "hold"} unconfirmed estimates.</strong> Confirm them in the inspector
-                first, or publish and accept them as estimates (recorded in the audit log).
+                <strong>
+                  {plural(estimates.length, "step")} {estimates.length === 1 ? "holds" : "hold"}{" "}
+                  {conflicts ? `unresolved conflicts (${conflicts}) or unconfirmed estimates` : "unconfirmed estimates"}.
+                </strong>{" "}
+                Settle them in the checklist or the inspector first, or publish and accept them as estimates (recorded in the
+                audit log).
               </p>
               <ul className="flex flex-wrap gap-1.5">
                 {estimates.map((s) => (

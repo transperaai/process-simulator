@@ -177,6 +177,7 @@ describe("save_fields", () => {
       "seasonality",
       "demand_settings",
       "issues",
+      "sources",
       "clients",
       "client_assignments",
     ];

@@ -5,7 +5,18 @@
 // re-runs the simulation.
 
 import { useEffect, useRef } from "react";
-import { triangularRange, type Distribution, type ProcessBundle, type StepKind, type StepRow } from "@transpera-flow/db";
+import {
+  EVIDENCE_COLUMNS,
+  isOpenAssumption,
+  triangularRange,
+  type Distribution,
+  type EvidenceStamp,
+  type ProcessBundle,
+  type SourceRow,
+  type StepKind,
+  type StepRow,
+} from "@transpera-flow/db";
+import { EvidencePanel } from "@/components/evidence";
 import { NumberField, SelectField, TextField, type SelectOption } from "@/components/fields";
 import { ProvenanceBadge } from "@/components/provenance-badge";
 import {
@@ -48,6 +59,9 @@ export function StepInspector({
   onClose,
   onDelete,
   draft = null,
+  sources = [],
+  stamp,
+  sourcesHref,
 }: {
   bundle: ProcessBundle;
   step: StepRow;
@@ -59,6 +73,11 @@ export function StepInspector({
   onDelete: () => void;
   /** In a draft (issue #9): how the draft changed this step against live, and undoing that. */
   draft?: DraftInfo | null;
+  /** The workspace's sources, to cite (issue #21). */
+  sources?: readonly SourceRow[];
+  /** Who and when, for citing and confirming. */
+  stamp?: () => EvidenceStamp;
+  sourcesHref?: string;
 }) {
   const id = step.id;
   const ref = useRef<HTMLElement>(null);
@@ -123,7 +142,7 @@ export function StepInspector({
         </button>
       </div>
       {draft?.change && <DraftChanges info={draft} change={draft.change} />}
-      {step.assumption && (
+      {step.assumption && !EVIDENCE_COLUMNS.some((c) => isOpenAssumption(step, c)) && (
         <div role="note" className="flex flex-col gap-1.5 rounded-token border border-warn bg-warn-soft p-2 text-xs">
           <p>
             <strong>Estimate.</strong> This step&apos;s values haven&apos;t been confirmed. Check them, then confirm; a draft
@@ -213,6 +232,10 @@ export function StepInspector({
             <TextField label="Tool" value={step.tool} optional save={field("tool")} />
           </div>
         </>
+      )}
+
+      {working && (
+        <EvidencePanel step={step} editor={editor} sources={sources} stamp={stamp ?? (() => ({ at: new Date().toISOString() }))} sourcesHref={sourcesHref} />
       )}
 
       <div className={sectionClass}>

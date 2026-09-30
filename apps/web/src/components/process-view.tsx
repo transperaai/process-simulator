@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow } from "@transpera-flow/db";
+import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow, type SourceRow } from "@transpera-flow/db";
 import type { EngineModel } from "@transpera-flow/engine";
 import { discardChange, revertField } from "@/lib/drafts/discard";
 import { EMPTY_DIFF, diffBundles, unresolvedSteps } from "@/lib/drafts/diff";
@@ -19,6 +19,7 @@ import type { View, Viewer } from "@/lib/realtime/transport";
 import { useRealtime } from "@/lib/realtime/use-realtime";
 import { useSimulation } from "@/lib/sim/use-simulation";
 import { ChangesPanel, DraftBar, DraftCompare, type DraftView } from "./draft-panels";
+import { AssumptionChecklist } from "./evidence";
 import { ConflictPrompt } from "./fields";
 import { KpiStrip } from "./kpi-strip";
 import { PresenceBar } from "./presence-bar";
@@ -64,6 +65,7 @@ export function ProcessView({
   registerHref,
   userId = null,
   viewer = null,
+  sources = [],
 }: {
   live: ProcessBundle;
   draft: ProcessBundle | null;
@@ -80,7 +82,11 @@ export function ProcessView({
   userId?: string | null;
   /** The signed-in user as others see them in presence (issue #10). */
   viewer?: Viewer | null;
+  /** The workspace's sources, which values cite as evidence (issue #21). */
+  sources?: SourceRow[];
 }) {
+  const stamp = () => ({ at: new Date().toISOString(), by: userId });
+  const sourcesHref = registerHref ? registerHref.replace(/\/issues$/, "/sources") : mode === "demo" ? "/demo/sources" : undefined;
   // Saves, catch-up reads and Realtime: the database and Supabase, or memory on the demo.
   const [connection] = useState(() => connect(mode, initialLive));
   const [session, drafts, state] = useDraftSession(
@@ -364,6 +370,9 @@ export function ProcessView({
               editor.run((b) => deleteSelection(b, [inspected.id], []));
               setSelection(NO_SELECTION);
             }}
+            sources={sources}
+            stamp={stamp}
+            sourcesHref={sourcesHref}
             draft={
               hasDraft
                 ? {
@@ -377,6 +386,15 @@ export function ProcessView({
           />
         ) : (
           <div className="flex flex-col gap-3">
+            {!showingLive && (
+              <AssumptionChecklist
+                bundle={working}
+                editor={editable ? editor : null}
+                sources={sources}
+                stamp={stamp}
+                onSelect={(id) => select("steps", id)}
+              />
+            )}
             {!showingLive && (
               <ChangesPanel diff={diff} live={live} bundle={working} editor={editable ? editor : null} names={names} onSelect={select} />
             )}

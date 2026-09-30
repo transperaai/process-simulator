@@ -81,7 +81,11 @@ export interface ReportRunInput {
   name: string;
   seed: number;
   reps: number;
-  engineVersion: string;
+  /**
+   * The engine version the saved run recorded (`runs.engine_version`, issue
+   * #22). Null: the engine that runs it now (`SimulationResult.engineVersion`).
+   */
+  engineVersion: string | null;
   /** ISO date the run starts on. */
   startDate: string;
   savedAt: string | null;
@@ -521,7 +525,7 @@ export function buildReportContent(input: ReportInput): BuiltReport {
       name: run.name,
       seed: run.seed,
       reps: run.reps,
-      engineVersion: run.engineVersion,
+      engineVersion: run.engineVersion ?? baseline.engineVersion,
       startDate: run.startDate,
       horizonWeeks: model.horizonWeeks,
       hoursPerWeek: model.hoursPerWeek,

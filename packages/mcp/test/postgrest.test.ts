@@ -16,6 +16,7 @@ import {
 import {
   applyPatches,
   compareHeadline,
+  ENGINE_VERSION,
   compareRuns,
   compareTable,
   headlineSubject,
@@ -184,7 +185,7 @@ describe.skipIf(!POSTGREST_URL)("MCP over PostgREST (acts as the user under RLS)
     // The browser: toEngineModel(bundle) in ProcessView, then simulate(model, 30, 1) in the worker.
     const browser = simulate(toEngineModel(northbeamBundle(), { startDate }), 30, 1);
     expect(run.data.kpi).toEqual(JSON.parse(JSON.stringify(browser.kpi)));
-    expect(run.data).toMatchObject({ reps: 30, seed: 1 });
+    expect(run.data).toMatchObject({ reps: 30, seed: 1, engine_version: ENGINE_VERSION });
   });
 
   it("run_scenario applies overrides as the browser applies a scenario, and refuses ones it can't apply", async () => {

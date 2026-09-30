@@ -11,7 +11,7 @@ import {
 import { describeAuditEntry, type AuditEntry } from "@/lib/suggestions/audit";
 import { demoBaselineSnapshot, demoCompany, demoProcesses, demoSuggestions } from "@/lib/suggestions/demo";
 import { parseReview, reviewInMemory, reviewSummary } from "@/lib/suggestions/review";
-import { defaultRunName, parseSaveRun } from "@/lib/runs/runs";
+import { defaultRunName, parseSaveRun, runEngineNote } from "@/lib/runs/runs";
 
 // The Suggestions page's review logic, the change log's wording, the demo's
 // sample data and saving runs (issue #25).
@@ -134,12 +134,25 @@ describe("saving runs", () => {
     seed: 1,
     reps: 30,
     durationMs: 812.4,
+    engineVersion: "1.0.0",
   };
   it("checks what the page sends", () => {
     expect(parseSaveRun(input)).toMatchObject({ ok: true, value: { name: "Baseline", durationMs: 812 } });
     expect(parseSaveRun({ ...input, name: " " })).toMatchObject({ ok: false });
     expect(parseSaveRun({ ...input, results: { ...input.results, won: { mean: "x" } } })).toMatchObject({ ok: false });
     expect(parseSaveRun({ ...input, processId: "nope" })).toMatchObject({ ok: false });
+  });
+  it("records the engine version the results came from (issue #22)", () => {
+    expect(parseSaveRun(input)).toMatchObject({ ok: true, value: { engineVersion: "1.0.0" } });
+    // A page loaded before runs recorded it still saves, with none.
+    expect(parseSaveRun({ ...input, engineVersion: undefined })).toMatchObject({ ok: true, value: { engineVersion: null } });
+    expect(parseSaveRun({ ...input, engineVersion: "latest; drop table runs" })).toMatchObject({ ok: false });
+    expect(parseSaveRun({ ...input, engineVersion: 1 })).toMatchObject({ ok: false });
+  });
+  it("says when the engine has changed since a run", () => {
+    expect(runEngineNote("1.0.0", "1.0.0")).toEqual({ label: "engine 1.0.0", changed: null });
+    expect(runEngineNote("1.0.0", "1.1.0").changed).toMatch(/Saved with engine 1\.0\.0; the engine is now 1\.1\.0/);
+    expect(runEngineNote(null, "1.1.0")).toEqual({ label: "engine version not recorded", changed: null });
   });
   it("names a run by when it was saved", () => {
     expect(defaultRunName(new Date(2026, 8, 30, 14, 5))).toBe("Run 30 Sept 2026, 14:05");

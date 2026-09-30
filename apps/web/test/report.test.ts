@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { northbeamIssues, northbeamScenarios, northbeamStepIds, runResults, toEngineModel, type ProcessBundle, type ScenarioRow } from "@transpera-flow/db";
-import { MemoryRobustnessCache, simulate } from "@transpera-flow/engine";
+import { ENGINE_VERSION, MemoryRobustnessCache, simulate } from "@transpera-flow/engine";
 import { compareScenarios } from "@transpera-flow/mcp";
 import { buildReportContent, describePatches, normaliseSections, type ReportInput } from "@/lib/report/assemble";
 import { SECTION_IDS, type ReportContent } from "@/lib/report/content";
@@ -199,8 +199,11 @@ describe("report content", () => {
     expect(a.provenance.join(" ")).toMatch(/templated text .* no language model/);
   });
 
-  it("prints the engine version and run on the methodology page", () => {
+  it("prints the engine version of the run on the methodology page: the saved run's, or the engine that ran it", () => {
     expect(full.content.methodology!.paragraphs.join(" ")).toContain("with engine test-engine");
+    const fresh = buildReportContent(input({ run: { ...input().run, engineVersion: null }, options: { sections: ["methodology"], scenarioIds: [] } })).content;
+    expect(fresh.run.engineVersion).toBe(ENGINE_VERSION);
+    expect(fresh.methodology!.paragraphs.join(" ")).toContain(`with engine ${ENGINE_VERSION}`);
   });
 
   it("lists every stated number for narration (#29) to check against", () => {

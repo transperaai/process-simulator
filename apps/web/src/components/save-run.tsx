@@ -22,7 +22,7 @@ function saveInDemo(input: SaveRunInput, bundle: ProcessBundle): SaveRunResult {
     name: input.name,
     scenario_id: null,
     revision_ids: [input.revisionId],
-    engine_version: null,
+    engine_version: input.engineVersion,
     reps: input.reps,
     seed: input.seed,
     params_snapshot: snapshotModel(companyOf(bundle), [
@@ -67,6 +67,7 @@ export function SaveRunBar({
       seed: result.seed,
       reps: result.reps,
       durationMs,
+      engineVersion: result.engineVersion,
     };
     startTransition(async () => {
       const r = mode === "demo" ? saveInDemo(input, bundle) : await saveRun(input);

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
-import { ModelChangedBanner, RunResultsTiles, runDate } from "@/components/runs-view";
+import { EngineChangedNote, ModelChangedBanner, RunResultsTiles, RunSavedLine } from "@/components/runs-view";
 import { loadRunPage } from "@/lib/company-data";
 
 /** One saved run, with "model changed since this run" and the list of changes (docs/PRD.md §4.1, D19). */
@@ -22,11 +22,12 @@ export default async function RunPage(props: PageProps<"/w/[slug]/runs/[id]">) {
         </Link>
       </nav>
       <h1 className="mt-2 text-xl font-bold">{run.name}</h1>
-      <p className="mb-3 text-fg-2">
-        Saved {runDate(run.created_at)} · {run.reps} replications, seed {run.seed}
-      </p>
+      <div className="mb-3">
+        <RunSavedLine run={run} />
+      </div>
       <div className="flex flex-col gap-3">
         <ModelChangedBanner changes={data.changes} rerunHref={`/w/${slug}`} />
+        <EngineChangedNote version={run.engine_version} />
         <RunResultsTiles results={run.results} />
       </div>
     </main>

@@ -1,4 +1,5 @@
 export * from "./model";
+export { ENGINE_VERSION } from "./version";
 export { DEFAULT_AVAILABILITY_FLOOR, initialState, pct, resolvePeople, runOnce, simulate, stat } from "./simulate";
 export { checkDemand, demandFactor, isFlatDemand, WEEKS_PER_CALENDAR_MONTH } from "./demand";
 export { mulberry32 } from "./random";
@@ -16,6 +17,30 @@ export {
   type NorthbeamServicingProcess,
   type NorthbeamServicingStep,
 } from "./fixtures/northbeam";
+export {
+  LARKSPUR_GROWTH_MONTHLY,
+  LARKSPUR_LEAD_SOURCES,
+  LARKSPUR_PIPELINE,
+  LARKSPUR_ROLES,
+  LARKSPUR_ROSTER,
+  LARKSPUR_SEASONALITY,
+  LARKSPUR_SERVICES,
+  LARKSPUR_SERVICING,
+  LARKSPUR_SETTINGS,
+  LARKSPUR_START,
+  LARKSPUR_START_MONTH,
+  LARKSPUR_TEAM,
+  larkspurClientKey,
+  larkspurModel,
+  type LarkspurClient,
+  type LarkspurDist,
+  type LarkspurEdge,
+  type LarkspurPerson,
+  type LarkspurRecurrence,
+  type LarkspurService,
+  type LarkspurServicingProcess,
+  type LarkspurStep,
+} from "./fixtures/larkspur";
 export {
   AT_RISK_HEALTH,
   DEFAULT_CHURN_SENSITIVITY,

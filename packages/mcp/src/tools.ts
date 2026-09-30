@@ -74,6 +74,8 @@ export function summarizeRun(model: EngineModel, result: SimulationResult) {
   const stepName = (id: string | null) => (id ? (model.steps.find((s) => s.id === id)?.name ?? id) : null);
   const personName = (id: string | null) => (id ? (result.resolvedPeople[id]?.name ?? id) : null);
   return {
+    /** The engine version the numbers come from (issue #22); a saved run records the same. */
+    engine_version: result.engineVersion,
     reps: result.reps,
     horizon_weeks: model.horizonWeeks,
     kpi: result.kpi,

@@ -29,7 +29,6 @@ import {
 import { buildReportContent } from "./assemble";
 import { toByteaHex } from "./bytea";
 import type { ReportContent, ReportSectionId } from "./content";
-import { REPORT_ENGINE_VERSION } from "./engine-version";
 import { REPORT_ROBUSTNESS_BUDGET_MS, REPORT_SHADOW_PRICE_BUDGET_MS } from "./options";
 import { renderReportHtml } from "./render";
 import { loadRobustnessCache, robustnessCheckKey, saveRobustnessCache } from "./robustness-cache";
@@ -145,7 +144,7 @@ export async function generateReport(db: Db, input: GenerateReportInput, renderP
   const currency = bundle.workspace.settings.currency;
 
   // The run: a saved one (only if the model is unchanged and it reproduces exactly), or a new one.
-  let run: { id: string; name: string; seed: number; reps: number; startDate: string; savedAt: string | null; isNew: boolean };
+  let run: { id: string; name: string; seed: number; reps: number; startDate: string; savedAt: string | null; engineVersion: string | null; isNew: boolean };
   if (input.runId) {
     const saved = await loadRun(db, input.runId);
     if (!saved || saved.workspace_id !== ws.id) throw new ReportError("not_found", "That saved run isn't available.");
@@ -158,9 +157,19 @@ export async function generateReport(db: Db, input: GenerateReportInput, renderP
         `The model has changed since “${saved.name}” was saved (${changes.length} ${changes.length === 1 ? "change" : "changes"}), so its numbers can't be reproduced. Generate from a new run instead.`,
       );
     }
-    run = { id: saved.id, name: saved.name, seed: saved.seed, reps: saved.reps, startDate: saved.created_at.slice(0, 10), savedAt: saved.created_at, isNew: false };
+    run = {
+      id: saved.id,
+      name: saved.name,
+      seed: saved.seed,
+      reps: saved.reps,
+      startDate: saved.created_at.slice(0, 10),
+      savedAt: saved.created_at,
+      // Runs saved before #22 didn't record it; they reproduce with today's engine or are refused below.
+      engineVersion: saved.engine_version,
+      isNew: false,
+    };
   } else {
-    run = { id: randomUUID(), name: `Report run ${input.now.slice(0, 10)}`, seed: 1, reps: input.reps, startDate: input.now.slice(0, 10), savedAt: input.now, isNew: true };
+    run = { id: randomUUID(), name: `Report run ${input.now.slice(0, 10)}`, seed: 1, reps: input.reps, startDate: input.now.slice(0, 10), savedAt: input.now, engineVersion: null, isNew: true };
   }
 
   // Cached robustness jobs of every scenario the report compares.
@@ -180,7 +189,7 @@ export async function generateReport(db: Db, input: GenerateReportInput, renderP
     scenarios,
     issues,
     sources,
-    run: { id: run.id, name: run.name, seed: run.seed, reps: run.reps, engineVersion: REPORT_ENGINE_VERSION, startDate: run.startDate, savedAt: run.savedAt },
+    run: { id: run.id, name: run.name, seed: run.seed, reps: run.reps, engineVersion: run.engineVersion, startDate: run.startDate, savedAt: run.savedAt },
     options: { sections: input.sections, scenarioIds: input.scenarioIds },
     generatedAt: input.now,
     generatedBy: input.generatedBy,
@@ -197,7 +206,7 @@ export async function generateReport(db: Db, input: GenerateReportInput, renderP
       process_id: process.id,
       name: run.name,
       revision_ids: revisions.map((p) => p.revision_id),
-      engine_version: REPORT_ENGINE_VERSION,
+      engine_version: built.baseline.engineVersion,
       reps: run.reps,
       seed: run.seed,
       params_snapshot: snapshotModel(company, revisions) as unknown as Json,

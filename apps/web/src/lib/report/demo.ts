@@ -7,7 +7,6 @@ import { MemoryRobustnessCache } from "@transpera-flow/engine";
 import { demoBundle, demoSources } from "@/lib/sources/demo";
 import { buildReportContent, type BuiltReport } from "./assemble";
 import type { ReportSectionId } from "./content";
-import { REPORT_ENGINE_VERSION } from "./engine-version";
 import { parseSections, REPORT_DEFAULT_REPS, REPORT_ROBUSTNESS_BUDGET_MS, REPORT_SHADOW_PRICE_BUDGET_MS } from "./options";
 
 const cache = new MemoryRobustnessCache(50_000);
@@ -47,7 +46,7 @@ export function buildDemoReport({
     scenarios: northbeamScenarios(),
     issues: northbeamIssues(),
     sources: demoSources(),
-    run: { id: null, name: "Demo run", seed: 1, reps, engineVersion: REPORT_ENGINE_VERSION, startDate: today.slice(0, 10), savedAt: null },
+    run: { id: null, name: "Demo run", seed: 1, reps, engineVersion: null, startDate: today.slice(0, 10), savedAt: null },
     options: { sections, scenarioIds },
     generatedAt: today,
     generatedBy: "Demo",

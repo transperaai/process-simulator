@@ -48,7 +48,7 @@ Same conversation or a new one; tell it the process name. Expect `created: false
 | Error code | Meaning |
 |---|---|
 | `ambiguous` | A name matched several rows; the reply lists `candidates`. Pass the exact name or id. |
-| `not_found` | Roles, services and people must already exist: no tool creates a role, and a person or client that is only a pending suggestion cannot be referenced yet. |
+| `not_found` | Roles, services and people must already exist. A missing role is suggested with `upsert_role` and can be used once accepted; a role, person or client that is only a pending suggestion cannot be referenced yet. |
 | `name_taken` | A process or step of that name exists; import with `target`, or use `update_step`. |
 | `forbidden` | The token's user needs the editor role in the workspace. |
 | `unresolved` | Publishing is refused while assumptions or conflicts remain. Publishing is a human step. |

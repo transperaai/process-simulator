@@ -7,17 +7,22 @@ Updated 30 Sep 2026, at the end of the Milestone A build session. Start a new se
 ## Where things stand
 
 **Milestone A (#1, Audit-ready):** every ticket is merged to `main` and live on
-https://transpera-flow.vercel.app except:
+https://transpera-flow.vercel.app, including #88 (A29: new workspace, Roles in Settings, `upsert_role`). What's left
+is Austin's QA:
 
-- **#27 A24: Transcript to draft, end to end** (`ready-for-human`): a QA pass with Austin, not a build.
-- **Milestone A QA with Austin**: he tests the whole flow on his PC, then does a polish and flow review.
-  He wants the backlog from that review gathered in one go, not iterated on mid-way.
+- **Milestone A QA**: Austin works through `docs/qa/milestone-a.md` (196 items), then does a polish and flow
+  review. He wants the backlog from that review gathered in one go, not iterated on mid-way. Findings arrive as a
+  comment on #1 or in chat.
+- **#27 A24: Transcript to draft** (`ready-for-human`): the extraction skill and QA pack are merged (#90). Austin's
+  timed run follows `docs/extraction/qa/README.md` on the **Copperleaf Marketing (QA)** workspace (`copperleaf-qa`),
+  already set up in production. He has no real transcripts, so the Copperleaf interviews are the test material.
+  Findings go on #27.
 
 **Milestones B (#2) and C (#3):** not started. Tickets #30–#43 are `ready-for-agent`; #44 is `ready-for-human`.
 Work the frontier: any open ticket whose `Blocked by` issues are all closed.
 
 **Production database:** every migration in `packages/db/supabase/migrations/` is applied (up to
-`20261020000000_narration`). See `docs/production-migrations.md`.
+`20261021000000_roles_and_workspaces`). See `docs/production-migrations.md`.
 
 ## How we work
 
@@ -84,14 +89,33 @@ password to `postgres`.
 - `ANTHROPIC_API_KEY` is set in Vercel (Production and Preview) for narration (#29). Without it, reports print
   the templated summary.
 
+## Next steps
+
+1. Support Austin's QA: answer questions, and when findings arrive, triage them into tickets (don't fix mid-review
+   unless he asks). Then plan the next wave with him before starting it (Milestone B frontier, the follow-ups below).
+2. Keep `docs/qa/milestone-a.md` and the QA pack current if behaviour changes.
+
+## Decisions from Austin (30 Sep)
+
+- **Google sign-in only** stays (the #4 ticket said magic link; the app has "Continue with Google").
+- **Most real audits:** Austin will usually give Claude the process structure (nodes, often from a diagram) over MCP
+  and fill in times and percentages on the canvas. Transcripts are one input, not the only one.
+- **Scenarios should come from analysis, not a preset library.** Today every workspace is seeded with four generic
+  scenarios (`private.scenario_library()`: hire into the busiest role, automate the heaviest step, more leads,
+  downturn; `@busiest` / `@heaviest` resolve at run time) and Northbeam has two example ones. Austin's vision:
+  simulate the current state, then derive options from the results (bottleneck, shadow price, queues, issues) and
+  an **AI analysis mode** that reads a range of simulated factors (robustness sensitivities, narration facts) and
+  proposes and tests changes, ranked with ranges. He wants to play with the current version first: **don't build
+  until he decides**; it's a candidate Milestone B ticket.
+
 ## Open items for Austin's QA
 
-- The lost-revenue definition, and the starter scenarios.
-- Larkspur (the second sample workspace) is not seeded in production.
+- The lost-revenue definition, and the starter scenarios (see the decision above).
+- Larkspur (the second sample workspace) is not seeded in production; it's only at `/demo/larkspur`.
 - The /privacy wording added with #29 (narration sends model numbers to Anthropic).
 - A live narration check on production (the API key is set).
 - The two-browser Realtime test: presence plus live changes.
-- #27, done together: follow `docs/extraction/qa/README.md`.
+- #27: the timed Copperleaf run.
 
 ## Performance (parked until the end of the build)
 
@@ -103,6 +127,19 @@ PRD §6.7 targets:
 Both are tested in `apps/web/test/scenarios.test.ts`. The engine was optimised twice during #19, with
 byte-identical results. Further work, starting with profiling the servicing
 simulation, waits for Austin's end-of-build review.
+
+## Follow-ups (not ticketed yet; raise with Austin when planning)
+
+- MCP editing tools (`add_step`, `update_step`, …) open a draft (`beginEdit`) before validating names; a failed call
+  leaves a harmless copy of live as a draft. `import_process` was fixed in #91 to write nothing on failure.
+- `applyPlan` in `packages/mcp` isn't transactional: a DB error mid-write can leave a partial draft.
+- Roles settings count usage from all step revisions via PostgREST (max 1000 rows), so a big workspace could
+  under-count; the `in_use` trigger still refuses a bad delete. A count RPC would fix it.
+- The services fallback-load editor and the client-assignment roster still list inactive roles.
+- Extraction: routing (edge) probabilities have no evidence or provenance, so routing conflicts aren't tracked;
+  register the skill as an MCP prompt so Claude desktop needs no install; add clients, services and lead sources to
+  `get_workspace_summary`; a `list_sources` tool; range citations (`value_min`/`value_max`).
+- The extraction fixture lint doesn't check new steps inside a `target` import (the e2e test does).
 
 ## Other open items
 

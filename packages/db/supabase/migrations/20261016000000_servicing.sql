@@ -35,7 +35,7 @@
 --   -- Restore save_fields' previous allow-list: re-run the `create or replace
 --   -- function public.save_fields ... $$;` block from 20261012000000_clients.sql.
 --   -- (Or leave it: with the table gone, a save to it just errors.)
---   delete from supabase_migrations.schema_migrations where version = '20261014000000';
+--   delete from supabase_migrations.schema_migrations where version = '20261016000000';
 --   commit;
 
 -- ---------------------------------------------------------------------------

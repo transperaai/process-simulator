@@ -6733,7 +6733,7 @@ create trigger audit_mcp after insert or update or delete on public.issues
   for each row execute function private.audit_mcp_write();
 ']);
 
--- 20261014000000_servicing.sql
+-- 20261016000000_servicing.sql
 -- Client servicing (docs/PRD.md §5 `processes.kind`, `service_servicing`,
 -- §6.3.5; decision D9; issue #19). A service links to servicing processes
 -- (`processes.kind = 'servicing'`, which exists since the first migration)
@@ -6771,7 +6771,7 @@ create trigger audit_mcp after insert or update or delete on public.issues
 --   -- Restore save_fields' previous allow-list: re-run the `create or replace
 --   -- function public.save_fields ... $$;` block from 20261012000000_clients.sql.
 --   -- (Or leave it: with the table gone, a save to it just errors.)
---   delete from supabase_migrations.schema_migrations where version = '20261014000000';
+--   delete from supabase_migrations.schema_migrations where version = '20261016000000';
 --   commit;
 
 -- ---------------------------------------------------------------------------
@@ -7043,7 +7043,7 @@ $$;
 -- on conflict do nothing;
 -- commit;
 
-insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261014000000', 'servicing', array['-- Client servicing (docs/PRD.md §5 `processes.kind`, `service_servicing`,
+insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261016000000', 'servicing', array['-- Client servicing (docs/PRD.md §5 `processes.kind`, `service_servicing`,
 -- §6.3.5; decision D9; issue #19). A service links to servicing processes
 -- (`processes.kind = ''servicing''`, which exists since the first migration)
 -- with a recurrence: every client on the service generates a task per
@@ -7080,7 +7080,7 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --   -- Restore save_fields'' previous allow-list: re-run the `create or replace
 --   -- function public.save_fields ... $$;` block from 20261012000000_clients.sql.
 --   -- (Or leave it: with the table gone, a save to it just errors.)
---   delete from supabase_migrations.schema_migrations where version = ''20261014000000'';
+--   delete from supabase_migrations.schema_migrations where version = ''20261016000000'';
 --   commit;
 
 -- ---------------------------------------------------------------------------

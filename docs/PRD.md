@@ -341,6 +341,7 @@ Given mapped datasets, compute and propose: arrival rates per source, conversion
 
 ### 6.7 Performance targets
 - 9 steps, 6 people, 13 weeks, 30 reps: < 150 ms in a worker.
+- Seeded Northbeam with its client roster and servicing (about 15 steps, 11 people, 26 clients), 13 weeks, 30 reps: < 250 ms.
 - 40 steps, 25 people, 25 clients with servicing, 26 weeks, 30 reps: < 1.5 s. Debounce slider input at 40 ms; cancel stale runs.
 - 12-month forecast of the above: < 5 s.
 - Robustness: see §6.5.

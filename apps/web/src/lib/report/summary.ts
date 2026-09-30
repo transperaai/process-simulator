@@ -10,7 +10,7 @@
 
 import type { EngineModel, Stat } from "@transpera-flow/engine";
 import type { ExecutiveSummary, KpiFigure, MethodologyView, ReportContent } from "./content";
-import { avgWithRange, formatDate, formatFigure, type FigureContext } from "./format";
+import { avgWithRange, figureRange, formatDate, formatFigure, type FigureContext } from "./format";
 
 const figure = (c: ReportContent, key: string): KpiFigure | undefined => c.kpis.find((k) => k.key === key);
 const ctxOf = (c: ReportContent): FigureContext => ({ currency: c.run.currency, hoursPerWeek: c.run.hoursPerWeek });
@@ -41,11 +41,11 @@ export function buildSummary(c: ReportContent): ExecutiveSummary {
     paragraphs.push(bits.join(" "));
   }
 
+  const clientCount = (s: Stat) => `avg ${formatFigure("count", s.mean, ctx)} clients (${figureRange("count", s, ctx)})`;
   if (c.clients) {
     const worst = c.clients.clients.filter((x) => x.atRisk >= 0.5).map((x) => x.name);
     paragraphs.push(
-      `Of the client roster, ${avgWithRange("count", c.clients.atRisk, ctx)} clients end the period at risk (health below 50) and ` +
-        `${avgWithRange("count", c.clients.churned, ctx)} leave.` +
+      `Of the client roster, ${clientCount(c.clients.atRisk)} end the period at risk (health below 50) and ${clientCount(c.clients.churned)} leave.` +
         (worst.length ? ` Most at risk: ${listText(worst.slice(0, 3))}.` : " No client ends at risk in most runs."),
     );
   }

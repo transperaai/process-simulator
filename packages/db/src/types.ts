@@ -65,6 +65,8 @@ export interface RoleRow {
   default_cost_rate: number;
   headcount: number;
   ongoing_hours_per_client_week: number;
+  /** Inactive roles are hidden from pickers; what already names one keeps it, and it still simulates. */
+  active: boolean;
 }
 
 export interface PersonRow {
@@ -513,7 +515,7 @@ export interface IssueRow {
 }
 
 /** The company-model tables a suggestion can change (docs/PRD.md §7.1c). */
-export type SuggestionTarget = "workspaces" | "services" | "people" | "clients" | "lead_sources" | "seasonality" | "demand_settings";
+export type SuggestionTarget = "workspaces" | "services" | "people" | "clients" | "lead_sources" | "seasonality" | "demand_settings" | "roles";
 export type SuggestionStatus = "pending" | "accepted" | "rejected";
 export type SuggestionValue = string | number | boolean | null;
 

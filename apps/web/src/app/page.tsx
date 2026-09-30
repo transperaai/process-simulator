@@ -2,21 +2,24 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { AppHeader } from "@/components/app-header";
-import { resolveMyAccess } from "@/lib/access-data";
+import { isAgencyAdmin, resolveMyAccess } from "@/lib/access-data";
 import { listWorkspaces } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseEnv } from "@/lib/supabase/env";
+import { NewWorkspaceForm } from "./new-workspace-form";
 
 export default async function HomePage() {
   // Render per request: Supabase settings are read at runtime, not build time.
   await connection();
   if (!supabaseEnv()) redirect("/demo");
-  let workspaces = await listWorkspaces();
+  const [firstLook, admin] = await Promise.all([listWorkspaces(), isAgencyAdmin()]);
+  let workspaces = firstLook;
   if (workspaces.length === 0) {
     // Sessions from before access resolution existed never ran it at sign-in.
     if ((await resolveMyAccess()) > 0) workspaces = await listWorkspaces();
   }
-  if (workspaces.length === 0) {
+  // An agency admin with no workspaces creates the first one here.
+  if (workspaces.length === 0 && !admin) {
     const {
       data: { user },
     } = await (await createClient()).auth.getUser();
@@ -26,6 +29,15 @@ export default async function HomePage() {
     <main className="mx-auto w-full max-w-5xl px-4">
       <AppHeader signedIn />
       <h1 className="mt-6 mb-3 text-xl font-bold">Workspaces</h1>
+      {admin && (
+        <details className="mb-4 rounded-token border border-line bg-panel p-3 shadow-token" open={workspaces.length === 0}>
+          <summary className="cursor-pointer font-semibold">New workspace</summary>
+          <div className="pt-3">
+            <NewWorkspaceForm />
+          </div>
+        </details>
+      )}
+      {workspaces.length === 0 && <p className="text-fg-2">No workspaces yet. Create the first one above.</p>}
       <ul className="grid gap-2 sm:grid-cols-2">
         {workspaces.map((ws) => (
           <li key={ws.id}>

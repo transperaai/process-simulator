@@ -1069,6 +1069,7 @@ export type Database = {
       }
       roles: {
         Row: {
+          active: boolean
           color: string | null
           created_at: string
           created_by: string | null
@@ -1077,10 +1078,12 @@ export type Database = {
           id: string
           name: string
           ongoing_hours_per_client_week: number
+          provenance: Json
           updated_at: string
           workspace_id: string
         }
         Insert: {
+          active?: boolean
           color?: string | null
           created_at?: string
           created_by?: string | null
@@ -1089,10 +1092,12 @@ export type Database = {
           id?: string
           name: string
           ongoing_hours_per_client_week?: number
+          provenance?: Json
           updated_at?: string
           workspace_id: string
         }
         Update: {
+          active?: boolean
           color?: string | null
           created_at?: string
           created_by?: string | null
@@ -1101,6 +1106,7 @@ export type Database = {
           id?: string
           name?: string
           ongoing_hours_per_client_week?: number
+          provenance?: Json
           updated_at?: string
           workspace_id?: string
         }
@@ -1787,6 +1793,10 @@ export type Database = {
       can_edit_workspace: { Args: { ws: string }; Returns: boolean }
       can_manage_workspace: { Args: { ws: string }; Returns: boolean }
       can_read_workspace: { Args: { ws: string }; Returns: boolean }
+      create_workspace: {
+        Args: { ws_name: string; ws_settings?: Json; ws_slug: string }
+        Returns: string
+      }
       discard_draft: { Args: { target_process: string }; Returns: Json }
       is_agency_admin: { Args: never; Returns: boolean }
       is_free_mail_domain: { Args: { domain: string }; Returns: boolean }

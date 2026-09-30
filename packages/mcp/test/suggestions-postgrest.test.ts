@@ -42,7 +42,7 @@ const insertId = async (sql: string, params: unknown[]) => (await admin.query(sq
 /** Every company-model row of the workspace, to show the tools changed none of them. */
 async function companyRows() {
   const out: Record<string, unknown> = {};
-  for (const t of ["people", "person_roles", "person_leave", "services", "clients", "client_services", "client_assignments", "lead_sources", "seasonality", "demand_settings"]) {
+  for (const t of ["people", "person_roles", "person_leave", "services", "roles", "clients", "client_services", "client_assignments", "lead_sources", "seasonality", "demand_settings"]) {
     out[t] = (await admin.query(`select to_jsonb(t) as r from ${t} t where workspace_id = $1 order by to_jsonb(t)::text`, [ids.ws])).rows.map((r) => r.r);
   }
   out.workspace = (await admin.query("select settings, provenance from workspaces where id = $1", [ids.ws])).rows[0];
@@ -104,6 +104,7 @@ describe.skipIf(!POSTGREST_URL)("company-model suggestion tools over PostgREST",
       ["set_company", { hours_per_week: 37.5, overtime_cap: 0.1, note: "Stated in the interview" }, 1],
       ["upsert_service", { name: "Branding", price: 2400 }, 1],
       ["upsert_service", { name: "Web design", price: 5000, pricing_model: "one_off" }, 1],
+      ["upsert_role", { name: "Copywriter", evidence, note: "Ana describes a copywriter" }, 1],
       ["upsert_person", { name: "Ana Lopez", fte: 0.8, roles: ["Designer", "Account manager"], leave: [{ start_date: "2026-12-21", end_date: "2026-12-31" }] }, 1],
       ["upsert_person", { name: "Ben Carter", roles: ["Designer"], cost_rate: 35 }, 1],
       ["upsert_client", { name: "Acme Ltd", mrr: 2500, assignments: { Designer: "Ana Lopez" }, evidence }, 1],
@@ -139,6 +140,63 @@ describe.skipIf(!POSTGREST_URL)("company-model suggestion tools over PostgREST",
     expect(listed.ok).toBe(true);
     expect(listed.data.suggestions.map((s) => s.id).sort()).toEqual(made.map((s) => s.id).sort());
     await client.close();
+  });
+
+  it("a suggested role is created only when accepted, and then a process can use it", async () => {
+    const editor = await connect(editorToken, options);
+    // "Design" partly matches "Designer": the tool asks rather than guessing.
+    expect(await call(editor, "upsert_role", { name: "Design" })).toMatchObject({ ok: false, error: { code: "ambiguous" } });
+    const viewer = await connect(viewerToken, options);
+    expect(await call(viewer, "upsert_role", { name: "Illustrator" })).toMatchObject({ ok: false, error: { code: "forbidden" } });
+    await viewer.close();
+
+    // The token can't write roles directly either.
+    const headers = { authorization: `Bearer ${anonKey()}`, "x-api-token": editorToken, "content-type": "application/json" };
+    const direct = await fetch(`${POSTGREST_URL}/roles`, { method: "POST", headers, body: JSON.stringify({ workspace_id: ids.ws, name: "Sneaky" }) });
+    expect([401, 403]).toContain(direct.status);
+    expect((await direct.json()).message).toMatch(/only by review/);
+
+    // A step naming a role that isn't there yet can't be imported.
+    const process_json = {
+      name: "Copywriting",
+      kind: "servicing",
+      entity_name: "job",
+      steps: [
+        { name: "Start", kind: "start" },
+        { name: "Write copy", role: "Copywriter" },
+        { name: "Done", kind: "end", outcome: "done" },
+      ],
+      edges: [
+        { from: "Start", to: "Write copy" },
+        { from: "Write copy", to: "Done" },
+      ],
+    };
+    const before = await call(editor, "import_process", { process_json });
+    expect(before.ok, JSON.stringify(before)).toBe(false);
+    expect(before.error).toMatchObject({ code: "not_found", message: expect.stringMatching(/No role .* matches .Copywriter./) });
+    // It checks before it writes: no process (or draft) is left behind.
+    expect((await admin.query("select count(*)::int as n from processes where workspace_id = $1", [ids.ws])).rows[0].n).toBe(0);
+
+    const rows = (await admin.query("select id from suggestions where workspace_id = $1 and target_table = 'roles' and status = 'pending'", [ids.ws])).rows;
+    expect(rows).toHaveLength(1);
+    const session = signJwt({ sub: ids.editor, role: "authenticated", aud: "authenticated", app_metadata: {} }, JWT_SECRET);
+    const res = await fetch(`${POSTGREST_URL}/rpc/review_suggestions`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${session}`, "content-type": "application/json" },
+      body: JSON.stringify({ ids: [rows[0].id], decision: "accept" }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject([{ id: rows[0].id, status: "accepted" }]);
+    const role = (await admin.query("select id, active from roles where workspace_id = $1 and name = 'Copywriter'", [ids.ws])).rows[0];
+    expect(role.active).toBe(true);
+
+    const summary = await call<{ roles: { id: string; name: string; active: boolean }[] }>(editor, "get_workspace_summary", {});
+    expect(summary.data.roles).toEqual(expect.arrayContaining([expect.objectContaining({ id: role.id, name: "Copywriter", active: true })]));
+    const after = await call(editor, "import_process", { process_json });
+    expect(after.ok, JSON.stringify(after)).toBe(true);
+    const step = (await admin.query("select role_id from steps where workspace_id = $1 and name = 'Write copy'", [ids.ws])).rows[0];
+    expect(step.role_id).toBe(role.id);
+    await editor.close();
   });
 
   it("refuses a viewer's token, an unknown source and an ambiguous name", async () => {

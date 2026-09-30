@@ -95,6 +95,7 @@ export const COMPANY_FIELDS: Record<CompanyTable, Record<string, FieldMeta>> = {
     headcount: { label: "Head-count", format: "number" },
     default_cost_rate: { label: "Cost rate", format: "money" },
     ongoing_hours_per_client_week: { label: "Hours per client a week", format: "hours" },
+    active: { label: "Active", format: "bool" },
   },
   services: {
     name: { label: "Name", format: "text" },

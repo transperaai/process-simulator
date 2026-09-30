@@ -161,6 +161,34 @@ export function buildServiceSuggestion(model: CompanyModel, args: ServiceArgs, a
 }
 
 // ---------------------------------------------------------------------------
+// upsert_role
+// ---------------------------------------------------------------------------
+
+export interface RoleArgs extends Provenanced {
+  name: string;
+  rename?: string;
+  create?: boolean;
+}
+
+/** A new role, or a new name for one. Names are unique in a workspace, ignoring case and surrounding spaces (the database's unique index). */
+export function buildRoleSuggestion(model: CompanyModel, args: RoleArgs, assumptions: string[]): Built {
+  const row = matchForUpsert(model.roles, args.name, "role", args.create);
+  const unchanged: string[] = [];
+  const label = `Role ${row?.name ?? args.name}`;
+  const newName = row ? args.rename?.trim() : args.name.trim();
+  const other = newName ? model.roles.find((r) => r.id !== row?.id && r.name.trim().toLowerCase() === newName.toLowerCase()) : undefined;
+  if (other) throw new ToolError("invalid_input", `There is already a role called '${other.name}'`);
+  const set = diffSet(row as unknown as Record<string, unknown>, { name: newName }, label, unchanged);
+  if (row && args.rename === undefined) unchanged.push(`${label} already exists${row.active === false ? " (inactive: reactivate it in Settings)" : ""}`);
+  if (!row) {
+    assumptions.push(`New role '${args.name}': default_cost_rate not given, so it will default to 0.`);
+    assumptions.push(`New role '${args.name}': headcount not given, so it will default to 1.`);
+  }
+  const patch: SuggestionPatch = { set };
+  return { proposals: hasChanges(patch) ? [proposal("roles", row?.id ?? null, patch, args)] : [], unchanged };
+}
+
+// ---------------------------------------------------------------------------
 // upsert_person
 // ---------------------------------------------------------------------------
 

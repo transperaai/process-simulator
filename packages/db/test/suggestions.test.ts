@@ -162,6 +162,7 @@ describe("the MCP server can't write the company model", () => {
     ["lead_sources", "update lead_sources set volume_week = 15 where id = $1", [ads]],
     ["seasonality", "insert into seasonality (workspace_id, month, multiplier) values ($1, 12, 0.5)", [ws]],
     ["demand_settings", "update demand_settings set growth_monthly = 0.05 where workspace_id = $1", [ws]],
+    ["roles", "insert into roles (workspace_id, name) values ($1, 'Copywriter')", [ws]],
   ];
   for (const [table, sql, params] of writes) {
     it(`refuses a write to ${table} made with an API token`, async () => {
@@ -171,15 +172,12 @@ describe("the MCP server can't write the company model", () => {
     });
   }
 
-  it("refuses an owner's token changing the workspace settings, but not roles (process building needs them)", async () => {
+  it("refuses an owner's token changing the workspace settings or the roles", async () => {
     const owner = { ...users.owner!.claims, api_token_id: randomUUID() };
     await expect(db.as(owner, (c) => c.query("update workspaces set settings = settings || '{\"hours_per_week\": 35}' where id = $1", [ws]))).rejects.toThrow(
       /only by review/,
     );
-    await db.as(owner, async (c) => {
-      const r = await c.query("insert into roles (workspace_id, name) values ($1, 'Copywriter') returning id", [ws]);
-      expect(r.rowCount).toBe(1);
-    });
+    await expect(db.as(owner, (c) => c.query("insert into roles (workspace_id, name) values ($1, 'Copywriter')", [ws]))).rejects.toThrow(/only by review/);
   });
 
   it("refuses to review suggestions over the API", async () => {
@@ -450,6 +448,8 @@ describe("the demo applies suggestions as the database does", () => {
       ["services", northbeamServiceIds.seo, { set: { price: 3800, churn_monthly_base: 0.025 } }],
       ["demand_settings", null, { set: { growth_monthly: 0.01 } }],
       ["seasonality", null, { set: { month: 8, multiplier: 0.7 } }],
+      ["roles", null, { set: { name: "Copywriter" } }],
+      ["roles", northbeamRoleIds.fin!, { set: { name: "Finance and admin" } }],
     ];
     let model: CompanyModel = companyOf(northbeamBundle());
     let n = 0;
@@ -485,11 +485,50 @@ describe("the demo applies suggestions as the database does", () => {
       const localSvc = model.services.find((s) => s.id === northbeamServiceIds.seo)!;
       expect({ price: svc.price, churn: svc.churn_monthly_base }).toEqual({ price: localSvc.price, churn: localSvc.churn_monthly_base });
       expect({ ...svc.prov, at: null, suggestion_id: null }).toEqual({ ...localSvc.provenance!.price, at: null, suggestion_id: null });
+      expect((await c.query("select name from roles where workspace_id = $1", [ws])).rows.map((r) => r.name).sort()).toEqual(
+        model.roles.map((r) => r.name).sort(),
+      );
       expect((await one(c, "select growth_monthly::float8 as g from demand_settings where workspace_id = $1", [ws])).g).toBe(model.demand!.growth_monthly);
       expect((await c.query("select month, multiplier::float8 from seasonality where workspace_id = $1", [ws])).rows).toEqual(
         model.seasonality.map((m) => ({ month: m.month, multiplier: m.multiplier })),
       );
     });
+  });
+});
+
+describe("suggesting roles", () => {
+  it("accepts a new role and a rename, and refuses a duplicate or a column that can't be suggested", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      const created = await suggest(c, "roles", null, { set: { name: "Copywriter" } });
+      const [r] = await review(c, [created.id], "accept");
+      expect(r!.status).toBe("accepted");
+      const row = await one(c, "select id, name, active, provenance from roles where id = $1", [r!.applied!.target_id]);
+      expect(row).toMatchObject({ name: "Copywriter", active: true, provenance: {} });
+      expect(r!.applied).toEqual({ target_id: row.id, before: null, after: { name: "Copywriter" } });
+
+      const renamed = await suggest(c, "roles", northbeamRoleIds.fin!, { set: { name: "Finance and admin" } });
+      const [r2] = await review(c, [renamed.id], "accept");
+      expect(r2!.status).toBe("accepted");
+      expect(r2!.applied).toEqual({ target_id: northbeamRoleIds.fin, before: { name: "Finance" }, after: { name: "Finance and admin" } });
+
+      const dup = await suggest(c, "roles", null, { set: { name: "copywriter" } });
+      const [r3] = await review(c, [dup.id], "accept");
+      expect(r3).toMatchObject({ status: "failed", code: "23505" });
+      expect((await one(c, "select status from suggestions where id = $1", [dup.id])).status).toBe("pending");
+
+      const bad = await suggest(c, "roles", northbeamRoleIds.fin!, { set: { headcount: 2 } });
+      const [r4] = await review(c, [bad.id], "accept");
+      expect(r4).toMatchObject({ status: "failed" });
+      expect(r4!.message).toMatch(/can't be suggested/);
+    });
+  });
+
+  it("still refuses a suggestion for any other table", async () => {
+    await expect(
+      db.as(users.editor!.claims, (c) =>
+        c.query("insert into suggestions (workspace_id, target_table, patch) values ($1, 'person_roles', '{\"set\":{}}')", [ws]),
+      ),
+    ).rejects.toThrow(/suggestions_target_table/);
   });
 });
 

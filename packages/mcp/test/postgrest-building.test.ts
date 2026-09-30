@@ -234,6 +234,11 @@ describe.skipIf(!POSTGREST_URL)("MCP process building over PostgREST (drafts onl
     const liveIds = liveBefore.steps.map((s) => s.id);
 
     const editor = await connect(editorToken, options);
+    // A step naming a role that doesn't exist is refused before anything is written: no draft is opened.
+    expect(proc.draft_revision_id).toBeNull();
+    const refused = await call(editor, "import_process", { target: "Sales pipeline", process_json: { steps: [{ name: "Discovery", role: "Astronaut" }] } });
+    expect(refused).toMatchObject({ ok: false, error: { code: "not_found" } });
+    expect((await processRow("Sales pipeline")).draft_revision_id).toBeNull();
     const r = await call<{
       created: boolean;
       draft: { revision_id: string; opened_now: boolean };

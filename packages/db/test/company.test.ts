@@ -178,6 +178,15 @@ describe("describeSuggestion", () => {
     expect(describeSuggestion({ ...s, status: "pending", applied: null }, gone).missing).toBe(true);
   });
 
+  it("describes a new role and a rename", () => {
+    const created = describeSuggestion(suggestion("roles", null, { set: { name: "Copywriter" } }), northbeam());
+    expect(created.subject).toBe("New role Copywriter");
+    expect(created.headline).toMatch(/^Claude suggests adding role Copywriter/);
+    const renamed = describeSuggestion(suggestion("roles", northbeamRoleIds.fin, { set: { name: "Finance and admin" } }), northbeam());
+    expect(renamed.headline).toMatch(/renaming to/);
+    expect(renamed.headline).toMatch(/was Finance/);
+  });
+
   it("names company settings, demand growth and a seasonality month", () => {
     const m = northbeam();
     expect(describeSuggestion(suggestion("workspaces", null, { set: { hours_per_week: 37.5 } }), m).headline).toBe(
@@ -193,6 +202,13 @@ describe("describeSuggestion", () => {
 });
 
 describe("applySuggestion", () => {
+  it("creates a role with the database's defaults", () => {
+    const { model, applied } = apply(northbeam(), suggestion("roles", null, { set: { name: "Copywriter" } }));
+    const role = model.roles.find((r) => r.name === "Copywriter")!;
+    expect(role).toMatchObject({ color: null, default_cost_rate: 0, headcount: 1, ongoing_hours_per_client_week: 0, active: true, provenance: {} });
+    expect(applied).toEqual({ target_id: role.id, before: null, after: { name: "Copywriter" } });
+  });
+
   it("applies with provenance from the evidence, leaving other values alone", () => {
     const evidence = [{ source_id: northbeamSourceIds.salesNotes, speaker: "Priya Shah", quote: "fifteen a week", value: 15 }];
     const s = suggestion("lead_sources", northbeamLeadSourceIds.ads, { set: { volume_week: 15 } }, { evidence, note: "Weekly figure" });

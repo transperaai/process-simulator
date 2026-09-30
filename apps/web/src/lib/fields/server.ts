@@ -53,6 +53,8 @@ function errorOutcome(error: { code?: string; message: string }): SaveOutcome<ne
   // Check constraints (e.g. FTE above 1.5, an end date before the start date).
   if (error.code === "23514") return { status: "error", message: "That value isn't allowed here." };
   if (error.code === "42501") return { status: "error", message: "You don't have permission to change this." };
+  // A rename onto a name another row of the workspace already has (roles).
+  if (error.code === "23505") return { status: "error", message: "That name is already taken." };
   return { status: "error", message: "Couldn't save. Try again." };
 }
 

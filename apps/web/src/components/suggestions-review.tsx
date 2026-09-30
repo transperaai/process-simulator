@@ -182,7 +182,7 @@ export function SuggestionsView({ suggestions, model, sources, canEdit, review, 
       {shown.length === 0 ? (
         <p className="rounded-token border border-dashed border-line p-4 text-fg-2">
           {filter === "pending"
-            ? "Nothing waiting for review. When Claude changes people, clients, services, demand or company settings over MCP, its suggestions appear here."
+            ? "Nothing waiting for review. When Claude changes people, clients, services, roles, demand or company settings over MCP, its suggestions appear here."
             : "None."}
         </p>
       ) : (

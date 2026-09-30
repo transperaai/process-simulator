@@ -42,6 +42,7 @@ export const SUGGESTION_COLUMNS: Record<SuggestionTarget, readonly string[]> = {
   lead_sources: ["name", "volume_week", "conversion_to_qualified"],
   seasonality: ["month", "multiplier"],
   demand_settings: ["growth_monthly"],
+  roles: ["name"],
 };
 
 /** Columns that name or describe a row rather than hold a value: no provenance. */
@@ -106,6 +107,7 @@ const NOUN: Record<SuggestionTarget, string> = {
   lead_sources: "lead source",
   seasonality: "seasonality",
   demand_settings: "demand",
+  roles: "role",
 };
 
 type Row = Record<string, unknown> & { provenance?: ProvenanceMap };
@@ -130,6 +132,8 @@ export function suggestionTarget(s: Pick<SuggestionRow, "target_table" | "target
       return (model.clients.find((r) => r.id === s.target_id) as unknown as Row) ?? null;
     case "lead_sources":
       return (model.leadSources.find((r) => r.id === s.target_id) as unknown as Row) ?? null;
+    case "roles":
+      return (model.roles.find((r) => r.id === s.target_id) as unknown as Row) ?? null;
   }
 }
 
@@ -291,6 +295,7 @@ const DEFAULTS = {
   clients: { start_date: null, mrr: 0, health: null, notes: null, active: true },
   lead_sources: { volume_week: 0, conversion_to_qualified: 1 },
   seasonality: { multiplier: 1 },
+  roles: { color: null, default_cost_rate: 0, headcount: 1, ongoing_hours_per_client_week: 0, active: true },
 } as const;
 
 /**
@@ -334,7 +339,7 @@ export function applySuggestion(model: CompanyModel, s: SuggestionRow, opts: App
     };
   }
 
-  type Keyed = "services" | "people" | "clients" | "leadSources" | "seasonality";
+  type Keyed = "services" | "people" | "clients" | "leadSources" | "seasonality" | "roles";
   const key: Keyed = table === "lead_sources" ? "leadSources" : (table as Keyed);
   const rows = model[key] as unknown as (Record<string, unknown> & { id: string; provenance?: ProvenanceMap })[];
   let target = s.target_id;

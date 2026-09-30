@@ -203,7 +203,7 @@ services            id, workspace_id, name, pricing_model (retainer|one_off|hour
                     churn_monthly_base, churn_health_sensitivity default 3 (estimated), mix_share, entry_process_id,
                     path_tags text[], fallback_ongoing_load jsonb ({role_id: hours_per_month}), active    (changed)
 service_servicing   service_id, process_id, recurrence jsonb ({every: week|month, times: n} | {poisson_per_month: r})  (new)
-roles               id, workspace_id, name, color, default_cost_rate
+roles               id, workspace_id, name, color, default_cost_rate, active (new), provenance (new)
 people              id, workspace_id, name, email, fte, capacity_hours_week, cost_rate, active, start_date, end_date, notes
 person_roles        person_id, role_id
 person_skills       person_id, step_id, capacity_factor numeric default 1.0, provenance jsonb   (changed: renamed from efficiency)
@@ -398,6 +398,7 @@ set_company({hours_per_week?, currency?, overhead_monthly?, ...})        -> sugg
 upsert_service({name, pricing_model, price, tenure_months?, churn_monthly_base?, mix_share?, servicing?}) -> suggestion
 upsert_person({name, roles[], fte?, capacity_hours_week?, cost_rate?, skills?, leave?})                   -> suggestion
 upsert_client({name, services[], mrr?, start_date?, assignments?: {role: person}, health?, evidence?})    -> suggestion (new)
+upsert_role({name, rename?, create?, evidence?, note?})                                                   -> suggestion (new)
 set_demand({lead_sources?, seasonality?, growth_monthly?})                                                -> suggestion
 list_suggestions({status?})                                                                               (new)
 

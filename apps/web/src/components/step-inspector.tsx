@@ -38,6 +38,7 @@ import type { ProcessEditor } from "@/lib/editor/editor";
 import { readField, type Edit, type Scalar } from "@/lib/editor/ops";
 import type { SaveOutcome, Saver } from "@/lib/fields/field-controller";
 import { formatHours } from "@/lib/format";
+import { selectableRoles } from "@/lib/roles";
 
 const DIST_OPTIONS: SelectOption[] = [
   { value: "lognormal", label: "Varies (lognormal)" },
@@ -112,7 +113,7 @@ export function StepInspector({
     value: k,
     label: KIND_LABELS[k],
   }));
-  const roleOptions = bundle.roles.map((r) => ({ value: r.id, label: r.name }));
+  const roleOptions = selectableRoles(bundle.roles, [step.role_id]).map((r) => ({ value: r.id, label: r.name }));
   const roleNames = new Map(bundle.roles.map((r) => [r.id, r.name]));
   const personOptions = bundle.people
     .filter((p) => p.active || p.id === step.person_id)

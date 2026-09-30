@@ -15,6 +15,14 @@ export async function resolveMyAccess(): Promise<number> {
   return data.length;
 }
 
+/** Whether the signed-in user is an agency admin (may create workspaces). */
+export async function isAgencyAdmin(): Promise<boolean> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("is_agency_admin");
+  if (error) throw error;
+  return data === true;
+}
+
 export interface WorkspaceMember {
   membershipId: string;
   userId: string;

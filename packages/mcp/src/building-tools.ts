@@ -320,12 +320,19 @@ async function loadSources(ctx: ToolContext, ws: WorkspaceRef): Promise<Lookups[
   return rows.map((s) => ({ ...s, name: s.title }));
 }
 
-async function lookupsFor(ctx: ToolContext, e: Editing, needsSources: boolean): Promise<Lookups> {
+type Named = { id: string; name: string };
+
+async function lookupsFor(
+  ctx: ToolContext,
+  ws: WorkspaceRef,
+  from: { roles: readonly Named[]; people: readonly Named[]; steps: StepRow[] },
+  needsSources: boolean,
+): Promise<Lookups> {
   return {
-    roles: e.bundle.roles.map((r) => ({ id: r.id, name: r.name })),
-    people: e.bundle.people.map((p) => ({ id: p.id, name: p.name })),
-    sources: needsSources ? await loadSources(ctx, e.ws) : [],
-    steps: e.bundle.steps,
+    roles: from.roles.map((r) => ({ id: r.id, name: r.name })),
+    people: from.people.map((p) => ({ id: p.id, name: p.name })),
+    sources: needsSources ? await loadSources(ctx, ws) : [],
+    steps: from.steps,
     warnings: [],
   };
 }
@@ -616,7 +623,7 @@ export function registerBuildingTools(server: McpServer, ctx: ToolContext): void
         if (clash) throw new ToolError("name_taken", `'${e.proc.name}' already has a step called '${clash.name}'; use update_step to change it`, [{ id: clash.id, name: clash.name }]);
         const after = args.after ? resolveName(bundle.steps, args.after, "step", where) : null;
         const before = args.before ? resolveName(bundle.steps, args.before, "step", where) : null;
-        const l = await lookupsFor(ctx, e, !!args.evidence?.length);
+        const l = await lookupsFor(ctx, e.ws, e.bundle, !!args.evidence?.length);
         const fields = toFields(args, l, where);
         const id = newId();
         if (args.rework_to !== undefined) fields.rework_to_step_id = args.rework_to === null ? null : resolveName(bundle.steps, args.rework_to, "step", where).id;
@@ -717,7 +724,7 @@ export function registerBuildingTools(server: McpServer, ctx: ToolContext): void
           const clash = bundle.steps.find((s) => s.id !== row.id && normalizeName(s.name) === normalizeName(args.name!));
           if (clash) throw new ToolError("name_taken", `'${e.proc.name}' already has a step called '${clash.name}'`, [{ id: clash.id, name: clash.name }]);
         }
-        const l = await lookupsFor(ctx, e, !!args.evidence?.length);
+        const l = await lookupsFor(ctx, e.ws, e.bundle, !!args.evidence?.length);
         const fields = toFields(args, l, where);
         if (args.rework_to !== undefined) fields.rework_to_step_id = args.rework_to === null ? null : resolveName(bundle.steps, args.rework_to, "step", where).id;
         const change = buildStepChange(row, fields, e.stamp, { outcome: nextOutcome(bundle.steps.filter((s) => s.id !== row.id)) });
@@ -972,7 +979,8 @@ export function registerBuildingTools(server: McpServer, ctx: ToolContext): void
         "Write a whole process graph (steps with numbers, evidence and reasoning, and edges) into a draft. Without `target`, creates a new " +
         "process as a draft. With `target`, writes into that process's draft (opening one if needed): steps are matched by stable id, then by " +
         "name, and keep their ids; values someone entered or measured are never overwritten but flagged as conflicts; a step whose edges are " +
-        "listed gets exactly those edges. Returns the diff against live, the conflicts and the checklist of assumptions to confirm.",
+        "listed gets exactly those edges. Names and the graph are checked before anything is written, so a failed call creates no process and " +
+        "opens no draft. Returns the diff against live, the conflicts and the checklist of assumptions to confirm.",
       inputSchema: {
         process_json: z
           .union([processJsonArg, z.string().max(2_000_000)])
@@ -996,31 +1004,56 @@ export function registerBuildingTools(server: McpServer, ctx: ToolContext): void
           json = r.data;
         } else json = args.process_json;
         const ws = await resolveWorkspace(ctx, args.workspace, assumptions);
+        const { data: canEdit, error: accessError } = await ctx.db.rpc("can_edit_workspace", { ws: ws.id });
+        if (accessError) throw writeError(accessError, "edit processes");
+        if (canEdit !== true) throw new ToolError("forbidden", `You don't have permission to edit processes in '${ws.name}' (editors and owners can).`);
 
-        let proc: ProcessWithDraft;
-        let draft: Draft;
+        let target: ProcessWithDraft | null = null;
+        let create: Parameters<typeof createProcessWithDraft>[2] | null = null;
         if (args.target) {
-          proc = await resolveProcess(ctx, ws, args.target, assumptions);
-          const ignored = (["name", "kind", "entity_name", "description"] as const).filter((k) => json[k] !== undefined && json[k] !== (proc as unknown as Record<string, unknown>)[k]);
+          target = await resolveProcess(ctx, ws, args.target, assumptions);
+          const ignored = (["name", "kind", "entity_name", "description"] as const).filter((k) => json[k] !== undefined && json[k] !== (target as unknown as Record<string, unknown>)[k]);
           if (ignored.length) assumptions.push(`process_json's ${ignored.join(", ")} ${ignored.length === 1 ? "was" : "were"} ignored: they belong to the process, not its draft.`);
-          draft = await openDraft(ctx, proc);
-          proc = { ...proc, draft_revision_id: draft.revision_id };
         } else {
           if (!json.name) throw new ToolError("invalid_input", "process_json needs a name for a new process (or pass `target` to write into an existing one).");
           const kind = json.kind ?? "pipeline";
           if (!json.kind) assumptions.push("kind defaulted to pipeline.");
           const entity = json.entity_name ?? (kind === "pipeline" ? "lead" : "item");
           if (!json.entity_name) assumptions.push(`entity_name defaulted to '${entity}'.`);
-          ({ proc, draft } = await createProcessWithDraft(ctx, ws, { name: json.name, kind, entity_name: entity, description: json.description?.trim() || null, source: "import" }));
+          create = { name: json.name, kind, entity_name: entity, description: json.description?.trim() || null, source: "import" };
         }
+
+        const stamp = await stampOf(ctx);
+        const planFor = async (from: Graph & { roles: readonly Named[]; people: readonly Named[]; retired?: StepRow[] }, owner: StepOwner) => {
+          const l = await lookupsFor(ctx, ws, from, hasCitations(json.steps));
+          const steps: ImportStep[] = withTopLevelReasoning(json.steps, json.assumptions).map((s) => {
+            const { id, name, rework_to, ...rest } = s;
+            return { ...toFields({ name, ...rest }, l, ` (step '${name}')`), ...(id !== undefined ? { id } : {}), name, ...(rework_to !== undefined ? { rework_to } : {}) };
+          });
+          const plan = planImport({ steps, edges: (json.edges ?? []) as ImportEdge[], remove_missing: json.remove_missing }, { ...from, retired: from.retired ?? [] }, owner, stamp, { newId });
+          return { l, plan };
+        };
+
+        // Check everything before writing anything, so a name that doesn't resolve or an invalid graph leaves no new
+        // process or newly opened draft behind: plan against what the draft will be (the open draft, else a copy of live,
+        // else empty), then create or open it and plan again against the real rows.
+        const current = target?.draft_revision_id ?? target?.live_revision_id;
+        await planFor(
+          current
+            ? await loadProcessBundle(ctx.db, ws, target!, current)
+            : { steps: [], edges: [], roles: check(await ctx.db.from("roles").select("id, name").eq("workspace_id", ws.id)), people: check(await ctx.db.from("people").select("id, name").eq("workspace_id", ws.id)) },
+          { revision_id: current ?? newId(), workspace_id: ws.id, process_id: target?.id ?? newId() },
+        );
+
+        let proc: ProcessWithDraft;
+        let draft: Draft;
+        if (target) {
+          draft = await openDraft(ctx, target);
+          proc = { ...target, draft_revision_id: draft.revision_id };
+        } else ({ proc, draft } = await createProcessWithDraft(ctx, ws, create!));
         const bundle = await loadDraft(ctx, ws, proc, draft);
-        const e: Editing = { ws, proc, draft, bundle, owner: { revision_id: draft.revision_id, workspace_id: ws.id, process_id: proc.id }, stamp: await stampOf(ctx) };
-        const l = await lookupsFor(ctx, e, hasCitations(json.steps));
-        const steps: ImportStep[] = withTopLevelReasoning(json.steps, json.assumptions).map((s) => {
-          const { id, name, rework_to, ...rest } = s;
-          return { ...toFields({ name, ...rest }, l, ` (step '${name}')`), ...(id !== undefined ? { id } : {}), name, ...(rework_to !== undefined ? { rework_to } : {}) };
-        });
-        const plan = planImport({ steps, edges: (json.edges ?? []) as ImportEdge[], remove_missing: json.remove_missing }, { ...bundle, retired: bundle.retired ?? [] }, e.owner, e.stamp, { newId });
+        const e: Editing = { ws, proc, draft, bundle, owner: { revision_id: draft.revision_id, workspace_id: ws.id, process_id: proc.id }, stamp };
+        const { l, plan } = await planFor(bundle, e.owner);
         assumptions.push(...plan.assumptions);
         const editConflicts = await applyPlan(ctx, draft.revision_id, plan);
 

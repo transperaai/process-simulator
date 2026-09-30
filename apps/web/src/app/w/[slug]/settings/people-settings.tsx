@@ -6,6 +6,7 @@ import { ChecklistField, DateField, NumberField, TextField, ToggleField } from "
 import type { PersonDetail, WorkspaceSettingsData } from "@/lib/data";
 import type { SaveOutcome, Saver } from "@/lib/fields/field-controller";
 import { formatNumber } from "@/lib/format";
+import { selectableRoles } from "@/lib/roles";
 import {
   addLeave,
   createPerson,
@@ -129,7 +130,7 @@ function AddPerson({ data }: { data: WorkspaceSettingsData }) {
         <span className="text-xs font-medium text-fg-2">Role</span>
         <select name="role_id" className="rounded-token border border-line bg-panel px-2 py-1.5">
           <option value="">No role yet</option>
-          {data.roles.map((r) => (
+          {selectableRoles(data.roles).map((r) => (
             <option key={r.id} value={r.id}>
               {r.name}
             </option>
@@ -230,7 +231,7 @@ function PersonRow({ person: p, data }: { person: PersonDetail; data: WorkspaceS
             label="Roles"
             value={roleIds}
             save={(base, next) => savePersonSet(p.id, p.workspace_id, "roles", [...base], [...next])}
-            options={data.roles.map((r) => ({ id: r.id, label: r.name }))}
+            options={selectableRoles(data.roles, roleIds).map((r) => ({ id: r.id, label: r.name }))}
             emptyLabel="no roles"
             disabled={disabled}
           />

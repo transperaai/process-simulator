@@ -353,12 +353,12 @@ Port `ProcessSim` from the prototype and fix the following, each with a failing 
 5. Resources pooled by role `count` with a hard-coded 0.08 floor → dispatch to named people; floor configurable (§6.3.4).
 6. Starts empty with no warm-up → §6.3.1.
 
-The v0.2 expectations for Northbeam (strategist ~91%, ~7 wins/quarter at seed 1) will move once fix 2 lands. Re-baseline the golden values after the fixes rather than matching the prototype exactly.
+Northbeam is re-baselined after the fixes rather than matched to the prototype: in place of v0.2's "strategist ~91%, ~7 wins/quarter at seed 1", engine 1.0.0 gives strategist 84.5% (range 73–99%) and 10.4 wins a quarter (range 7–14) at 7 leads a week, seed 1, 30 replications. `docs/engine-versioning.md` has the full values and why they differ (issue #22).
 
 ### 6.9 Verification (all in CI on every push)
 1. **Queueing-theory checks**: M/M/1, M/M/c and a Jackson network of steps in series must match analytic utilisation, queue length and wait within tolerance (~10 test models).
 2. **Behaviour checks**: more leads → higher bottleneck utilisation; +1 person at the bottleneck never lowers throughput; overload → more missed touchpoints → lower health → higher churn; same seed → identical output in Node and browser; warm-up removes empty-start bias.
-3. **Golden models**: Northbeam plus a second, messier sample agency (overload, overtime, named client roster, health-driven churn). Key outputs snapshotted; any change fails CI until the new baseline is approved, and `engine_version` is bumped.
+3. **Golden models**: Northbeam plus a second, messier sample agency (overload, overtime, named client roster, health-driven churn). Key outputs snapshotted; any change fails CI until the new baseline is approved, and `engine_version` is bumped. Built in #22: Larkspur Creative is the second agency; the workflow is in `docs/engine-versioning.md`.
 
 ---
 

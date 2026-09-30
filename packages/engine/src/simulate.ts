@@ -53,6 +53,7 @@ import type {
   TraceSegment,
 } from "./model";
 import { expo, lognormal, lognormalSampler, StreamLabels, Streams, triangular, type Rng } from "./random";
+import { ENGINE_VERSION } from "./version";
 
 /** The trace of every entity in a run that keeps none: never written to. */
 const NO_TRACE: TraceSegment[] = [];
@@ -1698,6 +1699,7 @@ export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationRes
     cycleMean: runs.map((r) => (r.cycle.length ? r.cycle.reduce((a, b) => a + b, 0) / r.cycle.length : 0)),
   };
   return {
+    engineVersion: ENGINE_VERSION,
     kpi,
     samples,
     seed,

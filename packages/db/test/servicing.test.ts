@@ -141,10 +141,10 @@ describe("service_servicing (database)", () => {
       { name: "Monthly report", kind: "servicing", live: true },
       { name: "Client check-in", kind: "servicing", live: true },
     ]);
-    const links = (await db.client.query("select service_id, process_id, recurrence, sla_hours::float8 as sla from service_servicing order by id")).rows;
+    const links = (await db.client.query("select service_id, process_id, recurrence, sla_hours::float8 as sla from service_servicing where workspace_id = $1 order by id", [ws])).rows;
     expect(links).toHaveLength(4);
     expect(links[0]).toEqual({ service_id: northbeamServiceIds.seo, process_id: report, recurrence: { every: "month", times: 1 }, sla: 40 });
-    const prov = (await db.client.query("select provenance from service_servicing limit 1")).rows[0].provenance;
+    const prov = (await db.client.query("select provenance from service_servicing where workspace_id = $1 limit 1", [ws])).rows[0].provenance;
     expect(prov.recurrence.source).toBe("estimated");
   });
 

@@ -6,12 +6,14 @@
   "exports": {
     ".": "./src/index.ts",
     "./northbeam-roster": "./src/fixtures/northbeam-roster.ts",
-    "./northbeam-servicing": "./src/fixtures/northbeam-servicing.ts"
+    "./northbeam-servicing": "./src/fixtures/northbeam-servicing.ts",
+    "./larkspur-data": "./src/fixtures/larkspur-data.ts"
   },
   "scripts": {
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "golden:approve": "node scripts/golden-approve.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.4",

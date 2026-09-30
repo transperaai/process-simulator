@@ -2,7 +2,7 @@ import { build } from "esbuild";
 import { chromium, type Browser } from "playwright-core";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { northbeamModel, northbeamWithClients, northbeamWithServices, simulate } from "../src";
+import { larkspurModel, northbeamModel, northbeamWithClients, northbeamWithServices, northbeamWithServicing, simulate } from "../src";
 import { largeModel } from "./fixtures/large-model";
 
 // The same model and seed must give byte-identical results in Node and in a
@@ -75,6 +75,17 @@ describe("determinism across hosts", () => {
       ...northbeamWithServices(),
       demand: { seasonality: [1.3, 1.2, 1.1, 1, 0.9, 0.8, 0.6, 0.7, 1.1, 1.2, 1.1, 0.5], growthMonthly: 0.03, startMonth: 8.93 },
     };
+    expect(await runInWorker(model, 30, 1)).toBe(JSON.stringify(simulate(model, 30, 1)));
+  }, 60_000);
+
+  // The golden models (golden.test.ts) are compared exactly, which relies on this.
+  it("Northbeam as seeded, with servicing: Node and a browser worker agree byte for byte", async () => {
+    const model = northbeamWithServicing();
+    expect(await runInWorker(model, 30, 1)).toBe(JSON.stringify(simulate(model, 30, 1)));
+  }, 60_000);
+
+  it("Larkspur, the messier golden agency: Node and a browser worker agree byte for byte", async () => {
+    const model = larkspurModel();
     expect(await runInWorker(model, 30, 1)).toBe(JSON.stringify(simulate(model, 30, 1)));
   }, 60_000);
 

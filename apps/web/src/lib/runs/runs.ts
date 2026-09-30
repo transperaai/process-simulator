@@ -2,6 +2,7 @@
 // what saving sends, checking it on the server, and the default name.
 
 import type { RunResults } from "@transpera-flow/db";
+import { ENGINE_VERSION } from "@transpera-flow/engine";
 
 /** What the process page sends to save the run it shows. */
 export interface SaveRunInput {
@@ -13,6 +14,11 @@ export interface SaveRunInput {
   seed: number;
   reps: number;
   durationMs: number | null;
+  /**
+   * The engine version that produced the results (`SimulationResult.engineVersion`;
+   * issue #22). Null only from a page loaded before runs recorded it.
+   */
+  engineVersion: string | null;
 }
 
 export type SaveRunResult = { status: "ok"; id: string } | { status: "error"; message: string };
@@ -23,6 +29,7 @@ export interface RunSaver {
 
 export const MAX_RUN_NAME = 200;
 
+const ENGINE_VERSION_FORMAT = /^\d{1,4}\.\d{1,4}\.\d{1,4}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isStat = (v: unknown): boolean =>
   !!v && typeof v === "object" && ["mean", "p10", "p90"].every((k) => Number.isFinite((v as Record<string, unknown>)[k]));
@@ -54,6 +61,9 @@ export function parseSaveRun(input: unknown): { ok: true; value: SaveRunInput } 
   if (!statsOk) return { ok: false, message: "The run's results aren't complete." };
   if (!Number.isInteger(i.seed) || !Number.isInteger(i.reps) || (i.reps as number) < 1) return { ok: false, message: "The run's settings aren't valid." };
   const durationMs = Number.isFinite(i.durationMs) ? Math.round(i.durationMs as number) : null;
+  if (i.engineVersion != null && (typeof i.engineVersion !== "string" || !ENGINE_VERSION_FORMAT.test(i.engineVersion))) {
+    return { ok: false, message: "The run's engine version isn't valid." };
+  }
   return {
     ok: true,
     value: {
@@ -64,6 +74,21 @@ export function parseSaveRun(input: unknown): { ok: true; value: SaveRunInput } 
       seed: i.seed as number,
       reps: i.reps as number,
       durationMs,
+      engineVersion: typeof i.engineVersion === "string" ? i.engineVersion : null,
     },
+  };
+}
+
+/**
+ * What to say about the engine a saved run used (issue #22): its version, and
+ * whether the engine has changed since, in which case running the same model
+ * again can give different numbers.
+ */
+export function runEngineNote(version: string | null, current: string = ENGINE_VERSION): { label: string; changed: string | null } {
+  if (!version) return { label: "engine version not recorded", changed: null };
+  if (version === current) return { label: `engine ${version}`, changed: null };
+  return {
+    label: `engine ${version}`,
+    changed: `Saved with engine ${version}; the engine is now ${current}. Its behaviour has changed since, so running the same model again can give different numbers.`,
   };
 }

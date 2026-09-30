@@ -70,7 +70,7 @@ export function PresenceBar({
       <section aria-label="Who else is here" className="flex min-w-0 items-center gap-2 text-xs">
         <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground" title={statusTitle(state.status)}>
           <span aria-hidden className={`inline-block size-2 rounded-full ${state.status === "live" ? "bg-good" : state.status === "connecting" ? "bg-warn" : "bg-crit"}`} />
-          <span className="sr-only xl:not-sr-only">{statusText}</span>
+          <span className="sr-only 2xl:not-sr-only">{statusText}</span>
         </span>
         <ul aria-label="People viewing this process" className="flex shrink-0 items-center -space-x-1.5">
           {shown.map((p) => (

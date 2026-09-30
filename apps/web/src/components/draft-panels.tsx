@@ -113,7 +113,7 @@ export function DraftBar({
           Live · r{liveNumber}
         </Badge>
       )}
-      <p title={status} className="order-last min-w-0 basis-full truncate text-xs text-muted-foreground xl:order-none xl:basis-auto xl:flex-1" aria-live="polite">
+      <p title={status} className="order-last min-w-0 basis-full truncate text-xs text-muted-foreground xl:order-none xl:basis-0 xl:flex-1" aria-live="polite">
         {status}
       </p>
       {hasDraft && (
@@ -164,7 +164,7 @@ export function DraftBar({
       )}
 
       {confirming === "publish" && (
-        <div role="alertdialog" aria-label="Publish the draft" className="order-last flex basis-full flex-col gap-2 rounded-token border border-accent bg-accent-soft p-2 text-xs">
+        <div role="alertdialog" aria-label="Publish the draft" className="order-last flex max-h-[45svh] basis-full flex-col gap-2 overflow-y-auto rounded-token border border-accent bg-accent-soft p-2 text-xs">
           {estimates.length ? (
             <>
               <p>

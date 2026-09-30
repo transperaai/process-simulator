@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AppHeader } from "@/components/app-header";
+import { ShellHeader } from "@/components/shell/shell-header";
 import { LiveExplainRun, type ExplanationView } from "@/components/narration";
 import { EngineChangedNote, ModelChangedBanner, RunResultsTiles, RunSavedLine } from "@/components/runs-view";
 import { canEditWorkspace } from "@/lib/access-data";
@@ -22,26 +21,20 @@ export default async function RunPage(props: PageProps<"/w/[slug]/runs/[id]">) {
     ? { source: cached.source, paragraphs: cached.paragraphs, fallback: cached.fallback, reason: cached.reason, cached: true, model: cached.model, checked: cached.checked, retried: cached.rejected.length > 0 }
     : null;
   return (
-    <main className="mx-auto w-full max-w-5xl px-4 pb-12">
-      <AppHeader workspace={data.workspace.name} signedIn />
-      <nav className="mt-4 flex gap-4 text-fg-2">
-        <Link href={`/w/${slug}`} className="hover:underline">
-          ← Back to the process
-        </Link>
-        <Link href={`/w/${slug}/runs`} className="hover:underline">
-          All saved runs
-        </Link>
-      </nav>
-      <h1 className="mt-2 text-xl font-bold">{run.name}</h1>
-      <div className="mb-3">
-        <RunSavedLine run={run} />
+    <div>
+      <ShellHeader title="Saved run" />
+      <div className="mx-auto w-full max-w-5xl px-4 pb-12 pt-6">
+        <h1 className="mt-2 text-xl font-bold">{run.name}</h1>
+        <div className="mb-3">
+          <RunSavedLine run={run} />
+        </div>
+        <div className="flex flex-col gap-3">
+          <ModelChangedBanner changes={data.changes} rerunHref={`/w/${slug}`} />
+          <EngineChangedNote version={run.engine_version} />
+          <RunResultsTiles results={run.results} />
+          <LiveExplainRun runId={run.id} initial={initial} canDraft={canEdit} configured={narrationConfigured()} />
+        </div>
       </div>
-      <div className="flex flex-col gap-3">
-        <ModelChangedBanner changes={data.changes} rerunHref={`/w/${slug}`} />
-        <EngineChangedNote version={run.engine_version} />
-        <RunResultsTiles results={run.results} />
-        <LiveExplainRun runId={run.id} initial={initial} canDraft={canEdit} configured={narrationConfigured()} />
-      </div>
-    </main>
+    </div>
   );
 }

@@ -2,13 +2,21 @@
 
 import Link from "next/link";
 import { useActionState, useState } from "react";
+import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import type { ProcessListing } from "@transpera-flow/db";
 import type { CreateProcessResult } from "@/app/w/[slug]/process-actions";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 
 /**
  * The workspace's processes (issue #76): the pipeline and its servicing
  * processes (issue #19), each opening on the canvas, never-published ones in
- * Draft view. Editors can start a new servicing process here.
+ * Draft view. It is the page's heading and the process picker in one: the
+ * current process's name opens the list. Editors can start a new servicing
+ * process from it.
  */
 export function ProcessNav({
   processes,
@@ -24,33 +32,58 @@ export function ProcessNav({
   create?: (prev: CreateProcessResult, form: FormData) => Promise<CreateProcessResult>;
 }) {
   const [adding, setAdding] = useState(false);
+  const here = processes.find((p) => p.id === current);
+  const name = here?.name ?? "Process";
+  if (processes.length <= 1 && !create) return <h1 className="truncate px-1 font-display text-base font-bold">{name}</h1>;
   return (
-    <nav aria-label="Processes" className="mb-3 flex flex-wrap items-center gap-1.5 text-sm">
-      <span className="mr-1 font-mono text-[11px] uppercase tracking-widest text-fg-3">Processes</span>
-      {processes.map((p) => {
-        const here = p.id === current;
-        return (
-          <Link
-            key={p.id}
-            href={hrefs[p.id]!}
-            aria-current={here ? "page" : undefined}
-            className={`rounded-token border px-2 py-0.5 ${here ? "border-accent bg-accent-soft font-semibold" : "border-line bg-panel hover:bg-panel-2"}`}
-          >
-            {p.name}
-            {p.kind === "servicing" && <span className="ml-1.5 text-xs text-fg-3">servicing</span>}
-            {!p.live && <span className="ml-1.5 rounded-token bg-warn-soft px-1 text-xs">not published</span>}
-          </Link>
-        );
-      })}
-      {create &&
-        (adding ? (
-          <NewServicingProcess create={create} onCancel={() => setAdding(false)} />
-        ) : (
-          <button type="button" onClick={() => setAdding(true)} className="rounded-token border border-dashed border-line px-2 py-0.5 text-fg-2 hover:bg-panel-2">
-            + Servicing process
-          </button>
-        ))}
-    </nav>
+    <>
+      <h1 className="min-w-0 text-base">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" className="max-w-full gap-1.5 px-2 font-display text-base font-bold" aria-label={`Process: ${name}. Switch process`}>
+              <span className="truncate">{name}</span>
+              <ChevronsUpDown className="text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-64">
+            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Processes</DropdownMenuLabel>
+            {processes.map((p) => (
+              <DropdownMenuItem key={p.id} asChild>
+                <Link href={hrefs[p.id]!} aria-current={p.id === current ? "page" : undefined}>
+                  <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                  {p.kind === "servicing" && <Badge variant="secondary">servicing</Badge>}
+                  {!p.live && (
+                    <Badge variant="outline" className="border-warn bg-warn-soft text-fg">
+                      not published
+                    </Badge>
+                  )}
+                  {p.id === current && <Check className="text-accent" aria-hidden />}
+                </Link>
+              </DropdownMenuItem>
+            ))}
+            {create && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => setAdding(true)}>
+                  <Plus /> New servicing process…
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </h1>
+      {create && (
+        <Dialog open={adding} onOpenChange={setAdding}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>New servicing process</DialogTitle>
+              <DialogDescription>A recurring process for existing clients, such as a monthly report. It simulates beside the pipeline.</DialogDescription>
+            </DialogHeader>
+            <NewServicingProcess create={create} onCancel={() => setAdding(false)} />
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
   );
 }
 
@@ -63,30 +96,24 @@ function NewServicingProcess({
 }) {
   const [state, action, pending] = useActionState(create, {});
   return (
-    <form action={action} className="flex flex-wrap items-center gap-1.5">
+    <form action={action} className="flex flex-col gap-3">
       <label className="sr-only" htmlFor="new-servicing-name">
         Name of the servicing process
       </label>
-      <input
-        id="new-servicing-name"
-        name="name"
-        required
-        maxLength={120}
-        autoFocus
-        placeholder="e.g. Quarterly review"
-        className="w-48 rounded-token border border-line bg-panel px-2 py-0.5"
-      />
-      <button type="submit" disabled={pending} className="rounded-token bg-accent px-2 py-0.5 font-semibold text-accent-fg disabled:opacity-60">
-        {pending ? "Creating…" : "Create"}
-      </button>
-      <button type="button" onClick={onCancel} className="rounded-token border border-line px-2 py-0.5">
-        Cancel
-      </button>
+      <Input id="new-servicing-name" name="name" required maxLength={120} autoFocus placeholder="e.g. Quarterly review" />
       {state.error && (
-        <p role="alert" className="w-full text-crit">
+        <p role="alert" className="text-destructive">
           {state.error}
         </p>
       )}
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={pending}>
+          {pending ? "Creating…" : "Create"}
+        </Button>
+      </DialogFooter>
     </form>
   );
 }

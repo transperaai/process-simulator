@@ -373,7 +373,7 @@ export function AssumptionChecklist({
   const conflicts = items.filter((i) => i.kind === "conflict").length;
   const assumptions = items.length - conflicts;
   return (
-    <section aria-label="Assumptions to confirm" className="flex max-h-96 flex-col gap-2 overflow-y-auto rounded-token border border-line bg-panel p-3 text-xs shadow-token">
+    <section aria-label="Assumptions to confirm" className="flex flex-col gap-2 rounded-token border border-line bg-panel p-3 text-xs shadow-token">
       <h2 className="text-sm font-bold">
         To confirm ({[conflicts && `${conflicts} conflict${conflicts === 1 ? "" : "s"}`, assumptions && `${assumptions} assumption${assumptions === 1 ? "" : "s"}`].filter(Boolean).join(", ")})
       </h2>

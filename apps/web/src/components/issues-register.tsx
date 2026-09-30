@@ -203,7 +203,7 @@ export function IssuesRegister({
             : "No issues match these filters."}
         </p>
       ) : (
-        <ul className={`flex flex-col gap-2 ${layout === "rail" ? "max-h-[40rem] overflow-y-auto pr-1" : ""}`}>
+        <ul className="flex flex-col gap-2">
           {shown.map((e) => (
             <IssueItem
               key={entryView(e).id}

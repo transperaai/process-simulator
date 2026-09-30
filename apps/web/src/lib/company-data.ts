@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import {
   changesSinceRun,
   loadCompanyModel,
@@ -99,7 +100,7 @@ export async function loadSuggestionsPage(slug: string): Promise<SuggestionsPage
 }
 
 /** How many suggestions wait for review (for the workspace nav). */
-export async function pendingSuggestionCount(workspaceId: string): Promise<number> {
+export const pendingSuggestionCount = cache(async (workspaceId: string): Promise<number> => {
   const supabase = await createClient();
   const { count, error } = await supabase
     .from("suggestions")
@@ -108,7 +109,7 @@ export async function pendingSuggestionCount(workspaceId: string): Promise<numbe
     .eq("status", "pending");
   if (error) throw error;
   return count ?? 0;
-}
+});
 
 export interface RunsPageData {
   workspace: WorkspaceHead;

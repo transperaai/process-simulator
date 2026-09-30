@@ -163,120 +163,122 @@ export function ScenarioPanel({
   };
 
   return (
-    <div className="grid gap-3 lg:grid-cols-[22rem_1fr]">
-      <LeverPanel
-        levers={levers}
-        values={values}
-        currency={currency}
-        status={status}
-        onChange={(path, v) =>
-          setValues((prev) => {
-            const next = { ...prev };
-            if (v === undefined) delete next[path];
-            else next[path] = v;
-            return next;
-          })
-        }
-        onReset={() => setValues({})}
-      />
-      <div ref={compareRef} className="flex min-w-0 scroll-mt-4 flex-col gap-3">
-        {fixScenario && stackIds.includes(fixScenario.id) && (
-          <p className="flex flex-wrap items-center gap-2 rounded-token border border-accent bg-accent-soft px-3 py-2 text-sm" data-running-fix>
-            <span>
-              Running the suggested fix “{fixScenario.name}” from the issues register (not a saved scenario).
-            </span>
-            <button
-              type="button"
-              className="rounded-token border border-line bg-panel px-2 py-0.5 text-xs"
-              onClick={() => setStackIds((ids) => ids.filter((id) => id !== fixScenario.id))}
-            >
-              Clear
-            </button>
-          </p>
-        )}
-        <CompareView
-          comparison={comparison}
-          headline={headline}
-          roleNames={roleNames}
-          people={people}
+    <div className="@container">
+      <div className="grid gap-3 @4xl:grid-cols-[22rem_1fr]">
+        <LeverPanel
+          levers={levers}
+          values={values}
           currency={currency}
-          hoursPerWeek={model.hoursPerWeek}
-          horizonWeeks={model.horizonWeeks}
-          running={Boolean(scenarioModel) && sim.status === "running"}
-          notes={notes}
-          robustness={
-            <RobustnessCheck
-              model={model}
-              scenario={patches}
-              provenance={provenance}
-              subject={subject.subject}
-              plural={subject.plural}
-              roleNames={roleNames}
-              currency={currency}
-            />
+          status={status}
+          onChange={(path, v) =>
+            setValues((prev) => {
+              const next = { ...prev };
+              if (v === undefined) delete next[path];
+              else next[path] = v;
+              return next;
+            })
           }
+          onReset={() => setValues({})}
         />
-        <ScenarioLibrary
-          scenarios={scenarios}
-          model={model}
-          stack={stackIds.filter((id) => scenarios.some((s) => s.id === id))}
-          problems={problems}
-          retired={retired}
-          canEdit={canEdit}
-          leverCount={moved.length}
-          busy={busy}
-          error={error}
-          onToggle={(id) => setStackIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]))}
-          onClear={() => setStackIds([])}
-          onSave={async (name, description) => {
-            // The levers were set on top of the applied scenarios, so the new
-            // scenario joins the end of the stack and the view doesn't change.
-            const saved = await create({ name, description, patch: moved, parent_scenario_id: null });
-            if (!saved) return false;
-            setStackIds((ids) => [...ids, saved.id]);
-            setValues({});
-            return true;
-          }}
-          onRepoint={async (id, index, targetId) => {
-            const scenario = scenarios.find((s) => s.id === id);
-            if (!scenario) return;
-            setBusy(true);
-            setError(null);
-            try {
-              const r = await store.repoint(scenario, repointPatch(scenario.patch, index, targetId));
-              if (r.status === "error") return setError(r.message);
-              setScenarios((list) => list.map((s) => (s.id === id ? r.scenario : s)));
-            } catch {
-              setError("Couldn't save. Try again.");
-            } finally {
-              setBusy(false);
+        <div ref={compareRef} className="flex min-w-0 scroll-mt-4 flex-col gap-3">
+          {fixScenario && stackIds.includes(fixScenario.id) && (
+            <p className="flex flex-wrap items-center gap-2 rounded-token border border-accent bg-accent-soft px-3 py-2 text-sm" data-running-fix>
+              <span>
+                Running the suggested fix “{fixScenario.name}” from the issues register (not a saved scenario).
+              </span>
+              <button
+                type="button"
+                className="rounded-token border border-line bg-panel px-2 py-0.5 text-xs"
+                onClick={() => setStackIds((ids) => ids.filter((id) => id !== fixScenario.id))}
+              >
+                Clear
+              </button>
+            </p>
+          )}
+          <CompareView
+            comparison={comparison}
+            headline={headline}
+            roleNames={roleNames}
+            people={people}
+            currency={currency}
+            hoursPerWeek={model.hoursPerWeek}
+            horizonWeeks={model.horizonWeeks}
+            running={Boolean(scenarioModel) && sim.status === "running"}
+            notes={notes}
+            robustness={
+              <RobustnessCheck
+                model={model}
+                scenario={patches}
+                provenance={provenance}
+                subject={subject.subject}
+                plural={subject.plural}
+                roleNames={roleNames}
+                currency={currency}
+              />
             }
-          }}
-          onDuplicate={(id) => {
-            const source = scenarios.find((s) => s.id === id);
-            if (!source) return;
-            void create({
-              name: copyName(source.name, scenarios.map((s) => s.name)),
-              description: source.description,
-              patch: source.patch,
-              parent_scenario_id: source.id,
-            });
-          }}
-          onDelete={async (id) => {
-            setBusy(true);
-            setError(null);
-            try {
-              const r = await store.remove(id);
-              if (r.status === "error") return setError(r.message);
-              setScenarios((list) => list.filter((s) => s.id !== id));
-              setStackIds((ids) => ids.filter((x) => x !== id));
-            } catch {
-              setError("Couldn't delete. Try again.");
-            } finally {
-              setBusy(false);
-            }
-          }}
-        />
+          />
+          <ScenarioLibrary
+            scenarios={scenarios}
+            model={model}
+            stack={stackIds.filter((id) => scenarios.some((s) => s.id === id))}
+            problems={problems}
+            retired={retired}
+            canEdit={canEdit}
+            leverCount={moved.length}
+            busy={busy}
+            error={error}
+            onToggle={(id) => setStackIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]))}
+            onClear={() => setStackIds([])}
+            onSave={async (name, description) => {
+              // The levers were set on top of the applied scenarios, so the new
+              // scenario joins the end of the stack and the view doesn't change.
+              const saved = await create({ name, description, patch: moved, parent_scenario_id: null });
+              if (!saved) return false;
+              setStackIds((ids) => [...ids, saved.id]);
+              setValues({});
+              return true;
+            }}
+            onRepoint={async (id, index, targetId) => {
+              const scenario = scenarios.find((s) => s.id === id);
+              if (!scenario) return;
+              setBusy(true);
+              setError(null);
+              try {
+                const r = await store.repoint(scenario, repointPatch(scenario.patch, index, targetId));
+                if (r.status === "error") return setError(r.message);
+                setScenarios((list) => list.map((s) => (s.id === id ? r.scenario : s)));
+              } catch {
+                setError("Couldn't save. Try again.");
+              } finally {
+                setBusy(false);
+              }
+            }}
+            onDuplicate={(id) => {
+              const source = scenarios.find((s) => s.id === id);
+              if (!source) return;
+              void create({
+                name: copyName(source.name, scenarios.map((s) => s.name)),
+                description: source.description,
+                patch: source.patch,
+                parent_scenario_id: source.id,
+              });
+            }}
+            onDelete={async (id) => {
+              setBusy(true);
+              setError(null);
+              try {
+                const r = await store.remove(id);
+                if (r.status === "error") return setError(r.message);
+                setScenarios((list) => list.filter((s) => s.id !== id));
+                setStackIds((ids) => ids.filter((x) => x !== id));
+              } catch {
+                setError("Couldn't delete. Try again.");
+              } finally {
+                setBusy(false);
+              }
+            }}
+          />
+        </div>
       </div>
     </div>
   );

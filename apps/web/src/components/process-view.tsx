@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
+import { PanelRight } from "lucide-react";
 import { isUnpublished, ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow, type SourceRow } from "@transpera-flow/db";
 import type { EngineModel } from "@transpera-flow/engine";
 import { discardChange, revertField } from "@/lib/drafts/discard";
@@ -18,7 +20,14 @@ import type { RealtimeSync } from "@/lib/realtime/sync";
 import type { View, Viewer } from "@/lib/realtime/transport";
 import { useRealtime } from "@/lib/realtime/use-realtime";
 import { useSimulation } from "@/lib/sim/use-simulation";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { SidebarTrigger } from "@/components/ui/sidebar";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { ChangesPanel, DraftBar, DraftCompare, type DraftView } from "./draft-panels";
+import { MapSidePanel, type PanelOpen, type PanelTabId } from "./map/side-panel";
+import { useMapPanelRequest } from "./shell/map-panel-request";
 import { AssumptionChecklist } from "./evidence";
 import { ConflictPrompt } from "./fields";
 import { KpiStrip } from "./kpi-strip";
@@ -69,6 +78,8 @@ export function ProcessView({
   userId = null,
   viewer = null,
   sources = [],
+  processPicker,
+  notice,
 }: {
   live: ProcessBundle;
   draft: ProcessBundle | null;
@@ -89,6 +100,10 @@ export function ProcessView({
   viewer?: Viewer | null;
   /** The workspace's sources, which values cite as evidence (issue #21). */
   sources?: SourceRow[];
+  /** The process picker (and page heading), shown at the left of the top bar. */
+  processPicker?: ReactNode;
+  /** A notice above the results, such as the demo's. */
+  notice?: ReactNode;
 }) {
   const stamp = () => ({ at: new Date().toISOString(), by: userId });
   const sourcesHref = registerHref ? registerHref.replace(/\/issues$/, "/sources") : mode === "demo" ? "/demo/sources" : undefined;
@@ -281,6 +296,15 @@ export function ProcessView({
     [bundle],
   );
 
+  // The side panel (issue #93): open state, and which tab is showing. Docked from lg up until told otherwise.
+  const panelParam = useSearchParams().get("panel");
+  const draftHasContent = !showingLive && (unresolved.length > 0 || diff.list.length > 0);
+  const [panelOpen, setPanelOpen] = useState<PanelOpen>(panelParam === "scenarios" || panelParam === "issues" ? true : "auto");
+  const [panelTab, setPanelTab] = useState<PanelTabId>(panelParam === "scenarios" ? "scenarios" : panelParam === "issues" ? "insights" : draftHasContent ? "draft" : "insights");
+  const isNarrow = useIsMobile();
+  const { request: panelRequest } = useMapPanelRequest();
+  const [seenRequest, setSeenRequest] = useState(panelRequest?.nonce ?? null);
+
   // Issues, levers and scenarios follow the model on screen (the draft, or live when shown).
   const issuesUi = useProcessIssues({
     bundle,
@@ -293,6 +317,10 @@ export function ProcessView({
     initialFix,
     registerHref,
     retired,
+    onShowIssues: () => {
+      setPanelOpen(true);
+      setPanelTab("insights");
+    },
   });
   // Saved scenarios that work on live but not on the draft: publishing would break them (issue #16).
   const breaks = useMemo(
@@ -303,76 +331,127 @@ export function ProcessView({
     [hasDraft, liveModel.model, workingModel.model, issuesUi.scenarios, working, live],
   );
 
+  // Opening the panel follows what you do (compare-in-render, as elsewhere in this file):
+  // 1. a step becomes inspected: show it on the Step tab.
+  const inspectedId = inspected && editable ? inspected.id : null;
+  const [seenInspected, setSeenInspected] = useState<string | null>(null);
+  if (inspectedId !== seenInspected) {
+    setSeenInspected(inspectedId);
+    if (inspectedId) {
+      setPanelOpen(true);
+      setPanelTab("step");
+    }
+  }
+  // 2. a fix runs (`?fix=` or "Run the fix"): show the scenarios it runs in.
+  const [seenFix, setSeenFix] = useState(issuesUi.fix);
+  if (issuesUi.fix !== seenFix) {
+    setSeenFix(issuesUi.fix);
+    if (issuesUi.fix) {
+      setPanelOpen(true);
+      setPanelTab("scenarios");
+    }
+  }
+  // 3. the sidebar asks for a tab (the demo's Issues and Scenarios items).
+  if (panelRequest && panelRequest.nonce !== seenRequest) {
+    setSeenRequest(panelRequest.nonce);
+    setPanelOpen(true);
+    if (panelRequest.tab === "issues") {
+      setPanelTab("insights");
+      issuesUi.showIssues();
+    } else setPanelTab("scenarios");
+  }
+  // A tab that no longer exists (the step was deselected, the draft is hidden) gives way to one that does.
+  const hasTab: Record<PanelTabId, boolean> = { step: editable && !!inspected, draft: !showingLive, insights: !!shownModel, scenarios: !!shownModel };
+  const activeTab: PanelTabId = hasTab[panelTab] ? panelTab : draftHasContent ? "draft" : hasTab.insights ? "insights" : hasTab.draft ? "draft" : "step";
+  const panelShown = panelOpen === true || (panelOpen === "auto" && !isNarrow);
+
   const select = (table: Table, id: string) => {
     setView("draft");
     setSelection(table === "steps" ? { steps: [id], edges: [] } : { steps: [], edges: [id] });
   };
 
   return (
-    <div className="flex flex-col gap-3">
-      <PresenceBar
-        sync={sync}
-        state={realtime}
-        me={me}
-        processName={live.process.name}
-        colleague={connection.colleague}
-        selectedStep={selected.steps.length === 1 ? selected.steps[0]! : null}
-      />
-      <DraftBar
-        session={session}
-        drafts={drafts}
-        canEdit={canEdit}
-        view={showingLive ? "live" : "draft"}
-        onView={(v) => {
-          setView(v);
-          setSelection(NO_SELECTION);
-        }}
-        changes={diff.list.length}
-        blocked={blocked}
-        unresolved={unresolved}
-        compare={compare}
-        onCompare={setCompare}
-        onReview={(id) => select("steps", id)}
-        breaks={breaks}
-      />
-      {working.process.kind === "servicing" && <ServicingBanner bundle={working} settingsHref={settingsHref} />}
-      {compare && hasDraft && (
-        <DraftCompare
-          live={liveModel.model ? { model: liveModel.model, result: liveSim.run?.result ?? null } : null}
-          draft={workingModel.model ? { model: workingModel.model, result: draftSim.run?.result ?? null } : null}
-          currency={working.workspace.settings.currency}
-          liveNumber={live.revision.number}
-          draftNumber={drafts.draft?.number ?? live.revision.number + 1}
+    <div className="flex min-h-svh flex-1 flex-col">
+      <div className="sticky top-0 z-20 flex flex-wrap items-center gap-x-2 gap-y-2 border-b bg-background/95 px-4 py-2 backdrop-blur">
+        <SidebarTrigger className="-ml-1" />
+        <Separator orientation="vertical" className="h-4" />
+        {processPicker ?? <h1 className="truncate px-1 font-display text-base font-bold">{live.process.name}</h1>}
+        <DraftBar
+          session={session}
+          drafts={drafts}
+          canEdit={canEdit}
+          view={showingLive ? "live" : "draft"}
+          onView={(v) => {
+            setView(v);
+            setSelection(NO_SELECTION);
+          }}
+          changes={diff.list.length}
+          blocked={blocked}
+          unresolved={unresolved}
+          compare={compare}
+          onCompare={setCompare}
+          onReview={(id) => select("steps", id)}
+          breaks={breaks}
         />
-      )}
+        <PresenceBar
+          variant="compact"
+          sync={sync}
+          state={realtime}
+          me={me}
+          processName={live.process.name}
+          colleague={connection.colleague}
+          selectedStep={selected.steps.length === 1 ? selected.steps[0]! : null}
+        />
+        {shownModel && mode !== "readonly" && (!hasDraft || showingLive) && (
+          // Saved runs are of the live model (issue #25).
+          <SaveRunBar
+            mode={mode}
+            bundle={live}
+            model={shownModel}
+            result={sim.status === "done" ? result : null}
+            durationMs={sim.run?.durationMs ?? null}
+            runsHref={registerHref ? registerHref.replace(/\/issues$/, "/runs") : "/demo/runs"}
+          />
+        )}
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          aria-label={panelShown ? "Hide panel" : "Show panel"}
+          aria-expanded={panelShown}
+          aria-controls="map-panel"
+          onClick={() => setPanelOpen(!panelShown)}
+        >
+          <PanelRight />
+        </Button>
+      </div>
+      <div className="flex flex-col gap-2 px-4 pt-3 empty:hidden">
+        {notice}
+        {working.process.kind === "servicing" && <ServicingBanner bundle={working} settingsHref={settingsHref} />}
+        {compare && hasDraft && (
+          <DraftCompare
+            live={liveModel.model ? { model: liveModel.model, result: liveSim.run?.result ?? null } : null}
+            draft={workingModel.model ? { model: workingModel.model, result: draftSim.run?.result ?? null } : null}
+            currency={working.workspace.settings.currency}
+            liveNumber={live.revision.number}
+            draftNumber={drafts.draft?.number ?? live.revision.number + 1}
+          />
+        )}
+        {resolved.error && (
+          <Alert className="border-crit bg-crit-soft">
+            <AlertDescription className="text-fg">
+              This process can&apos;t be simulated yet: {resolved.error}.{shownModel && result ? " The figures above are from before this change." : ""}
+            </AlertDescription>
+          </Alert>
+        )}
+        {editable && <SaveProblems editor={editor} bundle={bundle} conflicts={state.conflicts} error={state.error} sync={sync} />}
+      </div>
       {shownModel ? (
-        <KpiStrip
-          model={shownModel}
-          currency={bundle.workspace.settings.currency}
-          result={result}
-          status={sim.status}
-          durationMs={sim.run?.durationMs}
-        />
+        <div className="px-4 pt-3">
+          <KpiStrip model={shownModel} currency={bundle.workspace.settings.currency} result={result} status={sim.status} durationMs={sim.run?.durationMs} />
+        </div>
       ) : null}
-      {shownModel && mode !== "readonly" && (!hasDraft || showingLive) && (
-        // Saved runs are of the live model (issue #25).
-        <SaveRunBar
-          mode={mode}
-          bundle={live}
-          model={shownModel}
-          result={sim.status === "done" ? result : null}
-          durationMs={sim.run?.durationMs ?? null}
-          runsHref={registerHref ? registerHref.replace(/\/issues$/, "/runs") : "/demo/runs"}
-        />
-      )}
-      {resolved.error && (
-        <p role="alert" className="rounded-token border border-crit bg-crit-soft p-3">
-          This process can&apos;t be simulated yet: {resolved.error}.
-          {shownModel && result ? " The figures above are from before this change." : ""}
-        </p>
-      )}
-      {editable && <SaveProblems editor={editor} bundle={bundle} conflicts={state.conflicts} error={state.error} sync={sync} />}
-      <div className="grid gap-3 lg:grid-cols-[1fr_22rem]">
+      <div className="relative flex min-h-[28rem] flex-1 gap-3 p-4">
         <ProcessCanvas
           bundle={bundle}
           result={result}
@@ -385,72 +464,81 @@ export function ProcessView({
           onRestore={editable ? restore : null}
           savedLabel={hasDraft ? "Saved to draft" : "Saved"}
         />
-        {inspected && editable ? (
-          <StepInspector
-            key={inspected.id}
-            bundle={bundle}
-            step={inspected}
-            editor={editor}
-            autoFocus={inspectFocus === inspected.id}
-            onFocused={() => setInspectFocus(null)}
-            onClose={() => setSelection(NO_SELECTION)}
-            onDelete={() => {
-              editor.run((b) => deleteSelection(b, [inspected.id], []));
-              setSelection(NO_SELECTION);
-            }}
-            sources={sources}
-            stamp={stamp}
-            sourcesHref={sourcesHref}
-            draft={
-              hasDraft
-                ? {
-                    change: diff.steps.get(inspected.id),
-                    names,
-                    onRevert: (field) => editor.run((b) => revertField(session.getState().live, b, "steps", inspected.id, field)),
-                    onDiscard: () => editor.run((b) => discardChange(session.getState().live, b, "steps", inspected.id)),
-                  }
-                : null
-            }
-          />
-        ) : (
-          <div className="flex flex-col gap-3">
-            {!showingLive && (
-              <AssumptionChecklist
-                bundle={working}
-                editor={editable ? editor : null}
+        <MapSidePanel
+          open={panelOpen}
+          tab={activeTab}
+          onTab={setPanelTab}
+          onClose={() => setPanelOpen(false)}
+          stepTab={editable}
+          hasStep={hasTab.step}
+          draftTab={hasTab.draft}
+          unresolved={unresolved.length}
+          modelTabs={!!shownModel}
+          step={
+            inspected && editable ? (
+              <StepInspector
+                key={inspected.id}
+                bundle={bundle}
+                step={inspected}
+                editor={editor}
+                autoFocus={inspectFocus === inspected.id}
+                onFocused={() => setInspectFocus(null)}
+                onClose={() => setSelection(NO_SELECTION)}
+                onDelete={() => {
+                  editor.run((b) => deleteSelection(b, [inspected.id], []));
+                  setSelection(NO_SELECTION);
+                }}
                 sources={sources}
                 stamp={stamp}
-                onSelect={(id) => select("steps", id)}
+                sourcesHref={sourcesHref}
+                draft={
+                  hasDraft
+                    ? {
+                        change: diff.steps.get(inspected.id),
+                        names,
+                        onRevert: (field) => editor.run((b) => revertField(session.getState().live, b, "steps", inspected.id, field)),
+                        onDiscard: () => editor.run((b) => discardChange(session.getState().live, b, "steps", inspected.id)),
+                      }
+                    : null
+                }
               />
-            )}
-            {!showingLive && (
+            ) : null
+          }
+          draft={
+            <>
+              <AssumptionChecklist bundle={working} editor={editable ? editor : null} sources={sources} stamp={stamp} onSelect={(id) => select("steps", id)} />
               <ChangesPanel diff={diff} live={live} bundle={working} editor={editable ? editor : null} names={names} onSelect={select} />
-            )}
-            {shownModel &&
-              issuesUi.rail(
-                <div className="flex flex-col gap-3">
-                  <BottleneckPanel model={shownModel} result={result} ready={sim.status === "done"} />
-                  <UtilisationBars model={shownModel} result={result} />
-                </div>,
-              )}
-          </div>
-        )}
+              {!draftHasContent && <p className="py-6 text-center text-muted-foreground">Nothing to confirm and no changes against live.</p>}
+            </>
+          }
+          insights={
+            shownModel &&
+            issuesUi.rail(
+              <div className="flex flex-col gap-3">
+                <BottleneckPanel model={shownModel} result={result} ready={sim.status === "done"} />
+                <UtilisationBars model={shownModel} result={result} />
+              </div>,
+            )
+          }
+          scenarios={
+            shownModel && (
+              <ScenarioPanel
+                model={shownModel}
+                baseline={sim.run}
+                currency={bundle.workspace.settings.currency}
+                workspaceId={bundle.workspace.id}
+                initialScenarios={scenarios}
+                mode={mode}
+                fix={issuesUi.fix}
+                onScenariosChange={issuesUi.onScenariosChange}
+                provenance={provenance}
+                retired={retired}
+              />
+            )
+          }
+        />
       </div>
       {issuesUi.badges}
-      {shownModel && (
-        <ScenarioPanel
-          model={shownModel}
-          baseline={sim.run}
-          currency={bundle.workspace.settings.currency}
-          workspaceId={bundle.workspace.id}
-          initialScenarios={scenarios}
-          mode={mode}
-          fix={issuesUi.fix}
-          onScenariosChange={issuesUi.onScenariosChange}
-          provenance={provenance}
-          retired={retired}
-        />
-      )}
     </div>
   );
 }

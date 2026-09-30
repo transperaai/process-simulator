@@ -1,7 +1,6 @@
 "use client";
 
-// Issues on the process page (issue #17): the Issues tab in the rail beside
-// the map, badges on the steps, and the "Run the fix" request handed to the
+// Issues on the process page (issue #17): the Issues tab in the map's Insights panel, badges on the steps, and the "Run the fix" request handed to the
 // scenario panel. Kept out of process-view.tsx so that file only wires it in.
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -17,8 +16,10 @@ import { StepIssueBadges } from "./step-issue-badges";
 export interface ProcessIssues {
   /** Badges on the map's steps (portals; render anywhere). */
   badges: ReactNode;
-  /** The rail beside the map: `utilisation` in one tab, the issues in another. */
+  /** The Insights panel: `utilisation` in one tab, the issues in another. */
   rail: (utilisation: ReactNode) => ReactNode;
+  /** Switch the rail to its Issues tab (the sidebar's Issues item, on the demo). */
+  showIssues: () => void;
   /** The latest "Run the fix" request, for the scenario panel. */
   fix: FixRequest | null;
   /** The scenario panel reports its saved scenarios here, so issues can link and run them. */
@@ -40,6 +41,7 @@ export function useProcessIssues({
   initialFix,
   registerHref,
   retired = NO_RETIRED,
+  onShowIssues,
 }: {
   bundle: ProcessBundle;
   model: EngineModel | null;
@@ -54,6 +56,8 @@ export function useProcessIssues({
   registerHref?: string;
   /** Steps the model no longer has and what replaced them, for broken-scenario issues (issue #16). */
   retired?: RetiredSteps;
+  /** A step's issue badge was clicked: the caller opens the panel the Issues tab is in. */
+  onShowIssues?: () => void;
 }): ProcessIssues {
   const state = useIssues(bundle.workspace.id, initialIssues, mode);
   const [scenarios, setScenarios] = useState(initialScenarios);
@@ -117,7 +121,7 @@ export function useProcessIssues({
 
   const rail = (utilisation: ReactNode) => (
     <div className="flex min-w-0 flex-col gap-2">
-      <div role="tablist" aria-label="Beside the map" className="flex gap-0.5 self-start rounded-token border border-line bg-panel p-0.5 shadow-token">
+      <div role="tablist" aria-label="Insights" className="flex gap-0.5 self-start rounded-md bg-muted p-0.5">
         {(
           [
             ["utilisation", "Utilisation"],
@@ -132,7 +136,7 @@ export function useProcessIssues({
             aria-selected={tab === id}
             aria-controls={`rail-panel-${id}`}
             onClick={() => setTab(id)}
-            className={`rounded px-2.5 py-0.5 text-sm ${tab === id ? "bg-accent font-semibold text-accent-fg" : "text-fg-2 hover:bg-panel-2"}`}
+            className={`rounded-sm px-2.5 py-1 text-xs ${tab === id ? "bg-panel font-semibold text-fg shadow-token" : "text-muted-foreground hover:text-fg"}`}
           >
             {label}
           </button>
@@ -142,7 +146,7 @@ export function useProcessIssues({
         {tab === "utilisation" ? (
           utilisation
         ) : (
-          <div className="rounded-token border border-line bg-panel p-3 shadow-token">
+          <div>
             <IssuesRegister
               layout="rail"
               state={state}
@@ -177,10 +181,12 @@ export function useProcessIssues({
         onOpen={(id) => {
           setStepFilter(id);
           setTab("issues");
+          onShowIssues?.();
         }}
       />
     ),
     rail,
+    showIssues: () => setTab("issues"),
     fix,
     onScenariosChange: setScenarios,
     scenarios,

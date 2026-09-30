@@ -90,6 +90,33 @@ export async function saveAvailabilityFloor(
   return saveField("workspaces", { id: workspaceId }, "settings.availability_floor", base, value);
 }
 
+/**
+ * Overtime someone may work when client work exceeds their week, as a share
+ * of it (docs/PRD.md §6.3.4, decision D7); null restores the default (none).
+ */
+export async function saveOvertimeCap(workspaceId: string, base: number | null, value: number | null): Promise<SaveOutcome<number | null>> {
+  const share = (v: unknown) => v === null || (number(v) && (v as number) >= 0 && (v as number) <= 1);
+  if (!isId(workspaceId) || !share(value) || !isScalar(base)) return invalid;
+  if (!(await signedIn())) return signedOut;
+  return saveField("workspaces", { id: workspaceId }, "settings.overtime_cap", base, value);
+}
+
+/**
+ * A service's fallback ongoing load for one role: hours a month per client
+ * while no servicing process is mapped (docs/PRD.md §6.3.4). Null clears it.
+ */
+export async function saveServiceFallback(
+  serviceId: string,
+  roleId: string,
+  base: number | null,
+  value: number | null,
+): Promise<SaveOutcome<number | null>> {
+  const hours = (v: unknown) => v === null || (number(v) && (v as number) >= 0 && (v as number) <= 1000);
+  if (!isId(serviceId) || !isId(roleId) || !hours(value) || !(base === null || isFiniteNumber(base))) return invalid;
+  if (!(await signedIn())) return signedOut;
+  return saveField("services", { id: serviceId }, `fallback_ongoing_load.${roleId}`, base, value);
+}
+
 export interface ActionResult {
   error?: string;
 }

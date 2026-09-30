@@ -27,7 +27,11 @@ export function KpiStrip({ model, currency, result, status, durationMs }: KpiStr
   const bn = bnId ? k?.roles[bnId] : undefined;
   const weeks = model.horizonWeeks;
 
-  // Two rows of four: the flow, then the revenue it brings in.
+  const hours = (v: number) => `${formatNumber(v, 0)} h`;
+  const cap = model.overtimeCap ?? 0;
+  const overtime = k?.overtimeHours;
+  const overtimeCost = k?.overtimeCost;
+  // Two rows: the flow and the overtime it takes, then the revenue it brings in and the overtime's cost.
   const tiles: Tile[] = [
     { label: `Wins / ${weeks} wks`, value: k ? formatNumber(k.won.mean) : "–", detail: k ? formatRange(k.won, whole) : "" },
     { label: "Lost", value: k ? whole(k.lost.mean) : "–", detail: k ? formatRange(k.lost, whole) : "" },
@@ -41,6 +45,14 @@ export function KpiStrip({ model, currency, result, status, durationMs }: KpiStr
       value: bnId ? (model.roles[bnId]?.name ?? "–") : "–",
       detail: bn ? `${formatPercent(bn.util.mean)} utilised · ${formatRange(bn.util, formatPercent)}` : "",
       tone: bn && bn.util.mean > 0.85 ? "crit" : undefined,
+    },
+    {
+      label: `Overtime / ${weeks} wks`,
+      value: overtime ? hours(overtime.mean) : "–",
+      detail: overtime ? (cap > 0 ? formatRange(overtime, hours) : "none allowed (cap 0%)") : "",
+      definition:
+        "Hours worked beyond people's weeks to keep up with client work, up to the workspace's overtime cap. Beyond the cap, utilisation shows above 100%.",
+      tone: overtime && overtime.mean > 0 ? "crit" : undefined,
     },
     {
       label: "New MRR",
@@ -67,10 +79,16 @@ export function KpiStrip({ model, currency, result, status, durationMs }: KpiStr
       detail: k ? formatRange(k.lostRevenue, money) : "",
       definition: "For each lost lead: what it would have been worth if won (price × expected tenure for retainers).",
     },
+    {
+      label: "Overtime cost",
+      value: overtimeCost ? money(overtimeCost.mean) : "–",
+      detail: overtimeCost ? formatRange(overtimeCost, money) : "",
+      definition: "Overtime hours × each person's cost rate (their role's when they have none).",
+    },
   ];
 
   return (
-    <section aria-label="Key results" className="grid grid-cols-2 gap-2 md:grid-cols-4">
+    <section aria-label="Key results" className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-5">
       {tiles.map((t) => (
         <div key={t.label} title={t.definition} className="min-w-0 rounded-token border border-line bg-panel px-3 py-2 shadow-token">
           <p className="font-mono text-[11px] uppercase tracking-widest text-fg-3">{t.label}</p>

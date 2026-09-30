@@ -3,11 +3,14 @@
 // Fixed so far (docs/PRD.md §6.8): separate random streams per purpose, a
 // binary-heap event queue, dispatch to named people, a start from current
 // WIP or a discarded warm-up instead of an empty business, and revenue priced
-// per service and booked once per entity at its first win. Still as in the
-// prototype, and fixed in a later ticket: stale ongoing utilisation.
+// per service and booked once per entity at its first win, and ongoing
+// utilisation reported from the live client count the run actually used
+// (item 2). With a client roster, ongoing load is per client and person, and
+// overtime extends capacity up to the workspace's cap (§6.3.4, issue #18).
 //
 // Time runs from -warmup to H; everything reported is measured over [0, H].
 
+import { carriersFor, clientChurnMonthly, clientRoleLoads, rolePools } from "./clients";
 import { arrivalTimes as drawArrivals } from "./demand";
 import { EventQueue } from "./event-queue";
 import type {
@@ -207,11 +210,37 @@ interface PersonState {
   completed: number;
   steps: StepState[];
   leave: [number, number][] | null;
-  /** Pipeline share of the week, cached for the client count it was computed at. */
+  /** Pipeline share of the week, cached until their ongoing load changes. */
   frac: number;
-  fracAt: number;
+  fracDirty: boolean;
   /** The service in progress, so hands-on time straddling the end of the warm-up can be split. */
-  cur: { start: number; end: number; handsOn: number; role: string | null } | null;
+  cur: { start: number; end: number; handsOn: number; role: string | null; over: boolean } | null;
+  /** Ongoing client hours a week they carry now, in total and by role id. */
+  load: number;
+  roleLoad: Map<string, number>;
+  /** With a roster: each active client's share of their load, [role, hours a week] pairs. */
+  contrib: Map<RosterClient, [string, number][]>;
+  /** With a roster: active clients assigned to them in any role. */
+  clients: number;
+  /** Measured-window integrals of the above, from `lastT` on. */
+  lastT: number;
+  ongoingHours: number;
+  roleOngoingHours: Map<string, number>;
+  clientWeeks: number;
+  /** While overloaded (load above capacity, with an overtime cap): weeks, ongoing hours and pipeline hands-on hours. */
+  overWeeks: number;
+  overOngoing: number;
+  overPipeline: number;
+}
+
+/** A client active in a run: a roster client, or one won during it. */
+interface RosterClient {
+  churnWeekly: number;
+  rng: Rng;
+  /** Who carries its load: [person, role, hours a week]. */
+  carriers: [PersonState, string, number][];
+  /** People assigned to it in any role. */
+  assigned: PersonState[];
 }
 
 /** True when any step has current WIP entered (0 counts: "nothing here right now"). */
@@ -254,6 +283,8 @@ export function runOnce(
   const H = model.horizonWeeks * model.hoursPerWeek;
   const W = start.kind === "warmup" ? start.hours : 0;
   const floor = model.availabilityFloor ?? DEFAULT_AVAILABILITY_FLOOR;
+  const overtimeCap = Math.max(0, model.overtimeCap ?? 0);
+  const roster = model.clients !== undefined;
   const peopleModel = resolvePeople(model);
   const services = resolveServices(model);
   const hasServices = services[0]!.id !== null;
@@ -330,8 +361,19 @@ export function runOnce(
     steps: stepList.filter((st) => canDo(id, person, st.s)),
     leave: person.leave?.length ? person.leave : null,
     frac: 0,
-    fracAt: NaN,
+    fracDirty: true,
     cur: null,
+    load: 0,
+    roleLoad: new Map(),
+    contrib: new Map(),
+    clients: 0,
+    lastT: -W,
+    ongoingHours: 0,
+    roleOngoingHours: new Map(),
+    clientWeeks: 0,
+    overWeeks: 0,
+    overOngoing: 0,
+    overPipeline: 0,
   }));
   for (const st of stepList) st.people = people.filter((p) => p.steps.includes(st));
 
@@ -347,7 +389,7 @@ export function runOnce(
   const roleBusyHours: Record<string, number> = {};
   for (const rid in model.roles) roleBusyHours[rid] = 0;
 
-  let active = model.activeClients;
+  let active = roster ? 0 : model.activeClients;
   const events = new EventQueue<SimEvent>();
   let entities: SimEntity[] = [];
   let eid = 0;
@@ -359,25 +401,161 @@ export function runOnce(
 
   const push = (ev: SimEvent) => events.push(ev);
 
-  /** Ongoing client hours per week a person carries, shared across each role's members by capacity. */
-  const ongoingHours = (p: PersonState, clients: number) => {
-    let hours = 0;
-    for (const rid of p.person.roles) {
-      const role = model.roles[rid];
-      const cap = roleCapacity[rid];
-      if (!role || !cap) continue;
-      hours += (clients * (role.ongoing || 0) * (p.person.capacity / p.person.roles.length)) / cap;
+  const hpw = model.hoursPerWeek;
+  /** A person's load is above their capacity, so they may work overtime (only with a cap above 0). */
+  const overloaded = (p: PersonState) => overtimeCap > 0 && p.load > p.person.capacity;
+  /** Add a person's load since `lastT` to the measured-window integrals. */
+  const advance = (p: PersonState, t: number) => {
+    const a = Math.max(p.lastT, 0);
+    const b = Math.min(t, H);
+    p.lastT = t;
+    if (!(b > a)) return;
+    const weeks = (b - a) / hpw;
+    p.ongoingHours += p.load * weeks;
+    for (const [rid, hours] of p.roleLoad) p.roleOngoingHours.set(rid, (p.roleOngoingHours.get(rid) ?? 0) + hours * weeks);
+    p.clientWeeks += p.clients * weeks;
+    if (overloaded(p)) {
+      p.overWeeks += weeks;
+      p.overOngoing += p.load * weeks;
     }
-    return hours;
   };
-  /** Share of a working week this person has for pipeline work (recomputed when the client count moves). */
+  /** Pooled model: every person's share of `active` clients' ongoing hours, by role and capacity. */
+  const setPooledLoads = (t: number) => {
+    for (const p of people) {
+      advance(p, t);
+      p.roleLoad.clear();
+      let hours = 0;
+      for (const rid of p.person.roles) {
+        const role = model.roles[rid];
+        const cap = roleCapacity[rid];
+        if (!role || !cap) continue;
+        const h = (active * (role.ongoing || 0) * (p.person.capacity / p.person.roles.length)) / cap;
+        hours += h;
+        p.roleLoad.set(rid, (p.roleLoad.get(rid) ?? 0) + h);
+      }
+      p.load = hours;
+      p.fracDirty = true;
+    }
+  };
+  /** Roster: a person's load from their active clients' contributions (summed afresh, so churn leaves no residue). */
+  const setRosterLoad = (p: PersonState, t: number) => {
+    advance(p, t);
+    p.roleLoad.clear();
+    let hours = 0;
+    for (const parts of p.contrib.values()) {
+      for (const [rid, h] of parts) {
+        hours += h;
+        p.roleLoad.set(rid, (p.roleLoad.get(rid) ?? 0) + h);
+      }
+    }
+    p.load = hours;
+    p.fracDirty = true;
+  };
+  /**
+   * Share of a working week this person has for pipeline work, recomputed
+   * when their ongoing load changes. Load beyond capacity is first met by
+   * overtime, extending capacity by up to the cap; beyond that the share is
+   * clamped at the floor (docs/PRD.md §6.3.4). With no cap: capacity − load.
+   */
   const availFrac = (p: PersonState) => {
-    if (p.fracAt !== active) {
-      p.frac = Math.max(floor, (p.person.capacity - ongoingHours(p, active)) / model.hoursPerWeek);
-      p.fracAt = active;
+    if (p.fracDirty) {
+      const c = p.person.capacity;
+      const capacity = overloaded(p) ? c + c * overtimeCap : c;
+      p.frac = Math.max(floor, (capacity - p.load) / hpw);
+      p.fracDirty = false;
     }
     return p.frac;
   };
+
+  // The roster: each client's load goes to its assignee per role, or the role's pool.
+  const personById = new Map(people.map((p) => [p.id, p]));
+  const pools = roster ? rolePools(model, peopleModel) : {};
+  const rosterClients: RosterClient[] = [];
+  /** Round-robin position per role, for clients won during the run. */
+  const nextAssignee: Record<string, number> = {};
+  let wonClients = 0;
+  let churned = 0;
+  const addClient = (key: string, client: { services: string[]; assignments: Record<string, string> }, t: number) => {
+    const rc: RosterClient = {
+      churnWeekly: clientChurnMonthly(model, client) / WEEKS_PER_MONTH,
+      rng: streams.get(`churn:${key}`),
+      carriers: [],
+      assigned: [],
+    };
+    const loads = clientRoleLoads(model, client);
+    for (const rid in loads) {
+      for (const c of carriersFor(pools, peopleModel, rid, client.assignments[rid])) {
+        rc.carriers.push([personById.get(c.person)!, rid, loads[rid]! * c.share]);
+      }
+    }
+    for (const pid of new Set(Object.values(client.assignments))) {
+      const p = personById.get(pid);
+      if (p) rc.assigned.push(p);
+    }
+    const touched = new Set<PersonState>();
+    for (const [p, rid, hours] of rc.carriers) {
+      let parts = p.contrib.get(rc);
+      if (!parts) p.contrib.set(rc, (parts = []));
+      parts.push([rid, hours]);
+      touched.add(p);
+    }
+    for (const p of rc.assigned) {
+      advance(p, t);
+      p.clients++;
+    }
+    for (const p of touched) setRosterLoad(p, t);
+    rosterClients.push(rc);
+    active = rosterClients.length;
+  };
+  const removeClient = (rc: RosterClient, t: number) => {
+    for (const p of rc.assigned) {
+      advance(p, t);
+      p.clients--;
+    }
+    const touched = new Set(rc.carriers.map(([p]) => p));
+    for (const p of touched) {
+      p.contrib.delete(rc);
+      setRosterLoad(p, t);
+    }
+  };
+  /** A retainer won during the run: a synthetic client, assigned per role by round-robin among the role's members. */
+  const addWonClient = (svc: ServiceState, t: number) => {
+    const services = svc.id !== null ? [svc.id] : [];
+    const assignments: Record<string, string> = {};
+    for (const rid in clientRoleLoads(model, { services })) {
+      const pool = pools[rid] ?? [];
+      if (!pool.length) continue;
+      const i = nextAssignee[rid] ?? 0;
+      assignments[rid] = pool[i % pool.length]!.person;
+      nextAssignee[rid] = i + 1;
+    }
+    addClient(`won:${++wonClients}`, { services, assignments }, t);
+  };
+  /** Weekly churn tick: pooled clients decay; roster clients each churn with their weekly probability. */
+  const churnTick = (t: number) => {
+    if (!roster) {
+      active = Math.max(0, active - active * (model.churnMonthly / WEEKS_PER_MONTH));
+      setPooledLoads(t);
+      return;
+    }
+    const staying: RosterClient[] = [];
+    for (const rc of rosterClients) {
+      if (rc.rng() < rc.churnWeekly) {
+        removeClient(rc, t);
+        churned++;
+      } else {
+        staying.push(rc);
+      }
+    }
+    rosterClients.length = 0;
+    rosterClients.push(...staying);
+    active = staying.length;
+  };
+  if (roster) {
+    for (const cid of Object.keys(model.clients!)) addClient(`client:${cid}`, model.clients![cid]!, -W);
+  } else {
+    setPooledLoads(-W);
+  }
   const onLeave = (p: PersonState, t: number) => {
     if (!p.leave) return false;
     for (const [a, b] of p.leave) if (t >= a && t < b) return true;
@@ -429,7 +607,14 @@ export function runOnce(
       sv.counts.won++;
       cycle.push(t - e.t0);
       // A one-off job doesn't become an ongoing client.
-      if (sv.s.pricingModel !== "one_off") active += 1;
+      if (sv.s.pricingModel !== "one_off") {
+        if (roster) {
+          addWonClient(sv, t);
+        } else {
+          active += 1;
+          setPooledLoads(t);
+        }
+      }
       if (sv.s.pricingModel === "retainer") {
         billed += (sv.s.price / WEEKS_PER_MONTH) * weeksBilled(t, sv.s.churnMonthly);
       } else if (sv.s.pricingModel === "one_off") {
@@ -512,9 +697,11 @@ export function runOnce(
       const handsOn = st.work();
       dur = handsOn / frac;
       p.busyHours += handsOn;
+      const over = overloaded(p);
+      if (over) p.overPipeline += handsOn;
       const role = st.s.role;
       if (role && role in roleBusyHours) roleBusyHours[role]! += handsOn;
-      p.cur = { start: t, end: t + dur, handsOn, role };
+      p.cur = { start: t, end: t + dur, handsOn, role, over };
     }
     push({ t: t + dur, type: "end", e, st, p });
   }
@@ -571,7 +758,8 @@ export function runOnce(
     billed = 0;
     for (const sv of services) sv.counts = { arrivals: 0, won: 0, lost: 0 };
     cycle.length = 0;
-    active = model.activeClients;
+    // Nothing is won or churns during the warm-up, so the clients are as they started.
+    churned = 0;
     for (const { stat } of stepList) {
       Object.assign(stat, {
         arrivals: 0,
@@ -590,10 +778,12 @@ export function runOnce(
     for (const p of people) {
       p.busyHours = 0;
       p.completed = 0;
+      p.overPipeline = 0;
       const c = p.cur;
       if (!p.busy || !c || c.end <= 0 || c.end <= c.start) continue;
       const share = (c.handsOn * c.end) / (c.end - c.start);
       p.busyHours += share;
+      if (c.over) p.overPipeline += share;
       if (c.role && c.role in roleBusyHours) roleBusyHours[c.role]! += share;
     }
     entities = entities.filter((e) => e.done === undefined);
@@ -660,9 +850,10 @@ export function runOnce(
     } else if (ev.type === "measure") {
       startMeasuring();
     } else {
-      active = Math.max(0, active - active * (model.churnMonthly / WEEKS_PER_MONTH));
+      churnTick(ev.t);
     }
   }
+  for (const p of people) advance(p, H);
 
   const stepOut: Record<string, StepResult> = {};
   for (const s of model.steps) {
@@ -681,32 +872,61 @@ export function runOnce(
       slaBreaches: st.slaBreaches,
     };
   }
-  // Ongoing load is reported from the starting client count, as in the
-  // prototype (docs/PRD.md §6.8 item 2; fixed with the client roster).
+  // Ongoing load is reported from the live client count, integrated over the
+  // measured window: the same load that set everyone's availability
+  // (docs/PRD.md §6.8 item 2). Overtime: of the hours worked while overloaded
+  // (ongoing plus pipeline hands-on), those beyond capacity, up to the cap.
+  const weeks = model.horizonWeeks;
+  const peopleOut: Record<string, PersonResult> = {};
+  const roleOngoing: Record<string, number> = {};
+  const roleOvertime: Record<string, number> = {};
+  for (const rid in model.roles) {
+    roleOngoing[rid] = 0;
+    roleOvertime[rid] = 0;
+  }
+  let overtimeHours = 0;
+  let overtimeCost = 0;
+  for (const p of people) {
+    const c = p.person.capacity;
+    const cap = c * weeks;
+    const ong = p.ongoingHours;
+    const ot =
+      overtimeCap > 0 ? Math.min(Math.max(0, p.overOngoing + p.overPipeline - c * p.overWeeks), overtimeCap * c * p.overWeeks) : 0;
+    peopleOut[p.id] = {
+      pipeline: cap ? p.busyHours / cap : 0,
+      ongoing: cap ? ong / cap : 0,
+      util: cap ? (p.busyHours + ong) / (cap + ot) : 0,
+      pipelineHours: p.busyHours / weeks,
+      ongoingHours: ong / weeks,
+      overtime: cap ? ot / cap : 0,
+      overtimeHours: ot / weeks,
+      completed: p.completed,
+      ...(roster ? { clients: p.clientWeeks / weeks } : {}),
+    };
+    for (const [rid, hours] of p.roleOngoingHours) if (rid in roleOngoing) roleOngoing[rid]! += hours;
+    const ownRoles = p.person.roles.filter((rid) => rid in roleOvertime);
+    for (const rid of ownRoles) roleOvertime[rid]! += ot / p.person.roles.length;
+    if (ot > 0) {
+      overtimeHours += ot;
+      const rate =
+        p.person.cost ?? (ownRoles.length ? ownRoles.reduce((sum, rid) => sum + model.roles[rid]!.cost, 0) / ownRoles.length : 0);
+      overtimeCost += ot * rate;
+    }
+  }
   const roleOut: Record<string, RoleResult> = {};
   for (const rid in model.roles) {
-    const cap = (roleCapacity[rid] ?? 0) * model.horizonWeeks;
-    const ong = model.activeClients * (model.roles[rid]!.ongoing || 0) * model.horizonWeeks;
+    const cap = (roleCapacity[rid] ?? 0) * weeks;
+    const ong = roleOngoing[rid]!;
+    const ot = roleOvertime[rid]!;
     const busy = roleBusyHours[rid]!;
     roleOut[rid] = {
       pipeline: cap ? busy / cap : 0,
       ongoing: cap ? ong / cap : 0,
-      util: cap ? (busy + ong) / cap : 0,
-      pipelineHours: busy / model.horizonWeeks,
-      ongoingHours: ong / model.horizonWeeks,
-    };
-  }
-  const peopleOut: Record<string, PersonResult> = {};
-  for (const p of people) {
-    const cap = p.person.capacity * model.horizonWeeks;
-    const ong = ongoingHours(p, model.activeClients) * model.horizonWeeks;
-    peopleOut[p.id] = {
-      pipeline: cap ? p.busyHours / cap : 0,
-      ongoing: cap ? ong / cap : 0,
-      util: cap ? (p.busyHours + ong) / cap : 0,
-      pipelineHours: p.busyHours / model.horizonWeeks,
-      ongoingHours: ong / model.horizonWeeks,
-      completed: p.completed,
+      util: cap ? (busy + ong) / (cap + ot) : 0,
+      pipelineHours: busy / weeks,
+      ongoingHours: ong / weeks,
+      overtime: cap ? ot / cap : 0,
+      overtimeHours: ot / weeks,
     };
   }
   // Revenue from the per-service counts (docs/PRD.md §13).
@@ -734,6 +954,9 @@ export function runOnce(
     ltvAdded,
     lostRevenue,
     services: serviceOut,
+    overtimeHours,
+    overtimeCost,
+    ...(roster ? { clientsChurned: churned } : {}),
     cycle,
     steps: stepOut,
     roles: roleOut,
@@ -780,6 +1003,7 @@ function kpis(model: EngineModel, runs: ReplicationResult[], cycle: number[]): K
       util: stat(runs.map((r) => r.roles[rid]!.util)),
       pipeline: stat(runs.map((r) => r.roles[rid]!.pipeline)),
       ongoing: stat(runs.map((r) => r.roles[rid]!.ongoing)),
+      overtime: stat(runs.map((r) => r.roles[rid]!.overtime)),
     };
   }
   const people: Kpis["people"] = {};
@@ -788,6 +1012,7 @@ function kpis(model: EngineModel, runs: ReplicationResult[], cycle: number[]): K
       util: stat(runs.map((r) => r.people[pid]!.util)),
       pipeline: stat(runs.map((r) => r.people[pid]!.pipeline)),
       ongoing: stat(runs.map((r) => r.people[pid]!.ongoing)),
+      overtime: stat(runs.map((r) => r.people[pid]!.overtime)),
     };
   }
   const services: Kpis["services"] = {};
@@ -809,6 +1034,8 @@ function kpis(model: EngineModel, runs: ReplicationResult[], cycle: number[]): K
     ltvAdded: stat(runs.map((r) => r.ltvAdded)),
     lostRevenue: stat(runs.map((r) => r.lostRevenue)),
     wipEnd: stat(runs.map((r) => Object.values(r.steps).reduce((a, st) => a + st.wip, 0))),
+    overtimeHours: stat(runs.map((r) => r.overtimeHours)),
+    overtimeCost: stat(runs.map((r) => r.overtimeCost)),
     cycle: {
       mean: cycle.length ? cycle.reduce((a, b) => a + b, 0) / cycle.length : 0,
       p50: pct(cycle, 0.5),
@@ -855,6 +1082,8 @@ export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationRes
       util: avg((r) => r.roles[rid]!.util),
       pipelineHours: avg((r) => r.roles[rid]!.pipelineHours),
       ongoingHours: avg((r) => r.roles[rid]!.ongoingHours),
+      overtime: avg((r) => r.roles[rid]!.overtime),
+      overtimeHours: avg((r) => r.roles[rid]!.overtimeHours),
     };
   }
   const resolvedPeople = resolvePeople(model);
@@ -866,7 +1095,10 @@ export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationRes
       util: avg((r) => r.people[pid]!.util),
       pipelineHours: avg((r) => r.people[pid]!.pipelineHours),
       ongoingHours: avg((r) => r.people[pid]!.ongoingHours),
+      overtime: avg((r) => r.people[pid]!.overtime),
+      overtimeHours: avg((r) => r.people[pid]!.overtimeHours),
       completed: avg((r) => r.people[pid]!.completed),
+      ...(model.clients ? { clients: avg((r) => r.people[pid]!.clients ?? 0) } : {}),
     };
   }
   const wonArr = runs.map((r) => r.won);

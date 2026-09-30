@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./northbeam-roster": "./src/fixtures/northbeam-roster.ts"
   },
   "scripts": {
     "lint": "eslint .",

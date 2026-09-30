@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { northbeamModel, northbeamWithServices, simulate, type EngineModel } from "@transpera-flow/engine";
+import { NORTHBEAM_TEAM, northbeamModel, northbeamWithClients, simulate, type EngineModel } from "@transpera-flow/engine";
 import {
   ModelError,
   northbeamBundle,
+  northbeamClientIds,
   northbeamPersonIds,
   northbeamRoleIds,
   northbeamServiceIds,
@@ -20,11 +21,29 @@ function withKeys(model: EngineModel): EngineModel {
     ...Object.entries(northbeamStepIds).map(([k, v]) => [v, k] as const),
     ...Object.entries(northbeamRoleIds).map(([k, v]) => [v, k] as const),
     ...Object.entries(northbeamServiceIds).map(([k, v]) => [v, k] as const),
+    ...Object.entries(northbeamClientIds).map(([k, v]) => [v, k] as const),
+    ...NORTHBEAM_TEAM.map(([k, name]) => [northbeamPersonIds[name]!, k] as const),
   ]);
   const key = (id: string) => names.get(id) ?? id;
+  const keyed = <T>(record: Record<string, T>, value: (v: T) => T = (v) => v) =>
+    Object.fromEntries(Object.entries(record).map(([id, v]) => [key(id), value(v)]));
   return {
     ...model,
-    ...(model.services ? { services: Object.fromEntries(Object.entries(model.services).map(([id, sv]) => [key(id), sv])) } : {}),
+    ...(model.services
+      ? {
+          services: keyed(model.services, (sv) => (sv.fallbackOngoing ? { ...sv, fallbackOngoing: keyed(sv.fallbackOngoing) } : sv)),
+        }
+      : {}),
+    ...(model.people ? { people: keyed(model.people, (p) => ({ ...p, roles: p.roles.map(key) })) } : {}),
+    ...(model.clients
+      ? {
+          clients: keyed(model.clients, (c) => ({
+            ...c,
+            services: c.services.map(key).sort(),
+            assignments: Object.fromEntries(Object.entries(c.assignments).map(([r, p]) => [key(r), key(p)])),
+          })),
+        }
+      : {}),
     entry: key(model.entry),
     sinks: { won: key(model.sinks.won), lost: key(model.sinks.lost) },
     roles: Object.fromEntries(Object.entries(model.roles).map(([id, r]) => [key(id), r])),
@@ -39,33 +58,39 @@ function withKeys(model: EngineModel): EngineModel {
 
 const START = "2026-10-05"; // a Monday
 
-/** Northbeam as it was before services: none, and no condition tags. */
+/** Northbeam without services: none, and no condition tags (the roster stays). */
 function withoutServices(): ProcessBundle {
   const b = northbeamBundle();
   return { ...b, services: [], edges: b.edges.map((e) => ({ ...e, condition_tag: null })) };
 }
 
+/** Northbeam as it was before services and the client roster: the golden prototype model. */
+function beforeServicesAndClients(): ProcessBundle {
+  const { overtime_cap: _cap, ...settings } = northbeamBundle().workspace.settings;
+  const b = withoutServices();
+  return { ...b, workspace: { ...b.workspace, settings }, clients: [], clientServices: [], clientAssignments: [] };
+}
+
 describe("toEngineModel", () => {
-  it("resolves the Northbeam rows into exactly the engine's Northbeam with services (plus named people)", () => {
-    const { people, ...model } = withKeys(toEngineModel(northbeamBundle(), { startDate: START }));
-    expect(model).toEqual(northbeamWithServices());
-    expect(Object.keys(people!)).toHaveLength(11);
+  it("resolves the Northbeam rows into exactly the engine's Northbeam with services, people and its client roster", () => {
+    expect(withKeys(toEngineModel(northbeamBundle(), { startDate: START }))).toEqual(northbeamWithClients());
   });
 
-  it("resolves Northbeam without services into exactly the golden prototype model", () => {
-    const { people, ...model } = withKeys(toEngineModel(withoutServices(), { startDate: START }));
+  it("resolves Northbeam without services or clients into exactly the golden prototype model", () => {
+    const { people, ...model } = withKeys(toEngineModel(beforeServicesAndClients(), { startDate: START }));
     expect(model).toEqual(northbeamModel());
     expect(Object.keys(people!)).toHaveLength(11);
   });
 
   it("simulates to the same headline result as the engine fixture: strategist is the bottleneck", () => {
-    // Random streams are keyed by step id, so uuid-keyed rows and the
-    // prototype's name-keyed model draw different (equally valid) samples;
-    // exact equality of the models is covered above.
+    // Random streams are keyed by step and client id, so uuid-keyed rows and
+    // the name-keyed fixture draw different (equally valid) samples; exact
+    // equality of the models is covered above.
     const res = simulate(toEngineModel(northbeamBundle(), { startDate: START }), 300, 1);
     const reference = simulate(northbeamModel(), 300, 1);
+    const roster = simulate(northbeamWithClients(), 300, 1);
     expect(res.bnRole).toBe(northbeamRoleIds.strat);
-    expect(res.roles[northbeamRoleIds.strat]!.util).toBeCloseTo(reference.roles.strat!.util, 2);
+    expect(Math.abs(res.roles[northbeamRoleIds.strat]!.util - roster.roles.strat!.util)).toBeLessThan(0.01);
     expect(Math.abs(res.won - reference.won) / reference.won).toBeLessThan(0.1);
     // Services price wins at a mix-weighted 3,815 a month against the interim 3,800 retainer.
     expect(Math.abs(res.mrrAdded - reference.mrrAdded) / reference.mrrAdded).toBeLessThan(0.1);
@@ -237,6 +262,7 @@ describe("services", () => {
         churnMonthly: 0.03,
         mixShare: 0.55,
         pathTags: ["seo"],
+        fallbackOngoing: { [northbeamRoleIds.strat]: 1.5, [northbeamRoleIds.am]: 6, [northbeamRoleIds.seo]: 16, [northbeamRoleIds.fin]: 1.2 },
       },
       [ppc]: {
         name: "PPC management",
@@ -247,6 +273,7 @@ describe("services", () => {
         churnMonthly: 0.04,
         mixShare: 0.45,
         pathTags: ["ppc"],
+        fallbackOngoing: { [northbeamRoleIds.strat]: 1.5, [northbeamRoleIds.am]: 6, [northbeamRoleIds.ppc]: 19, [northbeamRoleIds.fin]: 1.2 },
       },
     });
     // Entering this process means entering at its entry step: the engine's default.

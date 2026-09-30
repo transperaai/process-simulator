@@ -78,7 +78,9 @@ describe("capacity: role or person over the utilisation threshold", () => {
   });
 
   it("is critical when client work alone exceeds capacity (50 clients × 1 h/wk on 40 h)", () => {
-    const m = line(1, [{ id: "a", work: 1 }], { r: 1 }, { activeClients: 50 });
+    // Every lead is lost, so no client is won and the load stays at 50 h/wk
+    // (ongoing load follows the live client count; docs/PRD.md §6.8 item 2).
+    const m = line(1, [{ id: "a", work: 1, next: [{ to: "lost", p: 1 }] }], { r: 1 }, { activeClients: 50 });
     m.roles.r!.ongoing = 1;
     const issue = find(run(m), "capacity:role:r")!;
     expect(issue.severity).toBe("critical");
@@ -224,19 +226,21 @@ describe("Northbeam", () => {
     fixesApply(m, issues);
   });
 
-  it("with 80% more leads: the audit queue grows, the strategist is over 85%, kickoffs wait", () => {
+  it("with 80% more leads: the audit queue grows, the strategist is over 100%, kickoffs wait", () => {
     const m = northbeamModel();
     m.leadsPerWeek *= 1.8;
     const issues = run(m, 30);
+    // The extra wins' client work counts as it lands (docs/PRD.md §6.8 item
+    // 2), which takes the strategist just past 100%: critical.
     expect(keys(issues)).toEqual([
+      "capacity:role:strat",
       "queue:step:audit",
       "wait:step:kickoff",
-      "capacity:role:strat",
       "spof:step:audit",
       "spof:step:kickoff",
     ]);
     // Severity order: critical first.
-    expect(issues.map((i) => i.severity)).toEqual(["critical", "critical", "serious", "serious", "serious"]);
+    expect(issues.map((i) => i.severity)).toEqual(["critical", "critical", "critical", "serious", "serious"]);
     // The suggested fix clears the growing queue.
     const fixed = applyPatches(m, find(issues, "queue:step:audit")!.fix!.patch).model;
     expect(keys(run(fixed, 30))).not.toContain("queue:step:audit");

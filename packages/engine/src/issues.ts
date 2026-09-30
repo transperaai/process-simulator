@@ -15,6 +15,7 @@
 // it as scenario patches (`fix`), which the app can run and compare.
 
 import type { EngineModel, EnginePerson, EngineStep, SimulationResult } from "./model";
+import { overtimeIssues } from "./overtime-issues";
 import { offeredLoad, type ScenarioPatch } from "./scenario";
 
 /** Issue types (docs/PRD.md §5 `issues.type`). Detectors use a subset; the rest are logged by hand. */
@@ -85,8 +86,15 @@ export interface DetectedIssue {
 }
 
 /** The detectors, in the order their issues are listed within a severity. */
-export const DETECTORS = ["capacity", "queue", "wait", "spof", "rework", "sla"] as const;
+export const DETECTORS = ["capacity", "overtime", "queue", "wait", "spof", "rework", "sla"] as const;
 export type Detector = (typeof DETECTORS)[number];
+
+/**
+ * Utilisation above which work doesn't fit, critical. Just over 1: someone
+ * working overtime within the cap is at exactly 100% of their extended week,
+ * which is serious, not critical (docs/PRD.md §6.3.4).
+ */
+const OVER_FULL = 1 + 1e-9;
 
 const LOCALE = "en-GB";
 const num = (v: number, digits = 1) => v.toLocaleString(LOCALE, { maximumFractionDigits: digits, minimumFractionDigits: 0 });
@@ -137,6 +145,10 @@ export function detectIssues(
   const roleOf = (s: EngineStep) => s.role ?? (s.person ? (people[s.person]?.roles[0] ?? null) : null);
 
   // --- Capacity: roles, then people whose load isn't already explained by their role.
+  // Client work alone is over capacity when it exceeds even the overtime cap
+  // allows (docs/PRD.md §6.3.4): then the run clamps to the floor, critical.
+  const aloneAt = 1 + Math.max(0, model.overtimeCap ?? 0);
+  const overCap = aloneAt > 1 ? " even with overtime" : "";
   const roleCapacity: Record<string, number> = {};
   for (const p of Object.values(people)) {
     for (const rid of p.roles) roleCapacity[rid] = (roleCapacity[rid] ?? 0) + p.capacity / p.roles.length;
@@ -150,14 +162,14 @@ export function detectIssues(
     flaggedRoles.add(rid);
     const members = Object.keys(people).filter((pid) => people[pid]!.roles.includes(rid));
     const who = named && members.length === 1 ? ` (${people[members[0]!]!.name})` : "";
-    const clientsAlone = r.ongoing >= 1;
+    const clientsAlone = r.ongoing >= aloneAt;
     out.push({
       detector: "capacity",
       key: `capacity:role:${rid}`,
       type: "capacity",
-      severity: clientsAlone || r.util >= 1 ? "critical" : r.util >= 0.95 ? "serious" : "warning",
+      severity: clientsAlone || r.util > OVER_FULL ? "critical" : r.util >= 0.95 ? "serious" : "warning",
       title: clientsAlone
-        ? `${roleName(rid)}${who}: client work alone exceeds capacity`
+        ? `${roleName(rid)}${who}: client work alone exceeds capacity${overCap}`
         : `${roleName(rid)}${who} at ${pct(r.util)} utilisation`,
       evidence:
         `Simulated: ${num(r.ongoingHours)} h/wk client work + ${num(r.pipelineHours)} h/wk pipeline work against ` +
@@ -181,16 +193,21 @@ export function detectIssues(
     const r = result.people[pid];
     const range = result.kpi.people[pid]?.util;
     if (!r || !(p.capacity > 0) || !(r.util > t.utilisation)) continue;
-    // Their role is flagged already: that issue names them when they are its only member.
-    if (p.roles.length && p.roles.every((rid) => flaggedRoles.has(rid))) continue;
+    // Their role is flagged already: that issue names them when they are its
+    // only member. Unless their own client work alone is over capacity and
+    // the role's isn't (one person's roster can be, while the role's isn't).
+    const alone = r.ongoing >= aloneAt;
+    const roleAlone = p.roles.some((rid) => (result.roles[rid]?.ongoing ?? 0) >= aloneAt);
+    if (p.roles.length && p.roles.every((rid) => flaggedRoles.has(rid)) && !(alone && !roleAlone)) continue;
     const mine = staffed.filter((s) => eligible(pid, p, s));
     const main = p.roles[0] ?? null;
+    const who = named ? p.name : `One ${main ? roleName(main) : "person"}`;
     out.push({
       detector: "capacity",
       key: `capacity:person:${pid}`,
       type: "capacity",
-      severity: r.ongoing >= 1 || r.util >= 1 ? "critical" : r.util >= 0.95 ? "serious" : "warning",
-      title: `${named ? p.name : `One ${main ? roleName(main) : "person"}`} at ${pct(r.util)} utilisation`,
+      severity: alone || r.util > OVER_FULL ? "critical" : r.util >= 0.95 ? "serious" : "warning",
+      title: alone ? `${who}: client work alone exceeds capacity${overCap}` : `${who} at ${pct(r.util)} utilisation`,
       evidence:
         `Simulated: ${num(r.ongoingHours)} h/wk client work + ${num(r.pipelineHours)} h/wk pipeline work against ` +
         `${num(p.capacity)} h/wk capacity (${pct(r.util)}${range ? `, range ${pct(range.p10)}–${pct(range.p90)}` : ""}), ` +
@@ -208,6 +225,9 @@ export function detectIssues(
       fix: main ? hire(main) : null,
     });
   }
+
+  // --- Overtime worked to keep up with client work (docs/PRD.md §4.1, decision D7).
+  for (const issue of overtimeIssues(model, result)) out.push({ detector: "overtime", ...issue });
 
   // --- Per step: queue growth, queue wait, single point of failure, rework, SLA.
   for (const s of [...model.steps].sort((a, b) => cmp(a.id, b.id))) {

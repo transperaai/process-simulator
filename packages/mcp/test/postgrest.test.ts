@@ -5,6 +5,7 @@ import {
   NORTHBEAM_PROCESS_ID,
   NORTHBEAM_WORKSPACE_ID,
   northbeamBundle,
+  northbeamClientIds,
   northbeamPersonIds,
   northbeamRoleIds,
   northbeamScenarios,
@@ -365,11 +366,29 @@ describe.skipIf(!POSTGREST_URL)("MCP over PostgREST (acts as the user under RLS)
       evidence: "Interview 12 Sep: proposals wait up to a week.",
     };
     expect(await call(viewer, "log_issue", issue)).toMatchObject({ ok: false, error: { code: "forbidden" } });
-    expect(await call(editor, "log_issue", { ...issue, client: "Acme" })).toMatchObject({ ok: false, error: { code: "not_supported" } });
+    expect(await call(editor, "log_issue", { ...issue, client: "Acme" })).toMatchObject({ ok: false, error: { code: "not_found" } });
     expect(await call(editor, "log_issue", { ...issue, step: "nowhere" })).toMatchObject({ ok: false, error: { code: "not_found" } });
     const logged = await call<{ issue: { id: string; source: string; step: { name: string }; scenario: { id: string } } }>(editor, "log_issue", issue);
     expect(logged.ok).toBe(true);
     expect(logged.data.issue).toMatchObject({ source: "manual", status: "open", step: { name: "Audit & proposal" }, scenario: { id: saved.data.scenario.id } });
+    // A client on the roster, by name (issue #18).
+    const churn = await call<{ issue: { id: string; client: { id: string; name: string } } }>(editor, "log_issue", {
+      title: "Swift Courier may not renew",
+      type: "churn_risk",
+      client: "swift courier co",
+      evidence: "Renewal call due; unhappy with lead volume.",
+    });
+    expect(churn.ok).toBe(true);
+    expect(churn.data.issue.client).toEqual({ id: northbeamClientIds.c12, name: "Swift Courier Co" });
+    expect((await admin.query("select client_id from issues where id = $1", [churn.data.issue.id])).rows[0].client_id).toBe(northbeamClientIds.c12);
+    const aboutSwift = await call<{ issues: { id: string; client: { name: string } }[]; filters: { client: { name: string } } }>(viewer, "list_issues", {
+      client: northbeamClientIds.c12,
+    });
+    expect(aboutSwift.data.issues.map((i) => i.id)).toEqual([churn.data.issue.id]);
+    expect(aboutSwift.data.issues[0]!.client.name).toBe("Swift Courier Co");
+    expect(aboutSwift.data.filters.client.name).toBe("Swift Courier Co");
+    await admin.query("delete from issues where id = $1", [churn.data.issue.id]);
+
     const row = (await admin.query("select * from issues where id = $1", [logged.data.issue.id])).rows[0];
     expect(row).toMatchObject({
       process_id: NORTHBEAM_PROCESS_ID,
@@ -389,6 +408,7 @@ describe.skipIf(!POSTGREST_URL)("MCP over PostgREST (acts as the user under RLS)
     expect(list.data.issues.find((i) => i.id === logged.data.issue.id)).toMatchObject({
       step: { name: "Audit & proposal" },
       person: { name: "Maya Collins" },
+      client: null,
       owner: { name: "Arjun Mehta" },
     });
     const ideas = await call<{ issues: { type: string }[] }>(viewer, "list_issues", { type: "idea" });

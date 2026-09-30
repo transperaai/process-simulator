@@ -53,9 +53,14 @@ const audit = northbeamStepIds.audit;
 const kickoff = northbeamStepIds.kickoff;
 const scenarios = northbeamScenarios();
 
-/** Northbeam's detections, as the demo computes them. */
+/**
+ * Northbeam's detections, as the demo computes them, from its pooled client
+ * load: the seeded roster (issue #18) adds overload findings about Nina
+ * Kowalski, which the engine's tests cover. These tests are about the register.
+ */
 function northbeamDetections(): DetectedIssue[] {
-  const model = toEngineModel(northbeamBundle(), START);
+  const b = northbeamBundle();
+  const model = toEngineModel({ ...b, clients: [], clientServices: [], clientAssignments: [] }, START);
   return detectIssues(model, simulate(model, 30, 1));
 }
 

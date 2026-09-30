@@ -7,7 +7,7 @@ import type { WorkspaceSettingsData } from "@/lib/data";
 import { mapOutcome, type SaveOutcome, type Saver } from "@/lib/fields/field-controller";
 import { formatCurrency, formatPercent } from "@/lib/format";
 import { formatTags, mixPercentages, parseTags, PRICING_LABELS, PRICING_MODELS, type ServiceField } from "@/lib/services";
-import { createService, removeService, saveServiceField, saveServiceTags, type ActionResult } from "./actions";
+import { createService, removeService, saveServiceFallback, saveServiceField, saveServiceTags, type ActionResult } from "./actions";
 
 type Scalar = string | number | boolean | null;
 
@@ -243,6 +243,7 @@ function ServiceItem({ service: sv, share, data }: { service: ServiceRow; share:
             hint={`${tagHint} A lead on this service takes the connections tagged with one of these.`}
           />
         </div>
+        <FallbackLoad service={sv} data={data} />
         {!disabled && (
           <div className="sm:col-span-2 lg:col-span-3">
             <RemoveService serviceId={sv.id} name={sv.name} />
@@ -250,6 +251,43 @@ function ServiceItem({ service: sv, share, data }: { service: ServiceRow; share:
         )}
       </div>
     </details>
+  );
+}
+
+/**
+ * Hours a month each client on this service needs from each role, while no
+ * servicing process is mapped (docs/PRD.md §6.3.4; issue #18). They go to the
+ * client's assigned person for the role (Clients page).
+ */
+function FallbackLoad({ service: sv, data }: { service: ServiceRow; data: WorkspaceSettingsData }) {
+  const load = sv.fallback_ongoing_load ?? {};
+  const any = Object.values(load).some((h) => typeof h === "number");
+  return (
+    <fieldset className="sm:col-span-2 lg:col-span-3">
+      <legend className="mb-1 text-xs font-medium text-fg-2">Ongoing load per client (hours a month, by role)</legend>
+      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        {data.roles.map((r) => (
+          <NumberField
+            key={r.id}
+            label={r.name}
+            value={typeof load[r.id] === "number" ? load[r.id]! : null}
+            save={(base, next) => saveServiceFallback(sv.id, r.id, base, next)}
+            optional
+            min={0}
+            max={1000}
+            step={0.5}
+            unit="h"
+            disabled={!data.canEdit}
+          />
+        ))}
+      </div>
+      <p className="mt-1 text-xs text-fg-3">
+        {any
+          ? "Each client on this service needs these hours from the person looking after it for that role; a blank role needs none."
+          : "None set: each client needs every role's hours per client a week instead (the pooled estimate)."}{" "}
+        Used until a servicing process is mapped.
+      </p>
+    </fieldset>
   );
 }
 

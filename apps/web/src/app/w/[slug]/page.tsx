@@ -26,6 +26,9 @@ export default async function WorkspacePage(props: PageProps<"/w/[slug]">) {
         <Link href={`/w/${slug}/issues`} className="text-fg-2 hover:underline">
           Issues
         </Link>
+        <Link href={`/w/${slug}/clients`} className="text-fg-2 hover:underline">
+          Clients
+        </Link>
         <Link href={`/w/${slug}/settings`} className="text-fg-2 hover:underline">
           People &amp; settings
         </Link>

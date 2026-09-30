@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { northbeamBundle, northbeamIssues, northbeamScenarios, northbeamStepIds } from "@transpera-flow/db";
 import { AppHeader } from "@/components/app-header";
 import { ProcessView } from "@/components/process-view";
@@ -16,7 +17,12 @@ export default async function DemoPage(props: PageProps<"/demo">) {
         compare with live, publish or discard. Move levers, save scenarios and log issues too. Everything stays in this
         tab and is gone when you reload.
       </p>
-      <h1 className="mt-4 mb-3 text-xl font-bold">{bundle.process.name}</h1>
+      <div className="mt-4 mb-3 flex items-baseline gap-4">
+        <h1 className="text-xl font-bold">{bundle.process.name}</h1>
+        <Link href="/demo/clients" className="text-fg-2 hover:underline">
+          Clients
+        </Link>
+      </div>
       <ProcessView
         live={bundle}
         draft={null}

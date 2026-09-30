@@ -29,7 +29,7 @@
 --   -- and save_links' from 20260930000000_field_saves.sql with `create function`
 --   -- changed to `create or replace function`. (Or leave them: with the tables
 --   -- gone, a save to them just errors.)
---   delete from supabase_migrations.schema_migrations where version = '20261008000000';
+--   delete from supabase_migrations.schema_migrations where version = '20261012000000';
 --   commit;
 
 create table public.clients (

@@ -11,6 +11,7 @@ import {
   createPerson,
   removeLeave,
   saveAvailabilityFloor,
+  saveOvertimeCap,
   savePersonField,
   savePersonSet,
   type ActionResult,
@@ -30,6 +31,7 @@ const sectionClass = "mb-8 rounded-token border border-line bg-panel p-4 shadow-
 export function SimulationSettings({ data }: { data: WorkspaceSettingsData }) {
   const { workspace, canManage } = data;
   const floor = workspace.settings.availability_floor ?? null;
+  const overtime = workspace.settings.overtime_cap ?? null;
   return (
     <section className={sectionClass} aria-labelledby="simulation-heading">
       <h2 id="simulation-heading" className="mb-3 text-base font-bold">
@@ -51,6 +53,26 @@ export function SimulationSettings({ data }: { data: WorkspaceSettingsData }) {
           hint={
             canManage
               ? "Share of each person's week always left for pipeline work, however heavy client work gets. Blank uses the default."
+              : "Only workspace owners can change this."
+          }
+        />
+      </div>
+      <div className="mt-4 max-w-xs">
+        <NumberField
+          label="Overtime cap"
+          value={overtime}
+          save={(base, next) => saveOvertimeCap(workspace.id, base, next)}
+          optional
+          scale={100}
+          unit="% of a week"
+          min={0}
+          max={100}
+          step={5}
+          placeholder="0 (default: none)"
+          disabled={!canManage}
+          hint={
+            canManage
+              ? "When someone's client work is more than their week, they work up to this much overtime to keep up; the simulation reports its hours and cost. Beyond it, utilisation shows above 100% and a critical issue is raised."
               : "Only workspace owners can change this."
           }
         />

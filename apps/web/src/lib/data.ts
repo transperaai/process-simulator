@@ -3,6 +3,7 @@ import {
   DEMAND_SETTINGS_COLUMNS,
   LEAD_SOURCE_COLUMNS,
   listProcesses,
+  loadClients,
   loadIssues,
   loadLiveProcessBySlug,
   loadProcessBySlug,
@@ -25,6 +26,7 @@ import {
   type WorkspaceRow,
   type WorkspaceSettings,
 } from "@transpera-flow/db";
+import type { RosterData } from "./clients/roster";
 import { createClient } from "./supabase/server";
 
 /** Workspaces the signed-in user can see (RLS decides). */
@@ -169,5 +171,33 @@ export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSett
     leadSources: (leadSources.data ?? []) as LeadSourceRow[],
     seasonality: (seasonality.data ?? []) as SeasonalityRow[],
     demand: demand.data as DemandSettingsRow | null,
+  };
+}
+
+/** The Clients page: the roster, and the roles, people and services it links to (issue #18). */
+export async function loadRoster(slug: string): Promise<RosterData | null> {
+  const supabase = await createClient();
+  const { data: workspace, error } = await supabase.from("workspaces").select("id, name, slug, settings").eq("slug", slug).maybeSingle();
+  if (error) throw error;
+  if (!workspace) return null;
+  const ws = workspace.id;
+  const [canEdit, roles, people, personRoles, services, roster] = await Promise.all([
+    supabase.rpc("can_edit_workspace", { ws }),
+    supabase.from("roles").select("id, name, color, headcount, default_cost_rate, ongoing_hours_per_client_week").eq("workspace_id", ws).order("name"),
+    supabase.from("people").select("id, name, fte, capacity_hours_week, active").eq("workspace_id", ws).order("name"),
+    supabase.from("person_roles").select("person_id, role_id, workspace_id").eq("workspace_id", ws),
+    supabase.from("services").select(SERVICE_COLUMNS).eq("workspace_id", ws).order("created_at").order("id"),
+    loadClients(supabase, ws),
+  ]);
+  for (const r of [canEdit, roles, people, personRoles, services]) if (r.error) throw r.error;
+  return {
+    workspace: { ...workspace, settings: workspace.settings as unknown as WorkspaceSettings },
+    canEdit: canEdit.data === true,
+    roles: roles.data ?? [],
+    people: people.data ?? [],
+    personRoles: personRoles.data ?? [],
+    // The cast narrows pricing_model and gives fallback_ongoing_load its shape.
+    services: (services.data ?? []) as ServiceRow[],
+    ...roster,
   };
 }

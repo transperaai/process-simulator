@@ -35,6 +35,10 @@ const nextConfig: NextConfig = {
     "/api/reports": CHROMIUM_BIN,
     "/api/mcp": CHROMIUM_BIN,
     "/demo/report/pdf": CHROMIUM_BIN,
+    // Narration and summary edits re-print a stored report's PDF (issue #29):
+    // POST /api/narrate, and the summary page's Server Action.
+    "/api/narrate": CHROMIUM_BIN,
+    "/w/\\[slug\\]/reports/\\[id\\]": CHROMIUM_BIN,
   },
 };
 

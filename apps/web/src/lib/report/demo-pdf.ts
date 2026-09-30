@@ -1,9 +1,9 @@
 // The demo's PDF (issue #28): the Northbeam report printed by headless
 // Chromium, nothing stored. If Chromium fails, the response says why and links
 // to the printable report with the same options (pdf-failure.ts), instead of
-// an empty 500.
+// an empty 500. Narration and edits as on the printable route (#29).
 
-import { buildDemoReport, demoRequest } from "./demo";
+import { demoProblemsPage, demoReportContent } from "./demo";
 import { logPdfFailure, pdfFailureResponse } from "./pdf-failure";
 import { renderReportHtml } from "./render";
 import type { PdfRenderer } from "./server";
@@ -13,7 +13,10 @@ export async function demoPdfResponse(
   { render, reps }: { render?: PdfRenderer; reps?: number } = {},
 ): Promise<Response> {
   const params = new URL(request.url).searchParams;
-  const { content } = buildDemoReport({ ...demoRequest(params), ...(reps ? { reps } : {}) });
+  // Narration by the demo's stand-in and a visitor's checked edit, as on the printable route (#29).
+  const built = await demoReportContent(params, reps ? { reps } : {});
+  if (!built.ok) return demoProblemsPage(built.problems);
+  const { content } = built;
   let pdf: Uint8Array;
   try {
     pdf = await (render ?? (await import("./pdf")).htmlToPdf)(renderReportHtml(content));

@@ -42,7 +42,7 @@ export default function DemoRunsPage() {
         joined, so it shows what changed since. Accept suggestions or save a run on the process page and come back: changes stay in this tab
         and are gone when you reload.
       </p>
-      <DemoRuns baseline={baseline} />
+      <DemoRuns baseline={baseline} processName={bundle.process.name} />
     </main>
   );
 }

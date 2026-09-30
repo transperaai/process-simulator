@@ -569,6 +569,86 @@ export type Database = {
           },
         ]
       }
+      narrations: {
+        Row: {
+          checked: number
+          created_at: string
+          created_by: string | null
+          edited_at: string | null
+          edited_by: string | null
+          edited_by_name: string | null
+          fallback: boolean
+          fallback_kind: string | null
+          fallback_reason: string | null
+          id: string
+          input_hash: string
+          model: string | null
+          purpose: string
+          rejected: Json
+          target: string
+          target_id: string
+          text: string
+          updated_at: string
+          usage: Json
+          validated: boolean
+          workspace_id: string
+        }
+        Insert: {
+          checked?: number
+          created_at?: string
+          created_by?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
+          edited_by_name?: string | null
+          fallback: boolean
+          fallback_kind?: string | null
+          fallback_reason?: string | null
+          id?: string
+          input_hash: string
+          model?: string | null
+          purpose: string
+          rejected?: Json
+          target: string
+          target_id: string
+          text: string
+          updated_at?: string
+          usage?: Json
+          validated: boolean
+          workspace_id: string
+        }
+        Update: {
+          checked?: number
+          created_at?: string
+          created_by?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
+          edited_by_name?: string | null
+          fallback?: boolean
+          fallback_kind?: string | null
+          fallback_reason?: string | null
+          id?: string
+          input_hash?: string
+          model?: string | null
+          purpose?: string
+          rejected?: Json
+          target?: string
+          target_id?: string
+          text?: string
+          updated_at?: string
+          usage?: Json
+          validated?: boolean
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "narrations_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       people: {
         Row: {
           active: boolean

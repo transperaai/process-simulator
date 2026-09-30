@@ -1,3 +1,4 @@
+import { anthropicNarrator } from "@/lib/narration/anthropic";
 import { parseReportRequest } from "@/lib/report/options";
 import { ReportError, generateReport } from "@/lib/report/server";
 import { supabaseEnv } from "@/lib/supabase/env";
@@ -6,7 +7,8 @@ import { createClient } from "@/lib/supabase/server";
 // Generate a report as the signed-in user (issue #28; docs/PRD.md §9): the
 // run, comparisons, robustness checks, the stored content and the PDF from
 // headless Chromium, in one Vercel function. Robustness is capped at 120 s
-// in total and the PDF takes a few seconds, well inside the limit below.
+// in total, narration (when asked, #29) at 75 s, and the PDF takes a few
+// seconds: inside the limit below.
 export const maxDuration = 300;
 
 const STATUS: Record<ReportError["code"], number> = {
@@ -35,6 +37,8 @@ export async function POST(request: Request): Promise<Response> {
       origin: new URL(request.url).origin,
       generatedBy: typeof claims.claims.email === "string" ? claims.claims.email : null,
       now: new Date().toISOString(),
+      // Narration (#29): on demand, server-side only; without a key the template prints and says why.
+      narration: parsed.value.narrate ? { model: anthropicNarrator() } : null,
     });
     return Response.json({
       status: "ok",
@@ -49,6 +53,9 @@ export async function POST(request: Request): Promise<Response> {
       included: report.content.included,
       omitted: report.content.omitted,
       excludedScenarios: report.content.excludedScenarios,
+      summary: report.content.summary
+        ? { source: report.content.summary.source, fallbackReason: report.content.summary.narration?.fallbackReason ?? null, cached: report.narration?.cached ?? false }
+        : null,
     });
   } catch (err) {
     if (err instanceof ReportError) return Response.json({ status: "error", code: err.code, message: err.message }, { status: STATUS[err.code] });

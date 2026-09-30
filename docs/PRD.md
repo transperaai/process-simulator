@@ -243,8 +243,9 @@ forecasts           id, workspace_id, name, months int, start_month date, planne
 runs                id, workspace_id, scenario_id, revision_ids uuid[], engine_version, reps, seed, params_snapshot jsonb,
                     results jsonb, trace_url (storage), duration_ms                           (changed)
 robustness_results  id, workspace_id, run_id, cache_key, results jsonb (verdict, sensitivities[])   (new)
-narrations          id, workspace_id, target (run|comparison), target_id, text, validated bool, fallback bool,
-                    edited_by (nullable)                                                      (new)
+narrations          id, workspace_id, target (run|comparison), target_id, purpose (summary|explain), input_hash, model,
+                    text, validated bool, fallback bool, fallback_kind, fallback_reason, rejected jsonb, usage jsonb,
+                    edited_by (nullable), edited_by_name, edited_at (docs/adr/0011-narration.md)   (new)
 issues              id, workspace_id, process_id, step_id, person_id, client_id, type (bottleneck|spof|manual|delay|failure|idea|
                     capacity|sla|churn_risk|perception_gap|broken_scenario), severity (critical|serious|warning|info), title,
                     evidence text, evidence_metrics jsonb, evidence_sources jsonb, owner_person_id, status, scenario_id,

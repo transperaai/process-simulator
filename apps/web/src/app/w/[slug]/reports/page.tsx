@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { ReportBuilder, StoredReports } from "@/components/report-builder";
+import { narrationConfigured } from "@/lib/narration/anthropic";
 import { loadReportsPage } from "@/lib/report/page-data";
 
 /** Reports (issue #28; docs/PRD.md §8 screen 12, §9): choose sections and scenarios, generate the PDF, and earlier reports. */
@@ -46,7 +47,14 @@ export default async function ReportsPage(props: PageProps<"/w/[slug]/reports">)
           {data.modelError ? (
             <p className="text-crit">This process can&apos;t be simulated yet: {data.modelError}</p>
           ) : (
-            <ReportBuilder key={data.processId} slug={slug} processId={data.processId} scenarios={data.scenarios} runs={data.runs} />
+            <ReportBuilder
+              key={data.processId}
+              slug={slug}
+              processId={data.processId}
+              scenarios={data.scenarios}
+              runs={data.runs}
+              narrationConfigured={narrationConfigured()}
+            />
           )}
           <h2 className="mt-8 mb-2 text-lg font-bold">Earlier reports</h2>
           <StoredReports slug={slug} reports={data.reports} />

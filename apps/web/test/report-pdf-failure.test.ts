@@ -111,6 +111,7 @@ describe("export_report when the PDF fails", () => {
     pdfError: null,
     printUrl: "https://flow.test/w/northbeam/reports/r1/print",
     content,
+    narration: null,
     ...over,
   });
 

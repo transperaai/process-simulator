@@ -59,6 +59,7 @@ import {
   type BottleneckSection,
   type ClientsView,
   type CompanyMapView,
+  type ExecutiveSummary,
   type IssueView,
   type IssuesView,
   type KpiFigure,
@@ -73,7 +74,7 @@ import {
   type UtilisationView,
 } from "./content";
 import { formatDateTime } from "./format";
-import { buildMethodology, buildSummary } from "./summary";
+import { buildMethodology, buildSummary, summaryProvenance, textNote } from "./summary";
 
 /** The run a report is generated from (a saved `runs` row, or one made for it). */
 export interface ReportRunInput {
@@ -518,6 +519,7 @@ export function buildReportContent(input: ReportInput): BuiltReport {
     generatedAt: input.generatedAt,
     generatedBy: input.generatedBy,
     workspace: { id: bundle.workspace.id, name: bundle.workspace.name },
+    names: { people: bundle.people.map((p) => p.name), clients: (bundle.clients ?? []).map((c) => c.name) },
     branding: input.branding ?? { accent: null, logoUrl: null },
     process: { id: bundle.process.id, name: bundle.process.name, entityName: bundle.process.entity_name },
     run: {
@@ -657,6 +659,18 @@ function buildAppendix(input: ReportInput, parts: ProcessPart[], model: EngineMo
   return { assumptions, evidence, conflicts, sources, company, provenance: [] };
 }
 
+/**
+ * The content with another executive summary (narration or an edit, #29):
+ * the appendix's provenance and the methodology's note on who wrote the text
+ * follow it.
+ */
+export function withSummary(content: ReportContent, summary: ExecutiveSummary): ReportContent {
+  const c: ReportContent = { ...content, summary };
+  if (c.appendix) c.appendix = { ...c.appendix, provenance: provenanceLines(c) };
+  if (c.methodology) c.methodology = { paragraphs: [...c.methodology.paragraphs.slice(0, -1), textNote(c)] };
+  return c;
+}
+
 /** Who produced what, for the appendix. */
 function provenanceLines(c: ReportContent): string[] {
   const lines = [
@@ -664,12 +678,6 @@ function provenanceLines(c: ReportContent): string[] {
     `Process revisions: ${c.run.revisions.map((r) => `${r.name} r${r.number}`).join(", ")}.`,
     `Generated ${formatDateTime(c.generatedAt)}${c.generatedBy ? ` by ${c.generatedBy}` : ""}.`,
   ];
-  if (c.summary) {
-    lines.push(
-      c.summary.source === "template"
-        ? "Executive summary: templated text filled in from the run; no language model."
-        : `Executive summary: narration checked number by number against this report's figures${c.summary.editedBy ? `, edited by ${c.summary.editedBy}` : ""}.`,
-    );
-  }
+  if (c.summary) lines.push(summaryProvenance(c.summary));
   return lines;
 }

@@ -71,12 +71,32 @@ export interface ReportRunInfo {
   cycle: { mean: number; p50: number; p90: number };
 }
 
-/** The executive summary: templated text now; #29 swaps in validated narration. */
+/** The executive summary: templated text, or narration checked number by number (#29). */
 export interface ExecutiveSummary {
   source: "template" | "narration";
   paragraphs: string[];
   /** Who edited it before export (#29); shown in the provenance appendix. */
   editedBy: string | null;
+  /** When it was last edited. */
+  editedAt?: string | null;
+  /** How narration was made, or why it wasn't used (#29); absent when nobody asked for narration. */
+  narration?: SummaryNarration | null;
+}
+
+/** The narration behind a summary (docs/adr/0011-narration.md). */
+export interface SummaryNarration {
+  /** The cached `narrations` row, when stored. */
+  id: string | null;
+  /** The model that drafted it, e.g. "claude-opus-5-5"; the stand-in on the demo. */
+  model: string;
+  /** When the draft was made. */
+  at: string;
+  /** Numbers in the printed text, each matched to one of the report's figures. */
+  checked: number;
+  /** A first draft was rejected for figures not in the report and redrafted. */
+  retried: boolean;
+  /** Why the templated text printed instead (a rejected draft, the API unavailable), or null. */
+  fallbackReason: string | null;
 }
 
 export interface MapNode {
@@ -259,6 +279,12 @@ export interface ReportBranding {
 
 export interface ReportContent {
   version: typeof REPORT_CONTENT_VERSION;
+  /**
+   * Names narration keeps from the language model (#29): they are replaced by
+   * labels ("Client A", "Team member B") in what it is sent. Absent on reports
+   * made before #29 (the utilisation and client tables are used instead).
+   */
+  names?: { people: string[]; clients: string[] };
   title: string;
   generatedAt: string;
   generatedBy: string | null;

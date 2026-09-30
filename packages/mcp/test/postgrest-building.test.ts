@@ -186,6 +186,9 @@ describe.skipIf(!POSTGREST_URL)("MCP process building over PostgREST (drafts onl
 
     const proc = await processRow("Sales pipeline");
     expect(proc).toMatchObject({ source: "import", live_revision_id: null });
+    const unpublished = await call<{ revision: { status: string }; steps: unknown[] }>(editor, "get_process", { process: "Sales pipeline" });
+    expect(unpublished).toMatchObject({ ok: true, data: { revision: { status: "draft" } } });
+    expect(unpublished.assumptions).toContain("revision defaulted to draft: the process hasn't been published yet.");
     const steps = await stepsOf(proc.draft_revision_id!);
     const discovery = steps.find((s) => s.name === "Discovery")!;
     expect(discovery).toMatchObject({ role_id: consultantRoleId, created_by: editorId, assumption: true });

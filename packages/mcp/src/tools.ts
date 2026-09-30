@@ -178,8 +178,10 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       runTool(async (assumptions) => {
         const ws = await resolveWorkspace(ctx, workspace, assumptions);
         const proc = await resolveProcess(ctx, ws, process, assumptions);
-        if (!revision) assumptions.push("revision defaulted to live.");
-        const bundle = await loadProcessBundle(ctx.db, ws, proc, revisionIdFor(proc, revision ?? "live"));
+        // A process built over MCP has only a draft until it is first published.
+        const which = revision ?? (!proc.live_revision_id && proc.draft_revision_id ? "draft" : "live");
+        if (!revision) assumptions.push(which === "live" ? "revision defaulted to live." : "revision defaulted to draft: the process hasn't been published yet.");
+        const bundle = await loadProcessBundle(ctx.db, ws, proc, revisionIdFor(proc, which));
         return {
           process: { ...bundle.process, draft_revision_id: proc.draft_revision_id },
           revision: bundle.revision,

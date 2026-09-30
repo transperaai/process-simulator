@@ -6,7 +6,7 @@
 // `applySuggestion` mirrors it for the demo, and a test keeps the two in step.
 // Pure: no I/O, and the clock and new ids come from the caller.
 
-import { fieldMeta, formatCompanyValue, MONTH_NAMES, type CompanyModel } from "./company";
+import { fieldMeta, formatCompanyValue, lowerFirst, MONTH_NAMES, type CompanyModel } from "./company";
 import type {
   EvidenceCitation,
   Provenance,
@@ -153,13 +153,15 @@ export function describeSuggestion(s: SuggestionRow, model: CompanyModel, sugges
   const currency = model.workspace.settings.currency || "GBP";
   const table = s.target_table;
   const row = suggestionTarget(s, model);
-  const singleton = table === "workspaces" || table === "demand_settings";
-  const creating = !singleton && !s.target_id && !(table === "seasonality" && row);
+  // Company settings and demand growth are one row per workspace; a month with no seasonality row is ×1.
+  const singleton = table === "workspaces" || table === "demand_settings" || table === "seasonality";
+  const creating = !singleton && !s.target_id;
   const missing = !creating && !singleton && !row && s.status === "pending";
   const recorded = s.status === "accepted" && s.applied ? s.applied.before : null;
+  const defaults: Record<string, unknown> = table === "seasonality" ? { multiplier: 1 } : table === "demand_settings" ? { growth_monthly: 0 } : {};
   const beforeOf = (field: string): unknown => {
-    if (s.status === "accepted") return recorded ? recorded[field] : undefined;
-    return row ? row[field] : undefined;
+    if (s.status === "accepted") return recorded ? recorded[field] : defaults[field];
+    return row ? row[field] : defaults[field];
   };
   const provOf = (field: string) => row?.provenance?.[table === "workspaces" ? `settings.${field}` : field];
 
@@ -168,7 +170,7 @@ export function describeSuggestion(s: SuggestionRow, model: CompanyModel, sugges
   const personName = (id: string | null) => (id ? (model.people.find((r) => r.id === id)?.name ?? "someone no longer in the model") : "nobody");
 
   const changes: SuggestionChange[] = [];
-  const hasBefore = !creating && (s.status !== "accepted" || recorded !== null);
+  const hasBefore = !creating && (s.status !== "accepted" || recorded !== null || singleton);
   for (const [field, value] of Object.entries(s.patch.set ?? {})) {
     if (table === "seasonality" && field === "month") continue;
     const meta = fieldMeta(table, field);
@@ -176,7 +178,7 @@ export function describeSuggestion(s: SuggestionRow, model: CompanyModel, sugges
     const prov = provOf(field);
     changes.push({
       field,
-      label: table === "seasonality" ? `${MONTH_NAMES[Number(s.patch.set.month) - 1] ?? "Month"} multiplier` : meta.label,
+      label: table === "seasonality" ? `Seasonality in ${MONTH_NAMES[Number(s.patch.set.month) - 1] ?? "a month"}` : meta.label,
       before: hasBefore ? formatCompanyValue(meta.format, was ?? null, currency) : null,
       after: formatCompanyValue(meta.format, value, currency),
       unchanged: hasBefore && s.status === "pending" && same(was, value),
@@ -241,7 +243,7 @@ export function describeSuggestion(s: SuggestionRow, model: CompanyModel, sugges
   if (creating) {
     const details = changes
       .filter((c) => c.field !== "name")
-      .map((c) => `${c.label.toLowerCase()} ${c.after}`)
+      .map((c) => `${lowerFirst(c.label)} ${c.after}`)
       .join(", ");
     headline = `${suggester} suggests adding ${NOUN[table]} ${name}${details ? ` (${details})` : ""}${cite ? `,${cite}` : ""}`;
   } else {
@@ -251,7 +253,7 @@ export function describeSuggestion(s: SuggestionRow, model: CompanyModel, sugges
       table === "workspaces" || table === "demand_settings" || table === "seasonality" ? "" : ` for ${name || NOUN[table]}`;
     if (!first) headline = `${suggester} suggests no change to ${subject.toLowerCase()}`;
     else {
-      const label = first.label === "Name" ? "renaming to" : first.label.replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase());
+      const label = first.label === "Name" ? "renaming to" : lowerFirst(first.label);
       const more = shown.length > 1 ? ` (and ${shown.length - 1} more change${shown.length > 2 ? "s" : ""})` : "";
       headline = `${suggester} suggests ${label} ${first.after}${where}${first.before !== null ? `, was ${first.before}` : ""}${more}${cite ? `,${cite}` : ""}`;
     }

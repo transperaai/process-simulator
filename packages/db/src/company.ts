@@ -165,7 +165,7 @@ export function formatCompanyValue(format: FieldFormat, value: unknown, currency
     case "multiplier":
       return `×${trim(value, 2)}`;
     case "fte":
-      return `${trim(value, 2)} FTE`;
+      return trim(value, 2);
     case "months":
       return `${trim(value, 1)} months`;
     default:
@@ -301,7 +301,8 @@ const TABLE_OF: Record<"roles" | "people" | "services" | "clients" | "lead_sourc
   lead_sources: "lead_sources",
 };
 
-const lowerFirst = (s: string) => (/^[A-Z][a-z]/.test(s) ? s[0]!.toLowerCase() + s.slice(1) : s);
+/** "Lead volume" → "lead volume"; acronyms ("FTE", "MRR") stay as they are. */
+export const lowerFirst = (s: string) => (/^[A-Z][a-z]/.test(s) ? s[0]!.toLowerCase() + s.slice(1) : s);
 
 /**
  * What changed between two snapshots (a saved run's and the model now), in a

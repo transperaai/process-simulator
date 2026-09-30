@@ -120,13 +120,13 @@ create table public.suggestions (
   -- {set: {column: value}, roles?: [role_id], services?: [service_id],
   --  assignments?: {role_id: person_id | null}, leave?: [{start_date, end_date, note?}]}
   -- For workspaces, `set` holds settings keys.
-  patch jsonb not null constraint suggestions_patch check (
+  patch jsonb not null constraint suggestions_patch check (coalesce(
     jsonb_typeof(patch) = 'object' and jsonb_typeof(patch -> 'set') = 'object'
     and (not patch ? 'roles' or jsonb_typeof(patch -> 'roles') = 'array')
     and (not patch ? 'services' or jsonb_typeof(patch -> 'services') = 'array')
     and (not patch ? 'assignments' or jsonb_typeof(patch -> 'assignments') = 'object')
     and (not patch ? 'leave' or jsonb_typeof(patch -> 'leave') = 'array')
-    and octet_length(patch::text) <= 20000),
+    and octet_length(patch::text) <= 20000, false)),
   -- Citations, as in provenance: [{source_id, speaker, quote, timestamp, value}].
   evidence jsonb not null default '[]' constraint suggestions_evidence check (
     jsonb_typeof(evidence) = 'array' and jsonb_array_length(evidence) <= 20 and octet_length(evidence::text) <= 50000),
@@ -553,10 +553,9 @@ begin
             reviewed_at = now()
       where x.id = sid;
       perform set_config('transpera.reviewing', '', true);
-      results := results || jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
-        'id', sid,
-        'status', case when decision = 'accept' then 'accepted' else 'rejected' end,
-        'applied', outcome)));
+      results := results || jsonb_build_array(
+        jsonb_build_object('id', sid, 'status', case when decision = 'accept' then 'accepted' else 'rejected' end)
+        || case when outcome is null then '{}'::jsonb else jsonb_build_object('applied', outcome) end);
     exception when others then
       perform set_config('transpera.reviewing', '', true);
       perform set_config('transpera.suggestion_id', '', true);

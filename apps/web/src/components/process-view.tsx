@@ -270,6 +270,16 @@ export function ProcessView({
 
   // Steps the model on screen no longer has (split, replaced or deleted), to explain broken scenarios (issue #16).
   const retired = useMemo(() => (showingLive ? retiredSteps(live) : retiredSteps(working, live)), [showingLive, live, working]);
+  // Whose values are estimated, for the robustness check: the steps (servicing processes' too), the
+  // services (churn sensitivity) and the workspace settings (health rules; issue #79).
+  const provenance = useMemo(
+    () => ({
+      steps: [...bundle.steps, ...(bundle.otherProcesses ?? []).flatMap((p) => p.steps)],
+      services: bundle.services,
+      workspace: bundle.workspace.provenance,
+    }),
+    [bundle],
+  );
 
   // Issues, levers and scenarios follow the model on screen (the draft, or live when shown).
   const issuesUi = useProcessIssues({
@@ -437,7 +447,7 @@ export function ProcessView({
           mode={mode}
           fix={issuesUi.fix}
           onScenariosChange={issuesUi.onScenariosChange}
-          steps={bundle.steps}
+          provenance={provenance}
           retired={retired}
         />
       )}

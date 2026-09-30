@@ -3,6 +3,7 @@ import { northbeamBundle } from "@transpera-flow/db";
 import { AppHeader } from "@/components/app-header";
 import { DemoRoster } from "@/components/roster-views";
 import type { RosterData } from "@/lib/clients/roster";
+import { demoBundle } from "@/lib/sources/demo";
 
 /** Northbeam's client roster from the seed fixtures, no database needed. */
 export default function DemoClientsPage() {
@@ -17,9 +18,9 @@ export default function DemoClientsPage() {
     clients: [...(b.clients ?? [])].sort((x, y) => x.name.localeCompare(y.name)),
     clientServices: b.clientServices ?? [],
     clientAssignments: b.clientAssignments ?? [],
-    // Simulated health and churn risk come from the seeded pipeline and servicing processes (issue #19).
+    // Simulated health and churn risk come from the demo's pipeline and servicing processes (issue #19), as /demo simulates them.
     servicingLinks: b.servicingLinks ?? [],
-    simulation: b,
+    simulation: demoBundle(),
   };
   return (
     <main className="mx-auto w-full max-w-5xl px-4 pb-12">

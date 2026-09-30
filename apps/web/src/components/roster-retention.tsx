@@ -122,13 +122,15 @@ function Figure({ label, value, detail, crit }: { label: string; value: string; 
   );
 }
 
-/** Weekly health, 0–100, with the at-risk line at 50. */
+/** Weekly health with the at-risk line at 50, scaled to the values (and 50) so small moves show. */
 export function Sparkline({ values }: { values: number[] }) {
   if (values.length < 2) return <span />;
   const w = 120;
   const h = 20;
   const x = (i: number) => (i / (values.length - 1)) * w;
-  const y = (v: number) => h - (Math.max(0, Math.min(100, v)) / 100) * h;
+  const lo = Math.max(0, Math.min(45, ...values) - 5);
+  const hi = Math.min(100, Math.max(55, ...values) + 5);
+  const y = (v: number) => h - ((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * h;
   const points = values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="order-last col-span-2 h-5 w-full sm:order-none sm:col-span-1" aria-hidden preserveAspectRatio="none">

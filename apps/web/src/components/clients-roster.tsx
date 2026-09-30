@@ -9,6 +9,7 @@ import { DEFAULT_HEALTH, personClientLoads, rosterSummary, type PersonClientLoad
 import type { SaveOutcome, Saver } from "@/lib/fields/field-controller";
 import { formatNumber, formatPercent, formatWholeCurrency } from "@/lib/format";
 import type { ClientRetention } from "@/lib/servicing";
+import type { SimulationResult } from "@transpera-flow/engine";
 import { RetentionPanel, useRosterRetention } from "./roster-retention";
 
 type Scalar = string | number | boolean | null;
@@ -40,7 +41,7 @@ export function ClientsRoster({ data, backend }: { data: RosterData; backend: Ro
         {summary.inactive ? <span className="text-fg-3"> · {summary.inactive} inactive</span> : null}
       </p>
       <RetentionPanel retention={retention} names={names} />
-      <LoadPanel data={data} />
+      <LoadPanel data={data} servicing={retention.result ? servicingHours(retention.result) : null} />
       <section className={sectionClass} aria-labelledby="roster-heading">
         <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-2">
           <h2 id="roster-heading" className="text-base font-bold">
@@ -87,8 +88,12 @@ export function ClientsRoster({ data, backend }: { data: RosterData; backend: Ro
 
 const STATUS_LABEL: Record<PersonClientLoad["status"], string> = { ok: "Fits", overtime: "Needs overtime", over: "Over capacity" };
 
-function LoadPanel({ data }: { data: RosterData }) {
+/** Simulated servicing hands-on hours a week per person (issue #19). */
+const servicingHours = (result: SimulationResult) => Object.fromEntries(Object.entries(result.people).map(([id, p]) => [id, p.servicingHours]));
+
+function LoadPanel({ data, servicing }: { data: RosterData; servicing: Record<string, number> | null }) {
   const loads = useMemo(() => personClientLoads(data), [data]);
+  const anyServicing = servicing !== null && Object.values(servicing).some((h) => h > 0.05);
   const cap = Number(data.workspace.settings.overtime_cap ?? 0);
   const roleName = new Map(data.roles.map((r) => [r.id, r.name]));
   const width = (share: number) => `${Math.max(0, Math.min(100, (share / 1.5) * 100))}%`;
@@ -99,14 +104,17 @@ function LoadPanel({ data }: { data: RosterData }) {
           Client load by person
         </h2>
         <p className="text-fg-3">
-          Ongoing hours a week from the clients each person looks after, before any pipeline work. Services without a
-          servicing process use their fallback load per client (Settings → Services).
+          Hours a week from the clients each person looks after, before any pipeline work. Services without a servicing
+          process use their fallback load per client (Settings → Services)
+          {anyServicing ? "; the rest is their simulated servicing tasks (darker)" : ""}.
           {cap > 0 ? ` Overtime cap: ${formatPercent(cap)} of a person's week.` : " No overtime allowed (Settings → Simulation)."}
         </p>
       </div>
       <ul className="flex flex-col gap-2">
         {loads.map((l) => {
+          const svc = servicing?.[l.personId] ?? 0;
           const share = l.capacity > 0 ? l.hours / l.capacity : 0;
+          const svcShare = l.capacity > 0 ? svc / l.capacity : 0;
           const tone = l.status === "over" ? "bg-crit" : l.status === "overtime" ? "bg-warn" : "bg-fg-3/50";
           return (
             <li
@@ -123,13 +131,15 @@ function LoadPanel({ data }: { data: RosterData }) {
               <span className="relative order-last col-span-2 h-4 sm:order-none sm:col-span-1" aria-hidden>
                 <span className="absolute inset-x-0 top-0.5 h-3 overflow-hidden rounded-sm bg-panel-2">
                   <span className={`absolute inset-y-0 left-0 ${tone}`} style={{ width: width(share) }} />
+                  {svc > 0 && <span className="absolute inset-y-0 bg-fg-2/70" style={{ left: width(share), width: width(svcShare) }} />}
                 </span>
                 {/* Ticks: a full week, and the week with the overtime cap. */}
                 <span className="absolute inset-y-0 w-px bg-fg" style={{ left: width(1) }} />
                 {cap > 0 && <span className="absolute inset-y-0 w-px bg-fg-3" style={{ left: width(1 + cap) }} />}
               </span>
               <span className="text-right text-xs tabular-nums sm:text-sm">
-                {formatNumber(l.hours)} of {formatNumber(l.capacity, 0)} h/wk{" "}
+                {anyServicing ? `${formatNumber(l.hours)} + ${formatNumber(svc)} servicing` : formatNumber(l.hours)} of{" "}
+                {formatNumber(l.capacity, 0)} h/wk{" "}
                 <span
                   className={`ml-1 rounded-token px-1.5 py-0.5 text-xs ${
                     l.status === "over" ? "bg-crit-soft text-crit" : l.status === "overtime" ? "bg-warn-soft" : "text-fg-3"

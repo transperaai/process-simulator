@@ -57,6 +57,10 @@
 --
 -- Rolling back deletes every suggestion and saved run. Audit entries it wrote
 -- stay in audit_log.
+--
+-- Production data: none needed. Existing rows get `provenance = '{}'` (no
+-- entry reads as an estimate until someone edits the value), and there are no
+-- suggestions or runs to carry over.
 
 -- ---------------------------------------------------------------------------
 -- Provenance on the remaining company-model values

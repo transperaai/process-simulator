@@ -252,11 +252,11 @@ function SuggestionCard({
         <p className="mt-2 rounded-token border border-crit bg-crit-soft p-2 text-xs">What this changes no longer exists, so it can only be rejected.</p>
       )}
 
-      <table className="mt-2 w-full text-left text-sm">
+      <table className="mt-2 w-full table-fixed text-left text-sm">
         <thead className="text-xs text-fg-3">
           <tr>
-            <th className="py-0.5 pr-3 font-medium">Field</th>
-            <th className="py-0.5 pr-3 font-medium">{s.status === "accepted" ? "Was" : view.action === "create" ? "" : "Now"}</th>
+            <th className="w-2/5 py-0.5 pr-3 font-medium">Field</th>
+            {view.action === "update" && <th className="w-1/4 py-0.5 pr-3 font-medium">{s.status === "accepted" ? "Was" : "Now"}</th>}
             <th className="py-0.5 font-medium">{s.status === "accepted" ? "Set to" : "Suggested"}</th>
           </tr>
         </thead>
@@ -264,7 +264,7 @@ function SuggestionCard({
           {view.changes.map((c) => (
             <tr key={c.field} className="border-t border-line align-top">
               <td className="py-1 pr-3 text-fg-2">{c.label}</td>
-              <td className="py-1 pr-3 tabular-nums text-fg-2">{c.before ?? (view.action === "create" ? "new" : "–")}</td>
+              {view.action === "update" && <td className="py-1 pr-3 tabular-nums text-fg-2">{c.before ?? "–"}</td>}
               <td className="py-1 tabular-nums">
                 <span className={c.unchanged ? "text-fg-3" : "font-semibold"}>{c.after}</span>
                 {c.unchanged && <span className="ml-1 text-xs text-fg-3">(already)</span>}

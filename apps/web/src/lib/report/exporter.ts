@@ -3,10 +3,14 @@
 // under RLS; docs/adr/0002-*).
 
 import { ToolError, type ReportExporter } from "@transpera-flow/mcp";
+import type { NarrationModel } from "@/lib/narration/narrate";
 import { REPORT_DEFAULT_REPS, parseSections } from "./options";
 import { ReportError, generateReport, type PdfRenderer } from "./server";
 
-export function reportExporter(origin: string, { now = () => new Date(), renderPdf }: { now?: () => Date; renderPdf?: PdfRenderer } = {}): ReportExporter {
+export function reportExporter(
+  origin: string,
+  { now = () => new Date(), renderPdf, narrator = () => null }: { now?: () => Date; renderPdf?: PdfRenderer; narrator?: () => NarrationModel | null } = {},
+): ReportExporter {
   return {
     async exportReport(input) {
       try {
@@ -23,6 +27,8 @@ export function reportExporter(origin: string, { now = () => new Date(), renderP
             origin,
             generatedBy: "Claude via MCP export_report",
             now: now().toISOString(),
+            narration: input.narrate && !input.summary ? { model: narrator() } : null,
+            summaryEdit: input.summary ? { paragraphs: input.summary, editor: "Claude via MCP export_report" } : null,
           },
           renderPdf,
         );
@@ -38,6 +44,16 @@ export function reportExporter(origin: string, { now = () => new Date(), renderP
           omitted: r.content.omitted,
           excluded_scenarios: r.content.excludedScenarios.map((s) => ({ name: s.name, reason: s.reason })),
           summary: r.content.summary?.paragraphs ?? [],
+          summary_source: r.content.summary?.source ?? null,
+          narration: r.narration
+            ? {
+                used: r.narration.source === "narration",
+                cached: r.narration.cached,
+                model: r.narration.model,
+                checked: r.narration.checked,
+                fallback_reason: r.narration.fallback ? r.narration.reason : null,
+              }
+            : null,
         };
       } catch (err) {
         if (err instanceof ReportError) throw new ToolError(err.code, err.message);

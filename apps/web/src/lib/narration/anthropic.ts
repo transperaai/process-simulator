@@ -21,9 +21,9 @@ export function narrationConfigured(): boolean {
 }
 
 /** Claude, or null when the server has no key (narration then falls back to the template, saying why). */
-export function anthropicNarrator(apiKey: string | undefined = process.env.ANTHROPIC_API_KEY): NarrationModel | null {
+export function anthropicNarrator(apiKey: string | undefined = process.env.ANTHROPIC_API_KEY, options: { fetch?: typeof fetch } = {}): NarrationModel | null {
   if (!apiKey) return null;
-  const client = new Anthropic({ apiKey, maxRetries: 0 });
+  const client = new Anthropic({ apiKey, maxRetries: 0, ...(options.fetch ? { fetch: options.fetch } : {}) });
   return {
     name: NARRATION_MODEL,
     async draft(req: DraftRequest): Promise<Draft> {

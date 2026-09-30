@@ -83,6 +83,8 @@ RLS and uses only `NEXT_PUBLIC_SUPABASE_URL` and
 does that without the service-role key:
 [`docs/adr/0002-mcp-acts-as-user-via-pre-request.md`](docs/adr/0002-mcp-acts-as-user-via-pre-request.md).
 
+To turn interview transcripts into a draft process, use the `/extract-process` skill: [`docs/extraction/README.md`](docs/extraction/README.md).
+
 ## Narration (Claude)
 
 The report's executive summary and "explain this run" can be drafted by Claude

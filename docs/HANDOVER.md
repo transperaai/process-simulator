@@ -91,7 +91,7 @@ password to `postgres`.
 - The /privacy wording added with #29 (narration sends model numbers to Anthropic).
 - A live narration check on production (the API key is set).
 - The two-browser Realtime test: presence plus live changes.
-- #27, done together.
+- #27, done together: follow `docs/extraction/qa/README.md`.
 
 ## Performance (parked until the end of the build)
 

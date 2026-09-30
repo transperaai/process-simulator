@@ -5107,6 +5107,38 @@ begin
 end;
 $$;
 
+-- Production data alignment (run after the migration):
+-- Gives an existing Northbeam workspace the seed's two sources and the
+-- evidence its sample figures cite (every cited value equals the step's own,
+-- so nothing simulates differently). Idempotent: sources are inserted only if
+-- missing, and a live step gets evidence only while its provenance is empty.
+-- Skipped entirely when there is no Northbeam workspace.
+--
+-- insert into public.sources (id, workspace_id, kind, title, speakers, recorded_at, body, created_at, updated_at)
+-- select v.id::uuid, w.id, v.kind, v.title, v.speakers, v.recorded_at::date, v.body, '2026-09-29T09:00:00Z', '2026-09-29T09:00:00Z'
+-- from public.workspaces w,
+--   (values
+--     ('30000000-0000-4000-8000-000000000001', 'transcript', 'Strategy walkthrough', array['Maya Collins', 'Rosa Diaz']::text[], '2026-09-12',
+--      E'[00:14:05] Maya Collins: A proper audit and proposal is a day''s work, call it six hours, if nobody interrupts me.\n[00:16:40] Rosa Diaz: From the time logs it looks more like twelve hours by the time it goes out.\n[00:21:10] Maya Collins: Kickoffs are quicker, half a day.'),
+--     ('30000000-0000-4000-8000-000000000002', 'notes', 'Sales team notes', array['Priya Shah', 'Tom Reed']::text[], '2026-09-15',
+--      E'Priya: discovery calls get booked within three working days of qualifying.\nPriya: about one proposal in seven comes back from sales review for changes.\nTom: clients take a week to decide, sometimes longer.')
+--   ) as v(id, kind, title, speakers, recorded_at, body)
+-- where w.id = 'a0000000-0000-4000-8000-000000000001'
+-- on conflict (id) do nothing;
+--
+-- update public.steps s set provenance = v.provenance::jsonb
+-- from public.processes p,
+--   (values
+--     ('e0000000-0000-4000-8000-000000000002', '{"wait_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Priya Shah","quote":"Discovery calls get booked within three working days of qualifying.","timestamp":null,"value":24}]}}'),
+--     ('e0000000-0000-4000-8000-000000000003', '{"work_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000001","speaker":"Maya Collins","quote":"A proper audit and proposal is a day''s work, call it six hours.","timestamp":"00:14:05","value":6}]},"rework_rate":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Priya Shah","quote":"About one proposal in seven comes back from sales review for changes.","timestamp":null,"value":0.15}]}}'),
+--     ('e0000000-0000-4000-8000-000000000004', '{"wait_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Tom Reed","quote":"Clients take a week to decide, sometimes longer.","timestamp":null,"value":40}]}}')
+--   ) as v(id, provenance)
+-- where p.id = 'c0000000-0000-4000-8000-000000000001'
+--   and s.revision_id = p.live_revision_id
+--   and s.id = v.id::uuid
+--   and s.provenance = '{}'::jsonb
+--   and exists (select 1 from public.sources src where src.id = '30000000-0000-4000-8000-000000000001');
+
 insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261009000000', 'sources', array['-- Sources, evidence and conflicts (docs/PRD.md §3 Source, §4.1 "Sources and
 -- evidence", §5 `sources` and `provenance jsonb`, §7.1b, decision D17; issue #21).
 --
@@ -5429,6 +5461,38 @@ begin
     ''conflicts'', conflicts);
 end;
 $$;
+
+-- Production data alignment (run after the migration):
+-- Gives an existing Northbeam workspace the seed''s two sources and the
+-- evidence its sample figures cite (every cited value equals the step''s own,
+-- so nothing simulates differently). Idempotent: sources are inserted only if
+-- missing, and a live step gets evidence only while its provenance is empty.
+-- Skipped entirely when there is no Northbeam workspace.
+--
+-- insert into public.sources (id, workspace_id, kind, title, speakers, recorded_at, body, created_at, updated_at)
+-- select v.id::uuid, w.id, v.kind, v.title, v.speakers, v.recorded_at::date, v.body, ''2026-09-29T09:00:00Z'', ''2026-09-29T09:00:00Z''
+-- from public.workspaces w,
+--   (values
+--     (''30000000-0000-4000-8000-000000000001'', ''transcript'', ''Strategy walkthrough'', array[''Maya Collins'', ''Rosa Diaz'']::text[], ''2026-09-12'',
+--      E''[00:14:05] Maya Collins: A proper audit and proposal is a day''''s work, call it six hours, if nobody interrupts me.\n[00:16:40] Rosa Diaz: From the time logs it looks more like twelve hours by the time it goes out.\n[00:21:10] Maya Collins: Kickoffs are quicker, half a day.''),
+--     (''30000000-0000-4000-8000-000000000002'', ''notes'', ''Sales team notes'', array[''Priya Shah'', ''Tom Reed'']::text[], ''2026-09-15'',
+--      E''Priya: discovery calls get booked within three working days of qualifying.\nPriya: about one proposal in seven comes back from sales review for changes.\nTom: clients take a week to decide, sometimes longer.'')
+--   ) as v(id, kind, title, speakers, recorded_at, body)
+-- where w.id = ''a0000000-0000-4000-8000-000000000001''
+-- on conflict (id) do nothing;
+--
+-- update public.steps s set provenance = v.provenance::jsonb
+-- from public.processes p,
+--   (values
+--     (''e0000000-0000-4000-8000-000000000002'', ''{"wait_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Priya Shah","quote":"Discovery calls get booked within three working days of qualifying.","timestamp":null,"value":24}]}}''),
+--     (''e0000000-0000-4000-8000-000000000003'', ''{"work_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000001","speaker":"Maya Collins","quote":"A proper audit and proposal is a day''''s work, call it six hours.","timestamp":"00:14:05","value":6}]},"rework_rate":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Priya Shah","quote":"About one proposal in seven comes back from sales review for changes.","timestamp":null,"value":0.15}]}}''),
+--     (''e0000000-0000-4000-8000-000000000004'', ''{"wait_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Tom Reed","quote":"Clients take a week to decide, sometimes longer.","timestamp":null,"value":40}]}}'')
+--   ) as v(id, provenance)
+-- where p.id = ''c0000000-0000-4000-8000-000000000001''
+--   and s.revision_id = p.live_revision_id
+--   and s.id = v.id::uuid
+--   and s.provenance = ''{}''::jsonb
+--   and exists (select 1 from public.sources src where src.id = ''30000000-0000-4000-8000-000000000001'');
 ']);
 
 -- seed.sql

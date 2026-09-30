@@ -77,7 +77,12 @@ Building tools write only into a process's draft (`open_draft`), never live;
 left-out numbers become assumptions, cited numbers keep their evidence, and
 values someone entered are flagged as conflicts instead of overwritten
 (`packages/mcp/src/building.ts`). Every MCP row write is audit-logged with
-`actor_kind = 'mcp'`. The endpoint acts as the token's user under
+`actor_kind = 'mcp'`. The company-model tools are `set_company`, `upsert_service`,
+`upsert_person`, `upsert_client`, `upsert_role`, `set_demand` and
+`list_suggestions`: they create suggestions a person accepts on the Suggestions
+page, and the database refuses company-model writes made with a token, roles
+included. A missing role is suggested with `upsert_role` and can be used in
+`import_process` once accepted. The endpoint acts as the token's user under
 RLS and uses only `NEXT_PUBLIC_SUPABASE_URL` and
 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; no extra environment variables. How it
 does that without the service-role key:

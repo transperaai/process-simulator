@@ -1,6 +1,6 @@
 # 8. Company-model suggestions are applied by the database, and runs keep a snapshot to diff
 
-Date: 30 Sep 2026 · Status: accepted · Issue: #25 · Implements PRD §7.1c, D19
+Date: 30 Sep 2026 · Status: accepted · Issue: #25 · Implements PRD §7.1c, D19 · Amended by 0012 (roles)
 
 ## Context
 

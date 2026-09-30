@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_HEALTH_RULES,
   applyPatches,
   applyScenarios,
   busiestRole,
+  healthRules,
   heaviestStep,
   isBlocking,
   northbeamModel,
+  northbeamWithServicing,
   offeredLoad,
   parsePatchPath,
   parsePatches,
@@ -157,6 +160,16 @@ describe("applyPatches: invalid paths are reported, not ignored", () => {
     }
   });
 
+  it("parses the health-rule and churn-sensitivity paths (issue #79)", () => {
+    for (const field of ["initial", "recover", "late_penalty", "missed_penalty"]) {
+      expect(parsePatchPath(`health.${field}`)).toEqual({ kind: "health", field });
+    }
+    expect(parsePatchPath("services.seo.churn_health_sensitivity")).toEqual({ kind: "services", id: "seo", field: "churn_health_sensitivity" });
+    for (const bad of ["health", "health.missed_threshold", "health.x.recover", "health.@busiest", "roles.r.churn_health_sensitivity", "services.@busiest.churn_health_sensitivity"]) {
+      expect(parsePatchPath(bad), bad).toBeNull();
+    }
+  });
+
   it("parsePatches checks the shape of untrusted input", () => {
     expect(parsePatches([{ path: "steps.a.work_hours", op: "multiply", value: 0.5 }])).toEqual({
       ok: true,
@@ -254,5 +267,63 @@ describe("selectors", () => {
     expect(issues).toEqual([]);
     expect(model.roles.strat!.count).toBe(2);
     expect(step(model, "audit").work).toBe(3);
+  });
+});
+
+describe("client health and churn (issue #79)", () => {
+  it("health rules act on the rules in force: the workspace's, or the estimated defaults", () => {
+    const m = northbeamWithServicing();
+    expect(m.health).toBeUndefined();
+    const { model, issues } = applyPatches(m, [
+      { path: "health.recover", op: "multiply", value: 1.25 },
+      { path: "health.late_penalty", op: "add", value: 1 },
+      { path: "health.missed_penalty", op: "set", value: 20 },
+    ]);
+    expect(issues).toEqual([]);
+    expect(healthRules(model)).toEqual({ ...DEFAULT_HEALTH_RULES, recover: 2.5, latePenalty: 6, missedPenalty: 20 });
+    // The workspace's own value is the base when it has one; the input model is untouched.
+    const set = applyPatches({ ...m, health: { initial: 60 } }, [{ path: "health.initial", op: "multiply", value: 0.5 }]).model;
+    expect(set.health).toEqual({ initial: 30 });
+    expect(m.health).toBeUndefined();
+  });
+
+  it("clamps health rules to 0–100 and churn sensitivity to 0–100", () => {
+    const { model, issues } = applyPatches(northbeamWithServicing(), [
+      { path: "health.initial", op: "add", value: 50 },
+      { path: "health.recover", op: "set", value: -1 },
+      { path: "services.seo.churn_health_sensitivity", op: "multiply", value: 1000 },
+    ]);
+    expect(model.health).toEqual({ initial: 100, recover: 0 });
+    expect(model.services!.seo!.churnSensitivity).toBe(100);
+    expect(issues.map((i) => i.problem)).toEqual(["clamped", "clamped", "clamped"]);
+  });
+
+  it("changes one service's churn sensitivity, and reports a missing service", () => {
+    const m = northbeamWithServicing();
+    const { model, issues } = applyPatches(m, [
+      { path: "services.ppc.churn_health_sensitivity", op: "multiply", value: 0.5 },
+      { path: "services.gone.churn_health_sensitivity", op: "set", value: 1 },
+    ]);
+    expect(model.services!.ppc!.churnSensitivity).toBe(1.5);
+    expect(model.services!.seo!.churnSensitivity).toBe(3);
+    expect(issues).toMatchObject([{ index: 1, problem: "missing_target" }]);
+    // A service with none set is at 0 (churn doesn't follow health), so `add` starts from there.
+    const { churnSensitivity: _c, ...plain } = m.services!.seo!;
+    const added = applyPatches({ ...m, services: { ...m.services, seo: plain } }, [{ path: "services.seo.churn_health_sensitivity", op: "add", value: 2 }]).model;
+    expect(added.services!.seo!.churnSensitivity).toBe(2);
+  });
+
+  it("moves the simulated health", () => {
+    const m = northbeamWithServicing();
+    const harsh = applyPatches(m, [
+      { path: "health.recover", op: "set", value: 0 },
+      { path: "health.late_penalty", op: "multiply", value: 3 },
+      { path: "health.missed_penalty", op: "multiply", value: 3 },
+    ]).model;
+    const mean = (model: EngineModel) => {
+      const r = simulate(model, 5, 1);
+      return Object.values(r.clients!).reduce((a, c) => a + c.health.mean, 0) / Object.keys(r.clients!).length;
+    };
+    expect(mean(harsh)).toBeLessThan(mean(m));
   });
 });

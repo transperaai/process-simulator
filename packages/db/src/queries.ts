@@ -133,7 +133,7 @@ export async function loadProcessBundle(
   revisionId: string,
 ): Promise<ProcessBundle> {
   const ws = workspace.id;
-  const [revision, roles, steps, edges, people, personRoles, personSkills, personLeave, services, leadSources, seasonality, demand, roster, servicing] =
+  const [revision, roles, steps, edges, people, personRoles, personSkills, personLeave, services, leadSources, seasonality, demand, roster, servicing, settingsProvenance] =
     await Promise.all([
       db.from("process_revisions").select("id, workspace_id, process_id, number, status").eq("id", revisionId).single(),
       db.from("roles").select("*").eq("workspace_id", ws),
@@ -143,19 +143,29 @@ export async function loadProcessBundle(
       db.from("person_roles").select("person_id, role_id, workspace_id").eq("workspace_id", ws),
       db.from("person_skills").select("person_id, step_id, workspace_id").eq("workspace_id", ws),
       db.from("person_leave").select("id, person_id, workspace_id, start_date, end_date").eq("workspace_id", ws),
-      db.from("services").select(SERVICE_COLUMNS).eq("workspace_id", ws),
+      // Services' and settings' provenance: the robustness check perturbs only estimated values (issue #79).
+      db.from("services").select(`${SERVICE_COLUMNS}, provenance`).eq("workspace_id", ws),
       db.from("lead_sources").select(LEAD_SOURCE_COLUMNS).eq("workspace_id", ws),
       db.from("seasonality").select(SEASONALITY_COLUMNS).eq("workspace_id", ws),
       db.from("demand_settings").select(DEMAND_SETTINGS_COLUMNS).eq("workspace_id", ws).maybeSingle(),
       loadClients(db, ws),
       loadServicingContext(db, ws, process),
+      db.from("workspaces").select("provenance").eq("id", ws).maybeSingle(),
     ]);
+  const wsProvenance = rows(settingsProvenance)?.provenance;
 
   // Split or replaced steps stay in the revision for scenarios to re-point, never drawn or simulated (./retired.ts).
   const { steps: inUse, retired } = partitionSteps((rows(steps) ?? []) as StepRow[]);
   // The casts narrow text columns that check constraints already limit, and the settings jsonb.
   return {
-    workspace: { id: workspace.id, name: workspace.name, slug: workspace.slug, settings: workspace.settings as WorkspaceSettings },
+    workspace: {
+      id: workspace.id,
+      name: workspace.name,
+      slug: workspace.slug,
+      settings: workspace.settings as WorkspaceSettings,
+      // jsonb; ProvenanceMap is its app-side shape.
+      ...(wsProvenance ? { provenance: wsProvenance as ProvenanceMap } : {}),
+    },
     process,
     revision: rows(revision) as ProcessRevisionRow,
     roles: rows(roles) ?? [],

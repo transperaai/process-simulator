@@ -6,7 +6,7 @@
 // inputs come from the engine's fixed templates.
 
 import { useMemo } from "react";
-import { robustnessVerdict, type EngineModel, type RobustnessOptions, type ScenarioPatch } from "@transpera-flow/engine";
+import { robustnessVerdict, type EngineModel, type ProvenanceRows, type RobustnessOptions, type ScenarioPatch } from "@transpera-flow/engine";
 import { formatNumber } from "@/lib/format";
 import { robustnessParameters } from "@/lib/robustness/session";
 import { useRobustness } from "@/lib/robustness/use-robustness";
@@ -14,7 +14,7 @@ import { useRobustness } from "@/lib/robustness/use-robustness";
 export function RobustnessCheck({
   model,
   scenario,
-  steps,
+  provenance,
   subject,
   plural,
   roleNames,
@@ -24,17 +24,17 @@ export function RobustnessCheck({
   model: EngineModel;
   /** The patches that make the scenario (applied scenarios, then levers). */
   scenario: ScenarioPatch[];
-  /** Step rows, for their provenance: entered or measured values are not perturbed. */
-  steps: readonly { id: string; provenance?: unknown }[];
+  /** Step, service and workspace rows, for their provenance: entered or measured values are not perturbed. */
+  provenance: ProvenanceRows;
   subject: string;
   plural: boolean;
   roleNames: Record<string, string>;
   currency: string;
 }) {
   const input = useMemo(() => {
-    const options: RobustnessOptions = { parameters: robustnessParameters(model, steps) };
+    const options: RobustnessOptions = { parameters: robustnessParameters(model, provenance) };
     return { model, scenario, options };
-  }, [model, scenario, steps]);
+  }, [model, scenario, provenance]);
   const { state, start, cancel } = useRobustness(input);
   const inputs = input.options.parameters?.length ?? 0;
   const conflicted = input.options.parameters?.filter((p) => p.conflict).length ?? 0;

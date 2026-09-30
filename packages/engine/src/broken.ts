@@ -93,11 +93,17 @@ const FIELD_WORDS: Record<string, string> = {
   work_hours: "hands-on time",
   wait_hours: "wait",
   rework_rate: "rework",
+  churn_health_sensitivity: "churn sensitivity to health",
+  initial: "starting client health",
+  recover: "health gained per task on time",
+  late_penalty: "health lost per late task",
+  missed_penalty: "health lost per missed task",
 };
 
 const KIND_WORDS: Record<PatchTarget["kind"], string> = {
   demand: "demand",
   finances: "finances",
+  health: "health rules",
   services: "service",
   roles: "role",
   people: "person",

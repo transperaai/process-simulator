@@ -13,14 +13,15 @@
 // (×0.5 then +1 is not +1 then ×0.5).
 //
 // Paths use the stored rows' vocabulary and ids (`steps.<step_id>.work_hours`,
-// `people.<person_id>.fte`), so a scenario means the same thing in the
+// `people.<person_id>.fte`; `health.late_penalty` for the workspace setting
+// `health_late_penalty`), so a scenario means the same thing in the
 // browser, on the server and in the database. A path whose target is missing
 // (a deleted step, a person who left) is reported, never silently skipped.
 //
 // Framework-free and dependency-free, like the rest of the engine.
 
 import type { EngineModel, EnginePerson, EngineStep } from "./model";
-import { servicingLinks, tasksPerWeek } from "./servicing";
+import { healthRules, servicingLinks, tasksPerWeek } from "./servicing";
 
 /** Servicing tasks a week per servicing process from the roster's clients, in process id order. */
 export function servicingTasksPerWeek(m: EngineModel): Map<string, number> {
@@ -57,11 +58,27 @@ export const MAX_PATCHES = 200;
 export const PATCH_FIELDS = {
   demand: ["leads_per_week", "active_clients", "churn_monthly"],
   finances: ["retainer"],
-  services: ["price", "mix_share"],
+  services: ["price", "mix_share", "churn_health_sensitivity"],
   roles: ["headcount", "cost_rate", "ongoing_hours"],
   people: ["fte"],
   steps: ["work_hours", "wait_hours", "rework_rate"],
+  /**
+   * The workspace's health rules (docs/PRD.md §6.3.5, issue #79), stored as
+   * `settings.health_<field>`: the starting health of a client with none
+   * entered, and the health gained for a servicing task done on time and lost
+   * for a late or a missed one.
+   */
+  health: ["initial", "recover", "late_penalty", "missed_penalty"],
 } as const;
+
+/** Highest value a health-rule patch may leave (health runs 0–100). */
+export const MAX_HEALTH_RULE = 100;
+
+/** Highest churn sensitivity a patch may leave (the app's limit for the field). */
+export const MAX_CHURN_SENSITIVITY = 100;
+
+/** The engine's name (`EngineHealthRules`) for each health-rule patch field. */
+export const HEALTH_RULE_KEYS = { initial: "initial", recover: "recover", late_penalty: "latePenalty", missed_penalty: "missedPenalty" } as const;
 
 /**
  * Symbolic targets resolved against the model when the patch is applied, so a
@@ -74,6 +91,7 @@ export const SELECTORS = { roles: ["@busiest"], steps: ["@heaviest"] } as const;
 export type PatchTarget =
   | { kind: "demand"; field: (typeof PATCH_FIELDS.demand)[number] }
   | { kind: "finances"; field: (typeof PATCH_FIELDS.finances)[number] }
+  | { kind: "health"; field: (typeof PATCH_FIELDS.health)[number] }
   | { kind: "services"; id: string; field: (typeof PATCH_FIELDS.services)[number] }
   | { kind: "roles"; id: string; field: (typeof PATCH_FIELDS.roles)[number] }
   | { kind: "people"; id: string; field: (typeof PATCH_FIELDS.people)[number] }
@@ -91,6 +109,7 @@ export function parsePatchPath(path: string): PatchTarget | null {
     const [kind, field] = parts as [string, string];
     if (kind === "demand" && has(PATCH_FIELDS.demand, field)) return { kind, field };
     if (kind === "finances" && has(PATCH_FIELDS.finances, field)) return { kind, field };
+    if (kind === "health" && has(PATCH_FIELDS.health, field)) return { kind, field };
     return null;
   }
   if (parts.length !== 3) return null;
@@ -205,11 +224,18 @@ export function applyPatches(model: EngineModel, patches: readonly ScenarioPatch
       case "finances":
         m.retainer = next(m.retainer, 0);
         return;
+      case "health": {
+        // Acts on the rules in force: the workspace's, or the estimated defaults where it has none.
+        const key = HEALTH_RULE_KEYS[target.field];
+        m.health = { ...m.health, [key]: next(healthRules(m)[key], 0, MAX_HEALTH_RULE) };
+        return;
+      }
       case "services": {
         const svc = m.services?.[target.id];
         if (!svc) return report("missing_target", `There is no service '${target.id}'.`);
         if (target.field === "price") svc.price = next(svc.price, 0);
-        else svc.mixShare = next(svc.mixShare, 0);
+        else if (target.field === "mix_share") svc.mixShare = next(svc.mixShare, 0);
+        else svc.churnSensitivity = next(svc.churnSensitivity ?? 0, 0, MAX_CHURN_SENSITIVITY);
         return;
       }
       case "roles": {

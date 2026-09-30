@@ -30,9 +30,11 @@ export default async function LarkspurDemoPage(props: PageProps<"/demo/larkspur"
         <Alert role="note">
           <Info />
           <AlertDescription className="text-xs leading-relaxed">
-            Demo mode, read-only: Larkspur Creative, the messier of the two sample agencies the engine is tested against. Its designers are
-            overloaded, its only copywriter works overtime, and late or missed client work wears its roster&apos;s health down until clients
-            leave. For an agency you can edit, see <Link href="/demo" className="underline">Northbeam</Link>.
+            <p>
+              Demo mode, read-only: Larkspur Creative, the messier of the two sample agencies the engine is tested against. Its designers are
+              overloaded, its only copywriter works overtime, and late or missed client work wears its roster&apos;s health down until clients
+              leave. For an agency you can edit, see <Link href="/demo" className="underline">Northbeam</Link>.
+            </p>
           </AlertDescription>
         </Alert>
       }

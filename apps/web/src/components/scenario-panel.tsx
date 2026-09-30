@@ -8,10 +8,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ScenarioRow } from "@transpera-flow/db";
-import { applyPatches, compareHeadline, compareRuns, type EngineModel, type EnginePerson } from "@transpera-flow/engine";
+import { applyPatches, compareHeadline, compareRuns, repointPatch, type EngineModel, type EnginePerson, type RetiredSteps } from "@transpera-flow/engine";
 import type { FixRequest } from "@/lib/issues/register";
 import { buildLevers, leverPatches, type LeverValues } from "@/lib/scenarios/levers";
 import { liveScenarioStore } from "@/lib/scenarios/live-store";
+import { resolveRun } from "@/lib/scenarios/broken";
 import { copyName, headlineSubject, scenarioProblems } from "@/lib/scenarios/scenarios";
 import { MemoryScenarioStore, type ScenarioStore } from "@/lib/scenarios/store";
 import type { SimRun } from "@/lib/sim/client";
@@ -24,6 +25,7 @@ import { RobustnessCheck } from "./robustness-check";
 import { ScenarioLibrary } from "./scenario-library";
 
 const NO_STEPS: readonly { id: string; provenance?: unknown }[] = [];
+const NO_RETIRED: RetiredSteps = {};
 
 export function ScenarioPanel({
   model,
@@ -35,6 +37,7 @@ export function ScenarioPanel({
   fix = null,
   onScenariosChange,
   steps = NO_STEPS,
+  retired = NO_RETIRED,
 }: {
   /** The baseline model (the process as it is now). */
   model: EngineModel;
@@ -51,6 +54,8 @@ export function ScenarioPanel({
   onScenariosChange?: (scenarios: ScenarioRow[]) => void;
   /** Step rows, for the robustness check: their provenance says which values are estimated. */
   steps?: readonly { id: string; provenance?: unknown }[];
+  /** Steps the model no longer has and what replaced them, to explain broken scenarios (issue #16). */
+  retired?: RetiredSteps;
 }) {
   const canEdit = mode !== "readonly";
   const [store] = useState<ScenarioStore>(() => (mode === "live" ? liveScenarioStore(workspaceId) : new MemoryScenarioStore(workspaceId)));
@@ -87,7 +92,7 @@ export function ScenarioPanel({
   // The stack can hold the unsaved fix; the library lists saved scenarios only.
   const known = useMemo(() => (fixScenario ? [...scenarios, fixScenario] : scenarios), [scenarios, fixScenario]);
 
-  const problems = useMemo(() => Object.fromEntries(known.map((s) => [s.id, scenarioProblems(model, s)])), [model, known]);
+  const problems = useMemo(() => Object.fromEntries(known.map((s) => [s.id, scenarioProblems(model, s, retired)])), [model, known, retired]);
   const stack = useMemo(
     () => stackIds.map((id) => known.find((s) => s.id === id)).filter((s): s is ScenarioRow => Boolean(s)),
     [stackIds, known],
@@ -100,7 +105,9 @@ export function ScenarioPanel({
   const levers = useMemo(() => buildLevers(stacked), [stacked]);
   const moved = useMemo(() => leverPatches(levers, values), [levers, values]);
   const patches = useMemo(() => [...usable.flatMap((s) => s.patch), ...moved], [usable, moved]);
-  const applied = useMemo(() => (patches.length ? applyPatches(model, patches) : null), [model, patches]);
+  // Model resolution refuses a broken scenario rather than skipping its patch (issue #16).
+  const resolved = useMemo(() => (patches.length ? resolveRun(model, patches, retired) : null), [model, patches, retired]);
+  const applied = resolved?.ok ? resolved : null;
 
   // Only a change to the scenario model re-runs it.
   const key = applied ? JSON.stringify(applied.model) : null;
@@ -123,7 +130,8 @@ export function ScenarioPanel({
     : null;
   const people: Record<string, EnginePerson> = { ...baseline?.result.resolvedPeople, ...run?.result.resolvedPeople };
   const notes = [
-    ...left.map((s) => `“${s.name}” needs attention and is left out: ${problems[s.id]!.map((p) => p.message).join(" ")}`),
+    ...left.map((s) => `“${s.name}” needs attention and is left out of the comparison: ${problems[s.id]!.map((p) => p.message).join(" ")}`),
+    ...(resolved && !resolved.ok ? [resolved.error] : []),
     ...(applied?.issues ?? []).map((i) => i.message),
   ];
 
@@ -213,6 +221,7 @@ export function ScenarioPanel({
           model={model}
           stack={stackIds.filter((id) => scenarios.some((s) => s.id === id))}
           problems={problems}
+          retired={retired}
           canEdit={canEdit}
           leverCount={moved.length}
           busy={busy}
@@ -227,6 +236,21 @@ export function ScenarioPanel({
             setStackIds((ids) => [...ids, saved.id]);
             setValues({});
             return true;
+          }}
+          onRepoint={async (id, index, targetId) => {
+            const scenario = scenarios.find((s) => s.id === id);
+            if (!scenario) return;
+            setBusy(true);
+            setError(null);
+            try {
+              const r = await store.repoint(scenario, repointPatch(scenario.patch, index, targetId));
+              if (r.status === "error") return setError(r.message);
+              setScenarios((list) => list.map((s) => (s.id === id ? r.scenario : s)));
+            } catch {
+              setError("Couldn't save. Try again.");
+            } finally {
+              setBusy(false);
+            }
           }}
           onDuplicate={(id) => {
             const source = scenarios.find((s) => s.id === id);

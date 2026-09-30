@@ -11,6 +11,7 @@ export {
   workingDaysBetween,
   type ModelOptions,
 } from "./model";
+export { isRetiredStep, partitionSteps } from "./retired";
 export { seedSql } from "./seed";
 export {
   NORTHBEAM_DOMAIN,

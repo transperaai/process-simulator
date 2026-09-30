@@ -64,6 +64,9 @@ export function stepFromRecord(record: Json): StepRow | null {
     row[f] = v;
   }
   for (const f of STEP_OPTIONAL_TEXT) row[f] = str(record[f]);
+  // A split or replaced step (issue #16): kept so the editor files it with the retired rows.
+  const replacedBy = Array.isArray(record.replaced_by) ? record.replaced_by.filter((v): v is string => typeof v === "string") : [];
+  if (replacedBy.length) row.replaced_by = replacedBy;
   return row as unknown as StepRow;
 }
 

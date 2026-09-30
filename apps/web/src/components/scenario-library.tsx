@@ -7,20 +7,77 @@
 
 import { useState, type FormEvent } from "react";
 import type { ScenarioRow } from "@transpera-flow/db";
-import type { EngineModel, PatchIssue } from "@transpera-flow/engine";
+import type { BrokenPatch, EngineModel, RetiredSteps } from "@transpera-flow/engine";
+import { repointTargets } from "@/lib/scenarios/broken";
 import { MAX_DESCRIPTION, MAX_NAME } from "@/lib/scenarios/validate";
 import { describePatch } from "@/lib/scenarios/scenarios";
 
 const buttonClass = "rounded-token border border-line px-2 py-0.5 text-xs hover:bg-panel-2 disabled:opacity-50";
+
+/**
+ * One broken change of a scenario (issue #16): what it pointed at and what
+ * happened to it, and (for editors) where to point it instead, the steps
+ * that replaced it first.
+ */
+function BrokenChange({
+  model,
+  problem,
+  canEdit,
+  busy,
+  onRepoint,
+}: {
+  model: EngineModel;
+  problem: BrokenPatch;
+  canEdit: boolean;
+  busy: boolean;
+  onRepoint: (targetId: string) => void;
+}) {
+  const { suggested, others } = repointTargets(model, problem);
+  const what = problem.kind === "steps" ? "step" : problem.kind === "people" ? "person" : problem.kind === "roles" ? "role" : "service";
+  return (
+    <li className="flex flex-col gap-1" data-broken-path={problem.path}>
+      <p>
+        <code className="rounded bg-panel-2 px-1 text-[11px] break-all text-fg-2">{problem.path}</code> {problem.message}
+      </p>
+      {canEdit && (suggested.length > 0 || others.length > 0) && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {suggested.map((t) => (
+            <button key={t.id} type="button" disabled={busy} onClick={() => onRepoint(t.id)} className={`${buttonClass} border-accent`}>
+              Point at {t.name}
+            </button>
+          ))}
+          {others.length > 0 && (
+            <select
+              aria-label={`Re-point to another ${what}`}
+              value=""
+              disabled={busy}
+              onChange={(e) => e.target.value && onRepoint(e.target.value)}
+              className="rounded-token border border-line bg-panel px-1 py-0.5 text-xs"
+            >
+              <option value="">{suggested.length ? `Or another ${what}…` : `Re-point to a ${what}…`}</option>
+              {others.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
 
 function ScenarioItem({
   scenario,
   model,
   position,
   problems,
+  retired,
   canEdit,
   busy,
   onToggle,
+  onRepoint,
   onDuplicate,
   onDelete,
 }: {
@@ -28,10 +85,12 @@ function ScenarioItem({
   model: EngineModel;
   /** 1-based place in the stack, or null when not applied. */
   position: number | null;
-  problems: PatchIssue[];
+  problems: BrokenPatch[];
+  retired: RetiredSteps;
   canEdit: boolean;
   busy: boolean;
   onToggle: () => void;
+  onRepoint: (index: number, targetId: string) => void;
   onDuplicate: () => void;
   onDelete: () => void;
 }) {
@@ -52,7 +111,11 @@ function ScenarioItem({
             )}
             {scenario.name}
             {broken && (
-              <span className="rounded-token border border-crit bg-crit-soft px-1 text-xs font-normal" title={problems.map((p) => p.message).join(" ")}>
+              <span
+                className="rounded-token border border-crit bg-crit-soft px-1 text-xs font-normal"
+                title={problems.map((p) => p.message).join(" ")}
+                data-needs-attention
+              >
                 Needs attention
               </span>
             )}
@@ -65,13 +128,20 @@ function ScenarioItem({
       </div>
       <ul className="text-xs text-fg-3">
         {scenario.patch.map((p, i) => (
-          <li key={i}>{describePatch(model, p)}</li>
+          <li key={i}>{describePatch(model, p, retired)}</li>
         ))}
       </ul>
       {broken && (
-        <p className="text-xs text-crit" role="note">
-          Left out of the comparison: {problems.map((p) => p.message).join(" ")}
-        </p>
+        <div className="flex flex-col gap-1 rounded-token border border-crit bg-crit-soft/50 p-1.5 text-xs" role="note">
+          <p className="font-semibold text-crit">
+            Left out of the comparison and reports until {problems.length === 1 ? "this change is" : "these changes are"} re-pointed:
+          </p>
+          <ul className="flex flex-col gap-1.5">
+            {problems.map((p) => (
+              <BrokenChange key={p.index} model={model} problem={p} canEdit={canEdit} busy={busy} onRepoint={(id) => onRepoint(p.index, id)} />
+            ))}
+          </ul>
+        </div>
       )}
       {canEdit && (
         <div className="flex gap-2">
@@ -111,12 +181,14 @@ export function ScenarioLibrary({
   model,
   stack,
   problems,
+  retired = {},
   canEdit,
   leverCount,
   busy,
   error,
   onToggle,
   onClear,
+  onRepoint,
   onSave,
   onDuplicate,
   onDelete,
@@ -124,7 +196,9 @@ export function ScenarioLibrary({
   scenarios: ScenarioRow[];
   model: EngineModel;
   stack: string[];
-  problems: Record<string, PatchIssue[]>;
+  problems: Record<string, BrokenPatch[]>;
+  /** Steps the model no longer has, to name them in broken changes. */
+  retired?: RetiredSteps;
   canEdit: boolean;
   /** Levers moved off neutral, which "Save" would store. */
   leverCount: number;
@@ -132,6 +206,8 @@ export function ScenarioLibrary({
   error: string | null;
   onToggle: (id: string) => void;
   onClear: () => void;
+  /** Point patch `index` of a scenario at another target (issue #16). */
+  onRepoint: (id: string, index: number, targetId: string) => void;
   onSave: (name: string, description: string) => Promise<boolean>;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
@@ -176,9 +252,11 @@ export function ScenarioLibrary({
               model={model}
               position={at >= 0 ? at + 1 : null}
               problems={problems[s.id] ?? []}
+              retired={retired}
               canEdit={canEdit}
               busy={busy}
               onToggle={() => onToggle(s.id)}
+              onRepoint={(index, targetId) => onRepoint(s.id, index, targetId)}
               onDuplicate={() => onDuplicate(s.id)}
               onDelete={() => onDelete(s.id)}
             />

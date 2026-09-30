@@ -4,11 +4,11 @@
 
 import type { ScenarioRow } from "@transpera-flow/db";
 import {
-  applyPatches,
-  isBlocking,
+  checkScenario,
   parsePatchPath,
+  type BrokenPatch,
   type EngineModel,
-  type PatchIssue,
+  type RetiredSteps,
   type ScenarioPatch,
 } from "@transpera-flow/engine";
 import { formatNumber } from "@/lib/format";
@@ -33,7 +33,7 @@ const SHARES = new Set(["churn_monthly", "rework_rate", "mix_share"]);
 const HOURS = new Set(["work_hours", "wait_hours", "ongoing_hours"]);
 
 /** A patch in words: "Audit & proposal hands-on time −60%", "Strategist head-count +1". */
-export function describePatch(model: EngineModel, patch: ScenarioPatch): string {
+export function describePatch(model: EngineModel, patch: ScenarioPatch, retired: RetiredSteps = {}): string {
   const target = parsePatchPath(patch.path);
   if (!target) return patch.path;
   const field = target.field;
@@ -49,7 +49,7 @@ export function describePatch(model: EngineModel, patch: ScenarioPatch): string 
         : target.kind === "steps"
           ? id === "@heaviest"
             ? "The heaviest step"
-            : model.steps.find((s) => s.id === id)?.name
+            : (model.steps.find((s) => s.id === id)?.name ?? (retired[id] ? `${retired[id].name} (removed)` : undefined))
           : target.kind === "people"
             ? model.people?.[id]?.name
             : model.services?.[id]?.name;
@@ -65,17 +65,26 @@ export function describePatch(model: EngineModel, patch: ScenarioPatch): string 
   return `${subject} → ${value(patch.value)}`;
 }
 
-/** What stops a scenario applying to the model; empty when it applies ("needs attention" otherwise). */
-export function scenarioProblems(model: EngineModel, scenario: Pick<ScenarioRow, "patch">): PatchIssue[] {
-  return applyPatches(model, scenario.patch).issues.filter(isBlocking);
+/**
+ * What stops a scenario applying to the model; empty when it applies
+ * ("needs attention" otherwise, issue #16). `retired` names steps the model
+ * no longer has and what replaced them (./broken.ts `retiredSteps`).
+ */
+export function scenarioProblems(model: EngineModel, scenario: Pick<ScenarioRow, "patch">, retired: RetiredSteps = {}): BrokenPatch[] {
+  return checkScenario(model, scenario.patch, retired).broken;
 }
 
 /**
  * The patches to run: the applied scenarios in the order they were applied,
  * leaving out any that need attention, then the unsaved levers.
  */
-export function effectivePatches(model: EngineModel, stack: readonly ScenarioRow[], levers: readonly ScenarioPatch[]): ScenarioPatch[] {
-  return [...stack.filter((s) => !scenarioProblems(model, s).length).flatMap((s) => s.patch), ...levers];
+export function effectivePatches(
+  model: EngineModel,
+  stack: readonly ScenarioRow[],
+  levers: readonly ScenarioPatch[],
+  retired: RetiredSteps = {},
+): ScenarioPatch[] {
+  return [...stack.filter((s) => !scenarioProblems(model, s, retired).length).flatMap((s) => s.patch), ...levers];
 }
 
 /** The compare headline's subject: “A”, “A” + “B”, “A” plus lever changes, These lever changes. */

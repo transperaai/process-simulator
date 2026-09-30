@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "./database.types";
+import { partitionSteps } from "./retired";
 import type {
   DemandSettingsRow,
   IssueRow,
@@ -60,13 +61,16 @@ export async function loadProcessBundle(
       db.from("demand_settings").select(DEMAND_SETTINGS_COLUMNS).eq("workspace_id", ws).maybeSingle(),
     ]);
 
+  // Split or replaced steps stay in the revision for scenarios to re-point, never drawn or simulated (./retired.ts).
+  const { steps: inUse, retired } = partitionSteps((rows(steps) ?? []) as StepRow[]);
   // The casts narrow text columns that check constraints already limit, and the settings jsonb.
   return {
     workspace: { id: workspace.id, name: workspace.name, slug: workspace.slug, settings: workspace.settings as WorkspaceSettings },
     process,
     revision: rows(revision) as ProcessRevisionRow,
     roles: rows(roles) ?? [],
-    steps: (rows(steps) ?? []) as StepRow[],
+    steps: inUse,
+    retired,
     edges: rows(edges) ?? [],
     people: rows(people) ?? [],
     personRoles: rows(personRoles) ?? [],

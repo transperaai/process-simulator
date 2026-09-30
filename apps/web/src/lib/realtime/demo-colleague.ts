@@ -4,7 +4,7 @@
 // "database" (MemoryDraftBackend) and show up through the same in-memory
 // Realtime as a real colleague would, so the editor can't tell the difference.
 
-import type { ProcessBundle, StepRow } from "@transpera-flow/db";
+import { isRetiredStep, type ProcessBundle, type StepRow } from "@transpera-flow/db";
 import type { DraftBackend, MemoryDraftBackend } from "@/lib/drafts/session";
 import { formatHours } from "@/lib/format";
 import { sameScalar } from "@/lib/editor/commands";
@@ -52,7 +52,7 @@ export class DemoColleague {
     const draft = await this.draft();
     if (!draft) return null;
     const rows = this.backend.draftRows()!;
-    const working = rows.steps.filter((s) => s.kind !== "start" && s.kind !== "end");
+    const working = rows.steps.filter((s) => s.kind !== "start" && s.kind !== "end" && !isRetiredStep(s));
     const target = working.find((s) => s.id === prefer) ?? working[this.turn++ % working.length];
     if (!target) return null;
     const hours = Number(target.work_hours);

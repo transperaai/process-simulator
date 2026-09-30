@@ -209,6 +209,21 @@ describe("service_servicing (database)", () => {
     }
   });
 
+  it("is company model (issue #25): the MCP server can't write links, and people's writes are audited (read by owners)", async () => {
+    const mcp = { ...users.editor!.claims, api_token_id: "00000000-0000-4000-8000-000000000999" };
+    await db.as(mcp, async (c) => {
+      await expect(c.query("update service_servicing set sla_hours = 12")).rejects.toThrow(/only by review/);
+    });
+    await db.as(users.owner!.claims, async (c) => {
+      await c.query("update service_servicing set sla_hours = 12 where service_id = $1 and process_id = $2", [northbeamServiceIds.seo, checkin]);
+      const audit = (
+        await c.query("select actor_kind, action, diff from audit_log where target_table = 'service_servicing' order by created_at desc limit 1")
+      ).rows[0];
+      expect(audit).toMatchObject({ actor_kind: "user", action: "update" });
+      expect(audit.diff.new.sla_hours).toBe(12);
+    });
+  });
+
   it("refuses anon entirely", async () => {
     const r = await db.client.query("select has_table_privilege('anon', 'public.service_servicing', 'select') as s");
     expect(r.rows[0].s).toBe(false);

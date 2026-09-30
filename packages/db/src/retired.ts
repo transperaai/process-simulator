@@ -1,5 +1,3 @@
-import type { StepRow } from "./types";
-
 // Retired steps (issue #16, docs/PRD.md §4.1 "Stable step IDs"). Splitting or
 // replacing a step in the editor keeps the old row in the revision with
 // `replaced_by` set to the steps that took over, so a saved scenario aimed at

@@ -17,6 +17,11 @@ export class EventQueue<T extends { t: number }> {
     return this.evs.length;
   }
 
+  /** The earliest pending event's time (Infinity when empty). */
+  minTime(): number {
+    return this.evs.length ? this.times[0]! : Infinity;
+  }
+
   push(ev: T): void {
     const { times, seqs, evs } = this;
     const t = ev.t;

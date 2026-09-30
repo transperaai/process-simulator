@@ -52,7 +52,7 @@ import type {
   TraceEntity,
   TraceSegment,
 } from "./model";
-import { expo, lognormal, lognormalSampler, Streams, triangular, type Rng } from "./random";
+import { expo, lognormal, lognormalSampler, StreamLabels, Streams, triangular, type Rng } from "./random";
 
 /** The trace of every entity in a run that keeps none: never written to. */
 const NO_TRACE: TraceSegment[] = [];
@@ -70,6 +70,8 @@ const DEFAULT_WARMUP_WEEKS = 4;
 const MAX_WARMUP_WEEKS = 52;
 /** Seed of the pilot run that sizes the automatic warm-up; fixed, so the warm-up is a property of the model. */
 const PILOT_SEED = 1;
+/** Each model's stream labels, shared by its replications. */
+const streamLabels = new WeakMap<EngineModel, StreamLabels>();
 
 interface SimEntity extends TraceEntity {
   seg: TraceSegment | null;
@@ -101,14 +103,14 @@ interface LinkState {
   rng: Rng;
 }
 
-type EventType = "arrive" | "week" | "measure" | "back" | "away" | "end" | "leave" | "task" | "miss";
+type EventType = "arrive" | "week" | "measure" | "back" | "away" | "end" | "leave" | "task";
 
 /**
  * A timed event. One shape for every type (unused fields null), so the event
  * loop's property reads stay monomorphic, and handled events are recycled
  * (see `schedule`) rather than left to the garbage collector:
  * arrive, week, measure: no fields; back, away: `p`; end: `e`, `st`, `p`;
- * leave: `e`, `st`; task: `c`, `l`; miss: `e`.
+ * leave: `e`, `st`; task: `c`, `l`.
  */
 interface SimEvent {
   t: number;
@@ -137,23 +139,41 @@ interface StepStat {
 
 /** A first-in, first-out queue of items waiting at a step. */
 class Fifo {
-  private readonly items: SimEntity[] = [];
+  /** A ring buffer (its length a power of 2): `n` items from `head` on, wrapping round. */
+  private buf: (SimEntity | null)[] = [null, null, null, null, null, null, null, null];
+  private head = 0;
+  private n = 0;
 
   get size(): number {
-    return this.items.length;
+    return this.n;
   }
 
   /** The oldest item, if any. */
   peek(): SimEntity | undefined {
-    return this.items[0];
+    return this.n ? this.buf[this.head]! : undefined;
   }
 
   push(e: SimEntity): void {
-    this.items.push(e);
+    const buf = this.buf;
+    const cap = buf.length;
+    if (this.n === cap) {
+      // Full: double it, oldest first.
+      const next: (SimEntity | null)[] = new Array<SimEntity | null>(cap * 2).fill(null);
+      for (let i = 0; i < cap; i++) next[i] = buf[(this.head + i) & (cap - 1)]!;
+      this.buf = next;
+      this.head = 0;
+      next[cap] = e;
+    } else {
+      buf[(this.head + this.n) & (cap - 1)] = e;
+    }
+    this.n++;
   }
 
   shift(): void {
-    this.items.shift();
+    const buf = this.buf;
+    buf[this.head] = null;
+    this.head = (this.head + 1) & (buf.length - 1);
+    this.n--;
   }
 }
 
@@ -370,6 +390,14 @@ interface RosterClient {
   /** What it bills a week while active, and since when. */
   weeklyBill: number;
   since: number;
+  /**
+   * Its tasks that can still be missed within the run, by deadline (ties in
+   * creation order). A task is marked missed when the run reaches its
+   * deadline, found lazily (`settleMisses`) rather than by an event each.
+   * Those before `openHead` are settled.
+   */
+  open: Task[];
+  openHead: number;
 }
 
 /** True when any step has current WIP entered (0 counts: "nothing here right now"). */
@@ -409,6 +437,8 @@ export function runOnce(
   start: InitialState = initialState(model),
 ): ReplicationResult {
   const streams = new Streams(seed);
+  let labels = streamLabels.get(model);
+  if (!labels) streamLabels.set(model, (labels = new StreamLabels()));
   const H = model.horizonWeeks * model.hoursPerWeek;
   const W = start.kind === "warmup" ? start.hours : 0;
   const floor = model.availabilityFloor ?? DEFAULT_AVAILABILITY_FLOOR;
@@ -467,11 +497,13 @@ export function runOnce(
       queue: new Fifo(),
       people: [],
       staffed: Boolean(s.role || s.person),
-      work: durationSampler(streams.get(`work:${s.id}`), s.work, s.workDist ?? DEFAULT_WORK_DIST),
+      work: durationSampler(streams.get(labels.join("work", s.id)), s.work, s.workDist ?? DEFAULT_WORK_DIST),
       wait:
-        s.wait || waitDist.kind === "triangular" ? durationSampler(streams.get(`wait:${s.id}`), s.wait, waitDist) : null,
-      rework: streams.get(`rework:${s.id}`),
-      route: streams.get(`route:${s.id}`),
+        s.wait || waitDist.kind === "triangular"
+          ? durationSampler(streams.get(labels.join("wait", s.id)), s.wait, waitDist)
+          : null,
+      rework: streams.get(labels.join("rework", s.id)),
+      route: streams.get(labels.join("route", s.id)),
       routes:
         hasServices && s.next.some((n) => n.tag !== undefined)
           ? services.map((sv) => routeFor(s.next, sv.s.pathTags))
@@ -671,7 +703,7 @@ export function runOnce(
       roster: isRoster,
       churnBase: clientChurnMonthly(model, client),
       sensitivity: clientChurnSensitivity(model, client),
-      rng: streams.get(`churn:${isRoster ? `client:${key}` : key}`),
+      rng: streams.get(isRoster ? labels.join("churn", "client", key) : labels.join("churn", key)),
       carriers: [],
       assigned: [],
       assignees: new Map(),
@@ -682,6 +714,8 @@ export function runOnce(
       churned: false,
       weeklyBill,
       since: t,
+      open: [],
+      openHead: 0,
     };
     if (isRoster) {
       rc.trajectory = [rc.health];
@@ -713,7 +747,7 @@ export function runOnce(
             svc,
             interval,
             gap: interval ?? poissonMeanGap(link.recurrence, hpw),
-            rng: streams.get(`servicing:${key}:${sid}:${link.process}`),
+            rng: streams.get(labels.join("servicing", key, sid, link.process)),
           };
           // The first task falls at a random point in the first interval, so clients' tasks don't all land at once.
           scheduleTask(rc, l, t + (interval !== null ? l.rng() * interval : expo(l.rng, l.gap)));
@@ -785,6 +819,8 @@ export function runOnce(
       setPooledLoads(t);
       return;
     }
+    // Tasks whose deadline passed before this tick count as missed first (one at the tick itself comes after it).
+    if (servicing) for (const rc of rosterClients) settleMisses(rc, t, false);
     const staying: RosterClient[] = [];
     for (const rc of rosterClients) {
       rc.trajectory?.push(rc.health);
@@ -864,22 +900,57 @@ export function runOnce(
     if (!c.active) return;
     scheduleTask(c, l, t + (l.interval ?? expo(l.rng, l.gap)));
     const sla = l.link.sla;
-    const e: SimEntity = {
-      id: eid++,
-      t0: t,
-      trace: keepTrace ? [] : NO_TRACE,
-      seg: null,
-      svc: l.svc,
-      servicing: { process: l.link.process, client: c.key },
-      task: { client: c, due: t + sla, deadline: t + 2 * sla, state: "open" },
-    };
-    if (keepTrace) entities.push(e);
-    if (t + 2 * sla <= H) schedule(t + 2 * sla, "miss", e);
+    const task: Task = { client: c, due: t + sla, deadline: t + 2 * sla, state: "open" };
+    const e: SimEntity = { id: eid++, t0: t, trace: NO_TRACE, seg: null, svc: l.svc, task };
+    if (keepTrace) {
+      e.trace = [];
+      e.servicing = { process: l.link.process, client: c.key };
+      entities.push(e);
+    }
+    // A deadline after the horizon can't be missed within the run.
+    if (task.deadline <= H) {
+      const open = c.open;
+      let i = open.length;
+      while (i > c.openHead && open[i - 1]!.deadline > task.deadline) i--;
+      if (i === open.length) open.push(task);
+      else open.splice(i, 0, task);
+    }
     enterTarget(e, l.entry, t);
+  }
+
+  /**
+   * Mark a client's open tasks missed whose deadline has come by `t`
+   * (`inclusive`) or before it, oldest deadline first, each at its deadline:
+   * exactly what an event at each deadline would do, but only when the
+   * client's health is next read (a completion, a weekly tick, the horizon).
+   */
+  function settleMisses(c: RosterClient, t: number, inclusive: boolean) {
+    const open = c.open;
+    let n = c.openHead;
+    while (n < open.length) {
+      const task = open[n]!;
+      if (inclusive ? task.deadline > t : task.deadline >= t) break;
+      n++;
+      if (task.state === "open") {
+        task.state = "missed";
+        touchpoint(c, "missed", task.deadline);
+      }
+    }
+    // Drop the settled ones once they are all settled, or are most of the list.
+    if (n === open.length) {
+      open.length = 0;
+      n = 0;
+    } else if (n >= 32 && 2 * n >= open.length) {
+      open.splice(0, n);
+      n = 0;
+    }
+    c.openHead = n;
   }
 
   /** A task reached its process's end: on time or late, unless it was already missed. */
   function finishTask(task: Task, t: number) {
+    // Any of the client's deadlines up to now pass first, this task's included.
+    settleMisses(task.client, t, true);
     const open = task.state === "open";
     task.state = "done";
     if (open) touchpoint(task.client, t <= task.due ? "onTime" : "late", t);
@@ -1094,6 +1165,14 @@ export function runOnce(
       p.completed++;
     }
     const w = st.wait ? st.wait() : 0;
+    // With no wait and nothing else pending at `t`, its leave event would be
+    // the very next one handled (whatever `takeNext` schedules comes after
+    // it), so it's handled here instead, in exactly that order.
+    if (w === 0 && events.minTime() > t) {
+      if (p) takeNext(p, t);
+      leave(e, st, t);
+      return;
+    }
     schedule(t + w, "leave", e, st);
     if (p) takeNext(p, t);
   }
@@ -1246,12 +1325,6 @@ export function runOnce(
       startMeasuring();
     } else if (ev.type === "task") {
       createTask(ev.c!, ev.l!, ev.t);
-    } else if (ev.type === "miss") {
-      const task = ev.e!.task!;
-      if (task.state === "open") {
-        task.state = "missed";
-        touchpoint(task.client, "missed", ev.t);
-      }
     } else if (ev.type === "away") {
       // Anyone idle who shares a servicing step with them can now take their queued tasks.
       const peers = new Set<PersonState>();
@@ -1270,6 +1343,8 @@ export function runOnce(
   for (const p of people) advance(p, H);
   // Clients still active bill to the horizon.
   for (const rc of rosterClients) bill(rc, H);
+  // Deadlines up to the horizon, after its weekly tick.
+  if (servicing) for (const rc of rosterClients) settleMisses(rc, H, true);
 
   const stepOut: Record<string, StepResult> = {};
   for (const s of model.steps) {
@@ -1420,10 +1495,16 @@ export function pct(arr: number[], p: number): number {
   return a[Math.min(a.length - 1, Math.floor(p * a.length))]!;
 }
 
-/** Mean and 10th–90th percentile band of a set of values. */
+/** Mean and 10th–90th percentile band of a set of values (as `pct` gives them, from one sort). */
 export function stat(values: number[]): Stat {
-  if (!values.length) return { mean: 0, p10: 0, p90: 0 };
-  return { mean: values.reduce((a, b) => a + b, 0) / values.length, p10: pct(values, 0.1), p90: pct(values, 0.9) };
+  const n = values.length;
+  if (!n) return { mean: 0, p10: 0, p90: 0 };
+  const a = values.slice().sort((x, y) => x - y);
+  return {
+    mean: values.reduce((a, b) => a + b, 0) / n,
+    p10: a[Math.min(n - 1, Math.floor(0.1 * n))]!,
+    p90: a[Math.min(n - 1, Math.floor(0.9 * n))]!,
+  };
 }
 
 /** Pipeline labour cost of one replication. */

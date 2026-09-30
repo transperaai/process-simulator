@@ -77,6 +77,35 @@ export function hashSeed(seed: number, label: string): number {
  * drawn from leaves every other stream's sequence untouched, which gives
  * common random numbers between a baseline and a scenario.
  */
+interface LabelNode {
+  label: string;
+  next: Map<string, LabelNode> | null;
+}
+
+/**
+ * Stream labels ("servicing:<client>:<service>:<process>", ...) joined from
+ * their parts once and then reused, so replications after the first neither
+ * build nor rehash them (issue #19: a roster's clients each have streams).
+ */
+export class StreamLabels {
+  private readonly root: LabelNode = { label: "", next: null };
+
+  /** The parts joined with ":". */
+  join(...parts: string[]): string {
+    let node = this.root;
+    for (const part of parts) {
+      const next = (node.next ??= new Map());
+      let child = next.get(part);
+      if (!child) {
+        child = { label: node === this.root ? part : `${node.label}:${part}`, next: null };
+        next.set(part, child);
+      }
+      node = child;
+    }
+    return node.label;
+  }
+}
+
 export class Streams {
   private readonly streams = new Map<string, Rng>();
 

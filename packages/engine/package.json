@@ -12,7 +12,8 @@
   "scripts": {
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "golden:approve": "node scripts/golden-approve.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.4",

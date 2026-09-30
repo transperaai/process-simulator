@@ -551,6 +551,8 @@ export interface ReplicationSamples {
 }
 
 export interface SimulationResult {
+  /** The engine version that produced it (`ENGINE_VERSION`); saved runs record it. */
+  engineVersion: string;
   /** Means and ranges; the flat fields below are the prototype's shape, kept for compatibility. */
   kpi: Kpis;
   /** Per-replication values behind `kpi`, for paired comparisons. */

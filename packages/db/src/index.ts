@@ -19,6 +19,7 @@ export {
   NORTHBEAM_WORKSPACE_ID,
   northbeamAccess,
   northbeamBundle,
+  northbeamClientIds,
   northbeamLeadSourceIds,
   northbeamIssues,
   northbeamPersonIds,
@@ -28,10 +29,14 @@ export {
   northbeamStepIds,
 } from "./fixtures/northbeam";
 export {
+  CLIENT_ASSIGNMENT_COLUMNS,
+  CLIENT_COLUMNS,
+  CLIENT_SERVICE_COLUMNS,
   DEMAND_SETTINGS_COLUMNS,
   ISSUE_COLUMNS,
   LEAD_SOURCE_COLUMNS,
   listProcesses,
+  loadClients,
   loadIssues,
   loadLiveProcessBySlug,
   loadProcessBundle,

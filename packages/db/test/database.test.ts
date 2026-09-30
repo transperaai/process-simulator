@@ -62,6 +62,12 @@ describe("seed", () => {
         leadSources: await many("select * from lead_sources where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
         seasonality: await many("select * from seasonality where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
         demand: (await one("select * from demand_settings where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID])) ?? null,
+        clients: await many(
+          "select id, workspace_id, name, start_date::text, mrr, health, provenance, notes, active from clients where workspace_id = $1",
+          [NORTHBEAM_WORKSPACE_ID],
+        ),
+        clientServices: await many("select * from client_services where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
+        clientAssignments: await many("select * from client_assignments where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
       } as ProcessBundle;
     });
     expect(bundle.process.live_revision_id).toBe(NORTHBEAM_REVISION_ID);

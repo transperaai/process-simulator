@@ -1,4 +1,8 @@
+import { NORTHBEAM_FALLBACK_LOAD, NORTHBEAM_ROSTER, NORTHBEAM_TEAM, northbeamClientKey } from "@transpera-flow/engine/northbeam-roster";
 import type {
+  ClientAssignmentRow,
+  ClientRow,
+  ClientServiceRow,
   DemandSettingsRow,
   EdgeRow,
   IssueRow,
@@ -18,9 +22,9 @@ import type {
 // fixed so the seed is reproducible, and they sort in the prototype's order so
 // the resolved engine model matches the engine's northbeamWithServices()
 // exactly (and, without the services, its golden northbeamModel()).
-// Each table has its own id prefix: 4 issues, 5 scenarios, 6 lead sources,
-// 7 access, 8 services, 9 people, a workspace, b roles, c process, d revision,
-// e steps, f edges.
+// Each table has its own id prefix: 3 clients, 4 issues, 5 scenarios, 6 lead
+// sources, 7 access, 8 services, 9 people, a workspace, b roles, c process,
+// d revision, e steps, f edges.
 
 const id = (prefix: string, n: number) => `${prefix}0000000-0000-4000-8000-${n.toString(16).padStart(12, "0")}`;
 
@@ -145,7 +149,7 @@ export const northbeamServiceIds = {
   ppc: id("8", 2),
 } as const;
 
-/** SEO and PPC retainers, as in the engine's northbeamWithServices(). */
+/** SEO and PPC retainers, as in the engine's northbeamWithServices(), with their fallback load per client (northbeamWithClients()). */
 function services(): ServiceRow[] {
   const service = (
     key: keyof typeof northbeamServiceIds,
@@ -167,6 +171,9 @@ function services(): ServiceRow[] {
     mix_share: mix,
     entry_process_id: proc,
     path_tags: [key],
+    fallback_ongoing_load: Object.fromEntries(
+      Object.entries(NORTHBEAM_FALLBACK_LOAD[key]).map(([roleKey, hours]) => [northbeamRoleIds[roleKey as RoleKey], hours]),
+    ),
     active: true,
   });
   return [
@@ -207,6 +214,47 @@ function leadSources(): LeadSourceRow[] {
   ];
 }
 
+/** Client ids, by the engine fixture's keys ("c01" …), in roster order. */
+export const northbeamClientIds: Record<string, string> = Object.fromEntries(
+  NORTHBEAM_ROSTER.map((_, i) => [northbeamClientKey(i), id("3", i + 1)]),
+);
+
+/** MRR comes from the invoices; health is the consultant's first estimate. */
+const ENTERED: Provenance = { source: "entered", at: "2026-09-29T00:00:00Z", note: "Northbeam sample data" };
+
+/** The 26 named clients of the engine's northbeamWithClients(), as rows. */
+function roster(): { clients: ClientRow[]; clientServices: ClientServiceRow[]; clientAssignments: ClientAssignmentRow[] } {
+  const person = (key: string) => northbeamPersonIds[NORTHBEAM_TEAM.find(([k]) => k === key)![1]]!;
+  const clients: ClientRow[] = [];
+  const clientServices: ClientServiceRow[] = [];
+  const clientAssignments: ClientAssignmentRow[] = [];
+  NORTHBEAM_ROSTER.forEach((c, i) => {
+    const clientId = id("3", i + 1);
+    clients.push({
+      id: clientId,
+      workspace_id: ws,
+      name: c.name,
+      start_date: c.start,
+      mrr: c.mrr,
+      health: c.health,
+      provenance: { mrr: ENTERED, health: ESTIMATE },
+      notes: c.health < 50 ? "Unhappy with lead volume since the spring; renewal call due." : null,
+      active: true,
+    });
+    for (const sv of c.services) {
+      clientServices.push({ client_id: clientId, service_id: northbeamServiceIds[sv], workspace_id: ws, start_date: null });
+    }
+    const assign = (roleKey: RoleKey, personKey: string) =>
+      clientAssignments.push({ client_id: clientId, role_id: northbeamRoleIds[roleKey], person_id: person(personKey), workspace_id: ws });
+    assign("strat", "maya");
+    assign("am", c.am);
+    if (c.seo) assign("seo", c.seo);
+    if (c.ppc) assign("ppc", c.ppc);
+    assign("fin", "rosa");
+  });
+  return { clients, clientServices, clientAssignments };
+}
+
 function demandSettings(): DemandSettingsRow {
   return { workspace_id: ws, growth_monthly: 0, provenance: { growth_monthly: ESTIMATE } };
 }
@@ -226,6 +274,7 @@ export function northbeamBundle(): ProcessBundle {
         active_clients: 26,
         churn_monthly: 0.03,
         retainer: 3800,
+        overtime_cap: 0.1,
       },
     },
     roles: [
@@ -302,6 +351,7 @@ export function northbeamBundle(): ProcessBundle {
     leadSources: leadSources(),
     seasonality: [],
     demand: demandSettings(),
+    ...roster(),
   };
 }
 

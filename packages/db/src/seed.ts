@@ -49,6 +49,9 @@ export function seedSql(
     out.push(insert("edges", b.edges.map((e) => ({ ...e }))));
     out.push(insert("person_skills", b.personSkills.map((r) => ({ ...r }))));
     out.push(insert("person_leave", b.personLeave.map((r) => ({ ...r }))));
+    out.push(insert("clients", (b.clients ?? []).map((r) => ({ ...r }))));
+    out.push(insert("client_services", (b.clientServices ?? []).map((r) => ({ ...r }))));
+    out.push(insert("client_assignments", (b.clientAssignments ?? []).map((r) => ({ ...r }))));
     out.push(`update public.processes set live_revision_id = ${literal(live_revision_id)} where id = ${literal(b.process.id)};\n`);
   }
   for (const a of access) {

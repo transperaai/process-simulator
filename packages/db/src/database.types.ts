@@ -103,6 +103,147 @@ export type Database = {
         }
         Relationships: []
       }
+      client_assignments: {
+        Row: {
+          client_id: string
+          created_at: string
+          person_id: string
+          role_id: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          person_id: string
+          role_id: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          person_id?: string
+          role_id?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_assignments_client_id_workspace_id_fkey"
+            columns: ["client_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "client_assignments_person_id_workspace_id_fkey"
+            columns: ["person_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "client_assignments_role_id_workspace_id_fkey"
+            columns: ["role_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "roles"
+            referencedColumns: ["id", "workspace_id"]
+          },
+        ]
+      }
+      client_services: {
+        Row: {
+          client_id: string
+          created_at: string
+          service_id: string
+          start_date: string | null
+          workspace_id: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          service_id: string
+          start_date?: string | null
+          workspace_id: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          service_id?: string
+          start_date?: string | null
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_services_client_id_workspace_id_fkey"
+            columns: ["client_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "client_services_service_id_workspace_id_fkey"
+            columns: ["service_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id", "workspace_id"]
+          },
+        ]
+      }
+      clients: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          health: number | null
+          id: string
+          mrr: number
+          name: string
+          notes: string | null
+          provenance: Json
+          start_date: string | null
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          health?: number | null
+          id?: string
+          mrr?: number
+          name: string
+          notes?: string | null
+          provenance?: Json
+          start_date?: string | null
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          health?: number | null
+          id?: string
+          mrr?: number
+          name?: string
+          notes?: string | null
+          provenance?: Json
+          start_date?: string | null
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clients_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       demand_settings: {
         Row: {
           created_at: string

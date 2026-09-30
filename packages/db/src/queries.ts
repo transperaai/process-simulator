@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "./database.types";
 import type {
+  ClientAssignmentRow,
+  ClientRow,
+  ClientServiceRow,
   DemandSettingsRow,
   IssueRow,
   LeadSourceRow,
@@ -29,7 +32,30 @@ function rows<T>(r: { data: T | null; error: unknown }): T {
 
 /** The `ServiceRow` columns. */
 export const SERVICE_COLUMNS =
-  "id, workspace_id, name, pricing_model, price, margin, tenure_months, churn_monthly_base, mix_share, entry_process_id, path_tags, active" as const;
+  "id, workspace_id, name, pricing_model, price, margin, tenure_months, churn_monthly_base, mix_share, entry_process_id, path_tags, fallback_ongoing_load, active" as const;
+
+/** The `ClientRow`, `ClientServiceRow` and `ClientAssignmentRow` columns. */
+export const CLIENT_COLUMNS = "id, workspace_id, name, start_date, mrr, health, provenance, notes, active" as const;
+export const CLIENT_SERVICE_COLUMNS = "client_id, service_id, workspace_id, start_date" as const;
+export const CLIENT_ASSIGNMENT_COLUMNS = "client_id, role_id, person_id, workspace_id" as const;
+
+/** A workspace's client roster: clients by name, their services and assignments. */
+export async function loadClients(
+  db: Db,
+  workspaceId: string,
+): Promise<{ clients: ClientRow[]; clientServices: ClientServiceRow[]; clientAssignments: ClientAssignmentRow[] }> {
+  const [clients, clientServices, clientAssignments] = await Promise.all([
+    db.from("clients").select(CLIENT_COLUMNS).eq("workspace_id", workspaceId).order("name").order("id"),
+    db.from("client_services").select(CLIENT_SERVICE_COLUMNS).eq("workspace_id", workspaceId),
+    db.from("client_assignments").select(CLIENT_ASSIGNMENT_COLUMNS).eq("workspace_id", workspaceId),
+  ]);
+  return {
+    // provenance is jsonb; ClientRow gives it its shape.
+    clients: (rows(clients) ?? []) as ClientRow[],
+    clientServices: rows(clientServices) ?? [],
+    clientAssignments: rows(clientAssignments) ?? [],
+  };
+}
 
 /** The `LeadSourceRow`, `SeasonalityRow` and `DemandSettingsRow` columns. */
 export const LEAD_SOURCE_COLUMNS = "id, workspace_id, name, volume_week, conversion_to_qualified, provenance" as const;
@@ -44,7 +70,7 @@ export async function loadProcessBundle(
   revisionId: string,
 ): Promise<ProcessBundle> {
   const ws = workspace.id;
-  const [revision, roles, steps, edges, people, personRoles, personSkills, personLeave, services, leadSources, seasonality, demand] =
+  const [revision, roles, steps, edges, people, personRoles, personSkills, personLeave, services, leadSources, seasonality, demand, roster] =
     await Promise.all([
       db.from("process_revisions").select("id, workspace_id, process_id, number, status").eq("id", revisionId).single(),
       db.from("roles").select("*").eq("workspace_id", ws),
@@ -58,6 +84,7 @@ export async function loadProcessBundle(
       db.from("lead_sources").select(LEAD_SOURCE_COLUMNS).eq("workspace_id", ws),
       db.from("seasonality").select(SEASONALITY_COLUMNS).eq("workspace_id", ws),
       db.from("demand_settings").select(DEMAND_SETTINGS_COLUMNS).eq("workspace_id", ws).maybeSingle(),
+      loadClients(db, ws),
     ]);
 
   // The casts narrow text columns that check constraints already limit, and the settings jsonb.
@@ -72,11 +99,13 @@ export async function loadProcessBundle(
     personRoles: rows(personRoles) ?? [],
     personSkills: rows(personSkills) ?? [],
     personLeave: rows(personLeave) ?? [],
+    // pricing_model is check-constrained; fallback_ongoing_load is jsonb.
     services: (rows(services) ?? []) as ServiceRow[],
     // Provenance is jsonb; LeadSourceRow and the others give it its shape.
     leadSources: (rows(leadSources) ?? []) as LeadSourceRow[],
     seasonality: (rows(seasonality) ?? []) as SeasonalityRow[],
     demand: rows(demand) as DemandSettingsRow | null,
+    ...roster,
   };
 }
 

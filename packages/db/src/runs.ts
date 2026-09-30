@@ -30,6 +30,7 @@ export interface RunRow {
   name: string;
   scenario_id: string | null;
   revision_ids: string[];
+  /** The engine version that produced the results (`ENGINE_VERSION`; issue #22); null for runs saved before it was recorded. */
   engine_version: string | null;
   reps: number;
   seed: number;

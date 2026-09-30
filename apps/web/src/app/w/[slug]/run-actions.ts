@@ -42,6 +42,7 @@ export async function saveRun(input: unknown): Promise<SaveRunResult> {
       params_snapshot: snapshotModel(model, processes) as unknown as Json,
       results: run.results as unknown as Json,
       duration_ms: run.durationMs,
+      engine_version: run.engineVersion,
     })
     .select("id")
     .single();

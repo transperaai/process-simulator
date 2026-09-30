@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { NORTHBEAM_WORKSPACE_ID, northbeamBundle, runResults, toEngineModel, type RunRow } from "@transpera-flow/db";
-import { simulate } from "@transpera-flow/engine";
+import { ENGINE_VERSION, simulate } from "@transpera-flow/engine";
 import { AppHeader } from "@/components/app-header";
 import { DemoRuns } from "@/components/demo-runs";
 import { demoBaselineSnapshot } from "@/lib/suggestions/demo";
@@ -16,7 +16,7 @@ export default function DemoRunsPage() {
     name: "Audit baseline",
     scenario_id: null,
     revision_ids: [bundle.revision.id],
-    engine_version: null,
+    engine_version: ENGINE_VERSION,
     reps: 30,
     seed: 1,
     params_snapshot: demoBaselineSnapshot(),

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { changesSinceRun, snapshotModel, type RunRow } from "@transpera-flow/db";
 import { useDemoCompany } from "@/lib/demo/company-store";
 import { demoProcesses } from "@/lib/suggestions/demo";
-import { ModelChangedBanner, RunResultsTiles, RunsTable, runDate } from "./runs-view";
+import { EngineChangedNote, ModelChangedBanner, RunResultsTiles, RunSavedLine, RunsTable } from "./runs-view";
 
 /** The demo's saved runs: the sample baseline and any saved on /demo in this tab, compared with the demo's model now. */
 export function DemoRuns({ baseline }: { baseline: RunRow }) {
@@ -22,11 +22,10 @@ export function DemoRuns({ baseline }: { baseline: RunRow }) {
           <h2 id="run-heading" className="text-lg font-bold">
             {run.name}
           </h2>
-          <p className="text-fg-2">
-            Saved {runDate(run.created_at)} · {run.reps} replications, seed {run.seed}
-          </p>
+          <RunSavedLine run={run} />
         </div>
         <ModelChangedBanner changes={changes} rerunHref="/demo" />
+        <EngineChangedNote version={run.engine_version} />
         <RunResultsTiles results={run.results} />
       </section>
     </div>

@@ -23,7 +23,7 @@ import {
   type ProcessBundle,
   type ScenarioRow,
 } from "@transpera-flow/db";
-import { applyPatches, detectIssues, isBlocking, ISSUE_SEVERITIES, ISSUE_TYPES, MAX_PATCHES, PATCH_OPS, simulate, type EngineModel } from "@transpera-flow/engine";
+import { applyPatches, detectIssues, ENGINE_VERSION, isBlocking, ISSUE_SEVERITIES, ISSUE_TYPES, MAX_PATCHES, PATCH_OPS, simulate, type EngineModel } from "@transpera-flow/engine";
 import { bottleneckReport, checkScenarioRobustness, compareScenarios, matchNamed, type NamedScenario } from "./analysis";
 import { resolveProcess, resolveWorkspace, revisionIdFor, type ProcessWithDraft, type ToolContext, type WorkspaceRef } from "./context";
 import { runTool, ToolError } from "./result";
@@ -114,6 +114,8 @@ const header = (l: Loaded) => ({
   process: { id: l.proc.id, name: l.proc.name },
   revision: { id: l.bundle.revision.id, number: l.bundle.revision.number, status: l.bundle.revision.status, which: "live" as const },
   start_date: l.startDate,
+  /** The engine version the numbers come from (issue #22). */
+  engine_version: ENGINE_VERSION,
 });
 
 /** Stable-id steps of a process (live revision, then the draft's for steps only drafted so far). */

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ModelChange, RunResults, RunRow } from "@transpera-flow/db";
 import { formatDays, formatNumber, formatPercent, formatRange, formatWholeCurrency } from "@/lib/format";
+import { runEngineNote } from "@/lib/runs/runs";
 
 // Saved runs (issue #25; docs/PRD.md §4.1, D19): the results someone saw, and
 // a "model changed since this run" banner listing what differs in the model
@@ -62,6 +63,26 @@ export function ModelChangedBanner({ changes, rerunHref }: { changes: ModelChang
         ))}
       </div>
     </section>
+  );
+}
+
+/** "Saved 30 Sep 2026, 14:05 · 30 replications, seed 1 · engine 1.0.0". */
+export function RunSavedLine({ run }: { run: Pick<RunRow, "created_at" | "reps" | "seed" | "engine_version"> }) {
+  return (
+    <p className="text-fg-2">
+      Saved {runDate(run.created_at)} · {run.reps} replications, seed {run.seed} · {runEngineNote(run.engine_version).label}
+    </p>
+  );
+}
+
+/** A note when the engine has changed since the run was saved (issue #22); nothing otherwise. */
+export function EngineChangedNote({ version }: { version: string | null }) {
+  const { changed } = runEngineNote(version);
+  if (!changed) return null;
+  return (
+    <p data-engine-changed="true" className="rounded-token border border-warn bg-warn-soft px-3 py-2">
+      {changed}
+    </p>
   );
 }
 

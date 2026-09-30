@@ -8,7 +8,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import pg from "pg";
 
-export const DATABASE_NAME = "transpera_flow_postgrest";
+// POSTGREST_DATABASE lets a local run use its own database beside another checkout's.
+export const DATABASE_NAME = process.env.POSTGREST_DATABASE ?? "transpera_flow_postgrest";
 const ADMIN_URL = process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/postgres";
 const supabaseDir = new URL("../../db/supabase/", import.meta.url);
 

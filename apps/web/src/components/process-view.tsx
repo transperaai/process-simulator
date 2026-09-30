@@ -27,6 +27,7 @@ import { useProcessIssues } from "./process-issues";
 import { ScenarioPanel } from "./scenario-panel";
 import { StepInspector } from "./step-inspector";
 import { UtilisationBars } from "./utilisation-bars";
+import { BottleneckPanel } from "./bottleneck-panel";
 
 /**
  * How edits are saved: `live` to the database as the signed-in user, `demo`
@@ -379,7 +380,13 @@ export function ProcessView({
             {!showingLive && (
               <ChangesPanel diff={diff} live={live} bundle={working} editor={editable ? editor : null} names={names} onSelect={select} />
             )}
-            {shownModel && issuesUi.rail(<UtilisationBars model={shownModel} result={result} />)}
+            {shownModel &&
+              issuesUi.rail(
+                <div className="flex flex-col gap-3">
+                  <BottleneckPanel model={shownModel} result={result} ready={sim.status === "done"} />
+                  <UtilisationBars model={shownModel} result={result} />
+                </div>,
+              )}
           </div>
         )}
       </div>

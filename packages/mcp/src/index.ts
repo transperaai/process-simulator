@@ -5,3 +5,5 @@ export { assertPublishableKey } from "./key-guard";
 export { ToolError, type ToolPayload } from "./result";
 export { generateApiToken, hashApiToken, looksLikeApiToken } from "./tokens";
 export { applyOverrides, createMcpServer, DEFAULT_REPS, DEFAULT_SEED, summarizeRun, TOOL_NAMES } from "./tools";
+export { ANALYSIS_TOOL_NAMES, DEFAULT_ROBUSTNESS_SECONDS, MAX_ROBUSTNESS_SECONDS } from "./analysis-tools";
+export { bottleneckReport, checkScenarioRobustness, compareScenarios, matchNamed, robustnessParameters, stackPatches, type NamedScenario } from "./analysis";

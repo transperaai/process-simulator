@@ -101,3 +101,28 @@ export {
   type RobustnessRequest,
   type RobustnessResponse,
 } from "./robustness-pool";
+export {
+  compareTable,
+  formatMoneyText,
+  formatNumberText,
+  headlineSubject,
+  type CompareMetric,
+  type CompareRow,
+  type CompareTableOptions,
+} from "./compare-table";
+export {
+  WEEKS_PER_QUARTER,
+  completions,
+  shadowPrice,
+  shadowPriceText,
+  type ShadowPrice,
+  type ShadowPriceOptions,
+} from "./shadow-price";
+export {
+  rankBottlenecks,
+  type BottleneckOptions,
+  type Bottlenecks,
+  type PersonConstraint,
+  type RoleConstraint,
+  type StepConstraint,
+} from "./bottlenecks";

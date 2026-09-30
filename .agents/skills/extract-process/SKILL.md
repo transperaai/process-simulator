@@ -49,7 +49,7 @@ Leading words, used throughout: **cited**, **assumed**, **ledger** (one line per
 
 | Heard | Field |
 |---|---|
-| A piece of work someone does | a `task` step with `role`: an existing role name, matched by meaning ("AM" is "Account manager"); `null` plus an open question if none fits |
+| A piece of work someone does | a `task` step with `role`: an existing role name, matched by meaning ("AM" is "Account manager"); if none fits, `null`, an `upsert_role` suggestion for the role (see "Suggestions"), and an open question to set the step's role once it is accepted |
 | "Only X does it" | `person` |
 | Software named | `tool` |
 | Hands-on time per item | `work_hours` |
@@ -67,7 +67,7 @@ Structure:
 - Leave out `x` and `y`: the server lays steps out.
 - Step names are short verb phrases, unique within the process.
 - Every non-end step has outgoing edges that sum to 1.
-- Roles must already exist. No tool creates one, and a person or client that is only a pending suggestion cannot be referenced yet.
+- A step can only name a role that exists. A missing role becomes an `upsert_role` suggestion, and the step's `role` stays `null` until someone accepts it. A role, person or client that is only a pending suggestion cannot be referenced yet.
 
 Limits: `steps` 200, `edges` 500, per step `evidence` 50, `assumptions` 10 (`{field, reasoning}`, reasoning 1 to 2000 characters), `notes` 4000, `tool` 200, name 1 to 200.
 
@@ -120,6 +120,7 @@ Give the field value and a citation `{field, source, speaker, quote, timestamp, 
 
 Company facts are stored as suggestions that change nothing until a person accepts them on the Suggestions page.
 
+- `upsert_role {name, create?, rename?, evidence?, note?}`: when a speaker names or clearly describes a job no existing role covers (matched by meaning). The evidence is the quote naming who does the work.
 - `upsert_person {name, roles?, fte? (above 0, up to 1.5), capacity_hours_week?, cost_rate?, start_date?, end_date?, active?, leave?: [{start_date, end_date, note?}], create?, rename?, evidence?, note?}`. `roles` is the full set, by existing role name.
 - `upsert_client {name, services?, mrr?, start_date?, health? (0 to 100), notes?, active?, assignments?: {role: person or null}, create?, rename?, evidence?, note?}`. `services` is the full set, by existing service name.
 - `set_demand {lead_sources?: [{name, volume_week?, conversion_to_qualified?, create?, rename?, evidence?, note?}], seasonality?: 12 numbers or [{month, multiplier}], growth_monthly?, evidence?, note?}`.
@@ -133,8 +134,9 @@ Rules:
 - A future-dated change (an FTE change "from November") is a suggestion whose `note` says the date, and the same point is an open question.
 - On `ambiguous`, pick from `candidates` when the transcript clearly means one of them. Pass `create: true` only when the row is clearly new; otherwise it is an open question.
 - If a matching pending suggestion already exists (from `list_suggestions`), do not create another: say which one to edit or reject.
-- `assignments` and `roles` must name existing rows. A pending new person cannot be assigned yet, so that is an open question.
-- `get_workspace_summary` lists no clients, services or lead sources. `upsert_*` without `create` matches by name: an exact match updates, a partial match returns `ambiguous` with candidates, and a name that matches nothing becomes a suggestion to add a new row. Send only names you mean to update or add.
+- `assignments` and `roles` must name existing rows. A pending new person or role cannot be referenced yet: suggest it, and list the assignment as an open question for after it is accepted.
+- Never invent a role to fill a step; suggest only roles a speaker named or described.
+- `get_workspace_summary` lists roles (with `active`) but no clients, services or lead sources. `upsert_*` without `create` matches by name: an exact match updates, a partial match returns `ambiguous` with candidates, and a name that matches nothing becomes a suggestion to add a new row. Send only names you mean to update or add.
 
 ## Summary (the final message)
 

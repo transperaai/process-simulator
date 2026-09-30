@@ -93,9 +93,35 @@ export function buildMethodology(c: ReportContent, model: EngineModel): Methodol
       "Scenarios are compared replication by replication with the same random numbers on both sides (common random numbers), so a change's range reflects the change rather than luck.",
       "Robustness: every estimated input (anything not entered or measured, including the client-health defaults) is moved 25% down and up one at a time, or across the range people gave where sources disagree, at 10 replications each; the most influential inputs are re-run at 30. The verdict says how often the bottleneck and the direction of each change hold, and flags any input whose disagreement flips the answer. A check that ran out of time says how far it got.",
       "The bottleneck is the busiest role by utilisation (hands-on pipeline, servicing and ongoing client hours over capacity plus overtime). Its shadow price is the extra completed items a quarter from one more full-time person in that role, from an extra paired replication set. People are modelled for capacity, not performance: no one is ranked.",
-      "All text in this report is filled in from fixed templates using the run's own numbers; no language model wrote any of it.",
+      textNote(c),
     ],
   };
+}
+
+/** The methodology's last paragraph: who wrote the report's text. */
+export function textNote(c: ReportContent): string {
+  if (c.summary?.source === "narration") {
+    return (
+      "The executive summary was drafted by a language model (Claude) from this report's figures only, and every number in it was matched " +
+      "against those figures before printing; a draft citing any figure not in the report is rejected. All other text is filled in from fixed " +
+      "templates using the run's own numbers."
+    );
+  }
+  return "All text in this report is filled in from fixed templates using the run's own numbers; no language model wrote any of it.";
+}
+
+/** The appendix's provenance line for the executive summary. */
+export function summaryProvenance(s: ExecutiveSummary): string {
+  const edited = s.editedBy ? ` Edited by ${s.editedBy}${s.editedAt ? ` on ${formatDate(s.editedAt)}` : ""}; the edit was checked the same way.` : "";
+  const n = s.narration;
+  if (s.source === "narration" && n) {
+    return (
+      `Executive summary: drafted by ${n.model} on ${formatDate(n.at)} from this report's figures; all ${plural(n.checked, "number")} in it matched those figures` +
+      `${n.retried ? " (a first draft citing figures not in the report was rejected and redrafted)" : ""}.${edited}`
+    );
+  }
+  const fallback = n?.fallbackReason ? ` A narrated summary was asked for but not used: ${n.fallbackReason}.` : "";
+  return `Executive summary: templated text filled in from the run; no language model.${fallback}${edited}`;
 }
 
 /**

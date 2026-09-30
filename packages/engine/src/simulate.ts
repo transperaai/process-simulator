@@ -54,6 +54,9 @@ import type {
 } from "./model";
 import { expo, lognormal, lognormalSampler, Streams, triangular, type Rng } from "./random";
 
+/** The trace of every entity in a run that keeps none: never written to. */
+const NO_TRACE: TraceSegment[] = [];
+
 /** Minimum share of a person's time left for pipeline work, unless the model sets one. */
 export const DEFAULT_AVAILABILITY_FLOOR = 0.08;
 const DEFAULT_WORK_DIST: Distribution = { kind: "lognormal", cv: 0.35 };
@@ -89,8 +92,8 @@ interface Task {
 /** One recurring servicing process of one client. */
 interface LinkState {
   link: EngineServicingLink;
-  /** Entry step or end of its process. */
-  entry: string;
+  /** Entry step or end of its process, resolved. */
+  entry: Target;
   svc: number;
   /** Hours between tasks; null for Poisson requests (`gap` is then their mean). */
   interval: number | null;
@@ -98,16 +101,24 @@ interface LinkState {
   rng: Rng;
 }
 
-type SimEvent =
-  | { t: number; type: "arrive" }
-  | { t: number; type: "week" }
-  | { t: number; type: "measure" }
-  | { t: number; type: "back"; p: PersonState }
-  | { t: number; type: "away"; p: PersonState }
-  | { t: number; type: "end"; e: SimEntity; st: StepState; p: PersonState | null }
-  | { t: number; type: "leave"; e: SimEntity; st: StepState }
-  | { t: number; type: "task"; c: RosterClient; l: LinkState }
-  | { t: number; type: "miss"; e: SimEntity };
+type EventType = "arrive" | "week" | "measure" | "back" | "away" | "end" | "leave" | "task" | "miss";
+
+/**
+ * A timed event. One shape for every type (unused fields null), so the event
+ * loop's property reads stay monomorphic, and handled events are recycled
+ * (see `schedule`) rather than left to the garbage collector:
+ * arrive, week, measure: no fields; back, away: `p`; end: `e`, `st`, `p`;
+ * leave: `e`, `st`; task: `c`, `l`; miss: `e`.
+ */
+interface SimEvent {
+  t: number;
+  type: EventType;
+  e: SimEntity | null;
+  st: StepState | null;
+  p: PersonState | null;
+  c: RosterClient | null;
+  l: LinkState | null;
+}
 
 interface StepStat {
   arrivals: number;
@@ -124,11 +135,54 @@ interface StepStat {
   slaBreaches: number;
 }
 
+/** A first-in, first-out queue of items waiting at a step. */
+class Fifo {
+  private readonly items: SimEntity[] = [];
+
+  get size(): number {
+    return this.items.length;
+  }
+
+  /** The oldest item, if any. */
+  peek(): SimEntity | undefined {
+    return this.items[0];
+  }
+
+  push(e: SimEntity): void {
+    this.items.push(e);
+  }
+
+  shift(): void {
+    this.items.shift();
+  }
+}
+
+/** Where an edge leads: a working step, or an end (resolved once per run, not per visit). */
+interface Target {
+  id: string;
+  st: StepState | undefined;
+  end: EngineEnd | undefined;
+}
+
+/** Hands-on hours a role worked in the measured window, pipeline and servicing. */
+interface RoleAcc {
+  busy: number;
+  svc: number;
+}
+
+/** Servicing tasks waiting for a client's assigned person at one step: a queue per person, in the order they first had one. */
+interface Assigned {
+  people: PersonState[];
+  lists: Fifo[];
+  /** Tasks waiting across the lists, so steps with none are skipped. */
+  waiting: number;
+}
+
 /** A step's run-time state: its statistics, queue, who can work it, and its random streams. */
 interface StepState {
   s: EngineStep;
   stat: StepStat;
-  queue: SimEntity[];
+  queue: Fifo;
   /** Eligible people; unstaffed for pure waits and decisions. */
   people: PersonState[];
   staffed: boolean;
@@ -139,18 +193,24 @@ interface StepState {
   route: Rng;
   /** Edges to choose from per service index, when any edge is condition-tagged; null otherwise. */
   routes: Route[] | null;
+  /** Where each of the step's edges (`s.next`) leads. */
+  targets: Target[];
+  /** Its role's hour counters; null when the step has no role the model knows. */
+  acc: RoleAcc | null;
   /**
    * Servicing steps: tasks waiting for the client's assigned person, by
    * person (the rest wait in `queue`, for anyone eligible). Null for the
    * pipeline's steps.
    */
-  assigned: Map<PersonState, SimEntity[]> | null;
+  assigned: Assigned | null;
 }
 
 /** The edges an entity picks from at a step, and their total probability. */
 interface Route {
   next: EngineEdge[];
   total: number;
+  /** Where each of `next` leads. */
+  targets: Target[];
 }
 
 /** A service as a run uses it. */
@@ -210,10 +270,10 @@ function resolveServices(model: EngineModel): ServiceState[] {
 function routeFor(edges: EngineEdge[], tags: string[]): Route {
   const sum = (next: EngineEdge[]) => next.reduce((a, n) => a + n.p, 0);
   const tagged = edges.filter((n) => n.tag !== undefined && tags.includes(n.tag));
-  if (tagged.length) return { next: tagged, total: sum(tagged) };
+  if (tagged.length) return { next: tagged, total: sum(tagged), targets: [] };
   const untagged = edges.filter((n) => n.tag === undefined);
-  if (untagged.length) return { next: untagged, total: sum(untagged) };
-  return { next: edges, total: 1 };
+  if (untagged.length) return { next: untagged, total: sum(untagged), targets: [] };
+  return { next: edges, total: 1, targets: [] };
 }
 
 /** Repeated duration draws with the given mean (same values as `sampleDuration`). */
@@ -266,7 +326,7 @@ interface PersonState {
   frac: number;
   fracDirty: boolean;
   /** The service in progress, so hands-on time straddling the end of the warm-up can be split. */
-  cur: { start: number; end: number; handsOn: number; role: string | null; over: boolean; svc: boolean } | null;
+  cur: { start: number; end: number; handsOn: number; acc: RoleAcc | null; over: boolean; svc: boolean } | null;
   /** Ongoing client hours a week they carry now, in total and by role id. */
   load: number;
   roleLoad: Map<string, number>;
@@ -382,6 +442,10 @@ export function runOnce(
   const servicingSteps = new Set<string>();
   if (servicing) for (const p of Object.values(processes)) for (const id of p.steps) servicingSteps.add(id);
 
+  // Hands-on hours per role, shared by the role's steps.
+  const roleAcc: Record<string, RoleAcc> = {};
+  for (const rid in model.roles) roleAcc[rid] = { busy: 0, svc: 0 };
+
   const stepStates = new Map<string, StepState>();
   for (const s of model.steps) {
     const waitDist = s.waitDist ?? DEFAULT_WAIT_DIST;
@@ -400,7 +464,7 @@ export function runOnce(
         departures: 0,
         slaBreaches: 0,
       },
-      queue: [],
+      queue: new Fifo(),
       people: [],
       staffed: Boolean(s.role || s.person),
       work: durationSampler(streams.get(`work:${s.id}`), s.work, s.workDist ?? DEFAULT_WORK_DIST),
@@ -412,7 +476,9 @@ export function runOnce(
         hasServices && s.next.some((n) => n.tag !== undefined)
           ? services.map((sv) => routeFor(s.next, sv.s.pathTags))
           : null,
-      assigned: servicingSteps.has(s.id) ? new Map() : null,
+      targets: [],
+      acc: s.role !== null && Object.hasOwn(roleAcc, s.role) ? roleAcc[s.role]! : null,
+      assigned: servicingSteps.has(s.id) ? { people: [], lists: [], waiting: 0 } : null,
     });
   }
   // End steps: the two sinks, then any further ones (which may override them).
@@ -425,6 +491,13 @@ export function runOnce(
     if (!stepStates.has(sv.entry)) throw new Error(`Service '${sv.s.name}' enters at unknown step '${sv.entry}'`);
   }
   const stepList = [...stepStates.values()];
+  // Each edge's target, resolved once: a working step or an end (unknown ones throw when reached).
+  const targetFor = (id: string): Target => ({ id, st: stepStates.get(id), end: ends.get(id) });
+  for (const st of stepList) {
+    st.targets = st.s.next.map((n) => targetFor(n.to));
+    if (st.routes) for (const r of st.routes) r.targets = r.next.map((n) => targetFor(n.to));
+  }
+  const entryTargets = services.map((sv) => targetFor(sv.entry));
 
   // Who can do what.
   const canDo = (pid: string, p: EnginePerson, s: EngineStep) =>
@@ -465,12 +538,6 @@ export function runOnce(
       roleCapacity[rid]! += p.person.capacity / p.person.roles.length;
     }
   }
-  const roleBusyHours: Record<string, number> = {};
-  const roleSvcHours: Record<string, number> = {};
-  for (const rid in model.roles) {
-    roleBusyHours[rid] = 0;
-    roleSvcHours[rid] = 0;
-  }
 
   let active = roster ? 0 : model.activeClients;
   const events = new EventQueue<SimEvent>();
@@ -482,7 +549,31 @@ export function runOnce(
   let done = 0;
   let billed = 0;
 
-  const push = (ev: SimEvent) => events.push(ev);
+  /** Handled events, reused by `schedule`. */
+  const pool: SimEvent[] = [];
+  const schedule = (
+    t: number,
+    type: EventType,
+    e: SimEntity | null = null,
+    st: StepState | null = null,
+    p: PersonState | null = null,
+    c: RosterClient | null = null,
+    l: LinkState | null = null,
+  ) => {
+    const ev = pool.pop();
+    if (ev) {
+      ev.t = t;
+      ev.type = type;
+      ev.e = e;
+      ev.st = st;
+      ev.p = p;
+      ev.c = c;
+      ev.l = l;
+      events.push(ev);
+    } else {
+      events.push({ t, type, e, st, p, c, l });
+    }
+  };
 
   const hpw = model.hoursPerWeek;
   /** A person's load is above their capacity, so they may work overtime (only with a cap above 0). */
@@ -618,7 +709,7 @@ export function runOnce(
           const interval = recurrenceInterval(link.recurrence, hpw);
           const l: LinkState = {
             link,
-            entry: processes[link.process]!.entry,
+            entry: targetFor(processes[link.process]!.entry),
             svc,
             interval,
             gap: interval ?? poissonMeanGap(link.recurrence, hpw),
@@ -740,14 +831,18 @@ export function runOnce(
   };
 
   function enter(e: SimEntity, sid: string, t: number) {
-    const st = stepStates.get(sid);
+    enterTarget(e, targetFor(sid), t);
+  }
+
+  function enterTarget(e: SimEntity, target: Target, t: number) {
+    const st = target.st;
     if (st) {
       st.stat.arrivals++;
       queueAt(e, st, t, t);
       return;
     }
-    const end = ends.get(sid);
-    if (!end) throw new Error(`Edge to unknown step '${sid}'`);
+    const end = target.end;
+    if (!end) throw new Error(`Edge to unknown step '${target.id}'`);
     if (e.task) {
       // A servicing task ends at its process's end, whatever the end's outcome: it books nothing.
       e.done = t;
@@ -761,7 +856,7 @@ export function runOnce(
 
   /** Schedule a client's next servicing task, if it falls within the run. */
   function scheduleTask(c: RosterClient, l: LinkState, t: number) {
-    if (t <= H) push({ t, type: "task", c, l });
+    if (t <= H) schedule(t, "task", null, null, null, c, l);
   }
 
   /** A client's servicing task is due: it enters its process, and the next one is scheduled. Churned clients generate none. */
@@ -772,15 +867,15 @@ export function runOnce(
     const e: SimEntity = {
       id: eid++,
       t0: t,
-      trace: [],
+      trace: keepTrace ? [] : NO_TRACE,
       seg: null,
       svc: l.svc,
       servicing: { process: l.link.process, client: c.key },
       task: { client: c, due: t + sla, deadline: t + 2 * sla, state: "open" },
     };
     if (keepTrace) entities.push(e);
-    if (t + 2 * sla <= H) push({ t: t + 2 * sla, type: "miss", e });
-    enter(e, l.entry, t);
+    if (t + 2 * sla <= H) schedule(t + 2 * sla, "miss", e);
+    enterTarget(e, l.entry, t);
   }
 
   /** A task reached its process's end: on time or late, unless it was already missed. */
@@ -864,9 +959,20 @@ export function runOnce(
 
   /** Put an entity at a step (queued since `tQ`); the longest-idle eligible free person takes it. */
   function queueAt(e: SimEntity, st: StepState, tQ: number, t: number) {
-    const seg: TraceSegment = { step: st.s.id, person: null, tQ, tS: null, tE: null, tL: null };
-    if (keepTrace) e.trace.push(seg);
-    e.seg = seg;
+    // Without a trace, an entity's one segment is reused from visit to visit.
+    let seg = e.seg;
+    if (keepTrace || !seg) {
+      seg = { step: st.s.id, person: null, tQ, tS: null, tE: null, tL: null };
+      if (keepTrace) e.trace.push(seg);
+      e.seg = seg;
+    } else {
+      seg.step = st.s.id;
+      seg.person = null;
+      seg.tQ = tQ;
+      seg.tS = null;
+      seg.tE = null;
+      seg.tL = null;
+    }
     if (!st.staffed) {
       startService(e, st, null, t);
       return;
@@ -876,9 +982,14 @@ export function runOnce(
     // role, who can do the step, queues for them only (docs/PRD.md §6.3.3).
     const assignee = st.assigned && e.task && !st.s.person && st.s.role ? e.task.client.assignees.get(st.s.role) : undefined;
     if (assignee && assignee.steps.includes(st)) {
-      let mine = st.assigned!.get(assignee);
-      if (!mine) st.assigned!.set(assignee, (mine = []));
-      mine.push(e);
+      const assigned = st.assigned!;
+      let k = assigned.people.indexOf(assignee);
+      if (k < 0) {
+        k = assigned.people.push(assignee) - 1;
+        assigned.lists.push(new Fifo());
+      }
+      assigned.lists[k]!.push(e);
+      assigned.waiting++;
       // While they are on leave, it falls back to the role's pool.
       if (!onLeave(assignee, t)) {
         takeNext(assignee, t);
@@ -902,21 +1013,30 @@ export function runOnce(
   function takeNext(p: PersonState, t: number) {
     if (p.busy || onLeave(p, t)) return;
     let best: SimEntity | null = null;
+    let bestTQ = 0;
     let bestStep: StepState | null = null;
-    let bestList: SimEntity[] | null = null;
-    for (const st of p.steps) {
-      const c = st.queue[0];
-      if (c && (!best || c.seg!.tQ < best.seg!.tQ)) {
+    let bestList: Fifo | null = null;
+    const steps = p.steps;
+    for (let i = 0; i < steps.length; i++) {
+      const st = steps[i]!;
+      const c = st.queue.peek();
+      if (c && (!best || c.seg!.tQ < bestTQ)) {
         best = c;
+        bestTQ = c.seg!.tQ;
         bestStep = st;
         bestList = st.queue;
       }
-      if (!st.assigned) continue;
-      for (const [q, list] of st.assigned) {
-        const a = list[0];
-        if (!a || (q !== p && !onLeave(q, t))) continue;
-        if (!best || a.seg!.tQ < best.seg!.tQ) {
+      const assigned = st.assigned;
+      if (!assigned || !assigned.waiting) continue;
+      for (let k = 0; k < assigned.people.length; k++) {
+        const list = assigned.lists[k]!;
+        const a = list.peek();
+        if (!a) continue;
+        const q = assigned.people[k]!;
+        if (q !== p && !onLeave(q, t)) continue;
+        if (!best || a.seg!.tQ < bestTQ) {
           best = a;
+          bestTQ = a.seg!.tQ;
           bestStep = st;
           bestList = list;
         }
@@ -924,6 +1044,7 @@ export function runOnce(
     }
     if (!best || !bestStep || !bestList) return;
     bestList.shift();
+    if (bestList !== bestStep.queue) bestStep.assigned!.waiting--;
     const stat = bestStep.stat;
     setQ(stat, t, -1);
     stat.waitSum += t - best.seg!.tQ;
@@ -945,11 +1066,24 @@ export function runOnce(
       else p.busyHours += handsOn;
       const over = overloaded(p);
       if (over) p.overPipeline += handsOn;
-      const role = st.s.role;
-      if (role && role in roleBusyHours) (svc ? roleSvcHours : roleBusyHours)[role]! += handsOn;
-      p.cur = { start: t, end: t + dur, handsOn, role, over, svc };
+      const acc = st.acc;
+      if (acc) {
+        if (svc) acc.svc += handsOn;
+        else acc.busy += handsOn;
+      }
+      const cur = p.cur;
+      if (cur) {
+        cur.start = t;
+        cur.end = t + dur;
+        cur.handsOn = handsOn;
+        cur.acc = acc;
+        cur.over = over;
+        cur.svc = svc;
+      } else {
+        p.cur = { start: t, end: t + dur, handsOn, acc, over, svc };
+      }
     }
-    push({ t: t + dur, type: "end", e, st, p });
+    schedule(t + dur, "end", e, st, p);
   }
 
   function endService(e: SimEntity, st: StepState, p: PersonState | null, t: number) {
@@ -960,7 +1094,7 @@ export function runOnce(
       p.completed++;
     }
     const w = st.wait ? st.wait() : 0;
-    push({ t: t + w, type: "leave", e, st });
+    schedule(t + w, "leave", e, st);
     if (p) takeNext(p, t);
   }
 
@@ -971,26 +1105,29 @@ export function runOnce(
     if (s.sla !== undefined && t - e.seg!.tQ > s.sla) st.stat.slaBreaches++;
     if (s.rework && st.rework() < s.rework) {
       st.stat.reworks++;
-      enter(e, s.id, t);
+      st.stat.arrivals++;
+      queueAt(e, st, t, t);
       return;
     }
     let u = st.route();
     let next = s.next;
+    let targets = st.targets;
     if (st.routes) {
       const r = st.routes[e.svc]!;
       next = r.next;
+      targets = r.targets;
       u *= r.total;
     }
     let acc = 0;
-    let to = next[next.length - 1]!.to;
-    for (const n of next) {
-      acc += n.p;
+    let k = next.length - 1;
+    for (let i = 0; i < next.length; i++) {
+      acc += next[i]!.p;
       if (u < acc) {
-        to = n.to;
+        k = i;
         break;
       }
     }
-    enter(e, to, t);
+    enterTarget(e, targets[k]!, t);
   }
 
   /**
@@ -1020,9 +1157,9 @@ export function runOnce(
         slaBreaches: 0,
       });
     }
-    for (const rid in roleBusyHours) {
-      roleBusyHours[rid] = 0;
-      roleSvcHours[rid] = 0;
+    for (const rid in roleAcc) {
+      roleAcc[rid]!.busy = 0;
+      roleAcc[rid]!.svc = 0;
     }
     for (const p of people) {
       p.busyHours = 0;
@@ -1035,7 +1172,10 @@ export function runOnce(
       if (c.svc) p.svcHours += share;
       else p.busyHours += share;
       if (c.over) p.overPipeline += share;
-      if (c.role && c.role in roleBusyHours) (c.svc ? roleSvcHours : roleBusyHours)[c.role]! += share;
+      if (c.acc) {
+        if (c.svc) c.acc.svc += share;
+        else c.acc.busy += share;
+      }
     }
     entities = entities.filter((e) => e.done === undefined);
   }
@@ -1068,7 +1208,7 @@ export function runOnce(
   // window's arrivals are the same whatever the warm-up length. Only the next
   // arrival sits in the event queue, which keeps the heap small. The rate
   // follows the calendar when the model has seasonality or growth (demand.ts).
-  if (W > 0) push({ t: 0, type: "measure" });
+  if (W > 0) schedule(0, "measure");
   const arrivalTimes = drawArrivals(model, H, W, streams.get("arrivals"), streams.get("arrivals:warmup"));
   // Each arrival's service comes from the mix, on its own streams (warm-up and
   // measured window apart, as for the arrival times).
@@ -1076,15 +1216,15 @@ export function runOnce(
   const mix = streams.get("mix");
   let nextArrival = 0;
   const scheduleArrival = () => {
-    if (nextArrival < arrivalTimes.length) push({ t: arrivalTimes[nextArrival++]!, type: "arrive" });
+    if (nextArrival < arrivalTimes.length) schedule(arrivalTimes[nextArrival++]!, "arrive");
   };
   scheduleArrival();
   // Weekly churn ticks.
-  for (let w = 1; w <= model.horizonWeeks; w++) push({ t: w * model.hoursPerWeek, type: "week" });
+  for (let w = 1; w <= model.horizonWeeks; w++) schedule(w * model.hoursPerWeek, "week");
   // People coming back from leave pick up waiting work.
-  for (const p of people) for (const [, end] of p.leave ?? []) if (end < H) push({ t: end, type: "back", p });
+  for (const p of people) for (const [, end] of p.leave ?? []) if (end < H) schedule(end, "back", null, null, p);
   // With servicing, people going on leave hand their assigned tasks to the role's pool.
-  if (servicing) for (const p of people) for (const [a] of p.leave ?? []) if (a > -W && a < H) push({ t: a, type: "away", p });
+  if (servicing) for (const p of people) for (const [a] of p.leave ?? []) if (a > -W && a < H) schedule(a, "away", null, null, p);
   if (start.kind === "wip") seedWip();
 
   for (let ev = events.pop(); ev; ev = events.pop()) {
@@ -1092,22 +1232,22 @@ export function runOnce(
     if (ev.type === "arrive") {
       scheduleArrival();
       const sv = drawService(ev.t < 0 ? mixWarmup : mix);
-      const e: SimEntity = { id: eid++, t0: ev.t, trace: [], seg: null, svc: sv };
-      entities.push(e);
+      const e: SimEntity = { id: eid++, t0: ev.t, trace: keepTrace ? [] : NO_TRACE, seg: null, svc: sv };
+      if (keepTrace) entities.push(e);
       if (ev.t >= 0) services[sv]!.counts.arrivals++;
-      enter(e, services[sv]!.entry, ev.t);
+      enterTarget(e, entryTargets[sv]!, ev.t);
     } else if (ev.type === "end") {
-      endService(ev.e, ev.st, ev.p, ev.t);
+      endService(ev.e!, ev.st!, ev.p, ev.t);
     } else if (ev.type === "leave") {
-      leave(ev.e, ev.st, ev.t);
+      leave(ev.e!, ev.st!, ev.t);
     } else if (ev.type === "back") {
-      takeNext(ev.p, ev.t);
+      takeNext(ev.p!, ev.t);
     } else if (ev.type === "measure") {
       startMeasuring();
     } else if (ev.type === "task") {
-      createTask(ev.c, ev.l, ev.t);
+      createTask(ev.c!, ev.l!, ev.t);
     } else if (ev.type === "miss") {
-      const task = ev.e.task!;
+      const task = ev.e!.task!;
       if (task.state === "open") {
         task.state = "missed";
         touchpoint(task.client, "missed", ev.t);
@@ -1115,11 +1255,17 @@ export function runOnce(
     } else if (ev.type === "away") {
       // Anyone idle who shares a servicing step with them can now take their queued tasks.
       const peers = new Set<PersonState>();
-      for (const st of ev.p.steps) if (st.assigned?.get(ev.p)?.length) for (const q of st.people) if (q !== ev.p) peers.add(q);
+      const away = ev.p!;
+      for (const st of away.steps) {
+        const k = st.assigned ? st.assigned.people.indexOf(away) : -1;
+        if (k >= 0 && st.assigned!.lists[k]!.size) for (const q of st.people) if (q !== away) peers.add(q);
+      }
       for (const q of peers) takeNext(q, ev.t);
     } else {
       churnTick(ev.t);
     }
+    // Handled: recycle it (nothing keeps a reference to an event after it runs).
+    pool.push(ev);
   }
   for (const p of people) advance(p, H);
   // Clients still active bill to the horizon.
@@ -1190,8 +1336,8 @@ export function runOnce(
     const cap = (roleCapacity[rid] ?? 0) * weeks;
     const ong = roleOngoing[rid]!;
     const ot = roleOvertime[rid]!;
-    const busy = roleBusyHours[rid]!;
-    const svcHours = roleSvcHours[rid]!;
+    const busy = roleAcc[rid]!.busy;
+    const svcHours = roleAcc[rid]!.svc;
     roleOut[rid] = {
       pipeline: cap ? busy / cap : 0,
       ongoing: cap ? ong / cap : 0,

@@ -35,7 +35,8 @@
 // Framework-free and dependency-free, like the rest of the engine.
 
 import type { EngineModel } from "./model";
-import { applyPatches, parsePatchPath, type PatchTarget, type ScenarioPatch } from "./scenario";
+import { applyPatches, HEALTH_RULE_KEYS, PATCH_FIELDS, parsePatchPath, type PatchTarget, type ScenarioPatch } from "./scenario";
+import { hasServicing, healthRules } from "./servicing";
 import { initialState, runOnce, SEED_STRIDE } from "./simulate";
 
 /** Bump when the engine or this module changes what a job returns, so stale cache entries are never read. */
@@ -182,6 +183,33 @@ function conflictValues(provenance: unknown, field: string): number[] | null {
  */
 export type ProvenanceLookup = (target: PatchTarget) => unknown;
 
+/** The rows whose `provenance` jsonb decides what is estimated (see `provenanceFromRows`). */
+export interface ProvenanceRows {
+  /** Step rows (every simulated process's), per-column or per-row provenance. */
+  steps?: readonly { id: string; provenance?: unknown }[];
+  /** Service rows, per-column provenance (`churn_health_sensitivity`, `price`, ...). */
+  services?: readonly { id: string; provenance?: unknown }[];
+  /** The workspace row's `provenance`: settings keyed `settings.<key>` (`settings.health_recover`, ...). */
+  workspace?: unknown;
+}
+
+/**
+ * A `ProvenanceLookup` over the stored rows: a step's or a service's own row,
+ * and for a health rule (`health.<field>`) the workspace's
+ * `settings.health_<field>` entry, handed over in the per-column shape.
+ * Targets with no row here (demand, roles, people) are estimated.
+ */
+export function provenanceFromRows({ steps = [], services = [], workspace }: ProvenanceRows): ProvenanceLookup {
+  const byStep = new Map(steps.map((s) => [s.id, s.provenance]));
+  const byService = new Map(services.map((s) => [s.id, s.provenance]));
+  return (t) => {
+    if (t.kind === "steps") return byStep.get(t.id);
+    if (t.kind === "services") return byService.get(t.id);
+    if (t.kind === "health" && isObject(workspace)) return { [t.field]: workspace[`settings.health_${t.field}`] };
+    return undefined;
+  };
+}
+
 /**
  * Every parameter the check can perturb, as patch paths, with the ones whose
  * provenance says entered or measured left out.
@@ -192,7 +220,12 @@ export type ProvenanceLookup = (target: PatchTarget) => unknown;
  * out (±25% of nothing is nothing). Money inputs (the retainer, service
  * prices) are included only when the metric is new MRR, and cost rates never:
  * they cannot move wins or the bottleneck. Head-counts and FTEs are facts
- * about the team, not estimates, and are not perturbed.
+ * about the team, not estimates, and are not perturbed. With a client roster,
+ * the health rules and each service's churn sensitivity are perturbed too
+ * (docs/PRD.md §6.5 "including health/churn defaults"): a rule the workspace
+ * hasn't set is the estimated default, so it is perturbed whatever the
+ * provenance says; the on-time, late and missed rules only when some service
+ * has a servicing process (their tasks are what move health).
  *
  * A conflicted field (per-column provenance with unresolved `conflict.values`)
  * uses the range of the conflicting values instead of ±perturbation, and is
@@ -204,13 +237,14 @@ export function estimatedParameters(
   { provenance, perturbation = 0.25, metric = "won" }: { provenance?: ProvenanceLookup; perturbation?: number; metric?: RobustnessMetric } = {},
 ): RobustnessParameter[] {
   const out: RobustnessParameter[] = [];
-  const add = (path: string, current: number) => {
+  /** `unset`: the value is a default the engine fills in, so an estimate whatever the provenance says. */
+  const add = (path: string, current: number, unset = false) => {
     if (!(current > 0)) return;
     const target = parsePatchPath(path);
     if (!target) return;
     const prov = provenance?.(target);
     const conflict = conflictValues(prov, target.field);
-    if (!conflict && provenanceSource(prov, target.field) !== "estimated") return;
+    if (!conflict && !unset && provenanceSource(prov, target.field) !== "estimated") return;
     if (conflict) {
       const low = Math.min(...conflict) / current;
       const high = Math.max(...conflict) / current;
@@ -237,6 +271,20 @@ export function estimatedParameters(
     add(`steps.${s.id}.wait_hours`, s.wait);
     add(`steps.${s.id}.rework_rate`, s.rework);
   }
+  // Client health and churn (docs/PRD.md §6.3.5, issue #79), which act only
+  // with a client roster: the health rules (a rule the workspace hasn't set is
+  // the PRD's estimated default) and each service's churn sensitivity. Tasks
+  // done on time, late or missed come only from servicing processes.
+  if (model.clients !== undefined) {
+    const rules = healthRules(model);
+    const servicing = services.some(([, s]) => hasServicing(model, s));
+    for (const field of PATCH_FIELDS.health) {
+      if (field !== "initial" && !servicing) continue;
+      const key = HEALTH_RULE_KEYS[field];
+      add(`health.${field}`, rules[key], model.health?.[key] === undefined);
+    }
+    for (const [id, s] of services) if (s.churnMonthly > 0) add(`services.${id}.churn_health_sensitivity`, s.churnSensitivity ?? 0);
+  }
   return out;
 }
 
@@ -254,6 +302,11 @@ const FIELD_LABELS: Record<string, string> = {
   work_hours: "hands-on time",
   wait_hours: "wait",
   rework_rate: "rework rate",
+  churn_health_sensitivity: "churn sensitivity to health",
+  initial: "Starting client health",
+  recover: "Health gained per task on time",
+  late_penalty: "Health lost per late task",
+  missed_penalty: "Health lost per missed task",
 };
 
 /** A parameter in words: "Audit & proposal: hands-on time", "Leads per week". */
@@ -261,7 +314,7 @@ export function parameterLabel(model: EngineModel, path: string): string {
   const t = parsePatchPath(path);
   if (!t) return path;
   const field = FIELD_LABELS[t.field] ?? t.field;
-  if (t.kind === "demand" || t.kind === "finances") return field;
+  if (t.kind === "demand" || t.kind === "finances" || t.kind === "health") return field;
   const name =
     t.kind === "steps"
       ? model.steps.find((s) => s.id === t.id)?.name

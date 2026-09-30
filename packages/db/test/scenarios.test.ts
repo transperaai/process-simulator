@@ -61,6 +61,13 @@ describe("scenario library", () => {
 });
 
 describe("patch shape", () => {
+  const healthPatches: ScenarioPatch[] = [
+    { path: "health.initial", op: "set", value: 70 },
+    { path: "health.recover", op: "multiply", value: 1.25 },
+    { path: "health.late_penalty", op: "add", value: 1 },
+    { path: "health.missed_penalty", op: "multiply", value: 0.75 },
+    { path: "services.s1.churn_health_sensitivity", op: "multiply", value: 1.25 },
+  ];
   const cases: unknown[] = [
     [],
     [{ path: "steps.e1.work_hours", op: "multiply", value: 0.5 }],
@@ -82,7 +89,30 @@ describe("patch shape", () => {
     [{ path: "demand.retainer", op: "set", value: 1 }],
     [{ path: 3, op: "set", value: 1 }],
     Array.from({ length: 201 }, () => ({ path: "demand.leads_per_week", op: "add", value: 0 })),
+    // Client health and churn (issue #79).
+    ...healthPatches.map((p) => [p]),
+    healthPatches,
+    [{ path: "health.missed_threshold", op: "set", value: 2 }],
+    [{ path: "health.recover.x", op: "set", value: 1 }],
+    [{ path: "health.s1.recover", op: "set", value: 1 }],
+    [{ path: "health", op: "set", value: 1 }],
+    [{ path: "health.@busiest", op: "set", value: 1 }],
+    [{ path: "health.health_recover", op: "set", value: 1 }],
+    [{ path: "services.s1.churn_sensitivity", op: "set", value: 1 }],
+    [{ path: "services.@busiest.churn_health_sensitivity", op: "set", value: 1 }],
+    [{ path: "roles.r1.churn_health_sensitivity", op: "set", value: 1 }],
+    [{ path: "services.churn_health_sensitivity", op: "set", value: 1 }],
   ];
+
+  it("accepts the health-rule and churn-sensitivity paths, in the engine and the database", async () => {
+    expect(parsePatches(healthPatches).ok).toBe(true);
+    const { rows } = await db.client.query("select private.is_scenario_patch($1::jsonb) as ok", [JSON.stringify(healthPatches)]);
+    expect(rows[0].ok).toBe(true);
+    const saved = await db.as(users.editor!.claims, (c) =>
+      c.query("insert into scenarios (workspace_id, name, patch) values ($1, 'Health', $2) returning patch", [NORTHBEAM_WORKSPACE_ID, JSON.stringify(healthPatches)]),
+    );
+    expect(saved.rows[0].patch).toEqual(healthPatches);
+  });
 
   it("the database accepts exactly what the engine's parsePatches accepts", async () => {
     for (const patch of cases) {

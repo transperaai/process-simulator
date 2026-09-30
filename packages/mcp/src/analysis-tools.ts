@@ -268,11 +268,13 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
         const { result, ...out } = checkScenarioRobustness({
           model: loaded.model,
           scenario,
-          // The servicing processes' steps too (issue #19): their provenance decides whether they are perturbed.
-          steps: [...loaded.bundle.steps, ...(loaded.bundle.otherProcesses ?? []).flatMap((p) => p.steps)] as unknown as {
-            id: string;
-            provenance?: unknown;
-          }[],
+          provenance: {
+            // The servicing processes' steps too (issue #19): their provenance decides whether they are perturbed.
+            steps: [...loaded.bundle.steps, ...(loaded.bundle.otherProcesses ?? []).flatMap((p) => p.steps)],
+            // Churn sensitivity and the health rules (issue #79).
+            services: loaded.bundle.services,
+            workspace: loaded.bundle.workspace.provenance,
+          },
           metric,
           currency: loaded.bundle.workspace.settings.currency,
           timeBudgetMs: seconds * 1000,

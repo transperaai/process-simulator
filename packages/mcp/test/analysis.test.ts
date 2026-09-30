@@ -119,12 +119,12 @@ describe("checkScenarioRobustness", () => {
     // Only the audit step's hands-on time is estimated: every other input is entered.
     const m = model();
     const only = steps.map((s) => ({ id: s.id, provenance: s.id === steps.find((x) => x.name === "Audit & proposal")!.id ? {} : { source: "entered" } }));
-    const params = robustnessParameters(m, only).map((p) => p.path);
+    const params = robustnessParameters(m, { steps: only }).map((p) => p.path);
     expect(params.filter((p) => p.startsWith("steps."))).toHaveLength(2);
     const out = checkScenarioRobustness({
       model: m,
       scenario: [scenario("Hire a strategist")],
-      steps: only,
+      provenance: { steps: only },
       metric: "won",
       currency: "GBP",
       timeBudgetMs: 60_000,
@@ -139,7 +139,7 @@ describe("checkScenarioRobustness", () => {
     const out = checkScenarioRobustness({
       model: model(),
       scenario: [scenario("Hire a strategist")],
-      steps,
+      provenance: { steps },
       metric: "won",
       currency: "GBP",
       timeBudgetMs: 5,

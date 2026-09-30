@@ -4,6 +4,7 @@ import {
   RobustnessCancelled,
   handleRobustnessRequest,
   northbeamModel,
+  northbeamWithServicing,
   type PoolWorker,
   type RobustnessRequest,
   type RobustnessResponse,
@@ -30,14 +31,14 @@ const hire: ScenarioPatch[] = [{ path: "roles.strat.headcount", op: "add", value
 function input() {
   const model = northbeamModel();
   const steps = model.steps.map((s) => ({ id: s.id, provenance: s.id === "discovery" ? { source: "measured" } : {} }));
-  const parameters = robustnessParameters(model, steps).slice(0, 4);
+  const parameters = robustnessParameters(model, { steps }).slice(0, 4);
   return { model, scenario: hire, options: { parameters, refineTop: 2 } };
 }
 
 describe("robustness parameters from provenance", () => {
   it("perturbs a step's values unless its provenance says entered or measured", () => {
     const model = northbeamModel();
-    const paths = (steps: { id: string; provenance?: unknown }[]) => robustnessParameters(model, steps).map((p) => p.path);
+    const paths = (steps: { id: string; provenance?: unknown }[]) => robustnessParameters(model, { steps }).map((p) => p.path);
     expect(paths([])).toContain("steps.audit.work_hours");
     expect(paths([{ id: "audit", provenance: { source: "entered" } }])).not.toContain("steps.audit.work_hours");
     // Per-column: only the named column is known.
@@ -46,6 +47,24 @@ describe("robustness parameters from provenance", () => {
     expect(perColumn).toContain("steps.audit.rework_rate");
     // No provenance on demand yet: estimated.
     expect(paths([])).toContain("demand.leads_per_week");
+  });
+
+  it("perturbs health rules and churn sensitivity unless the workspace or service row says they are known (issue #79)", () => {
+    const model = northbeamWithServicing();
+    model.health = { latePenalty: 6 };
+    const paths = (rows: Parameters<typeof robustnessParameters>[1]) =>
+      robustnessParameters(model, rows)
+        .map((p) => p.path)
+        .filter((p) => p.startsWith("health.") || p.endsWith("churn_health_sensitivity"));
+    expect(paths({})).toHaveLength(6);
+    const known = paths({
+      services: [{ id: "seo", provenance: { churn_health_sensitivity: { source: "entered" } } }],
+      workspace: { "settings.health_late_penalty": { source: "entered" } },
+    });
+    expect(known).not.toContain("services.seo.churn_health_sensitivity");
+    expect(known).not.toContain("health.late_penalty");
+    expect(known).toContain("services.ppc.churn_health_sensitivity");
+    expect(known).toContain("health.missed_penalty");
   });
 });
 

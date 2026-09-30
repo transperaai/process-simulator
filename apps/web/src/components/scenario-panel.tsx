@@ -8,7 +8,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ScenarioRow } from "@transpera-flow/db";
-import { applyPatches, compareHeadline, compareRuns, repointPatch, type EngineModel, type EnginePerson, type RetiredSteps } from "@transpera-flow/engine";
+import { applyPatches, compareHeadline, compareRuns, repointPatch, type EngineModel, type EnginePerson, type ProvenanceRows, type RetiredSteps } from "@transpera-flow/engine";
 import type { FixRequest } from "@/lib/issues/register";
 import { buildLevers, leverPatches, type LeverValues } from "@/lib/scenarios/levers";
 import { liveScenarioStore } from "@/lib/scenarios/live-store";
@@ -24,7 +24,7 @@ import type { EditMode } from "./process-view";
 import { RobustnessCheck } from "./robustness-check";
 import { ScenarioLibrary } from "./scenario-library";
 
-const NO_STEPS: readonly { id: string; provenance?: unknown }[] = [];
+const NO_PROVENANCE: ProvenanceRows = {};
 const NO_RETIRED: RetiredSteps = {};
 
 export function ScenarioPanel({
@@ -36,7 +36,7 @@ export function ScenarioPanel({
   mode,
   fix = null,
   onScenariosChange,
-  steps = NO_STEPS,
+  provenance = NO_PROVENANCE,
   retired = NO_RETIRED,
 }: {
   /** The baseline model (the process as it is now). */
@@ -52,8 +52,8 @@ export function ScenarioPanel({
   fix?: FixRequest | null;
   /** Told the saved scenarios whenever they change, so issues can link and run them. */
   onScenariosChange?: (scenarios: ScenarioRow[]) => void;
-  /** Step rows, for the robustness check: their provenance says which values are estimated. */
-  steps?: readonly { id: string; provenance?: unknown }[];
+  /** Step, service and workspace rows, for the robustness check: their provenance says which values are estimated. */
+  provenance?: ProvenanceRows;
   /** Steps the model no longer has and what replaced them, to explain broken scenarios (issue #16). */
   retired?: RetiredSteps;
 }) {
@@ -208,7 +208,7 @@ export function ScenarioPanel({
             <RobustnessCheck
               model={model}
               scenario={patches}
-              steps={steps}
+              provenance={provenance}
               subject={subject.subject}
               plural={subject.plural}
               roleNames={roleNames}

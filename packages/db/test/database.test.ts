@@ -97,6 +97,10 @@ describe("seed", () => {
     expect(bundle.leadSources).toHaveLength(3);
     expect(bundle.leadSources!.map((s) => s.provenance)).toEqual(northbeamBundle().leadSources!.map((s) => s.provenance));
     expect(bundle.demand).toMatchObject({ provenance: northbeamBundle().demand!.provenance });
+    // Churn sensitivity is seeded as the PRD's estimate, so robustness perturbs it; the rest is stamped entered (issue #79).
+    for (const s of bundle.services) {
+      expect(s.provenance).toMatchObject({ churn_health_sensitivity: { source: "estimated" }, price: { source: "entered" } });
+    }
     const opts = { startDate: "2026-10-05" };
     expect(toEngineModel(bundle, opts)).toEqual(toEngineModel(northbeamBundle(), opts));
   });

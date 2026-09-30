@@ -9,8 +9,12 @@ import {
   estimatedParameters,
   handleRobustnessRequest,
   northbeamModel,
+  northbeamWithClients,
+  northbeamWithServicing,
+  parameterLabel,
   plannedReplications,
   poolSize,
+  provenanceFromRows,
   provenanceSource,
   robustness,
   robustnessVerdict,
@@ -18,6 +22,7 @@ import {
   simulate,
   type ChunkResult,
   type PoolWorker,
+  type ProvenanceRows,
   type RobustnessExecutor,
   type RobustnessRequest,
   type RobustnessResponse,
@@ -95,6 +100,78 @@ describe("which parameters are estimated", () => {
     });
     expect(p).toEqual({ path: "steps.audit.work_hours", low: 0.5, high: 2, conflict: true });
   });
+});
+
+describe("client health and churn (issue #79)", () => {
+  const HEALTH = ["health.initial", "health.recover", "health.late_penalty", "health.missed_penalty"];
+  const CHURN = ["services.ppc.churn_health_sensitivity", "services.seo.churn_health_sensitivity"];
+  const healthAndChurn = (params: { path: string }[]) => params.map((p) => p.path).filter((p) => p.startsWith("health.") || p.endsWith(".churn_health_sensitivity"));
+
+  it("perturbs the health rules and churn sensitivity when they are estimated or unset, with a roster", () => {
+    // Northbeam with servicing: no health rules set (the estimated defaults), churn sensitivity 3.
+    expect(healthAndChurn(estimatedParameters(northbeamWithServicing())).sort()).toEqual([...HEALTH, ...CHURN].sort());
+    // A roster without servicing: nothing is on time, late or missed, so only starting health and churn matter.
+    const clients = northbeamWithClients();
+    expect(healthAndChurn(estimatedParameters(clients))).toEqual(["health.initial"]);
+    for (const sv of Object.values(clients.services!)) sv.churnSensitivity = 3;
+    expect(healthAndChurn(estimatedParameters(clients)).sort()).toEqual(["health.initial", ...CHURN].sort());
+    // No roster: health and churn sensitivity play no part.
+    expect(healthAndChurn(estimatedParameters(northbeamModel()))).toEqual([]);
+    // Zero sensitivity: nothing to perturb.
+    const m = northbeamWithServicing();
+    m.services!.seo!.churnSensitivity = 0;
+    expect(healthAndChurn(estimatedParameters(m))).not.toContain("services.seo.churn_health_sensitivity");
+  });
+
+  it("leaves out entered or measured values, read from the service and workspace rows", () => {
+    const m = northbeamWithServicing();
+    m.health = { recover: 2, latePenalty: 5, missedPenalty: 12 };
+    const paths = (rows: ProvenanceRows) => healthAndChurn(estimatedParameters(m, { provenance: provenanceFromRows(rows) }));
+    expect(paths({}).sort()).toEqual([...HEALTH, ...CHURN].sort());
+    const known = paths({
+      services: [
+        { id: "seo", provenance: { churn_health_sensitivity: { source: "entered" } } },
+        { id: "ppc", provenance: { churn_health_sensitivity: { source: "estimated" }, price: { source: "entered" } } },
+      ],
+      workspace: {
+        "settings.health_recover": { source: "measured" },
+        "settings.health_late_penalty": { source: "entered" },
+        "settings.health_missed_penalty": { source: "estimated" },
+        // Starting health isn't set, so the default is in force: an estimate, whatever this says.
+        "settings.health_initial": { source: "entered" },
+      },
+    });
+    expect(known).toEqual(["health.initial", "health.missed_penalty", "services.ppc.churn_health_sensitivity"]);
+    // A conflicted churn sensitivity uses the conflict's range.
+    const conflicted = estimatedParameters(m, {
+      provenance: provenanceFromRows({
+        services: [{ id: "seo", provenance: { churn_health_sensitivity: { source: "entered", conflict: { values: [{ value: 1.5 }, { value: 6 }] } } } }],
+      }),
+    }).find((p) => p.path === "services.seo.churn_health_sensitivity");
+    expect(conflicted).toEqual({ path: "services.seo.churn_health_sensitivity", low: 0.5, high: 2, conflict: true });
+  });
+
+  it("names them in words", () => {
+    const m = northbeamWithServicing();
+    expect(parameterLabel(m, "health.missed_penalty")).toBe("Health lost per missed task");
+    expect(parameterLabel(m, "services.seo.churn_health_sensitivity")).toBe(`${m.services!.seo!.name}: churn sensitivity to health`);
+  });
+
+  it("on Northbeam with servicing, reports them among the sensitive inputs where client servicing decides the answer", () => {
+    // Losing an account manager: check-ins and reports run late, health falls, and
+    // clients churn, which frees the team for the pipeline. Over three quarters
+    // how fast that happens is among what moves the answer most.
+    const m = northbeamWithServicing();
+    m.horizonWeeks = 39;
+    const r = robustness(m, [{ path: "roles.am.headcount", op: "add", value: -1 }]);
+    expect(r.complete).toBe(true);
+    const screened = r.sensitivities.filter((s) => HEALTH.includes(s.path) || CHURN.includes(s.path));
+    expect(screened.map((s) => s.path).sort()).toEqual([...HEALTH, ...CHURN].sort());
+    for (const s of screened) expect(s.effect.low !== null && s.effect.high !== null, s.path).toBe(true);
+    expect(screened.some((s) => s.influence > 0)).toBe(true);
+    const sensitive = robustnessVerdict({ result: r, subject: "Losing an account manager", roleNames: {}, horizonWeeks: m.horizonWeeks, currency: "GBP" }).sensitive;
+    expect(sensitive.map((s) => s.label)).toContain(`${m.services!.seo!.name}: churn sensitivity to health`);
+  }, 60_000);
 });
 
 describe("robustness check", () => {

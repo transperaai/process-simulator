@@ -214,7 +214,10 @@ export async function createService(workspaceId: string, _prev: ActionResult, fo
     .select("id", { count: "exact", head: true })
     .eq("workspace_id", workspaceId);
   if (countError) return failure(countError);
-  const { error } = await supabase.from("services").insert({ workspace_id: workspaceId, ...service, mix_share: count ? 0 : 1 });
+  // The churn sensitivity starts at the PRD's estimated default (§6.3.5), so it is marked as an
+  // estimate (the robustness check perturbs it, issue #79) rather than stamped entered.
+  const provenance = { churn_health_sensitivity: { source: "estimated", at: new Date().toISOString(), note: "Default" } };
+  const { error } = await supabase.from("services").insert({ workspace_id: workspaceId, ...service, mix_share: count ? 0 : 1, provenance });
   if (error) return failure(error);
   refresh();
   return {};

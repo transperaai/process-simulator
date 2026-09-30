@@ -89,7 +89,7 @@ describe.skipIf(!POSTGREST_URL)("MCP over PostgREST (acts as the user under RLS)
     await admin?.end();
   });
 
-  it("lists the five tools to an MCP client", async () => {
+  it("lists every tool to an MCP client", async () => {
     const client = await connect(memberToken, options);
     expect((await client.listTools()).tools.map((t) => t.name).sort()).toEqual([...TOOL_NAMES].sort());
     await client.close();

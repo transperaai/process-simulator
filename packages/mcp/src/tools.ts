@@ -4,13 +4,21 @@ import { listProcesses, loadProcessBundle, ModelError, toEngineModel } from "@tr
 import { applyPatches, isBlocking, MAX_PATCHES, PATCH_OPS, simulate, type EngineModel, type ScenarioPatch, type SimulationResult } from "@transpera-flow/engine";
 import { resolveProcess, resolveWorkspace, revisionIdFor, visibleWorkspaces, matchWorkspace, type ToolContext } from "./context";
 import { runTool, ToolError } from "./result";
+import { ANALYSIS_TOOL_NAMES, registerAnalysisTools } from "./analysis-tools";
 
 /** The browser's defaults (apps/web useSimulation): 30 replications, seed 1. */
 export const DEFAULT_REPS = 30;
 export const DEFAULT_SEED = 1;
 const MAX_REPS = 200;
 
-export const TOOL_NAMES = ["list_workspaces", "set_active_workspace", "get_workspace_summary", "get_process", "run_scenario"] as const;
+export const TOOL_NAMES = [
+  "list_workspaces",
+  "set_active_workspace",
+  "get_workspace_summary",
+  "get_process",
+  "run_scenario",
+  ...ANALYSIS_TOOL_NAMES,
+] as const;
 
 const workspaceArg = z
   .string()
@@ -242,5 +250,6 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       }),
   );
 
+  registerAnalysisTools(server, ctx);
   return server;
 }

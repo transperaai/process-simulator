@@ -101,8 +101,10 @@ export function buildMethodology(c: ReportContent, model: EngineModel): Methodol
 /** The methodology's last paragraph: who wrote the report's text. */
 export function textNote(c: ReportContent): string {
   if (c.summary?.source === "narration") {
+    const model = c.summary.narration?.model ?? "";
+    const by = model.startsWith("claude") ? `a language model (Claude, ${model})` : model || "a language model";
     return (
-      "The executive summary was drafted by a language model (Claude) from this report's figures only, and every number in it was matched " +
+      `The executive summary was drafted by ${by} from this report's figures only, and every number in it was matched ` +
       "against those figures before printing; a draft citing any figure not in the report is rejected. All other text is filled in from fixed " +
       "templates using the run's own numbers."
     );

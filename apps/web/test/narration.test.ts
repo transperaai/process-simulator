@@ -163,7 +163,9 @@ describe("the printed report", () => {
     const html = renderReportHtml(narrated);
     expect(narrated.summary!.source).toBe("narration");
     expect(narrated.appendix!.provenance.at(-1)).toMatch(/^Executive summary: drafted by fake-model on 30 Sept 2026 from this report's figures; all \d+ numbers in it matched/);
-    expect(narrated.methodology!.paragraphs.at(-1)).toMatch(/drafted by a language model \(Claude\)/);
+    expect(narrated.methodology!.paragraphs.at(-1)).toMatch(/drafted by fake-model from this report/);
+    const byClaude = withSummary(content, { ...narrated.summary!, narration: { ...narrated.summary!.narration!, model: "claude-opus-5-5" } });
+    expect(byClaude.methodology!.paragraphs.at(-1)).toMatch(/drafted by a language model \(Claude, claude-opus-5-5\)/);
     expect(html).toContain("drafted by fake-model");
     // The template's report says the opposite.
     expect(content.appendix!.provenance.at(-1)).toBe("Executive summary: templated text filled in from the run; no language model.");

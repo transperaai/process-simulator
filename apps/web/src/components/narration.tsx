@@ -17,7 +17,7 @@ const primary = "rounded-token bg-accent px-3 py-1.5 font-semibold text-accent-f
 export function ProblemList({ problems }: { problems: NumberProblem[] }) {
   if (!problems.length) return null;
   return (
-    <div role="alert" className="rounded-token border border-crit bg-crit-soft px-3 py-2 text-sm">
+    <div role="alert" data-problems className="rounded-token border border-crit bg-crit-soft px-3 py-2 text-sm">
       <p className="font-semibold">These figures aren&apos;t in the report as written, so the text can&apos;t print:</p>
       <ul className="list-disc pl-5">
         {problems.map((p, i) => (

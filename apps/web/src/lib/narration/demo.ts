@@ -17,7 +17,6 @@ type Json = Record<string, unknown>;
 const str = (v: unknown) => (typeof v === "string" ? v : "");
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const obj = (v: unknown): Json => (v && typeof v === "object" && !Array.isArray(v) ? (v as Json) : {});
-const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 const list = (items: string[]) => (items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
 
 function summaryDraft(facts: Json): string[] {
@@ -36,7 +35,7 @@ function summaryDraft(facts: Json): string[] {
   );
   const bn = obj(facts.bottleneck);
   const findings = arr(bn.findings).map(str).filter(Boolean);
-  if (findings.length) out.push(`What holds the business back: ${lowerFirst(findings[0]!)}${bn.oneMorePerson ? ` ${str(bn.oneMorePerson)}` : ""}`);
+  if (findings.length) out.push(`What holds the business back: ${findings[0]!}${bn.oneMorePerson ? ` ${str(bn.oneMorePerson)}` : ""}`);
   const clients = obj(facts.clients);
   if (clients.atRiskAtEnd) {
     const most = arr(clients.mostAtRisk).map(str);
@@ -47,8 +46,8 @@ function summaryDraft(facts: Json): string[] {
   for (const s of arr(facts.scenarios).map(obj)) {
     const sensitive = arr(s.mostSensitiveInputs).map(obj)[0];
     out.push(
-      `${str(s.headline)}${s.robustnessVerdict ? ` How far to trust it: ${lowerFirst(str(s.robustnessVerdict))}` : ""}` +
-        (sensitive ? ` The input that matters most is ${lowerFirst(str(sensitive.input))} (${str(sensitive.effect)}).` : ""),
+      `${str(s.headline)}${s.robustnessVerdict ? ` How far to trust it: ${str(s.robustnessVerdict)}` : ""}` +
+        (sensitive ? ` The input that matters most is “${str(sensitive.input)}” (${str(sensitive.effect)}).` : ""),
     );
   }
   const issues = obj(facts.openIssues);
@@ -64,7 +63,7 @@ function explainDraft(facts: Json): string[] {
   const r = obj(facts.results);
   const role = obj(r.busiestRole);
   return [
-    `Across ${str(run.replications)} replications of ${str(run.period)}, ${str(run.process)} wins ${str(r.wins)} and loses ${str(r.lost)}. ` +
+    `Across ${String(run.replications ?? "")} replications of ${str(run.period)}, ${str(run.process)} wins ${str(r.wins)} and loses ${str(r.lost)}. ` +
       `Each figure is an average with the range most replications fall inside (the 10th to 90th percentile), so the wider the range, the less certain the figure.`,
     `An item takes ${str(r.cycleTime)} from arrival to an outcome. New work adds ${str(r.newMrr)} in new MRR, and billing comes to ${str(r.billed)}.` +
       (role.role ? ` ${str(role.role)} is the busiest role at ${str(role.utilisation)} utilised, so it sets the pace.` : ""),

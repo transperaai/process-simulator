@@ -51,6 +51,11 @@ export async function WorkspaceProcessPage({ slug, processId, fix }: { slug: str
         <Link href={`${base}/runs`} className="text-fg-2 hover:underline">
           Runs
         </Link>
+        {canEdit && (
+          <Link href={`${base}/reports?process=${live.process.id}`} className="text-fg-2 hover:underline">
+            Report
+          </Link>
+        )}
         <Link href={`${base}/settings`} className="text-fg-2 hover:underline">
           People &amp; settings
         </Link>

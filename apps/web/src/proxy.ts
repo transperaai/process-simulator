@@ -10,6 +10,8 @@ export async function proxy(request: NextRequest) {
   if (!env) return NextResponse.next({ request });
   // The MCP endpoint authenticates with an API token, not a session cookie.
   if (request.nextUrl.pathname === "/api/mcp") return NextResponse.next({ request });
+  // A report's download link carries its own token (issue #28); whoever holds it may open it without signing in.
+  if (/^\/api\/reports\/[^/]+\/pdf$/.test(request.nextUrl.pathname) && request.nextUrl.searchParams.has("token")) return NextResponse.next({ request });
 
   let response = NextResponse.next({ request });
   const supabase = createServerClient(env.url, env.key, {

@@ -8,7 +8,7 @@ import { demoBundle, demoSources } from "@/lib/sources/demo";
 import { buildReportContent, type BuiltReport } from "./assemble";
 import type { ReportSectionId } from "./content";
 import { REPORT_ENGINE_VERSION } from "./engine-version";
-import { REPORT_DEFAULT_REPS, REPORT_ROBUSTNESS_BUDGET_MS, REPORT_SHADOW_PRICE_BUDGET_MS } from "./options";
+import { parseSections, REPORT_DEFAULT_REPS, REPORT_ROBUSTNESS_BUDGET_MS, REPORT_SHADOW_PRICE_BUDGET_MS } from "./options";
 
 const cache = new MemoryRobustnessCache(50_000);
 
@@ -19,6 +19,16 @@ export const DEMO_DEFAULT_SCENARIOS = northbeamScenarios()
 
 export function demoScenarios() {
   return northbeamScenarios();
+}
+
+/**
+ * What the demo form asked for. A bare link (no `sections`) gets every
+ * section and the default scenarios; otherwise exactly what was ticked.
+ */
+export function demoRequest(params: URLSearchParams): { sections: ReportSectionId[]; scenarioIds: string[] } {
+  if (!params.has("sections")) return { sections: parseSections(undefined), scenarioIds: DEMO_DEFAULT_SCENARIOS };
+  const known = new Set(northbeamScenarios().map((s) => s.id));
+  return { sections: parseSections(params.getAll("sections")), scenarioIds: [...new Set(params.getAll("scenarios"))].filter((id) => known.has(id)) };
 }
 
 export function buildDemoReport({

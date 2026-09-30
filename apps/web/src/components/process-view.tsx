@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow, type SourceRow } from "@transpera-flow/db";
+import { isUnpublished, ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow, type SourceRow } from "@transpera-flow/db";
 import type { EngineModel } from "@transpera-flow/engine";
 import { discardChange, revertField } from "@/lib/drafts/discard";
 import { EMPTY_DIFF, diffBundles, unresolvedSteps } from "@/lib/drafts/diff";
@@ -29,6 +29,7 @@ import { ScenarioPanel } from "./scenario-panel";
 import { StepInspector } from "./step-inspector";
 import { UtilisationBars } from "./utilisation-bars";
 import { BottleneckPanel } from "./bottleneck-panel";
+import { ServicingBanner } from "./servicing-banner";
 
 /**
  * How edits are saved: `live` to the database as the signed-in user, `demo`
@@ -63,6 +64,7 @@ export function ProcessView({
   issues = [],
   initialFix = null,
   registerHref,
+  settingsHref,
   userId = null,
   viewer = null,
   sources = [],
@@ -78,6 +80,8 @@ export function ProcessView({
   initialFix?: string | null;
   /** The full issues register, if the workspace has one to link to. */
   registerHref?: string;
+  /** The workspace settings, where services are linked to servicing processes (issue #19). */
+  settingsHref?: string;
   /** The signed-in user, recorded as who entered the values they change. */
   userId?: string | null;
   /** The signed-in user as others see them in presence (issue #10). */
@@ -98,8 +102,9 @@ export function ProcessView({
   const editor = session.editor;
   const canEdit = mode !== "readonly";
   const hasDraft = drafts.draft !== null || drafts.opening;
-  // Editors see the draft by default; everyone else the live model.
-  const [view, setView] = useState<DraftView>(canEdit ? "draft" : "live");
+  // Editors see the draft by default; everyone else the live model, unless it was never published (issue #76).
+  const unpublished = isUnpublished(initialLive);
+  const [view, setView] = useState<DraftView>(canEdit || unpublished ? "draft" : "live");
   const showingLive = hasDraft && view === "live";
   const working = state.bundle;
   const live = drafts.live;
@@ -319,6 +324,7 @@ export function ProcessView({
         onReview={(id) => select("steps", id)}
         breaks={breaks}
       />
+      {working.process.kind === "servicing" && <ServicingBanner bundle={working} settingsHref={settingsHref} />}
       {compare && hasDraft && (
         <DraftCompare
           live={liveModel.model ? { model: liveModel.model, result: liveSim.run?.result ?? null } : null}

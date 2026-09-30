@@ -8,6 +8,8 @@ import { parseRosterCsv, type ParsedImport } from "@/lib/clients/csv";
 import { DEFAULT_HEALTH, personClientLoads, rosterSummary, type PersonClientLoad, type RosterData } from "@/lib/clients/roster";
 import type { SaveOutcome, Saver } from "@/lib/fields/field-controller";
 import { formatNumber, formatPercent, formatWholeCurrency } from "@/lib/format";
+import type { ClientRetention } from "@/lib/servicing";
+import { RetentionPanel, useRosterRetention } from "./roster-retention";
 
 type Scalar = string | number | boolean | null;
 
@@ -19,6 +21,9 @@ export function ClientsRoster({ data, backend }: { data: RosterData; backend: Ro
   const currency = data.workspace.settings.currency;
   const [query, setQuery] = useState("");
   const shown = data.clients.filter((c) => c.name.toLowerCase().includes(query.trim().toLowerCase()));
+  // Simulated health and churn risk per client (issue #19), re-run as the roster changes.
+  const retention = useRosterRetention(data);
+  const names = useMemo(() => new Map(data.clients.map((c) => [c.id, c.name])), [data.clients]);
   return (
     <>
       <p className="mb-4 text-fg-2">
@@ -34,6 +39,7 @@ export function ClientsRoster({ data, backend }: { data: RosterData; backend: Ro
           ))}
         {summary.inactive ? <span className="text-fg-3"> · {summary.inactive} inactive</span> : null}
       </p>
+      <RetentionPanel retention={retention} names={names} />
       <LoadPanel data={data} />
       <section className={sectionClass} aria-labelledby="roster-heading">
         <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-2">
@@ -68,7 +74,7 @@ export function ClientsRoster({ data, backend }: { data: RosterData; backend: Ro
           <ul className="flex flex-col divide-y divide-line border-y border-line">
             {shown.map((c) => (
               <li key={c.id}>
-                <ClientItem client={c} data={data} backend={backend} />
+                <ClientItem client={c} data={data} backend={backend} simulated={retention.byClient.get(c.id)} />
               </li>
             ))}
             {!shown.length && <li className="py-3 text-fg-3">No client matches “{query}”.</li>}
@@ -304,7 +310,18 @@ function healthTone(health: number | null) {
   return h < 50 ? "bg-crit-soft text-crit" : h < 70 ? "bg-warn-soft" : "bg-good-soft";
 }
 
-function ClientItem({ client: c, data, backend }: { client: ClientRow; data: RosterData; backend: RosterBackend }) {
+function ClientItem({
+  client: c,
+  data,
+  backend,
+  simulated,
+}: {
+  client: ClientRow;
+  data: RosterData;
+  backend: RosterBackend;
+  /** Its simulated health and churn risk, when the page simulates (issue #19). */
+  simulated?: ClientRetention;
+}) {
   const disabled = !data.canEdit;
   const currency = data.workspace.settings.currency;
   const services = data.clientServices.filter((cs) => cs.client_id === c.id).map((cs) => cs.service_id);
@@ -338,6 +355,16 @@ function ClientItem({ client: c, data, backend }: { client: ClientRow; data: Ros
           Health {formatNumber(c.health === null ? DEFAULT_HEALTH : Number(c.health), 0)}
           {estimated ? " (est.)" : ""}
         </span>
+        {simulated && (
+          <span
+            className={`rounded-token px-1.5 text-xs tabular-nums ${healthTone(simulated.end)}`}
+            title={`Simulated over the horizon: health ${formatNumber(simulated.start, 0)} → ${formatNumber(simulated.end, 0)} (range ${formatNumber(simulated.endLow, 0)}–${formatNumber(simulated.endHigh, 0)}); touchpoints ${formatNumber(simulated.onTime)} on time, ${formatNumber(simulated.late)} late, ${formatNumber(simulated.missed)} missed; churned in ${formatPercent(simulated.churned)} of runs.`}
+          >
+            Simulated {formatNumber(simulated.end, 0)}
+            {simulated.end < simulated.start - 0.5 ? " ↓" : simulated.end > simulated.start + 0.5 ? " ↑" : ""} · churn risk{" "}
+            {formatNumber(simulated.churnMonthly * 100, 1)}%/mo
+          </span>
+        )}
         {!c.active && <span className="rounded-token bg-panel-2 px-1.5 text-xs text-fg-2">Inactive</span>}
         <span className="w-full truncate pl-5 text-xs text-fg-3 sm:w-auto sm:pl-0">{assignedText}</span>
       </summary>

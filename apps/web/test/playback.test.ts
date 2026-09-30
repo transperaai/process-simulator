@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { northbeamBundle, northbeamStepIds, toEngineModel } from "@transpera-flow/db";
+import { bundleForProcess, northbeamBundle, northbeamServicingProcessIds, northbeamStepIds, toEngineModel } from "@transpera-flow/db";
 import { initialState, runOnce, simulate, type EngineModel, type TraceEntity } from "@transpera-flow/engine";
 import { PlaybackClock, SPEEDS, formatSimTime, maxHopHours } from "@/lib/playback/clock";
 import { playbackGraph, playbackRun } from "@/lib/playback/graph";
@@ -16,7 +16,8 @@ const result = simulate(model, 30, 1);
 const run = playbackRun(result)!;
 const MAX_HOP = maxHopHours(40);
 const index = new PlaybackIndex(run, graph, { maxHop: MAX_HOP });
-const workSteps = model.steps.map((s) => s.id);
+// The pipeline's working steps: the run also carries servicing tasks, which playback of the pipeline leaves out (issue #19).
+const workSteps = bundle.steps.filter((s) => s.kind !== "start" && s.kind !== "end").map((s) => s.id);
 
 /** A fixed spread of times over the horizon, including the ends and every event time. */
 function sampleTimes(entities: TraceEntity[], H: number): number[] {
@@ -66,10 +67,24 @@ describe("playback trace index", () => {
     }
   });
 
+  it("plays a servicing process's own tasks, each ending at its end", () => {
+    const report = bundleForProcess(bundle, northbeamServicingProcessIds.report!)!;
+    const own = playbackRun(result, report.process)!;
+    expect(own.entities.length).toBeGreaterThan(20);
+    expect(own.entities.every((e) => e.servicing?.process === report.process.id)).toBe(true);
+    const g = playbackGraph(report);
+    expect(g.ends.done).toBe(report.steps.find((s) => s.kind === "end")!.id);
+    const idx = new PlaybackIndex(own, g, { maxHop: MAX_HOP });
+    const steps = report.steps.filter((s) => s.kind === "task").map((s) => s.id);
+    const rep0 = runOnce(model, 1, true, initialState(model));
+    for (const step of steps) expect(idx.queuedAt(step, own.H)).toBe(rep0.steps[step]!.wip);
+    expect(idx.endedBy(g.ends.done!, own.H)).toBeGreaterThan(10);
+  });
+
   it("agrees with the engine's own queue statistics for replication 0", () => {
     // Replication 0 is the traced one; its per-step stats are the ground truth.
     const rep0 = runOnce(model, 1, true, initialState(model));
-    expect(rep0.entities).toEqual(run.entities);
+    expect(rep0.entities!.filter((e) => !e.servicing)).toEqual(run.entities);
     for (const step of workSteps) {
       // Items still queued at the horizon.
       expect(index.queuedAt(step, run.H)).toBe(rep0.steps[step]!.wip);

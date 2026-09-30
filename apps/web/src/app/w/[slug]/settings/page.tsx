@@ -5,6 +5,7 @@ import { loadWorkspaceSettings } from "@/lib/data";
 import { DemandSettings } from "./demand-settings";
 import { PeopleSettings, SimulationSettings } from "./people-settings";
 import { ServicesSettings } from "./services-settings";
+import { HealthSettings } from "./servicing-settings";
 
 export default async function WorkspaceSettingsPage(props: PageProps<"/w/[slug]/settings">) {
   const { slug } = await props.params;
@@ -25,6 +26,7 @@ export default async function WorkspaceSettingsPage(props: PageProps<"/w/[slug]/
       </p>
       <SimulationSettings data={data} />
       <ServicesSettings data={data} />
+      <HealthSettings data={data} />
       <DemandSettings data={data} />
       <PeopleSettings data={data} />
     </main>

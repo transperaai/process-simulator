@@ -1,14 +1,24 @@
 import Link from "next/link";
-import { northbeamIssues, northbeamScenarios } from "@transpera-flow/db";
+import { notFound } from "next/navigation";
+import { bundleForProcess, northbeamIssues, northbeamScenarios, processesOf } from "@transpera-flow/db";
 import { AppHeader } from "@/components/app-header";
+import { ProcessNav } from "@/components/process-nav";
 import { ProcessView } from "@/components/process-view";
 import { demoBundle, demoSources } from "@/lib/sources/demo";
 
-/** The Northbeam sample from the seed fixtures, no database needed. `?fix=<issue>` runs that issue's fix. */
+/**
+ * The Northbeam sample from the seed fixtures, no database needed. `?fix=<issue>`
+ * runs that issue's fix; `?process=<id>` opens one of its servicing processes
+ * (issue #19), which simulates beside the pipeline.
+ */
 export default async function DemoPage(props: PageProps<"/demo">) {
-  const { fix } = await props.searchParams;
+  const { fix, process } = await props.searchParams;
   // Sources disagree on audit time (a conflict) and kickoff time is an assumption, so the checklist and the publish check can be tried.
-  const bundle = demoBundle();
+  const pipeline = demoBundle();
+  const bundle = typeof process === "string" ? bundleForProcess(pipeline, process) : pipeline;
+  if (!bundle) notFound();
+  const processes = processesOf(pipeline).map((p) => ({ id: p.id, name: p.name, kind: p.kind, live: true, draft: false }));
+  const hrefs = Object.fromEntries(processes.map((p) => [p.id, p.id === pipeline.process.id ? "/demo" : `/demo?process=${p.id}`]));
   return (
     <main className="mx-auto w-full max-w-7xl px-4 pb-8">
       <AppHeader workspace={`${bundle.workspace.name} · demo`} signedIn={false} />
@@ -27,7 +37,9 @@ export default async function DemoPage(props: PageProps<"/demo">) {
           Sources
         </Link>
       </div>
+      <ProcessNav processes={processes} current={bundle.process.id} hrefs={hrefs} />
       <ProcessView
+        key={bundle.process.id}
         live={bundle}
         draft={null}
         mode="demo"

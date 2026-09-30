@@ -42,7 +42,9 @@ export function usePlayback(bundle: ProcessBundle, result: SimulationResult | nu
   const state = useSyncExternalStore(clock.subscribe, clock.getState, clock.getState);
   const reducedMotion = usePrefersReducedMotion();
 
-  const run = useMemo(() => (result ? playbackRun(result) : null), [result]);
+  const processId = bundle.process.id;
+  const processKind = bundle.process.kind;
+  const run = useMemo(() => (result ? playbackRun(result, { id: processId, kind: processKind }) : null), [result, processId, processKind]);
   // Rebuilt only when the edges or end steps change, not when a step moves.
   const graphKey = JSON.stringify(playbackGraph(bundle));
   const graph = useMemo(() => JSON.parse(graphKey) as PlaybackGraph, [graphKey]);

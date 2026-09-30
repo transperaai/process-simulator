@@ -64,8 +64,9 @@ export function KpiStrip({ model, currency, result, status, durationMs }: KpiStr
       label: `Billed / ${weeks} wks`,
       value: k ? money(k.billed.mean) : "–",
       detail: k ? formatRange(k.billed, money) : "",
-      definition:
-        "Revenue billed within the horizon by the clients won in it, net of churn; one-off projects bill when won. Existing clients aren't included yet.",
+      definition: model.clients
+        ? "Revenue billed within the horizon: every client's monthly fee for the weeks it stays (the roster at its MRR, new wins at their service's price), stopping when it churns; one-off projects bill when won."
+        : "Revenue billed within the horizon by the clients won in it, net of churn; one-off projects bill when won. Add a client roster to include existing clients.",
     },
     {
       label: "LTV added",
@@ -86,9 +87,36 @@ export function KpiStrip({ model, currency, result, status, durationMs }: KpiStr
       definition: "Overtime hours × each person's cost rate (their role's when they have none).",
     },
   ];
+  // Retention (docs/PRD.md §6.3.5, §13; issue #19): with a client roster, who is at risk and who leaves.
+  if (model.clients) {
+    const risk = k?.clientsAtRisk;
+    const churned = k?.clientsChurned;
+    const touch = k?.touchpoints;
+    tiles.push(
+      {
+        label: "Clients at risk",
+        value: risk ? formatNumber(risk.mean) : "–",
+        detail: risk ? formatRange(risk, whole) : "",
+        definition:
+          "Active clients whose simulated health ends the horizon below 50. Health starts from the roster (80 if not entered), recovers when servicing tasks are done on time and drops when they are late or missed.",
+        tone: risk && risk.mean >= 1 ? "crit" : undefined,
+      },
+      {
+        label: `Churned / ${weeks} wks`,
+        value: churned ? formatNumber(churned.mean) : "–",
+        detail: touch && touch.onTime.mean + touch.late.mean + touch.missed.mean > 0
+          ? `touchpoints: ${whole(touch.late.mean)} late · ${whole(touch.missed.mean)} missed`
+          : churned
+            ? formatRange(churned, whole)
+            : "",
+        definition:
+          "Clients who leave in the horizon. Monthly churn = the service's base × (1 + sensitivity × (100 − health) / 100), so late and missed servicing raise it.",
+      },
+    );
+  }
 
   return (
-    <section aria-label="Key results" className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-5">
+    <section aria-label="Key results" className={`grid grid-cols-2 gap-2 md:grid-cols-4 ${tiles.length > 10 ? "xl:grid-cols-6" : "xl:grid-cols-5"}`}>
       {tiles.map((t) => (
         <div key={t.label} title={t.definition} className="min-w-0 rounded-token border border-line bg-panel px-3 py-2 shadow-token">
           <p className="font-mono text-[11px] uppercase tracking-widest text-fg-3">{t.label}</p>

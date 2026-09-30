@@ -41,6 +41,8 @@ export const SERVICE_FIELDS = {
   margin: between(0, 1),
   tenure_months: between(0, MAX_TENURE_MONTHS),
   churn_monthly_base: between(0, 1),
+  // How much poor client health raises churn (docs/PRD.md §6.3.5; issue #19).
+  churn_health_sensitivity: between(0, 100),
   mix_share: between(0, MAX_MIX_SHARE),
   entry_process_id: (v) => v === null || isId(v),
   active: (v) => typeof v === "boolean",

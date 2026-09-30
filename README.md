@@ -42,6 +42,10 @@ small stand-in for Supabase auth, the migrations and the seed.
 
 After changing the fixtures, regenerate the seed with `pnpm --filter @transpera-flow/db gen:seed`.
 
+The engine's golden models fail on any change that moves a snapshotted number. If the change is meant to,
+approve the new baselines, which bumps `ENGINE_VERSION`:
+`pnpm --filter @transpera-flow/engine golden:approve "why the numbers moved"` (see `docs/engine-versioning.md`).
+
 The MCP end-to-end suites (`packages/mcp/test/postgrest*.test.ts`) also need
 PostgREST; it is skipped locally unless `POSTGREST_URL` and
 `POSTGREST_JWT_SECRET` are set. CI prepares its database with

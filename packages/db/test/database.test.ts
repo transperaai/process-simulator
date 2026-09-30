@@ -4,6 +4,9 @@ import {
   NORTHBEAM_PROCESS_ID,
   NORTHBEAM_REVISION_ID,
   NORTHBEAM_WORKSPACE_ID,
+  LARKSPUR_PROCESS_ID,
+  LARKSPUR_WORKSPACE_ID,
+  larkspurBundle,
   northbeamAccess,
   northbeamBundle,
   northbeamIssues,
@@ -27,6 +30,54 @@ afterAll(async () => {
   await db?.close();
 });
 
+/** A seeded workspace's pipeline bundle, as the database returns it. */
+async function loadSeeded(claims: Record<string, unknown>, wsId: string): Promise<ProcessBundle> {
+  return db.as(claims, async (c) => {
+    const one = async (sql: string, params: unknown[]) => (await c.query(sql, params)).rows[0];
+    const many = async (sql: string, params: unknown[]) => (await c.query(sql, params)).rows;
+    const workspace = await one("select id, name, slug, settings from workspaces where id = $1", [wsId]);
+    const process = await one("select * from processes where workspace_id = $1 and kind = 'pipeline'", [wsId]);
+    // Its servicing processes at their live revisions (issue #19).
+    const servicing = await many("select * from processes where workspace_id = $1 and kind = 'servicing' order by id", [wsId]);
+    const otherProcesses = [];
+    for (const p of servicing) {
+      otherProcesses.push({
+        process: p,
+        revision: await one("select * from process_revisions where id = $1", [p.live_revision_id]),
+        steps: await many("select * from steps where revision_id = $1", [p.live_revision_id]),
+        edges: await many("select * from edges where revision_id = $1", [p.live_revision_id]),
+      });
+    }
+    return {
+      workspace,
+      process,
+      revision: await one("select * from process_revisions where id = $1", [process.live_revision_id]),
+      roles: await many("select * from roles where workspace_id = $1", [wsId]),
+      steps: await many("select * from steps where revision_id = $1", [process.live_revision_id]),
+      edges: await many("select * from edges where revision_id = $1", [process.live_revision_id]),
+      people: await many("select * from people where workspace_id = $1", [wsId]),
+      personRoles: await many("select * from person_roles where workspace_id = $1", [wsId]),
+      personSkills: await many("select * from person_skills where workspace_id = $1", [wsId]),
+      personLeave: await many(
+        "select id, person_id, workspace_id, start_date::text, end_date::text from person_leave where workspace_id = $1",
+        [wsId],
+      ),
+      services: await many("select * from services where workspace_id = $1", [wsId]),
+      leadSources: await many("select * from lead_sources where workspace_id = $1", [wsId]),
+      seasonality: await many("select * from seasonality where workspace_id = $1", [wsId]),
+      demand: (await one("select * from demand_settings where workspace_id = $1", [wsId])) ?? null,
+      clients: await many(
+        "select id, workspace_id, name, start_date::text, mrr, health, provenance, notes, active from clients where workspace_id = $1",
+        [wsId],
+      ),
+      clientServices: await many("select * from client_services where workspace_id = $1", [wsId]),
+      clientAssignments: await many("select * from client_assignments where workspace_id = $1", [wsId]),
+      servicingLinks: await many("select * from service_servicing where workspace_id = $1", [wsId]),
+      otherProcesses,
+    } as ProcessBundle;
+  });
+}
+
 describe("seed", () => {
   it("bootstrap.sql is up to date with the migrations and seed", () => {
     const dir = new URL("../supabase/", import.meta.url);
@@ -35,55 +86,12 @@ describe("seed", () => {
 
   it("seed.sql is up to date with the fixtures", () => {
     const onDisk = readFileSync(new URL("../supabase/seed.sql", import.meta.url), "utf8");
-    expect(onDisk).toBe(seedSql([northbeamBundle()], [northbeamAccess()], northbeamScenarios(), northbeamIssues(), northbeamSources()));
+    expect(onDisk).toBe(seedSql([northbeamBundle(), larkspurBundle()], [northbeamAccess()], northbeamScenarios(), northbeamIssues(), northbeamSources()));
   });
 
   it("round-trips: rows loaded from the database resolve to the same engine model", async () => {
     const admin = await createUser(db, "admin@example.com", { agency_admin: true });
-    const bundle = await db.as(admin.claims, async (c) => {
-      const one = async (sql: string, params: unknown[]) => (await c.query(sql, params)).rows[0];
-      const many = async (sql: string, params: unknown[]) => (await c.query(sql, params)).rows;
-      const workspace = await one("select id, name, slug, settings from workspaces where id = $1", [NORTHBEAM_WORKSPACE_ID]);
-      const process = await one("select * from processes where workspace_id = $1 and kind = 'pipeline'", [NORTHBEAM_WORKSPACE_ID]);
-      // Its servicing processes at their live revisions (issue #19).
-      const servicing = await many("select * from processes where workspace_id = $1 and kind = 'servicing' order by id", [NORTHBEAM_WORKSPACE_ID]);
-      const otherProcesses = [];
-      for (const p of servicing) {
-        otherProcesses.push({
-          process: p,
-          revision: await one("select * from process_revisions where id = $1", [p.live_revision_id]),
-          steps: await many("select * from steps where revision_id = $1", [p.live_revision_id]),
-          edges: await many("select * from edges where revision_id = $1", [p.live_revision_id]),
-        });
-      }
-      return {
-        workspace,
-        process,
-        revision: await one("select * from process_revisions where id = $1", [process.live_revision_id]),
-        roles: await many("select * from roles where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
-        steps: await many("select * from steps where revision_id = $1", [process.live_revision_id]),
-        edges: await many("select * from edges where revision_id = $1", [process.live_revision_id]),
-        people: await many("select * from people where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
-        personRoles: await many("select * from person_roles where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
-        personSkills: await many("select * from person_skills where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
-        personLeave: await many(
-          "select id, person_id, workspace_id, start_date::text, end_date::text from person_leave where workspace_id = $1",
-          [NORTHBEAM_WORKSPACE_ID],
-        ),
-        services: await many("select * from services where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
-        leadSources: await many("select * from lead_sources where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
-        seasonality: await many("select * from seasonality where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
-        demand: (await one("select * from demand_settings where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID])) ?? null,
-        clients: await many(
-          "select id, workspace_id, name, start_date::text, mrr, health, provenance, notes, active from clients where workspace_id = $1",
-          [NORTHBEAM_WORKSPACE_ID],
-        ),
-        clientServices: await many("select * from client_services where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
-        clientAssignments: await many("select * from client_assignments where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
-        servicingLinks: await many("select * from service_servicing where workspace_id = $1", [NORTHBEAM_WORKSPACE_ID]),
-        otherProcesses,
-      } as ProcessBundle;
-    });
+    const bundle = await loadSeeded(admin.claims, NORTHBEAM_WORKSPACE_ID);
     expect(bundle.process.live_revision_id).toBe(NORTHBEAM_REVISION_ID);
     expect(bundle.services).toHaveLength(2);
     expect(bundle.leadSources).toHaveLength(3);
@@ -91,6 +99,18 @@ describe("seed", () => {
     expect(bundle.demand).toMatchObject({ provenance: northbeamBundle().demand!.provenance });
     const opts = { startDate: "2026-10-05" };
     expect(toEngineModel(bundle, opts)).toEqual(toEngineModel(northbeamBundle(), opts));
+  });
+
+  it("loads Larkspur Creative, the second golden agency, which round-trips to the same engine model (issue #22)", async () => {
+    const admin = await createUser(db, "admin-larkspur@example.com", { agency_admin: true });
+    const bundle = await loadSeeded(admin.claims, LARKSPUR_WORKSPACE_ID);
+    expect(bundle.process.id).toBe(LARKSPUR_PROCESS_ID);
+    expect(bundle.workspace.slug).toBe("larkspur");
+    expect(bundle.clients).toHaveLength(18);
+    expect(bundle.personLeave).toHaveLength(2);
+    expect(bundle.otherProcesses).toHaveLength(2);
+    const opts = { startDate: "2026-10-05" };
+    expect(toEngineModel(bundle, opts)).toEqual(toEngineModel(larkspurBundle(), opts));
   });
 });
 
@@ -106,8 +126,8 @@ describe("row-level security", () => {
   it("lets an agency admin see every workspace", async () => {
     const admin = await createUser(db, "agency@example.com", { agency_admin: true });
     const visible = await db.as(admin.claims, countVisible);
-    // The pipeline and its two servicing processes (issue #19).
-    expect(visible).toMatchObject({ workspaces: 1, roles: 6, processes: 3, steps: 22, edges: 23, people: 11, person_roles: 11 });
+    // Northbeam and Larkspur (issue #22), each a pipeline and two servicing processes (issue #19).
+    expect(visible).toMatchObject({ workspaces: 2, roles: 13, processes: 6, steps: 46, edges: 47, people: 21, person_roles: 22 });
   });
 
   it("lets a member with an agency_admin membership see the workspace", async () => {

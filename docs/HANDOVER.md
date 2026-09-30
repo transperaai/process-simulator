@@ -1,187 +1,124 @@
-# Handover: connect Supabase and Vercel, then carry on building
+# Handover
 
-Written 29 Sep 2026 at the end of the first build session. Work lives on branch
-`claude/charming-cannon-2jmd09` (not merged to `main` yet). CI is green on every
-commit.
+Updated 30 Sep 2026, at the end of the Milestone A build session. Start a new session with:
+
+> Read `CLAUDE.md` and `docs/HANDOVER.md`, then carry on from "Next steps".
 
 ## Where things stand
 
-**Built and tested** (see the GitHub issues for detail):
+**Milestone A (#1, Audit-ready):** every ticket is merged to `main` and live on
+https://transpera-flow.vercel.app except:
 
-| Ticket | State |
-|---|---|
-| #4 Walking skeleton | Done: monorepo, engine in a Web Worker, schema + RLS, seed, read-only canvas, KPI strip, magic-link auth, CI |
-| #5 Engine correctness | Done: queueing-theory tests, per-purpose random streams, heap, portable log/exp (browser = server byte for byte) |
-| #7 Ranges everywhere | Done: every KPI is average + 10–90% range |
-| #6 Named people | Done except the **people settings form** (create/edit/deactivate), which saves data and waited for Supabase |
+- **#27 A24: Transcript to draft, end to end** (`ready-for-human`): a QA pass with Austin, not a build.
+- **Milestone A QA with Austin**: he tests the whole flow on his PC, then does a polish and flow review.
+  He wants the backlog from that review gathered in one go, not iterated on mid-way.
 
-**Supabase project** `vgsjkpwvxkpqvyazwcyq` (free/Nano plan for now):
-- `packages/db/supabase/bootstrap.sql` has been run in the SQL editor: both migrations,
-  the Northbeam seed, and the migration-history rows. Verified: 1 workspace, 12 steps, 11 people.
-- Not done yet: auth URL config, making Austin agency admin, RLS spot-check on the live DB.
+**Milestones B (#2) and C (#3):** not started. Tickets #30–#43 are `ready-for-agent`; #44 is `ready-for-human`.
+Work the frontier: any open ticket whose `Blocked by` issues are all closed.
 
-**Vercel**: project created from the repo with Root Directory `apps/web`. Not done yet:
-env vars, and it deploys `main`, which is still empty (see step 4 below).
+**Production database:** every migration in `packages/db/supabase/migrations/` is applied (up to
+`20261020000000_narration`). See `docs/production-migrations.md`.
 
-**Why a local session:** the cloud environment's network policy blocks Supabase and
-Vercel, so the next session should run on Austin's computer (Remote Control), where
-the CLIs use his logins and network.
+## How we work
 
-## Security to-dos (do these first)
+- **Austin approves waves; within a wave, carry on without waiting.** Tell him when each wave finishes and go
+  straight to the next unless he says otherwise.
+- **Delegate building to agents** to save the main session's context. Model policy (Austin's): plan with Opus,
+  build with Sonnet, review larger tickets with Opus. Give routine work (merges, small fixes) to Sonnet or do it
+  directly. Tell agents to **commit and push after every step**: a container restart once lost unpushed agent work.
+- **Keep GitHub issues current:** comment on a ticket when work starts (name the branch), put `Closes #N` in the
+  PR, and post a progress comment on the milestone parent issue after each wave.
+- **Production migrations: apply as we go** (Austin approved this). Additive only; verify after each, and log
+  it in `docs/production-migrations.md`. Anything destructive, or any other production-affecting action, needs
+  Austin's go-ahead first.
+- Austin would rather Claude runs commands than he does. Never paste API keys or tokens into chat.
+- If the auto-mode classifier blocks an action, stop and ask Austin; never work around it.
+- **Parked for later** (Austin): performance optimisation (see below), and refining the flow after his review.
 
-- [ ] **Rotate the Supabase access token.** Two tokens were pasted into the first chat;
-      revoke both at supabase.com/dashboard/account/tokens. The cloud environment's
-      `SUPABASE_ACCESS_TOKEN` variable holds one of them: update or delete it.
-- [ ] Never commit tokens. `.env*` is git-ignored; keep secrets in `apps/web/.env.local`
-      and Vercel's env settings only.
+## Operations
 
-## Option B: run Claude Code on your own computer (Mac)
-
-`claude remote-control` runs in the folder you start it in; it doesn't clone
-anything by itself. Either clone first (steps below), or start it in an empty
-projects folder and let the session clone the repo (see the kick-off message).
-
-**1. Install the tools** (skip any you already have):
+**Production SQL** (Supabase project `vgsjkpwvxkpqvyazwcyq`, via the Management API; allowed in
+`.claude/settings.json`):
 
 ```sh
-# Homebrew, if missing: https://brew.sh
-brew install git node@22 gh
-brew install --cask claude-code      # Claude Code, includes `claude remote-control`
-# If the cask isn't available: curl -fsSL https://claude.ai/install.sh | bash
+bash packages/db/scripts/prod-sql.sh -c "select 1"
+bash packages/db/scripts/prod-sql.sh -f apply.sql
 ```
 
-**2. Log in:**
+**Applying a migration:**
+1. Before merging the PR, write an apply file:
+   - `begin;`
+   - the migration's SQL
+   - `insert into supabase_migrations.schema_migrations (version, name, statements) values ('<version>', '<name>', array[$mig$<the migration SQL>$mig$]);`
+   - `commit;`
+2. Run preflight queries for anything that could fail on real data.
+3. Apply the file.
+4. Verify: tables, row-level security, policies, and the `schema_migrations` row.
+5. Merge the PR, then update the log.
+
+- **Migration order:** migrations apply in file-name order. A migration landing after a later-numbered one
+  must be renumbered.
+- **`save_fields`:** each migration that redefines `save_fields` must copy the **latest** definition and
+  append to its allow-list, because the last definition wins.
+
+**CI:**
+- The GitHub `check` job runs lint, typecheck, tests, the build, and the PostgREST end-to-end tests. Each PR
+  also gets a Vercel preview.
+- In the cloud container, use `gh api` REST calls; GraphQL is blocked.
+- Merge with `gh api -X PUT repos/transperaai/transpera-flow/pulls/<n>/merge -f merge_method=squash`.
+
+**Local tests in the cloud container** (Postgres 16 and Chromium are preinstalled):
 
 ```sh
-gh auth login          # GitHub: HTTPS, "log in with a web browser"
-claude                 # first run signs in to your Claude account; /exit afterwards
-```
-
-**3. Get the repo and set it up:**
-
-```sh
-mkdir -p ~/Code && cd ~/Code
-gh repo clone transperaai/transpera-flow
-cd transpera-flow
-git checkout claude/charming-cannon-2jmd09
-corepack enable            # gives you pnpm 10 (Node 22 required)
-pnpm install
-npx supabase login         # opens the browser
-npx vercel login
-```
-
-**4. Start the session** from inside `transpera-flow`:
-
-```sh
-claude remote-control      # or open this folder in the Claude Desktop app
-```
-
-It appears in the Claude Code app (phone too) and runs on the Mac with its logins
-and network.
-
-**5. Kick-off message** for the new session:
-
-> Read `docs/HANDOVER.md` and `CLAUDE.md`, then work through "Steps for the next
-> session" one at a time. If the current folder isn't a clone of
-> `transperaai/transpera-flow`, clone it first with
-> `gh repo clone transperaai/transpera-flow`, `cd` into it, check out
-> `claude/charming-cannon-2jmd09`, and run `corepack enable && pnpm install`.
-> The Supabase and Vercel CLIs are logged in on this machine (if not, walk me
-> through `npx supabase login` and `npx vercel login`). Ask me before merging to `main`.
-
-For the full test suite locally you also need Postgres 16 and Chromium:
-
-```sh
-docker run -d --name transpera-flow-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16
-pnpm --filter @transpera-flow/engine exec playwright-core install chromium
+su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /var/tmp/pgtest/data -o '-p 5432 -k /tmp' -l /var/tmp/pgtest/log start"
+export DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
+export CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome
 pnpm lint && pnpm typecheck && pnpm test
 ```
 
-## Steps for the next session
+If `/var/tmp/pgtest/data` doesn't exist after a container reset, run `initdb` there as `postgres` and set the
+password to `postgres`.
 
-> **Done 29 Sep 2026 (second session, on Austin's Mac):** steps 1–6 and 8. `main` now exists
-> (PR #45) and is the default branch and Vercel's production branch; production is
-> https://transpera-flow.vercel.app. Step 7 is partly done: see the checklist in
-> `docs/supabase-notes.md`. Supabase tokens were rotated.
+**Secrets:**
+- `SUPABASE_ACCESS_TOKEN` is set in the cloud environment.
+- `ANTHROPIC_API_KEY` is set in Vercel (Production and Preview) for narration (#29). Without it, reports print
+  the templated summary.
 
-1. **Link Supabase** (from the repo root):
-   ```sh
-   npx supabase link --project-ref vgsjkpwvxkpqvyazwcyq --workdir packages/db
-   npx supabase migration list --workdir packages/db   # both migrations should show as applied remotely
-   ```
-   If `link` warns about the Postgres version, set `db.major_version` in
-   `packages/db/supabase/config.toml` to match the project.
+## Open items for Austin's QA
 
-2. **Spot-check RLS on the live database** (SQL editor or `supabase db query`): a signed-in
-   stranger must see nothing.
-   ```sql
-   begin;
-   set local role authenticated;
-   select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000000","role":"authenticated"}', true);
-   select count(*) from people;   -- expect 0
-   rollback;
-   ```
+- The lost-revenue definition, and the starter scenarios.
+- Larkspur (the second sample workspace) is not seeded in production.
+- The /privacy wording added with #29 (narration sends model numbers to Anthropic).
+- A live narration check on production (the API key is set).
+- The two-browser Realtime test: presence plus live changes.
+- #27, done together.
 
-3. **Auth settings** (Supabase dashboard → Authentication → URL Configuration): Site URL =
-   the Vercel production URL; add `<vercel-url>/auth/callback`, the preview pattern
-   `https://*-<team>.vercel.app/auth/callback`, and `http://localhost:3000/auth/callback`
-   to Redirect URLs.
+## Performance (parked until the end of the build)
 
-4. **Get `main` deployable**: open a PR from `claude/charming-cannon-2jmd09` to `main`
-   and merge it (or point Vercel's production branch at this branch for now).
+PRD §6.7 targets:
+- Pipeline-only Northbeam, re-run after a lever change: < 150 ms.
+- Full seeded Northbeam with its client roster and servicing: < 250 ms. It's roughly twice the cost because
+  servicing simulates the 26 clients' ongoing work as well as the pipeline.
 
-5. **Vercel env vars** (from the repo root, after `npx vercel link` to the existing project):
-   ```sh
-   npx vercel env add NEXT_PUBLIC_SUPABASE_URL           # https://vgsjkpwvxkpqvyazwcyq.supabase.co
-   npx vercel env add NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-   npx vercel env pull apps/web/.env.local
-   ```
-   Add each to Production, Preview and Development. The publishable key is under Supabase
-   → Project Settings → API Keys. Then redeploy.
-
-6. **First sign-in**: open the deployed site, sign in with Austin's email, then run
-   `packages/db/scripts/make-agency-admin.sql` (with that email) in the SQL editor, and sign
-   out and back in. `/` should list Northbeam; `/w/northbeam` shows the canvas.
-
-7. **Work through `docs/supabase-notes.md`** ("Things that may need changes"), checking off
-   what's verified: auth.uid/jwt, agency-admin flag refresh, anon grants, redirect URLs,
-   email rate limits (set up custom SMTP before inviting clients), people loading.
-
-8. **Replace hand-written DB types** with `npx supabase gen types typescript --linked --workdir packages/db`
-   output, and use it in `apps/web/src/lib/data.ts`.
-
-## Then continue building (Milestone A)
-
-Next tickets, in order:
-
-1. **#6 people settings form**: the first write path. Settles the pattern for per-field
-   saves with version checks (PRD decision D14) that #8 reuses.
-2. **#8 canvas editing**, including on-canvas node editing, inline edits, context menu, undo/redo.
-3. **#15 levers + scenarios + compare**, then **#14 playback animation** (trace already records who did each step).
-4. **#9 draft mode** and **#10 presence** (needs Realtime enabled on the tables).
-5. Engine-only tickets that are safe any time: #11 warm-up + current WIP, #12 services + revenue, #13 demand.
-
-Work the frontier: any open ticket whose "Blocked by" issues are all closed. Close #4,
-#5 and #7 once the live checks above pass (#6 after the settings form).
+Both are tested in `apps/web/test/scenarios.test.ts`. The engine was optimised twice during #19, with
+byte-identical results. Further work, starting with profiling the servicing
+simulation, waits for Austin's end-of-build review.
 
 ## Other open items
 
-- [ ] Create the five triage labels on GitHub (`needs-triage`, `needs-info`,
-      `ready-for-agent`, `ready-for-human`, `wontfix`) and apply them; ticket status is
-      currently written in each issue body.
-- [ ] Upgrade Supabase to Pro and Vercel to Pro before real client data (PRD D2).
+- [ ] Upgrade Supabase and Vercel to Pro before real client data (PRD D2).
 - [ ] DPA clause in the retainer contract (PRD D20).
 - [ ] Custom SMTP for Supabase auth emails before inviting clients.
 
 ## Things worth knowing
 
-- **Next.js 16**: `proxy.ts` replaces middleware; request APIs are async. Read
-  `apps/web/AGENTS.md` and the bundled docs before writing Next code.
-- **Demo mode**: without Supabase env vars the app redirects to `/demo`, which runs
-  Northbeam from the fixtures. Handy for UI work.
-- **Engine determinism**: never use `Math.log`/`Math.exp` in the engine; use `det-math.ts`.
-  The browser-vs-Node byte-identity test will catch it.
-- **Fixtures are the source of truth for sample data**: after changing them or a migration,
-  run `pnpm --filter @transpera-flow/db gen:seed` and `gen:bootstrap` (CI fails if stale).
-- **Engine numbers moved from the prototype** after the stream fix: Northbeam now shows
-  ~7.5 wins/quarter and the strategist at ~92% (prototype: 7.1 / 91%). Parity is statistical.
+- **Next.js 16:** `proxy.ts` replaces middleware, and request APIs are async. Read `apps/web/AGENTS.md` and the
+  bundled docs before writing Next code.
+- **Demo mode:** without Supabase env vars, the app redirects to `/demo`, which runs Northbeam from the fixtures.
+- **Engine determinism:** never use `Math.log`/`Math.exp` in the engine; use `det-math.ts`. Any change that moves
+  golden-model numbers needs an `ENGINE_VERSION` bump and `golden:approve` (see `docs/engine-versioning.md`).
+- **Fixtures are the source of truth for sample data:** after changing them or a migration, run
+  `pnpm --filter @transpera-flow/db gen:seed` and `gen:bootstrap`. CI fails if either is stale.
+- **PDF reports on Vercel:** `apps/web/next.config.ts` traces Chromium's real `bin/` path (not the pnpm
+  symlink). Keep it that way or the PDF route returns 500s.
+- **Plain Postgres vs Supabase:** anything verified only against plain Postgres goes in `docs/supabase-notes.md`.

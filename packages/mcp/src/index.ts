@@ -10,5 +10,12 @@ export { bottleneckReport, checkScenarioRobustness, compareScenarios, matchNamed
 export { SUGGESTION_TOOL_NAMES } from "./suggestion-tools";
 export { buildClientSuggestion, buildCompanySuggestion, buildDemandSuggestions, buildPersonSuggestion, buildServiceSuggestion, matchForUpsert } from "./suggesting";
 export { BUILDING_TOOL_NAMES } from "./building-tools";
+export {
+  REPORT_SECTION_IDS,
+  REPORT_TOOL_NAMES,
+  type ReportExporter,
+  type ReportExportInput,
+  type ReportExportResult,
+} from "./report-tool";
 export { buildNewStep, buildStepChange, planImport, resolveName, revisionDiff, type ImportInput, type ImportPlan, type RevisionDiff, type StepFields } from "./building";
 export { PROCESS_TEMPLATES, type ProcessTemplate } from "./templates";

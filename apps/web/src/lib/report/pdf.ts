@@ -13,11 +13,13 @@ export interface PdfOptions {
   fontTimeoutMs?: number;
   /** Overall cap on loading the page (default 20 s). */
   loadTimeoutMs?: number;
+  /** A local Chrome or Chromium (default: `CHROMIUM_PATH`, else the serverless build). */
+  executablePath?: string;
 }
 
-async function launch(): Promise<Browser> {
+async function launch(executablePath?: string): Promise<Browser> {
   const puppeteer = (await import("puppeteer-core")).default;
-  const local = process.env.CHROMIUM_PATH;
+  const local = executablePath || process.env.CHROMIUM_PATH;
   if (local) {
     return puppeteer.launch({ executablePath: local, headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage", "--font-render-hinting=none"] });
   }
@@ -30,8 +32,8 @@ async function launch(): Promise<Browser> {
 }
 
 /** Print a complete HTML document to an A4 PDF. */
-export async function htmlToPdf(html: string, { fontTimeoutMs = 4000, loadTimeoutMs = 20_000 }: PdfOptions = {}): Promise<Uint8Array> {
-  const browser = await launch();
+export async function htmlToPdf(html: string, { fontTimeoutMs = 4000, loadTimeoutMs = 20_000, executablePath }: PdfOptions = {}): Promise<Uint8Array> {
+  const browser = await launch(executablePath);
   try {
     const page = await browser.newPage();
     // Web fonts load from Google Fonts; if that's slow or blocked, the stack's fallbacks print instead.

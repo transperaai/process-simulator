@@ -7,7 +7,7 @@ import type { RosterBackend } from "@/lib/clients/backend";
 import { parseRosterCsv, type ParsedImport } from "@/lib/clients/csv";
 import { DEFAULT_HEALTH, personClientLoads, rosterSummary, type PersonClientLoad, type RosterData } from "@/lib/clients/roster";
 import type { SaveOutcome, Saver } from "@/lib/fields/field-controller";
-import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
+import { formatNumber, formatPercent, formatWholeCurrency } from "@/lib/format";
 
 type Scalar = string | number | boolean | null;
 
@@ -23,7 +23,7 @@ export function ClientsRoster({ data, backend }: { data: RosterData; backend: Ro
     <>
       <p className="mb-4 text-fg-2">
         <span className="font-semibold text-fg">{summary.active} active clients</span> ·{" "}
-        {formatCurrency(summary.mrr, currency)} MRR a month
+        {formatWholeCurrency(summary.mrr, currency)} MRR a month
         {data.services
           .filter((sv) => summary.byService.get(sv.id))
           .map((sv) => (
@@ -105,7 +105,7 @@ function LoadPanel({ data }: { data: RosterData }) {
           return (
             <li
               key={l.personId}
-              className="grid grid-cols-[minmax(7rem,11rem)_1fr_auto] items-center gap-3 sm:grid-cols-[12rem_1fr_16rem]"
+              className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 sm:grid-cols-[12rem_1fr_16rem]"
               aria-label={`${l.name}: ${formatNumber(l.hours)} of ${formatNumber(l.capacity)} hours a week from ${l.clients} clients, ${STATUS_LABEL[l.status]}`}
             >
               <span className="min-w-0 leading-tight">
@@ -114,7 +114,7 @@ function LoadPanel({ data }: { data: RosterData }) {
                   {l.roleIds.map((r) => roleName.get(r)).join(", ")} · {l.clients} client{l.clients === 1 ? "" : "s"}
                 </span>
               </span>
-              <span className="relative h-4" aria-hidden>
+              <span className="relative order-last col-span-2 h-4 sm:order-none sm:col-span-1" aria-hidden>
                 <span className="absolute inset-x-0 top-0.5 h-3 overflow-hidden rounded-sm bg-panel-2">
                   <span className={`absolute inset-y-0 left-0 ${tone}`} style={{ width: width(share) }} />
                 </span>
@@ -189,8 +189,11 @@ function AddClient({ data, backend }: { data: RosterData; backend: RosterBackend
   );
 }
 
-const TEMPLATE = (data: RosterData) =>
-  ["Name", "Services", "Start date", "MRR", "Health", ...data.roles.slice(0, 2).map((r) => r.name), "Notes"].join(", ");
+/** An example header, with two of the roles clients are assigned in. */
+const TEMPLATE = (data: RosterData) => {
+  const assigned = data.roles.filter((r) => data.clientAssignments.some((a) => a.role_id === r.id)).slice(-2);
+  return ["Name", "Services", "Start date", "MRR", "Health", ...assigned.map((r) => r.name), "Notes"].join(", ");
+};
 
 function PasteCsv({ data, backend }: { data: RosterData; backend: RosterBackend }) {
   const [text, setText] = useState("");
@@ -277,13 +280,13 @@ function PasteCsv({ data, backend }: { data: RosterData; backend: RosterBackend 
                 </thead>
                 <tbody className="divide-y divide-line">
                   {parsed.rows.map((r) => (
-                    <tr key={r.line} className={r.client ? "" : "text-fg-3 line-through"}>
+                    <tr key={r.line} className={r.client ? "" : "text-fg-3"}>
                       <td className="py-1 pr-2 tabular-nums">{r.line}</td>
                       <td className="pr-2">{r.client?.name ?? "–"}</td>
                       <td className="pr-2">{r.client?.serviceIds.map((id) => serviceName.get(id)).join(", ")}</td>
-                      <td className="pr-2 text-right tabular-nums">{r.client ? formatCurrency(r.client.mrr, data.workspace.settings.currency) : ""}</td>
+                      <td className="pr-2 text-right tabular-nums">{r.client ? formatWholeCurrency(r.client.mrr, data.workspace.settings.currency) : ""}</td>
                       <td className="pr-2 tabular-nums">{r.client ? Object.keys(r.client.assignments).length : ""}</td>
-                      <td className={r.error ? "text-crit no-underline" : "text-fg-2"}>{[r.error, ...r.warnings].filter(Boolean).join(" ")}</td>
+                      <td className={r.error ? "text-crit" : "text-fg-2"}>{[r.error, ...r.warnings].filter(Boolean).join(" ")}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -327,7 +330,7 @@ function ClientItem({ client: c, data, backend }: { client: ClientRow; data: Ros
         </span>
         <span className={`font-semibold ${c.active ? "" : "text-fg-3 line-through"}`}>{c.name}</span>
         <span className="text-fg-2">{services.map((s) => serviceName.get(s)).join(" + ") || "No services"}</span>
-        <span className="tabular-nums text-fg-2">{formatCurrency(Number(c.mrr), currency)}/month</span>
+        <span className="tabular-nums text-fg-2">{formatWholeCurrency(Number(c.mrr), currency)}/month</span>
         <span
           className={`rounded-token px-1.5 text-xs tabular-nums ${healthTone(c.health === null ? null : Number(c.health))}`}
           title={estimated ? "Health: an estimate" : "Health: entered"}

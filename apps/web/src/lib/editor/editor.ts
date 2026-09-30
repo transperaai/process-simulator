@@ -232,9 +232,9 @@ export class ProcessEditor {
    * ones, and take it off the map if it is still there (as its delete would).
    */
   private retire(row: StepRow): void {
+    if (this.state.bundle.steps.some((s) => s.id === row.id)) this.applyRemote({ kind: "delete", table: "steps", id: row.id });
     const kept = (this.state.bundle.retired ?? []).filter((r) => r.id !== row.id);
     this.set({ bundle: { ...this.state.bundle, retired: [...kept, row] } });
-    if (this.state.bundle.steps.some((s) => s.id === row.id)) this.applyRemote({ kind: "delete", table: "steps", id: row.id });
   }
 
   /** Listen for our saves going through (to tell others who made them). */

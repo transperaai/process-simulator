@@ -78,14 +78,8 @@ export function effectivePatches(model: EngineModel, stack: readonly ScenarioRow
   return [...stack.filter((s) => !scenarioProblems(model, s).length).flatMap((s) => s.patch), ...levers];
 }
 
-/** The compare headline's subject: “A”, “A” + “B”, “A” plus lever changes, These lever changes. */
-export function headlineSubject(names: readonly string[], levers: boolean): { subject: string; plural: boolean } {
-  const quoted = names.map((n) => `“${n}”`);
-  if (!quoted.length) return { subject: "These lever changes", plural: true };
-  const joined = quoted.join(" + ");
-  if (levers) return { subject: `${joined} plus lever changes`, plural: true };
-  return { subject: joined, plural: quoted.length > 1 };
-}
+/** The compare headline's subject; lives in the engine so MCP `compare_scenarios` words it the same. */
+export { headlineSubject } from "@transpera-flow/engine";
 
 /** A name for a copy that isn't taken yet: "X (copy)", "X (copy 2)", … */
 export function copyName(name: string, taken: readonly string[]): string {

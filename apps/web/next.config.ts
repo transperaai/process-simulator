@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-// Chromium for the PDF report (issue #28; docs/adr/0009-pdf-reports.md): the
+// Chromium for the PDF report (issue #28; docs/adr/0010-pdf-reports.md): the
 // brotli-packed binary in @sparticuz/chromium/bin is read at run time, not
 // imported, so file tracing is told to ship it with the functions that print.
 // Both packages are on Next's built-in serverExternalPackages list.

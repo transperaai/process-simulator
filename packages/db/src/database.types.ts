@@ -999,6 +999,67 @@ export type Database = {
           },
         ]
       }
+      service_servicing: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          process_id: string
+          provenance: Json
+          recurrence: Json
+          service_id: string
+          sla_hours: number
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          process_id: string
+          provenance?: Json
+          recurrence?: Json
+          service_id: string
+          sla_hours?: number
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          process_id?: string
+          provenance?: Json
+          recurrence?: Json
+          service_id?: string
+          sla_hours?: number
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_servicing_process_id_workspace_id_fkey"
+            columns: ["process_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "service_servicing_service_id_workspace_id_fkey"
+            columns: ["service_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "service_servicing_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       services: {
         Row: {
           active: boolean

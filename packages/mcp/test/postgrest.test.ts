@@ -3,6 +3,7 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   NORTHBEAM_PROCESS_ID,
+  northbeamServicingProcessIds,
   NORTHBEAM_WORKSPACE_ID,
   northbeamBundle,
   northbeamClientIds,
@@ -122,7 +123,8 @@ describe.skipIf(!POSTGREST_URL)("MCP over PostgREST (acts as the user under RLS)
 
     const summary = await call<{ processes: { id: string; live_revision: number }[] }>(client, "get_workspace_summary");
     expect(summary.ok).toBe(true);
-    expect(summary.data.processes.map((p) => p.id)).toEqual([NORTHBEAM_PROCESS_ID]);
+    // The pipeline, then its servicing processes (issue #19).
+    expect(summary.data.processes.map((p) => p.id)).toEqual([NORTHBEAM_PROCESS_ID, ...Object.values(northbeamServicingProcessIds)]);
     expect(summary.assumptions.join(" ")).toMatch(/only workspace/);
 
     const process = await call<{ steps: unknown[]; edges: unknown[] }>(client, "get_process", { process: NORTHBEAM_PROCESS_ID });

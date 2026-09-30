@@ -136,7 +136,8 @@ describe("seasonality and growth", () => {
     const month = WEEKS_PER_CALENDAR_MONTH * model.hoursPerWeek;
     const counts = [0, 0, 0];
     for (let seed = 1; seed <= 20; seed++) {
-      for (const e of runOnce(model, seed, true).entities!) counts[Math.floor(e.t0 / month)]!++;
+      // Leads only: servicing tasks (issue #19) come from the client roster, not demand.
+      for (const e of runOnce(model, seed, true).entities!) if (!e.servicing) counts[Math.floor(e.t0 / month)]!++;
     }
     // December none; January twice February (7 × 52/12 × 20 ≈ 607 a normal month).
     expect(counts[0]).toBe(0);

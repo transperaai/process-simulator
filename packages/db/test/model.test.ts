@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NORTHBEAM_TEAM, northbeamModel, northbeamWithClients, simulate, type EngineModel } from "@transpera-flow/engine";
+import { NORTHBEAM_TEAM, northbeamModel, northbeamWithClients, northbeamWithServicing, simulate, type EngineModel } from "@transpera-flow/engine";
 import {
   ModelError,
   northbeamBundle,
@@ -7,6 +7,8 @@ import {
   northbeamPersonIds,
   northbeamRoleIds,
   northbeamServiceIds,
+  northbeamServicingProcessIds,
+  northbeamServicingStepIds,
   northbeamStepIds,
   toEngineModel,
   workingDaysBetween,
@@ -22,6 +24,8 @@ function withKeys(model: EngineModel): EngineModel {
     ...Object.entries(northbeamRoleIds).map(([k, v]) => [v, k] as const),
     ...Object.entries(northbeamServiceIds).map(([k, v]) => [v, k] as const),
     ...Object.entries(northbeamClientIds).map(([k, v]) => [v, k] as const),
+    ...Object.entries(northbeamServicingProcessIds).map(([k, v]) => [v, k] as const),
+    ...Object.entries(northbeamServicingStepIds).map(([k, v]) => [v, k] as const),
     ...NORTHBEAM_TEAM.map(([k, name]) => [northbeamPersonIds[name]!, k] as const),
   ]);
   const key = (id: string) => names.get(id) ?? id;
@@ -31,7 +35,11 @@ function withKeys(model: EngineModel): EngineModel {
     ...model,
     ...(model.services
       ? {
-          services: keyed(model.services, (sv) => (sv.fallbackOngoing ? { ...sv, fallbackOngoing: keyed(sv.fallbackOngoing) } : sv)),
+          services: keyed(model.services, (sv) => ({
+            ...sv,
+            ...(sv.fallbackOngoing ? { fallbackOngoing: keyed(sv.fallbackOngoing) } : {}),
+            ...(sv.servicing ? { servicing: sv.servicing.map((l) => ({ ...l, process: key(l.process) })) } : {}),
+          })),
         }
       : {}),
     ...(model.people ? { people: keyed(model.people, (p) => ({ ...p, roles: p.roles.map(key) })) } : {}),
@@ -44,6 +52,12 @@ function withKeys(model: EngineModel): EngineModel {
           })),
         }
       : {}),
+    ...(model.servicingProcesses
+      ? {
+          servicingProcesses: keyed(model.servicingProcesses, (p) => ({ ...p, entry: key(p.entry), steps: p.steps.map(key) })),
+        }
+      : {}),
+    ...(model.ends ? { ends: keyed(model.ends) } : {}),
     entry: key(model.entry),
     sinks: { won: key(model.sinks.won), lost: key(model.sinks.lost) },
     roles: Object.fromEntries(Object.entries(model.roles).map(([id, r]) => [key(id), r])),
@@ -57,6 +71,11 @@ function withKeys(model: EngineModel): EngineModel {
 }
 
 const START = "2026-10-05"; // a Monday
+
+/** Northbeam's pipeline alone: no servicing processes or links (as before issue #19). */
+function pipelineOnly(): ProcessBundle {
+  return { ...northbeamBundle(), servicingLinks: [], otherProcesses: [] };
+}
 
 /** Northbeam without services: none, and no condition tags (the roster stays). */
 function withoutServices(): ProcessBundle {
@@ -72,8 +91,16 @@ function beforeServicesAndClients(): ProcessBundle {
 }
 
 describe("toEngineModel", () => {
-  it("resolves the Northbeam rows into exactly the engine's Northbeam with services, people and its client roster", () => {
-    expect(withKeys(toEngineModel(northbeamBundle(), { startDate: START }))).toEqual(northbeamWithClients());
+  it("resolves the Northbeam rows into exactly the engine's Northbeam with services, people, its client roster and servicing", () => {
+    expect(withKeys(toEngineModel(northbeamBundle(), { startDate: START }))).toEqual(northbeamWithServicing());
+  });
+
+  it("without its servicing links, Northbeam resolves as before servicing: fallback load, no health-driven churn", () => {
+    const b = northbeamBundle();
+    const model = withKeys(toEngineModel({ ...b, servicingLinks: [], services: b.services.map((sv) => ({ ...sv, churn_health_sensitivity: 0 })) }, { startDate: START }));
+    const expected = northbeamWithClients();
+    expected.services = Object.fromEntries(Object.entries(expected.services!).map(([id, sv]) => [id, { ...sv, churnSensitivity: 0 }]));
+    expect(model).toEqual(expected);
   });
 
   it("resolves Northbeam without services or clients into exactly the golden prototype model", () => {
@@ -88,7 +115,7 @@ describe("toEngineModel", () => {
     // equality of the models is covered above.
     const res = simulate(toEngineModel(northbeamBundle(), { startDate: START }), 300, 1);
     const reference = simulate(northbeamModel(), 300, 1);
-    const roster = simulate(northbeamWithClients(), 300, 1);
+    const roster = simulate(northbeamWithServicing(), 300, 1);
     expect(res.bnRole).toBe(northbeamRoleIds.strat);
     expect(Math.abs(res.roles[northbeamRoleIds.strat]!.util - roster.roles.strat!.util)).toBeLessThan(0.01);
     expect(Math.abs(res.won - reference.won) / reference.won).toBeLessThan(0.1);
@@ -183,7 +210,7 @@ describe("end steps", () => {
   const LOST2 = "e0000000-0000-4000-8000-0000000000d3";
 
   it("simulates edges into a 'done' end", () => {
-    const b = northbeamBundle();
+    const b = pipelineOnly();
     b.steps = b.steps.map((s) => (s.id === northbeamStepIds.lost ? { ...s, outcome: "done" } : s));
     const model = toEngineModel(b, { startDate: START });
     // No lost end is left, so the lost sink is a placeholder and the old lost end is a 'done' end.
@@ -196,7 +223,7 @@ describe("end steps", () => {
   });
 
   it("keeps the first won and lost ends (by id) as sinks and maps extra ends to `ends`", () => {
-    const b = northbeamBundle();
+    const b = pipelineOnly();
     b.steps = [
       ...b.steps,
       endStep(b, DONE, "Referred on", "done"),
@@ -220,12 +247,12 @@ describe("end steps", () => {
     const res = simulate(model, 5, 1);
     expect(res.kpi.done.mean).toBeGreaterThan(0);
     // Fast wins straight from qualify (0.7 a week) outnumber the whole pipeline's.
-    const before = simulate(toEngineModel(northbeamBundle(), { startDate: START }), 5, 1);
+    const before = simulate(toEngineModel(pipelineOnly(), { startDate: START }), 5, 1);
     expect(res.kpi.won.mean).toBeGreaterThan(before.kpi.won.mean);
   });
 
   it("orders sinks by id, not row order", () => {
-    const b = northbeamBundle();
+    const b = pipelineOnly();
     // An id sorting before the seeded won end becomes the sink; the seeded one moves to `ends`.
     const early = "e0000000-0000-4000-8000-000000000000";
     b.steps = [...b.steps, endStep(b, early, "Won early", "won")];
@@ -237,7 +264,7 @@ describe("end steps", () => {
   });
 
   it("adds no `ends` when the process has one won and one lost end", () => {
-    expect(toEngineModel(northbeamBundle(), { startDate: START })).not.toHaveProperty("ends");
+    expect(toEngineModel(pipelineOnly(), { startDate: START })).not.toHaveProperty("ends");
   });
 });
 
@@ -251,7 +278,7 @@ describe("services", () => {
   };
 
   it("maps each service's pricing, tenure, churn, mix and path tags", () => {
-    const model = toEngineModel(northbeamBundle(), { startDate: START });
+    const model = toEngineModel(pipelineOnly(), { startDate: START });
     expect(model.services).toEqual({
       [seo]: {
         name: "SEO retainer",
@@ -260,6 +287,7 @@ describe("services", () => {
         margin: 0.45,
         tenureMonths: 18,
         churnMonthly: 0.03,
+        churnSensitivity: 3,
         mixShare: 0.55,
         pathTags: ["seo"],
         fallbackOngoing: { [northbeamRoleIds.strat]: 1.5, [northbeamRoleIds.am]: 6, [northbeamRoleIds.seo]: 16, [northbeamRoleIds.fin]: 1.2 },
@@ -271,6 +299,7 @@ describe("services", () => {
         margin: 0.4,
         tenureMonths: 12,
         churnMonthly: 0.04,
+        churnSensitivity: 3,
         mixShare: 0.45,
         pathTags: ["ppc"],
         fallbackOngoing: { [northbeamRoleIds.strat]: 1.5, [northbeamRoleIds.am]: 6, [northbeamRoleIds.ppc]: 19, [northbeamRoleIds.fin]: 1.2 },

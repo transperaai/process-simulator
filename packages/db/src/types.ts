@@ -36,6 +36,16 @@ export interface WorkspaceSettings {
    * share of their capacity (default 0: none; docs/PRD.md §6.3.4, decision D7).
    */
   overtime_cap?: number;
+  /**
+   * How servicing moves client health (docs/PRD.md §6.3.5; issue #19):
+   * health added for a task done on time, taken off for a late one and for a
+   * missed one, and the health of a client with none entered. Left out: the
+   * estimated defaults (2, 5, 12, 80).
+   */
+  health_recover?: number;
+  health_late_penalty?: number;
+  health_missed_penalty?: number;
+  health_initial?: number;
 }
 
 export interface WorkspaceRow {
@@ -186,8 +196,13 @@ export interface ServiceRow {
   margin: number;
   /** Expected tenure of a retainer client, in months. */
   tenure_months: number;
-  /** Base monthly churn (0–1). */
+  /** Base monthly churn (0–1): at full health, the churn of a client on this service. */
   churn_monthly_base: number;
+  /**
+   * How much poor health raises churn (docs/PRD.md §6.3.5): monthly churn =
+   * base × (1 + sensitivity × (100 − health) / 100). Default 3, an estimate.
+   */
+  churn_health_sensitivity: number;
   /** Relative share of arrivals. */
   mix_share: number;
   /** Process its arrivals enter; null means the workspace's pipeline (whichever process is simulated). */
@@ -358,6 +373,39 @@ export interface DemandSettingsRow {
   provenance: ProvenanceMap;
 }
 
+/**
+ * How often a client generates a servicing task (docs/PRD.md §5
+ * `service_servicing.recurrence`): `times` tasks spread evenly over every
+ * week or month, or ad-hoc requests at random, `poisson_per_month` a month on
+ * average. A type alias, so it stays assignable to the jsonb column.
+ */
+export type RecurrenceJson = { every: "week" | "month"; times: number } | { poisson_per_month: number };
+
+/**
+ * A servicing process a service's clients run, and how often (docs/PRD.md
+ * §5 `service_servicing`, §6.3.5; issue #19).
+ */
+export interface ServiceServicingRow {
+  id: string;
+  workspace_id: string;
+  service_id: string;
+  /** A process of kind `servicing`. */
+  process_id: string;
+  recurrence: RecurrenceJson;
+  /** On time within this many working hours of the task starting; missed beyond twice it. */
+  sla_hours: number;
+  /** Provenance of `recurrence` and `sla_hours`. */
+  provenance: ProvenanceMap;
+}
+
+/** One process at one revision: what a run needs of a process other than the one on screen. */
+export interface ProcessPart {
+  process: ProcessRow;
+  revision: ProcessRevisionRow;
+  steps: StepRow[];
+  edges: EdgeRow[];
+}
+
 /** Everything needed to render and simulate one process revision. */
 export interface ProcessBundle {
   workspace: WorkspaceRow;
@@ -395,6 +443,15 @@ export interface ProcessBundle {
   clients?: ClientRow[];
   clientServices?: ClientServiceRow[];
   clientAssignments?: ClientAssignmentRow[];
+  /**
+   * Client servicing (issue #19): which servicing processes each service's
+   * clients run, and the workspace's other processes at their live
+   * revisions, which a run of this one needs: its servicing processes, and,
+   * when this bundle is itself a servicing process, the pipeline it runs
+   * beside. Omitted or empty: no servicing, as before it existed.
+   */
+  servicingLinks?: ServiceServicingRow[];
+  otherProcesses?: ProcessPart[];
 }
 
 /**
@@ -498,6 +555,8 @@ export type _SchemaDriftChecks = [
   Assert<Matches<ClientRow, "clients">>,
   Assert<Matches<ClientServiceRow, "client_services">>,
   Assert<Matches<ClientAssignmentRow, "client_assignments">>,
+  // recurrence and provenance are jsonb; RecurrenceJson and ProvenanceMap are their app-side shapes.
+  Assert<Matches<Omit<ServiceServicingRow, "recurrence">, "service_servicing">>,
   Assert<Matches<LeadSourceRow, "lead_sources">>,
   Assert<Matches<SeasonalityRow, "seasonality">>,
   Assert<Matches<DemandSettingsRow, "demand_settings">>,

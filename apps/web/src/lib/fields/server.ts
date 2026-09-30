@@ -23,7 +23,8 @@ export type EditableTable =
   | "issues"
   | "sources"
   | "clients"
-  | "client_assignments";
+  | "client_assignments"
+  | "service_servicing";
 
 /** Link tables `save_links` accepts, and their member column. */
 export const LINK_MEMBERS = { person_roles: "role_id", person_skills: "step_id", client_services: "service_id" } as const;

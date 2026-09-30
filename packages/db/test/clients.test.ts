@@ -309,7 +309,10 @@ describe("the roster in the engine model", () => {
   });
 
   it("derives each person's starting load from their clients' services", () => {
-    const m = bundle();
+    // Without servicing processes (issue #19), which replace the fallback load.
+    const m = bundle((b) => {
+      b.servicingLinks = [];
+    });
     const loads = rosterLoads(m, m.people!);
     // Nina: 8 PPC clients × 19 h a month.
     expect(loads[northbeamPersonIds["Nina Kowalski"]!]!.hours).toBeCloseTo((8 * 19) / 4.33, 10);

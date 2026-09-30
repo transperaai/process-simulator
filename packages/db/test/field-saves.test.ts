@@ -180,6 +180,7 @@ describe("save_fields", () => {
       "sources",
       "clients",
       "client_assignments",
+      "service_servicing",
     ];
     for (const target of editable) {
       const outcome = await db

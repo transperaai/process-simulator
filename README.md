@@ -42,7 +42,7 @@ small stand-in for Supabase auth, the migrations and the seed.
 
 After changing the fixtures, regenerate the seed with `pnpm --filter @transpera-flow/db gen:seed`.
 
-The MCP end-to-end suite (`packages/mcp/test/postgrest.test.ts`) also needs
+The MCP end-to-end suites (`packages/mcp/test/postgrest*.test.ts`) also need
 PostgREST; it is skipped locally unless `POSTGREST_URL` and
 `POSTGREST_JWT_SECRET` are set. CI prepares its database with
 `packages/mcp/test/postgrest-db.ts` and then starts PostgREST (see
@@ -65,7 +65,15 @@ Tools: `list_workspaces`, `set_active_workspace`, `get_workspace_summary`,
 `compare_scenarios`, `check_robustness` (time-capped; a capped check is flagged
 `partial`), `get_bottlenecks` (with the shadow price: extra completions per
 quarter from one more FTE in the top bottleneck role; see
-`packages/engine/src/shadow-price.ts`), `log_issue` and `list_issues`. The endpoint acts as the token's user under
+`packages/engine/src/shadow-price.ts`), `log_issue` and `list_issues`, and the
+process-building tools `add_source`, `create_process`, `add_step`,
+`update_step`, `remove_step`, `connect_steps`, `set_routing`, `import_process`,
+`publish_process`, `discard_draft`, `list_templates` and `create_from_template`.
+Building tools write only into a process's draft (`open_draft`), never live;
+left-out numbers become assumptions, cited numbers keep their evidence, and
+values someone entered are flagged as conflicts instead of overwritten
+(`packages/mcp/src/building.ts`). Every MCP row write is audit-logged with
+`actor_kind = 'mcp'`. The endpoint acts as the token's user under
 RLS and uses only `NEXT_PUBLIC_SUPABASE_URL` and
 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; no extra environment variables. How it
 does that without the service-role key:

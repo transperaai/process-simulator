@@ -174,6 +174,48 @@ describe("robustness check", () => {
   });
 });
 
+describe("conflicting estimates (issue #21)", () => {
+  // Maya says an audit takes a tenth of what's modelled; the model says six hours.
+  const conflicted = { path: "steps.audit.work_hours", low: 0.1, high: 1, conflict: true };
+  const narrow = { path: "steps.discovery.work_hours", low: 0.9, high: 1.1, conflict: true };
+
+  it("perturbs a conflicted value across its range even when it was entered, and not once the conflict is settled", () => {
+    const model = northbeamModel();
+    const audit = model.steps.find((s) => s.id === "audit")!;
+    const conflict = { values: [{ value: audit.work / 4 }, { value: audit.work }] };
+    const params = (resolved: boolean) =>
+      estimatedParameters(model, {
+        provenance: (t) =>
+          t.kind === "steps" && t.id === "audit"
+            ? {
+                rework_rate: { source: "entered" },
+                work_hours: { source: "entered", conflict: resolved ? { ...conflict, resolved: { at: "2026-09-30", choice: "range" } } : conflict },
+              }
+            : { source: "entered" },
+      });
+    expect(params(false)).toEqual([{ path: "steps.audit.work_hours", low: 0.25, high: 1, conflict: true }]);
+    expect(params(true)).toEqual([]);
+  });
+
+  it("reports when the conclusion flips inside a conflict range, and says to measure it", () => {
+    const r = robustness(northbeamModel(), hire, { parameters: [conflicted, narrow, quick.parameters[0]!], refineTop: 1 });
+    const audit = r.sensitivities.find((s) => s.path === conflicted.path)!;
+    expect(audit.conflict).toBe(true);
+    expect(audit.flipsSign || audit.flipsBottleneck).toBe(true);
+    expect(r.conflictFlips).toEqual([{ path: conflicted.path, label: "Audit & proposal: hands-on time" }]);
+    const v = robustnessVerdict({ result: r, subject: "Hiring a strategist", roleNames: { strat: "Strategist" }, horizonWeeks: 13 });
+    expect(v.conflicts).toEqual([
+      "The conclusion flips within the conflict range: the answer depends on whose estimate of Audit & proposal: hands-on time is right; measure this.",
+    ]);
+  });
+
+  it("says nothing when the conclusion holds across every conflict range", () => {
+    const r = robustness(northbeamModel(), hire, { parameters: [narrow], refineTop: 1 });
+    expect(r.conflictFlips).toEqual([]);
+    expect(robustnessVerdict({ result: r, subject: "It", roleNames: {}, horizonWeeks: 13 }).conflicts).toEqual([]);
+  });
+});
+
 describe("cache", () => {
   it("re-opening compare on an unchanged model reuses the cached results without re-running", async () => {
     const model = northbeamModel();

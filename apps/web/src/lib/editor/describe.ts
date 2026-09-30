@@ -27,6 +27,7 @@ export function describeValue(field: string, v: Value, names: Map<string, string
   if (field === "kind") return KIND_LABELS[v as keyof typeof KIND_LABELS] ?? String(v);
   if (field === "outcome") return OUTCOME_LABELS[v as keyof typeof OUTCOME_LABELS] ?? String(v);
   if (field === "assumption") return v ? "estimate" : "confirmed";
+  if (field === "conflict") return v ? "sources disagree" : "settled";
   if (/_hours$|_params\.(min|mode|max)$/.test(field)) return formatHours(Number(v));
   return String(v);
 }

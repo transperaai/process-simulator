@@ -48,7 +48,13 @@ function keys(record: Json): Pick<StepRow, "id" | "revision_id" | "workspace_id"
 export function stepFromRecord(record: Json): StepRow | null {
   const k = keys(record);
   if (!k) return null;
-  const row: Json = { ...k, work_params: params(record.work_params), wait_params: params(record.wait_params), assumption: record.assumption === true };
+  const row: Json = {
+    ...k,
+    work_params: params(record.work_params),
+    wait_params: params(record.wait_params),
+    assumption: record.assumption === true,
+    conflict: record.conflict === true,
+  };
   // Where each parameter came from (lib/editor/provenance.ts): merged with the values it describes.
   const provenance = record.provenance;
   if (provenance && typeof provenance === "object" && !Array.isArray(provenance)) row.provenance = provenance;

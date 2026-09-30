@@ -136,6 +136,14 @@ export interface StepRow {
    */
   assumption: boolean;
   /**
+   * Sources disagree on one of the step's values and nobody has settled it
+   * yet (docs/PRD.md §4.1 Sources and evidence, D17). Kept in step with the
+   * per-column `provenance.<column>.conflict` entries (see evidence.ts).
+   */
+  conflict: boolean;
+  /** Where each value came from, per column (`{work_hours: {source, at, by, evidence, conflict}}`). */
+  provenance: ProvenanceMap;
+  /**
    * Steps that took over this one's work when it was split or replaced in the
    * editor (docs/PRD.md §4.1 "Stable step IDs"). A step with any is retired:
    * its row stays in the revision so saved scenarios aimed at it can be
@@ -200,7 +208,41 @@ export type Provenance = {
   by?: string;
   /** Dataset a measured value came from. */
   dataset_id?: string;
+  /** Why the value is what it is (e.g. Claude's reasoning for an assumption). */
   note?: string;
+  /** Filled in without a source (a default or an inference); listed for confirmation until someone confirms it. */
+  assumption?: boolean;
+  /** What people said about the value (docs/PRD.md §7.2). */
+  evidence?: EvidenceCitation[];
+  /** Sources disagree on the value: what each said, and whether someone has settled it. */
+  conflict?: ProvenanceConflict;
+};
+
+/**
+ * One citation of a source for a value (docs/PRD.md §5 `provenance.evidence`):
+ * who said it, their words and where in the recording. `value` is the number
+ * they stated, in the column's units (hours, a 0–1 share, items), when they
+ * stated one; citations that state different values make a conflict.
+ */
+export type EvidenceCitation = {
+  source_id: string;
+  speaker?: string | null;
+  quote: string;
+  /** Where in the source: a time in the recording ("00:12:40"), a page, or a date. */
+  timestamp?: string | null;
+  value?: number | null;
+};
+
+/** One of the disagreeing values (docs/PRD.md §5 `provenance.conflict.values`). */
+export type ConflictValue = { value: number; source_id: string | null; speaker: string | null };
+
+/**
+ * A disagreement between sources. The value becomes a triangular range over
+ * `values` until someone settles it; `resolved` records who did and how.
+ */
+export type ProvenanceConflict = {
+  values: ConflictValue[];
+  resolved?: { at: string; by?: string; choice: "range" | "value" };
 };
 
 /**
@@ -210,6 +252,28 @@ export type Provenance = {
  * entry is an estimate.
  */
 export type ProvenanceMap = { [column: string]: Provenance | undefined };
+
+export type SourceKind = "transcript" | "notes" | "screenshot";
+
+/**
+ * A transcript, note set or screenshot from the audit (docs/PRD.md §3 Source,
+ * §5 `sources`). Parameters cite it by id in `provenance.<column>.evidence`.
+ */
+export interface SourceRow {
+  id: string;
+  workspace_id: string;
+  kind: SourceKind;
+  title: string;
+  speakers: string[];
+  /** ISO date the conversation or notes are from. */
+  recorded_at: string | null;
+  /** The transcript or notes text. */
+  body: string | null;
+  /** Link to the file (a screenshot, the recording), if it lives elsewhere. */
+  file_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 /** Where qualified leads come from (docs/PRD.md §5 `lead_sources`). */
 export interface LeadSourceRow {
@@ -375,4 +439,5 @@ export type _SchemaDriftChecks = [
   Assert<Matches<Omit<ScenarioRow, "patch">, "scenarios">>,
   // evidence_metrics is jsonb; Record<string, number> is its app-side shape.
   Assert<Matches<Omit<IssueRow, "evidence_metrics">, "issues">>,
+  Assert<Matches<SourceRow, "sources">>,
 ];

@@ -160,11 +160,15 @@ export function provenanceSource(provenance: unknown, field: string): Provenance
   return source === "entered" || source === "measured" ? source : "estimated";
 }
 
-/** The conflicting values recorded for one field (per-column provenance only), or null. */
+/**
+ * The conflicting values recorded for one field (per-column provenance only),
+ * or null. A conflict someone settled (`conflict.resolved`) no longer counts.
+ */
 function conflictValues(provenance: unknown, field: string): number[] | null {
   if (!isObject(provenance)) return null;
   const own = provenance[field];
   if (!isObject(own) || !isObject(own.conflict) || !Array.isArray(own.conflict.values)) return null;
+  if (own.conflict.resolved) return null;
   const values = own.conflict.values
     .map((v: unknown) => (isObject(v) ? Number(v.value) : Number(v)))
     .filter((v: number) => Number.isFinite(v) && v >= 0);
@@ -190,8 +194,10 @@ export type ProvenanceLookup = (target: PatchTarget) => unknown;
  * they cannot move wins or the bottleneck. Head-counts and FTEs are facts
  * about the team, not estimates, and are not perturbed.
  *
- * A conflicted field (per-column provenance with `conflict.values`) uses the
- * range of the conflicting values instead of ±perturbation.
+ * A conflicted field (per-column provenance with unresolved `conflict.values`)
+ * uses the range of the conflicting values instead of ±perturbation, and is
+ * perturbed even when its value was entered or measured: sources disagreeing
+ * with it is the uncertainty the check is for (docs/PRD.md §6.5, D17).
  */
 export function estimatedParameters(
   model: EngineModel,
@@ -203,8 +209,8 @@ export function estimatedParameters(
     const target = parsePatchPath(path);
     if (!target) return;
     const prov = provenance?.(target);
-    if (provenanceSource(prov, target.field) !== "estimated") return;
     const conflict = conflictValues(prov, target.field);
+    if (!conflict && provenanceSource(prov, target.field) !== "estimated") return;
     if (conflict) {
       const low = Math.min(...conflict) / current;
       const high = Math.max(...conflict) / current;
@@ -385,6 +391,12 @@ export interface RobustnessResult {
   signHolds: number;
   /** Every screened parameter, most sensitive first: those that flip the delta's sign, then by influence. */
   sensitivities: Sensitivity[];
+  /**
+   * Conflicted parameters (sources disagree) whose range flips the conclusion:
+   * the delta's sign or the bottleneck. The answer depends on whose estimate
+   * is right, so it should be measured (docs/PRD.md §6.5).
+   */
+  conflictFlips: { path: string; label: string }[];
   /** Parameters planned, screened (both directions) and refined. */
   parameters: number;
   screened: number;
@@ -586,6 +598,7 @@ function* plan(ctx: Ctx): Generator<RobustnessJob[], Omit<RobustnessResult, "sta
     },
     signHolds: share((o) => o.sign === nominalFull.sign),
     sensitivities,
+    conflictFlips: sensitivities.filter((s) => s.conflict && (s.flipsSign || s.flipsBottleneck)).map((s) => ({ path: s.path, label: s.label })),
     parameters: entries.length,
     screened: screened.length,
     refined: top.filter((e) => e.refined).length,
@@ -790,6 +803,8 @@ export interface Verdict {
   details: string[];
   /** The top sensitive inputs, one line each, most sensitive first. */
   sensitive: { label: string; effect: string; flips: boolean }[];
+  /** One line per conflicted input whose range flips the conclusion: "the answer depends on whose estimate … is right; measure this". */
+  conflicts: string[];
 }
 
 const LOCALE = "en-GB";
@@ -843,5 +858,11 @@ export function robustnessVerdict({ result: r, subject, plural = false, roleName
     const effect = `${range(s.low)}: ${low}; ${range(s.high)}: ${high}${s.flipsSign ? " (flips the answer)" : s.flipsBottleneck ? " (moves the bottleneck)" : ""}`;
     return { label: s.label, effect, flips: s.flipsSign || s.flipsBottleneck };
   });
-  return { verdict, details, sensitive };
+  const conflicts = (r.conflictFlips ?? []).map(
+    (c) => `The conclusion flips within the conflict range: the answer depends on whose estimate of ${lowerFirst(c.label)} is right; measure this.`,
+  );
+  return { verdict, details, sensitive, conflicts };
 }
+
+/** "Audit & proposal: hands-on time" stays as is; "Leads per week" becomes "leads per week". */
+const lowerFirst = (s: string) => (s.includes(":") ? s : s.charAt(0).toLowerCase() + s.slice(1));

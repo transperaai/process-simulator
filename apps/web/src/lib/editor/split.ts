@@ -9,7 +9,7 @@
 // Pure, like ./commands.ts: the edit is a remove and an insert, so undo puts
 // the step and its connections back exactly as they were.
 
-import type { EdgeRow, ProcessBundle, StepRow } from "@transpera-flow/db";
+import { EVIDENCE_COLUMNS, openConflict, type EdgeRow, type ProcessBundle, type StepRow } from "@transpera-flow/db";
 import type { Edit, Op, RowChange } from "./ops";
 
 /** Kinds of step that can be split: the ones that hold work or a wait. */
@@ -68,7 +68,9 @@ export function splitStep(bundle: ProcessBundle, id: string, newId: () => string
   const copy = (): StepRow => {
     const row: StepRow & { replaced_by?: unknown; provenance?: unknown } = { ...old };
     delete row.replaced_by;
-    return { ...row, work_params: { ...halfParams }, wait_params: { ...old.wait_params }, ...(provenance ? { provenance: { ...kept } } : {}) };
+    // A conflict on hands-on time goes with its provenance; the halves are flagged only for the conflicts they keep (issue #21).
+    const conflict = EVIDENCE_COLUMNS.some((c) => openConflict({ provenance: kept as StepRow["provenance"] }, c) !== null);
+    return { ...row, conflict, work_params: { ...halfParams }, wait_params: { ...old.wait_params }, ...(provenance ? { provenance: { ...kept } as StepRow["provenance"] } : {}) };
   };
   const first: StepRow = {
     ...copy(),

@@ -20,7 +20,8 @@ export type EditableTable =
   | "lead_sources"
   | "seasonality"
   | "demand_settings"
-  | "issues";
+  | "issues"
+  | "sources";
 
 /** Link tables `save_links` accepts, and their member column. */
 export const LINK_MEMBERS = { person_roles: "role_id", person_skills: "step_id" } as const;

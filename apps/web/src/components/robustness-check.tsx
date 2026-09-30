@@ -37,6 +37,7 @@ export function RobustnessCheck({
   }, [model, scenario, steps]);
   const { state, start, cancel } = useRobustness(input);
   const inputs = input.options.parameters?.length ?? 0;
+  const conflicted = input.options.parameters?.filter((p) => p.conflict).length ?? 0;
 
   const verdict =
     state.status === "done"
@@ -67,7 +68,7 @@ export function RobustnessCheck({
       {state.status === "idle" && (
         <p className="text-xs text-fg-3">
           {inputs
-            ? `Re-runs both sides with each of the ${inputs} estimated inputs 25% lower and higher, to see whether the answer holds. Takes 10–30 s.`
+            ? `Re-runs both sides with each of the ${inputs} estimated inputs 25% lower and higher${conflicted ? ` (${conflicted} where sources disagree: across the range they gave)` : ""}, to see whether the answer holds. Takes 10–30 s.`
             : "Every input is entered or measured, so there is nothing estimated to check."}
         </p>
       )}
@@ -104,6 +105,11 @@ export function RobustnessCheck({
           <p data-testid="robustness-verdict" className="rounded-token border border-line bg-panel-2 px-3 py-2 text-sm font-semibold">
             {verdict.verdict}
           </p>
+          {verdict.conflicts.map((c) => (
+            <p key={c} role="alert" data-testid="robustness-conflict" className="rounded-token border border-crit bg-crit-soft px-3 py-2 text-xs">
+              {c}
+            </p>
+          ))}
           {verdict.details.map((d) => (
             <p key={d} className="text-xs text-fg-3">
               {d}

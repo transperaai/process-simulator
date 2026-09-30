@@ -7,7 +7,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { IssueRow, ProcessBundle, ScenarioRow } from "@transpera-flow/db";
 import { detectBrokenScenarios, detectIssues, type EngineModel, type RetiredSteps, type SimulationResult } from "@transpera-flow/engine";
-import { entryView, fixFor, registerEntries, stepBadges, type FixRequest } from "@/lib/issues/register";
+import { perceptionGapDetections } from "@/lib/issues/perception";
+import { entryView, fixFor, promoteInput, registerEntries, stepBadges, type FixRequest } from "@/lib/issues/register";
 import { useIssues } from "@/lib/issues/use-issues";
 import { IssuesRegister } from "./issues-register";
 import type { EditMode } from "./process-view";
@@ -62,12 +63,14 @@ export function useProcessIssues({
 
   // Saved scenarios whose targets no longer resolve raise a broken_scenario issue each (issue #16).
   const broken = useMemo(() => (model ? detectBrokenScenarios(model, scenarios, retired) : []), [model, scenarios, retired]);
-  const detected = useMemo(() => (model && result ? [...broken, ...detectIssues(model, result)] : null), [model, result, broken]);
+  // Perception gaps from the steps' evidence (issue #21).
+  const gaps = useMemo(() => perceptionGapDetections(bundle.steps), [bundle.steps]);
+  const detected = useMemo(() => (model && result ? [...broken, ...detectIssues(model, result), ...gaps] : null), [model, result, broken, gaps]);
   const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);
 
   // A tracked broken-scenario issue resolves itself once its scenario is fixed (re-pointed or deleted).
   const resolving = useRef(new Set<string>());
-  const { issues: tracked, saver } = state;
+  const { issues: tracked, saver, promote } = state;
   useEffect(() => {
     if (mode === "readonly" || !model) return;
     const still = new Set(broken.map((d) => d.key));
@@ -78,6 +81,17 @@ export function useProcessIssues({
       void saver(i.id, "status")(i.status, "done").finally(() => resolving.current.delete(i.id));
     }
   }, [mode, model, broken, tracked, saver]);
+
+  // The database logs a perception gap as a tracked issue when it is saved; the demo has no database, so it tracks it here.
+  const logged = useRef(new Set<string>());
+  useEffect(() => {
+    if (mode !== "demo") return;
+    for (const g of gaps) {
+      if (logged.current.has(g.key) || tracked.some((i) => i.detected_key === g.key)) continue;
+      logged.current.add(g.key);
+      void promote(promoteInput(g, bundle.process.id, scenarios));
+    }
+  }, [mode, gaps, tracked, promote, bundle.process.id, scenarios]);
   const entries = useMemo(() => registerEntries(state.issues, detected ?? []), [state.issues, detected]);
   // Issues on this process, or on none in particular.
   const here = useMemo(

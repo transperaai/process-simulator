@@ -5,7 +5,7 @@
 // save and the same undo step) records it as `entered` through the
 // `provenance.<column>` key. A value with no entry is an estimate.
 
-import type { ProcessBundle, StepRow } from "@transpera-flow/db";
+import { EVIDENCE_COLUMNS, isOpenAssumption, openConflict, type ProcessBundle, type StepRow } from "@transpera-flow/db";
 import { readField, type Edit, type Patch, type RowChange } from "./ops";
 
 export type ProvenanceSource = "estimated" | "entered" | "measured";
@@ -60,6 +60,22 @@ export function provenanceSource(step: StepRow, column: string): ProvenanceSourc
   return source === "entered" || source === "measured" ? source : "estimated";
 }
 
+/**
+ * A person's entry over what the value had: `entered` by them, keeping the
+ * evidence cited for it, and any conflict kept as history, marked settled by
+ * choosing a value.
+ */
+function enteredOver(previous: Provenance | null, entry: Provenance): Provenance {
+  if (!previous) return entry;
+  const out: Provenance = { ...entry };
+  if (Array.isArray(previous.evidence) && previous.evidence.length) out.evidence = previous.evidence;
+  const conflict = previous.conflict as { values?: unknown; resolved?: unknown } | undefined;
+  if (conflict && typeof conflict === "object" && Array.isArray(conflict.values)) {
+    out.conflict = conflict.resolved ? conflict : { ...conflict, resolved: { at: entry.at, ...(entry.by ? { by: entry.by } : {}), choice: "value" } };
+  }
+  return out;
+}
+
 /** Who and when to record for a person's edit. */
 export interface Stamp {
   at: string;
@@ -82,12 +98,28 @@ export function stampProvenance(bundle: ProcessBundle, edit: Edit, stamp: Stamp)
       if (!row) return c;
       const before: Patch = { ...c.before };
       const after: Patch = { ...c.after };
+      const settled: string[] = [];
       for (const field of Object.keys(c.after)) {
         const key = provenanceFieldFor(field);
         if (!key || key in after) continue;
         before[key] = readField(row, key);
-        after[key] = entry;
+        after[key] = enteredOver(stepProvenance(row, key.slice(PREFIX.length)), entry);
+        settled.push(key.slice(PREFIX.length));
         changed = true;
+      }
+      // Typing a value settles its conflict or assumption (issue #21): the step's flags follow.
+      if (settled.length) {
+        const left = (test: (s: StepRow, column: string) => boolean) =>
+          EVIDENCE_COLUMNS.some((col) => !settled.includes(col) && test(row, col));
+        const had = (test: (s: StepRow, column: string) => boolean) => settled.some((col) => test(row, col));
+        if (row.conflict && !("conflict" in after) && had((s, col) => openConflict(s, col) !== null) && !left((s, col) => openConflict(s, col) !== null)) {
+          before.conflict = true;
+          after.conflict = false;
+        }
+        if (row.assumption && !("assumption" in after) && had(isOpenAssumption) && !left(isOpenAssumption)) {
+          before.assumption = true;
+          after.assumption = false;
+        }
       }
       return { ...c, before, after };
     });

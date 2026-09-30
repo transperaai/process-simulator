@@ -405,7 +405,7 @@ export function buildNewStep(
       for (const c of cites) b.merge(citeEvidence(b.cur, column, toEvidence(c), stamp));
     } else if (given !== undefined && given !== null) {
       b.set(`provenance.${column}`, estimatedEntry(stamp, { assumption: true, note: reasoning ?? `Given without a cited source${from}.` }));
-      assumptions.push(`Step '${name}': ${column} ${formatParameter(column, given)} has no cited source; marked as an assumption${reasoning ? ` (${reasoning})` : ""}.`);
+      assumptions.push(`Step '${name}': ${column} ${formatParameter(column, given)} has no cited source; marked as an assumption${reasoning ? ` (${reasoning.replace(/[.\s]+$/, "")})` : ""}.`);
     } else if (defaults.assumed.includes(column)) {
       const value = stepValue(b.cur, column) ?? 0;
       b.set(`provenance.${column}`, estimatedEntry(stamp, { assumption: true, note: reasoning ?? `Server default for a ${kind} step${from}.` }));
@@ -516,7 +516,7 @@ export function buildStepChange(row: StepRow, f: StepFields, stamp: Stamp, opts:
             clean({ ...(entry ?? {}), ...estimatedEntry(stamp, { assumption: given === null ? undefined : true, note: reasoning ?? entry?.note }) }),
           );
           if (given !== null) {
-            assumptions.push(`${label}: ${column} ${formatParameter(column, given)} has no cited source; marked as an assumption${reasoning ? ` (${reasoning})` : ""}.`);
+            assumptions.push(`${label}: ${column} ${formatParameter(column, given)} has no cited source; marked as an assumption${reasoning ? ` (${reasoning.replace(/[.\s]+$/, "")})` : ""}.`);
           }
         }
       }

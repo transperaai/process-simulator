@@ -261,7 +261,7 @@ describe("provenance in remote changes", () => {
     const changes: RemoteChange[] = [];
     memory.onChange = (c) => changes.push(c);
     const editor = new ProcessEditor(bundle, memory, () => ({ at: "2026-10-07T09:00:00.000Z", by: "00000000-0000-4000-8000-00000000a0a0" }));
-    editor.run((b) => updateStep(b, ids.audit, { work_hours: 4 }));
+    editor.run((b) => updateStep(b, ids.onboard, { work_hours: 4 }));
     await editor.settled();
     // The echo comes back with the entry's keys in another order (jsonb does that): still ours.
     const echo = changes.splice(0)[0]!;
@@ -275,16 +275,16 @@ describe("provenance in remote changes", () => {
 
     // Tom enters a new value: it arrives with his provenance.
     const tom = { source: "entered" as const, at: "2026-10-07T09:05:00.000Z", by: "00000000-0000-4000-8000-00000000b0b0" };
-    await memory.update("steps", ids.audit, { work_hours: 4, "provenance.work_hours": entry as never }, { work_hours: 9, "provenance.work_hours": tom });
+    await memory.update("steps", ids.onboard, { work_hours: 4, "provenance.work_hours": entry as never }, { work_hours: 9, "provenance.work_hours": tom });
     for (const c of changes.splice(0)) editor.applyRemote(c);
-    const now = step(editor.getState().bundle, ids.audit);
+    const now = step(editor.getState().bundle, ids.onboard);
     expect(now.work_hours).toBe(9);
     expect(stamped(now).work_hours).toEqual(tom);
     // Our next edit compares against his provenance too, so it saves without a conflict.
-    editor.run((b) => updateStep(b, ids.audit, { work_hours: 5 }));
+    editor.run((b) => updateStep(b, ids.onboard, { work_hours: 5 }));
     await editor.settled();
     expect(editor.getState().conflicts).toEqual([]);
-    expect(stored(memory, ids.audit).work_hours).toBe(5);
+    expect(stored(memory, ids.onboard).work_hours).toBe(5);
   });
 });
 

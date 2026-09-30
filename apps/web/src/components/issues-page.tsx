@@ -9,6 +9,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow } from "@transpera-flow/db";
 import { detectIssues } from "@transpera-flow/engine";
+import { perceptionGapDetections } from "@/lib/issues/perception";
 import { useIssues } from "@/lib/issues/use-issues";
 import { useSimulation } from "@/lib/sim/use-simulation";
 import { IssuesRegister, type Named } from "./issues-register";
@@ -42,7 +43,10 @@ export function IssuesPage({
   }, [bundle]);
   const sim = useSimulation(model);
   const result = sim.run?.result ?? null;
-  const detected = useMemo(() => (model && result ? detectIssues(model, result) : model ? null : []), [model, result]);
+  const detected = useMemo(
+    () => (model && result ? [...detectIssues(model, result), ...perceptionGapDetections(bundle.steps)] : model ? null : perceptionGapDetections(bundle.steps)),
+    [model, result, bundle.steps],
+  );
 
   return (
     <div className="rounded-token border border-line bg-panel p-4 shadow-token">

@@ -172,7 +172,7 @@ function others(step: StepRow, column: string) {
  *   the most likely value. The step is flagged `conflict`.
  */
 export function citeEvidence(step: StepRow, column: EvidenceColumn, citation: EvidenceCitation, stamp: EvidenceStamp): StepPatch {
-  const entry: Provenance = columnProvenance(step, column) ?? { source: "estimated" };
+  const entry: Provenance = columnProvenance(step, column) ?? { source: "estimated", at: stamp.at, ...(stamp.by ? { by: stamp.by } : {}) };
   const evidence = [...evidenceOf(step, column), clean(citation)];
   const known = entry.source === "entered" || entry.source === "measured";
   const current = stepValue(step, column);

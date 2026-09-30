@@ -99,7 +99,13 @@ describe("citing evidence", () => {
     const kickoff = step(bundle(), "kickoff");
     const patch = citeEvidence(kickoff, "work_hours", { source_id: interview, speaker: "Maya Collins", quote: "Kickoffs are quicker, half a day.", value: 4 }, stamp);
     expect(patch).toEqual({
-      "provenance.work_hours": { source: "estimated", evidence: [{ source_id: interview, speaker: "Maya Collins", quote: "Kickoffs are quicker, half a day.", value: 4 }], assumption: true },
+      "provenance.work_hours": {
+        source: "estimated",
+        at: stamp.at,
+        by: stamp.by,
+        evidence: [{ source_id: interview, speaker: "Maya Collins", quote: "Kickoffs are quicker, half a day.", value: 4 }],
+        assumption: true,
+      },
       assumption: true,
     });
     const said = citeEvidence(kickoff, "work_hours", { source_id: interview, speaker: "Maya Collins", quote: "Five hours.", value: 5 }, stamp);

@@ -49,7 +49,7 @@ import {
   type SetStateAction,
 } from "react";
 import type { SimulationResult } from "@transpera-flow/engine";
-import type { PersonRow, ProcessBundle, RoleRow, StepOutcome, StepRow } from "@transpera-flow/db";
+import { EVIDENCE_COLUMNS, badgeQuote, isOpenAssumption, openConflict, type PersonRow, type ProcessBundle, type RoleRow, type StepOutcome, type StepRow } from "@transpera-flow/db";
 import {
   KIND_LABELS,
   OUTCOME_LABELS,
@@ -108,8 +108,12 @@ type StepNodeData = {
   ghost: boolean;
   /** A removed step that can be put back from its card. */
   restorable: boolean;
-  /** The step's values are unconfirmed estimates. */
+  /** The step's values are unconfirmed estimates (assumptions). */
   estimate: boolean;
+  /** Sources disagree on one of the step's values (issue #21). */
+  conflict: boolean;
+  /** The quotes behind the step's conflict or assumption, for the badge's tooltip. */
+  quote: string | null;
   /** Live values the draft changed, as shown on the card. */
   wasName: string | null;
   wasWho: string | null;
@@ -155,9 +159,14 @@ const CanvasContext = createContext<{ editor: ProcessEditor | null; restore: ((t
 
 const badgeClass = "pointer-events-none absolute -top-2 left-2 rounded-full border px-1.5 text-[10px] leading-4 font-semibold";
 
-/** "New", "Changed" or "Removed" on a card in a draft, and "Estimate" on unconfirmed values. */
-function Badges({ change, estimate }: { change: ChangeKind | null; estimate: boolean }) {
+/**
+ * "New", "Changed" or "Removed" on a card in a draft; "Conflict" where sources
+ * disagree and "Assumption" on unconfirmed values, each showing the quotes
+ * behind it on hover (the inspector lists them in full on click).
+ */
+function Badges({ change, estimate, conflict = false, quote = null }: { change: ChangeKind | null; estimate: boolean; conflict?: boolean; quote?: string | null }) {
   const label = change === "added" ? "New" : change === "changed" ? "Changed" : change === "removed" ? "Removed" : null;
+  const why = quote ? `: ${quote}` : "";
   return (
     <>
       {label && (
@@ -168,13 +177,26 @@ function Badges({ change, estimate }: { change: ChangeKind | null; estimate: boo
           {label}
         </span>
       )}
-      {estimate && (
-        <span
-          aria-hidden
-          title="Unconfirmed estimate"
-          className={`${badgeClass} border-warn bg-warn-soft text-fg ${label ? "left-auto right-6" : ""}`}
-        >
-          Estimate
+      {(estimate || conflict) && (
+        <span aria-hidden className={`pointer-events-none absolute -top-2 flex gap-1 ${label ? "right-6" : "left-2"}`}>
+          {conflict && (
+            <span
+              data-badge="conflict"
+              title={`Sources disagree${why}`}
+              className="pointer-events-auto rounded-full border border-crit bg-crit-soft px-1.5 text-[10px] leading-4 font-semibold text-fg"
+            >
+              Conflict
+            </span>
+          )}
+          {estimate && (
+            <span
+              data-badge="assumption"
+              title={`Unconfirmed assumption${why}`}
+              className="pointer-events-auto rounded-full border border-warn bg-warn-soft px-1.5 text-[10px] leading-4 font-semibold text-fg"
+            >
+              Assumption
+            </span>
+          )}
         </span>
       )}
     </>
@@ -233,7 +255,7 @@ const selectedRing = "outline-2 outline-offset-2 outline-accent";
 const percent = (p: number) => `${Math.round(p * 1000) / 10}%`;
 
 /** What a screen reader hears for a step. */
-function stepLabel({ step, role, person, warning, reworkTo, change, estimate, wasName, wasWho, wasWork, wasWait }: StepNodeData): string {
+function stepLabel({ step, role, person, warning, reworkTo, change, estimate, conflict, wasName, wasWho, wasWork, wasWait }: StepNodeData): string {
   const draft =
     change === "added"
       ? "new in this draft"
@@ -249,7 +271,7 @@ function stepLabel({ step, role, person, warning, reworkTo, change, estimate, wa
               .filter(Boolean)
               .join("")}`
           : null;
-  const flags = [draft, estimate && "unconfirmed estimate", warning && `warning: ${warning}`];
+  const flags = [draft, conflict && "sources disagree", estimate && "unconfirmed assumption", warning && `warning: ${warning}`];
   if (step.kind === "start" || step.kind === "end") {
     return [step.name, step.kind === "start" ? "start" : `end, ${step.outcome}`, ...flags].filter(Boolean).join(", ");
   }
@@ -276,7 +298,7 @@ function StepNode({ data, selected }: NodeProps<StepFlowNode>) {
       {pulse && !editing && (
         <span aria-hidden className="bottleneck-pulse pointer-events-none absolute -inset-1.5 rounded-token border-2 border-crit" />
       )}
-      <Badges change={data.change} estimate={data.estimate} />
+      <Badges change={data.change} estimate={data.estimate} conflict={data.conflict} quote={data.quote} />
       <Handle type="target" position={Position.Left} className={handleClass(editable && !ghost)} />
       <div className="h-1 rounded-t-token" style={{ background: role?.color ?? "var(--line-2)" }} />
       {editing ? (
@@ -331,7 +353,7 @@ function TerminalNode({ data, selected }: NodeProps<TerminalFlowNode>) {
     <div
       className={`relative border text-xs font-semibold ${editing ? "w-44 rounded-token border-accent bg-panel" : `rounded-full border-line-2 px-3 py-1.5 ${tone}`} ${changeClass(data)} ${selected ? selectedRing : ""}`}
     >
-      <Badges change={data.change} estimate={data.estimate} />
+      <Badges change={data.change} estimate={data.estimate} conflict={data.conflict} quote={data.quote} />
       {step.kind !== "start" && <Handle type="target" position={Position.Left} className={handleClass(editable)} />}
       {editing ? (
         <NodeInlineEditor step={step} focus="name" />
@@ -660,7 +682,9 @@ function Canvas({
           change: change && (change.kind !== "changed" || change.fields.length) ? change.kind : null,
           ghost: false,
           restorable: false,
-          estimate: step.assumption === true,
+          estimate: step.assumption === true || EVIDENCE_COLUMNS.some((c) => isOpenAssumption(step, c)),
+          conflict: step.conflict === true || EVIDENCE_COLUMNS.some((c) => openConflict(step, c) !== null),
+          quote: badgeQuote(step),
           wasName: was(change, ["name"], (l) => l.name),
           wasWho: was(change, ["role_id", "person_id"], who),
           wasWork: was(change, ["work_hours"], (l) => `${formatHours(l.work_hours)} work`),
@@ -703,6 +727,8 @@ function Canvas({
           ghost: true,
           restorable: editable && !discardProblem(bundle, c),
           estimate: false,
+          conflict: false,
+          quote: null,
           wasName: null,
           wasWho: null,
           wasWork: null,

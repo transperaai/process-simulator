@@ -4,10 +4,11 @@
 // the map, badges on the steps, and the "Run the fix" request handed to the
 // scenario panel. Kept out of process-view.tsx so that file only wires it in.
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { IssueRow, ProcessBundle, ScenarioRow } from "@transpera-flow/db";
 import { detectIssues, type EngineModel, type SimulationResult } from "@transpera-flow/engine";
-import { entryView, fixFor, registerEntries, stepBadges, type FixRequest } from "@/lib/issues/register";
+import { perceptionGapDetections } from "@/lib/issues/perception";
+import { entryView, fixFor, promoteInput, registerEntries, stepBadges, type FixRequest } from "@/lib/issues/register";
 import { useIssues } from "@/lib/issues/use-issues";
 import { IssuesRegister } from "./issues-register";
 import type { EditMode } from "./process-view";
@@ -53,7 +54,20 @@ export function useProcessIssues({
   const [tab, setTab] = useState<"utilisation" | "issues">(initialFix ? "issues" : "utilisation");
   const [stepFilter, setStepFilter] = useState("");
 
-  const detected = useMemo(() => (model && result ? detectIssues(model, result) : null), [model, result]);
+  // What the run detects, and perception gaps from the steps' evidence (issue #21).
+  const gaps = useMemo(() => perceptionGapDetections(bundle.steps), [bundle.steps]);
+  const detected = useMemo(() => (model && result ? [...detectIssues(model, result), ...gaps] : null), [model, result, gaps]);
+  // The database logs a perception gap as a tracked issue when it is saved; the demo has no database, so it tracks it here.
+  const logged = useRef(new Set<string>());
+  const { issues: tracked, promote } = state;
+  useEffect(() => {
+    if (mode !== "demo") return;
+    for (const g of gaps) {
+      if (logged.current.has(g.key) || tracked.some((i) => i.detected_key === g.key)) continue;
+      logged.current.add(g.key);
+      void promote(promoteInput(g, bundle.process.id, scenarios));
+    }
+  }, [mode, gaps, tracked, promote, bundle.process.id, scenarios]);
   const entries = useMemo(() => registerEntries(state.issues, detected ?? []), [state.issues, detected]);
   // Issues on this process, or on none in particular.
   const here = useMemo(

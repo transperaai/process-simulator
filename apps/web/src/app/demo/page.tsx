@@ -42,6 +42,9 @@ export default async function DemoPage(props: PageProps<"/demo">) {
         <Link href="/demo/runs" className="text-fg-2 hover:underline">
           Runs
         </Link>
+        <Link href="/demo/report" className="text-fg-2 hover:underline">
+          Report
+        </Link>
         <Link href="/demo/larkspur" className="text-fg-2 hover:underline">
           Larkspur, a messier agency
         </Link>

@@ -1,4 +1,5 @@
 import { listProcesses, type Db, type ProcessRow } from "@transpera-flow/db";
+import type { ReportExporter } from "./report-tool";
 import { ToolError } from "./result";
 
 /** Per-request state: a Supabase client acting as the token's user, and which token it is. */
@@ -9,6 +10,8 @@ export interface ToolContext {
   activeWorkspaceId: string | null;
   /** ISO date used when a tool needs "today". */
   today: string;
+  /** The report pipeline (export_report), supplied by the web app; absent where it can't run. */
+  reports?: ReportExporter;
 }
 
 export interface WorkspaceRef {

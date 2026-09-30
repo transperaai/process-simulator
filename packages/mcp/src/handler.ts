@@ -2,6 +2,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@transpera-flow/db";
 import { assertPublishableKey } from "./key-guard";
+import type { ReportExporter } from "./report-tool";
 import { hashApiToken, looksLikeApiToken } from "./tokens";
 import { createMcpServer } from "./tools";
 
@@ -19,6 +20,8 @@ export interface McpHandlerOptions {
   fetch?: typeof fetch;
   /** For tests: the current date. */
   now?: () => Date;
+  /** The report pipeline for export_report (the web app supplies it). */
+  reports?: ReportExporter;
 }
 
 /** The request header the pre-request hook reads (private.api_token_pre_request). */
@@ -77,6 +80,7 @@ export async function handleMcpRequest(request: Request, options: McpHandlerOpti
     tokenHash: hashApiToken(token),
     activeWorkspaceId: use.active_workspace_id,
     today: (options.now?.() ?? new Date()).toISOString().slice(0, 10),
+    ...(options.reports ? { reports: options.reports } : {}),
   });
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   try {

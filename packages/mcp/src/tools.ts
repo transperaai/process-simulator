@@ -5,6 +5,7 @@ import { applyPatches, isBlocking, MAX_PATCHES, PATCH_OPS, simulate, type Engine
 import { resolveProcess, resolveWorkspace, revisionIdFor, visibleWorkspaces, matchWorkspace, type ToolContext } from "./context";
 import { runTool, ToolError } from "./result";
 import { ANALYSIS_TOOL_NAMES, registerAnalysisTools } from "./analysis-tools";
+import { BUILDING_TOOL_NAMES, registerBuildingTools } from "./building-tools";
 
 /** The browser's defaults (apps/web useSimulation): 30 replications, seed 1. */
 export const DEFAULT_REPS = 30;
@@ -18,6 +19,7 @@ export const TOOL_NAMES = [
   "get_process",
   "run_scenario",
   ...ANALYSIS_TOOL_NAMES,
+  ...BUILDING_TOOL_NAMES,
 ] as const;
 
 const workspaceArg = z
@@ -86,7 +88,7 @@ export function summarizeRun(model: EngineModel, result: SimulationResult) {
   };
 }
 
-/** An MCP server exposing the v1 read tools, acting as the context's user. */
+/** An MCP server exposing the v1 tools (read, analysis and process building), acting as the context's user. */
 export function createMcpServer(ctx: ToolContext): McpServer {
   const server = new McpServer({ name: "transpera-flow", version: "0.1.0" });
 
@@ -251,5 +253,6 @@ export function createMcpServer(ctx: ToolContext): McpServer {
   );
 
   registerAnalysisTools(server, ctx);
+  registerBuildingTools(server, ctx);
   return server;
 }

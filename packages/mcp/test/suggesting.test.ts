@@ -14,6 +14,7 @@ import {
   buildCompanySuggestion,
   buildDemandSuggestions,
   buildPersonSuggestion,
+  buildRoleSuggestion,
   buildServiceSuggestion,
   matchForUpsert,
 } from "../src";
@@ -107,6 +108,50 @@ describe("upsert_person", () => {
 
   it("returns candidates for a name that only partly matches", () => {
     fails(() => buildPersonSuggestion(model(), { name: "Sam", fte: 1 }, []), "ambiguous");
+  });
+});
+
+describe("upsert_role", () => {
+  it("suggests a new role, noting the defaults it will get", () => {
+    const assumptions: string[] = [];
+    const built = buildRoleSuggestion(model(), { name: "Copywriter", evidence, note: "Priya describes one" }, assumptions);
+    expect(built.proposals).toEqual([
+      { target_table: "roles", target_id: null, patch: { set: { name: "Copywriter" } }, evidence, note: "Priya describes one" },
+    ]);
+    expect(assumptions).toEqual([
+      "New role 'Copywriter': default_cost_rate not given, so it will default to 0.",
+      "New role 'Copywriter': headcount not given, so it will default to 1.",
+    ]);
+  });
+
+  it("stores nothing for a role that already exists, in any case", () => {
+    const built = buildRoleSuggestion(model(), { name: "finance" }, []);
+    expect(built.proposals).toEqual([]);
+    expect(built.unchanged).toEqual(["Role Finance already exists"]);
+  });
+
+  it("says when the existing role is inactive", () => {
+    const m = model();
+    m.roles = m.roles.map((r) => (r.id === northbeamRoleIds.fin ? { ...r, active: false } : r));
+    expect(buildRoleSuggestion(m, { name: "Finance" }, []).unchanged).toEqual(["Role Finance already exists (inactive: reactivate it in Settings)"]);
+  });
+
+  it("renames by id or name", () => {
+    const built = buildRoleSuggestion(model(), { name: "Finance", rename: "Finance and admin" }, []);
+    expect(built.proposals).toHaveLength(1);
+    expect(built.proposals[0]).toMatchObject({ target_id: northbeamRoleIds.fin, patch: { set: { name: "Finance and admin" } } });
+  });
+
+  it("refuses a rename onto another role's name", () => {
+    const err = fails(() => buildRoleSuggestion(model(), { name: "Finance", rename: "sales" }, []), "invalid_input");
+    expect(err.message).toBe("There is already a role called 'Sales'");
+  });
+
+  it("returns candidates for a name that only partly matches, unless create is set", () => {
+    const err = fails(() => buildRoleSuggestion(model(), { name: "SEO" }, []), "ambiguous");
+    expect(err.candidates).toEqual([{ id: northbeamRoleIds.seo, name: "SEO specialist" }]);
+    const built = buildRoleSuggestion(model(), { name: "SEO", create: true }, []);
+    expect(built.proposals[0]).toMatchObject({ target_id: null, patch: { set: { name: "SEO" } } });
   });
 });
 

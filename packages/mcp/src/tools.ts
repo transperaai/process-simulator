@@ -145,7 +145,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
         const ws = await resolveWorkspace(ctx, workspace, assumptions);
         const [processes, roles, people] = await Promise.all([
           listProcesses(ctx.db, ws.id),
-          ctx.db.from("roles").select("id, name, headcount, default_cost_rate").eq("workspace_id", ws.id).order("name"),
+          ctx.db.from("roles").select("id, name, headcount, default_cost_rate, active").eq("workspace_id", ws.id).order("name"),
           ctx.db.from("people").select("id, name, fte, capacity_hours_week, active").eq("workspace_id", ws.id).order("name"),
         ]);
         const revisionIds = processes.flatMap((p) => [p.live_revision_id, p.draft_revision_id]).filter((id): id is string => !!id);

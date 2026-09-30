@@ -1,6 +1,6 @@
 // Company-model tools (docs/PRD.md §7.1, §7.1c, decision D19; issue #25):
-// set_company, upsert_service, upsert_person, upsert_client and set_demand
-// create suggestions and change nothing else; list_suggestions reads them.
+// set_company, upsert_service, upsert_person, upsert_client, upsert_role and
+// set_demand create suggestions and change nothing else; list_suggestions reads them.
 // A person accepts or rejects each one on the app's Suggestions page. The
 // database backs this up: an API-token request can't write the company-model
 // tables or review suggestions (migration 20261015000000_suggestions.sql).
@@ -26,11 +26,12 @@ import {
   buildCompanySuggestion,
   buildDemandSuggestions,
   buildPersonSuggestion,
+  buildRoleSuggestion,
   buildServiceSuggestion,
   type Built,
 } from "./suggesting";
 
-export const SUGGESTION_TOOL_NAMES = ["set_company", "upsert_service", "upsert_person", "upsert_client", "set_demand", "list_suggestions"] as const;
+export const SUGGESTION_TOOL_NAMES = ["set_company", "upsert_service", "upsert_person", "upsert_client", "upsert_role", "set_demand", "list_suggestions"] as const;
 
 const workspaceArg = z.string().optional().describe("Workspace id, slug or name. Defaults to the active workspace (set_active_workspace).");
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "an ISO date (YYYY-MM-DD)");
@@ -178,6 +179,28 @@ export function registerSuggestionTools(server: McpServer, ctx: ToolContext): vo
       runTool(async (assumptions) => {
         const { ws, model } = await load(ctx, workspace, assumptions);
         return store(ctx, ws, model, buildServiceSuggestion(model, args, assumptions));
+      }),
+  );
+
+  server.registerTool(
+    "upsert_role",
+    {
+      title: "Suggest a role",
+      description:
+        "Suggest a new role (a kind of work: steps, people and client assignments name roles) or a new name for one." + suggestionNote,
+      inputSchema: {
+        name: nameRefArg("role"),
+        rename: renameArg,
+        create: createArg,
+        evidence: evidenceArg,
+        note: noteArg,
+        workspace: workspaceArg,
+      },
+    },
+    ({ workspace, ...args }) =>
+      runTool(async (assumptions) => {
+        const { ws, model } = await load(ctx, workspace, assumptions);
+        return store(ctx, ws, model, buildRoleSuggestion(model, args, assumptions));
       }),
   );
 

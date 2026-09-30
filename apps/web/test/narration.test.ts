@@ -167,6 +167,7 @@ describe("the printed report", () => {
     const byClaude = withSummary(content, { ...narrated.summary!, narration: { ...narrated.summary!.narration!, model: "claude-opus-5-5" } });
     expect(byClaude.methodology!.paragraphs.at(-1)).toMatch(/drafted by a language model \(Claude, claude-opus-5-5\)/);
     expect(html).toContain("drafted by fake-model");
+    expect(html).toContain("<p class=\"small muted\" data-summary-note>Drafted by fake-model from this report's figures; every number in it was checked against them.</p>");
     // The template's report says the opposite.
     expect(content.appendix!.provenance.at(-1)).toBe("Executive summary: templated text filled in from the run; no language model.");
     expect(content.methodology!.paragraphs.at(-1)).toMatch(/no language model wrote any of it/);

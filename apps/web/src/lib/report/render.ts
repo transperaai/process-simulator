@@ -190,8 +190,20 @@ const cover: Renderer = (c) => {
 const summary: Renderer = (c, ctx) =>
   section(
     "summary",
-    `${kpiGrid(c, ctx)}${(c.summary?.paragraphs ?? []).map((p) => `<p>${esc(p)}</p>`).join("")}${c.summary?.source === "template" ? `<p class="small muted">Written from fixed templates using the run's own numbers.</p>` : ""}`,
+    `${kpiGrid(c, ctx)}${(c.summary?.paragraphs ?? []).map((p) => `<p>${esc(p)}</p>`).join("")}${summaryNote(c)}`,
   );
+
+/** Under the summary: who wrote it (#29); the appendix has the detail. */
+function summaryNote(c: ReportContent): string {
+  const s = c.summary;
+  if (!s) return "";
+  const edited = s.editedBy ? ` Edited by ${esc(s.editedBy)}.` : "";
+  const text =
+    s.source === "narration" && s.narration
+      ? `Drafted by ${esc(s.narration.model)} from this report's figures; every number in it was checked against them.${edited}`
+      : `Written from fixed templates using the run's own numbers.${edited}`;
+  return `<p class="small muted" data-summary-note>${text}</p>`;
+}
 
 const companyMap: Renderer = (c) => {
   const m = c.companyMap!;

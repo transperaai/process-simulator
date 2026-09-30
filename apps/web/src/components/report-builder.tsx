@@ -118,7 +118,7 @@ function NarrateOption({ checked, onChange, configured, name }: { checked: boole
           <span className="font-semibold">Narrated summary</span>
           <span className="text-fg-2">
             {" "}
-            · drafted from the report&apos;s figures and checked number by number; any figure not in the report and the templated summary prints instead.
+            · drafted from the report&apos;s figures and checked number by number; if a draft cites a figure the report doesn&apos;t print, the templated summary prints instead.
             Cached per run, so an unchanged run is never drafted twice. You can edit it before handing the report over.
           </span>
           {!configured && <span className="block text-xs text-fg-3">{"Narration needs the Anthropic API key on the server; without it the templated summary prints."}</span>}

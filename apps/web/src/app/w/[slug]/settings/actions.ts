@@ -4,6 +4,7 @@ import { refresh } from "next/cache";
 import type { SaveOutcome } from "@/lib/fields/field-controller";
 import { saveField, saveLinks } from "@/lib/fields/server";
 import { isGrowth, isMonth, isMultiplier, parseLeadSourceField, parseNewLeadSource, type LeadSourceField } from "@/lib/demand";
+import { parseNewRole, parseRoleField, type RoleField } from "@/lib/roles";
 import { isTagList, parseNewService, parseServiceField, type ServiceField } from "@/lib/services";
 import { createClient } from "@/lib/supabase/server";
 
@@ -229,6 +230,41 @@ export async function removeService(serviceId: string): Promise<ActionResult> {
   const { data, error } = await supabase.from("services").delete().eq("id", serviceId).select("id");
   if (error) return failure(error);
   if (!data.length) return { error: "That service was already removed, or you can't edit it." };
+  refresh();
+  return {};
+}
+
+// Roles (issue #88). Owners and editors manage them; RLS enforces that.
+
+export async function saveRoleField(roleId: string, field: RoleField, base: Scalar, value: Scalar): Promise<SaveOutcome<Scalar>> {
+  const parsed = parseRoleField(roleId, field, base, value);
+  if (!parsed) return invalid;
+  if (!(await signedIn())) return signedOut;
+  const outcome = await saveField("roles", { id: parsed.roleId }, parsed.field, parsed.base, parsed.value);
+  // People and service labels use role names.
+  if (outcome.status === "saved") refresh();
+  return outcome;
+}
+
+export async function createRole(workspaceId: string, _prev: ActionResult, form: FormData): Promise<ActionResult> {
+  if (!isId(workspaceId)) return { error: "Couldn't save. Try again." };
+  const role = parseNewRole(form);
+  if ("error" in role) return role;
+  const supabase = await createClient();
+  const { error } = await supabase.from("roles").insert({ workspace_id: workspaceId, name: role.name });
+  if (error) return error.code === "23505" ? { error: `There is already a role called '${role.name}'.` } : failure(error);
+  refresh();
+  return {};
+}
+
+export async function removeRole(roleId: string): Promise<ActionResult> {
+  if (!isId(roleId)) return { error: "Couldn't remove it. Try again." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("roles").delete().eq("id", roleId).select("id");
+  if (error) {
+    return error.code === "23503" ? { error: "That role is still used by steps, people or clients. Make it inactive instead." } : failure(error);
+  }
+  if (!data.length) return { error: "That role was already removed, or you can't edit it." };
   refresh();
   return {};
 }

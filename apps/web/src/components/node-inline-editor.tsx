@@ -10,6 +10,7 @@ import type { ProcessBundle, StepRow } from "@transpera-flow/db";
 import type { ProcessEditor } from "@/lib/editor/editor";
 import { commitInline, inlineDraft, type InlineField } from "@/lib/editor/inline-edit";
 import { applyEdit, readField } from "@/lib/editor/ops";
+import { selectableRoles } from "@/lib/roles";
 
 export interface InlineEditing {
   editor: ProcessEditor;
@@ -57,7 +58,7 @@ export function NodeInlineEditor({ step, focus }: { step: StepRow; focus: Inline
             <label htmlFor={`${step.id}-role`} className="text-fg-2">
               Role
             </label>
-            <Select ctx={ctx} step={step} field="role_id" id={`${step.id}-role`} none="No role" options={bundle.roles} />
+            <Select ctx={ctx} step={step} field="role_id" id={`${step.id}-role`} none="No role" options={selectableRoles(bundle.roles, [step.role_id])} />
             <label htmlFor={`${step.id}-person`} className="text-fg-2">
               Pinned
             </label>

@@ -6,7 +6,7 @@ import { ProcessNav } from "@/components/process-nav";
 import { ProcessView } from "@/components/process-view";
 import { canEditWorkspace, canManageWorkspace, currentViewer } from "@/lib/access-data";
 import { pendingSuggestionCount } from "@/lib/company-data";
-import { loadProcessForEditing, loadWorkspaceIssues, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
+import { loadProcessForEditing, loadWorkspaceIssues, loadWorkspaceOverview, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
 
 /**
  * A process of the workspace on the canvas: `/w/[slug]` (the first published
@@ -15,7 +15,12 @@ import { loadProcessForEditing, loadWorkspaceIssues, loadWorkspaceScenarios, loa
  */
 export async function WorkspaceProcessPage({ slug, processId, fix }: { slug: string; processId?: string; fix: string | null }) {
   const process = await loadProcessForEditing(slug, processId);
-  if (!process) notFound();
+  if (!process) {
+    // A workspace nothing is published in (a new one) still opens: its links and how to get started.
+    const overview = processId ? null : await loadWorkspaceOverview(slug);
+    if (!overview) notFound();
+    return <EmptyWorkspace slug={slug} overview={overview} />;
+  }
   const { live, draft, processes } = process;
   const [canEdit, canManage, scenarios, issues, viewer, sources, pendingSuggestions] = await Promise.all([
     canEditWorkspace(live.workspace.id),
@@ -87,6 +92,78 @@ export async function WorkspaceProcessPage({ slug, processId, fix }: { slug: str
         userId={viewer?.userId ?? null}
         viewer={viewer}
       />
+    </main>
+  );
+}
+
+const linkClass = "text-fg-2 hover:underline";
+
+/** A workspace with no published process: the same links as the canvas page, and what to do next (issue #88). */
+async function EmptyWorkspace({ slug, overview }: { slug: string; overview: NonNullable<Awaited<ReturnType<typeof loadWorkspaceOverview>>> }) {
+  const { workspace, processes } = overview;
+  const [canManage, pendingSuggestions] = await Promise.all([canManageWorkspace(workspace.id), pendingSuggestionCount(workspace.id)]);
+  const base = `/w/${slug}`;
+  return (
+    <main className="mx-auto w-full max-w-7xl px-4 pb-8">
+      <AppHeader workspace={workspace.name} signedIn />
+      <div className="mt-4 mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <h1 className="text-xl font-bold">{workspace.name}</h1>
+        <Link href={`${base}/issues`} className={linkClass}>
+          Issues
+        </Link>
+        <Link href={`${base}/clients`} className={linkClass}>
+          Clients
+        </Link>
+        <Link href={`${base}/sources`} className={linkClass}>
+          Sources
+        </Link>
+        <Link href={`${base}/suggestions`} className={linkClass}>
+          Suggestions
+          {pendingSuggestions > 0 && (
+            <span className="ml-1 rounded-full border border-warn bg-warn-soft px-1.5 text-[11px] font-semibold tabular-nums">{pendingSuggestions}</span>
+          )}
+        </Link>
+        <Link href={`${base}/runs`} className={linkClass}>
+          Runs
+        </Link>
+        <Link href={`${base}/settings`} className={linkClass}>
+          People &amp; settings
+        </Link>
+        {canManage && (
+          <Link href={`${base}/settings/access`} className={linkClass}>
+            Access
+          </Link>
+        )}
+      </div>
+      <section className="rounded-token border border-dashed border-line p-6">
+        <h2 className="text-base font-bold">No published process yet</h2>
+        {processes.length > 0 && (
+          <>
+            <p className="mt-2 text-fg-2">These haven&apos;t been published yet:</p>
+            <ul className="mt-1 list-disc pl-5">
+              {processes.map((p) => (
+                <li key={p.id}>
+                  <Link href={`${base}/p/${p.id}`} className="font-semibold hover:underline">
+                    {p.name}
+                  </Link>
+                  {p.draft && <span className="ml-2 text-fg-3">has a draft</span>}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        <p className="mt-3 text-fg-2">
+          To get started, add roles under{" "}
+          <Link href={`${base}/settings`} className="underline">
+            People &amp; settings
+          </Link>
+          , then import a process with Claude (<code>set_active_workspace</code>, then <code>import_process</code>). Create a token under{" "}
+          <Link href="/settings/tokens" className="underline">
+            API tokens
+          </Link>{" "}
+          to connect it.
+        </p>
+      </section>
     </main>
   );
 }

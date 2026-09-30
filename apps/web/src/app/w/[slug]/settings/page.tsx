@@ -4,6 +4,7 @@ import { AppHeader } from "@/components/app-header";
 import { loadWorkspaceSettings } from "@/lib/data";
 import { DemandSettings } from "./demand-settings";
 import { PeopleSettings, SimulationSettings } from "./people-settings";
+import { RolesSettings } from "./roles-settings";
 import { ServicesSettings } from "./services-settings";
 import { HealthSettings } from "./servicing-settings";
 
@@ -25,6 +26,7 @@ export default async function WorkspaceSettingsPage(props: PageProps<"/w/[slug]/
         value to keep.
       </p>
       <SimulationSettings data={data} />
+      <RolesSettings data={data} />
       <ServicesSettings data={data} />
       <HealthSettings data={data} />
       <DemandSettings data={data} />

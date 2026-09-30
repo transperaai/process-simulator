@@ -35,6 +35,7 @@ import {
   type WorkspaceSettings,
 } from "@transpera-flow/db";
 import type { RosterData } from "./clients/roster";
+import { roleUsage, type RoleUsage } from "./roles";
 import { createClient } from "./supabase/server";
 
 /** Workspaces the signed-in user can see (RLS decides). */
@@ -95,6 +96,24 @@ export async function loadProcessForEditing(
   return loadProcessBySlug(await createClient(), slug, processId ? { processId } : {});
 }
 
+/**
+ * A workspace with no published process (a new one): its name and whatever
+ * processes exist, for the page that stands in for the canvas (issue #88).
+ */
+export async function loadWorkspaceOverview(
+  slug: string,
+): Promise<{ workspace: Pick<WorkspaceRow, "id" | "name" | "slug">; processes: ProcessListing[] } | null> {
+  const supabase = await createClient();
+  const { data: workspace, error } = await supabase.from("workspaces").select("id, name, slug").eq("slug", slug).maybeSingle();
+  if (error) throw error;
+  if (!workspace) return null;
+  const processes = await listProcesses(supabase, workspace.id);
+  return {
+    workspace,
+    processes: processes.map((p) => ({ id: p.id, name: p.name, kind: p.kind, live: p.live_revision_id !== null, draft: p.draft_revision_id !== null })),
+  };
+}
+
 export interface PersonDetail extends PersonRow {
   email: string | null;
   notes: string | null;
@@ -111,7 +130,9 @@ export interface WorkspaceSettingsData {
   canEdit: boolean;
   /** agency_admin or owner: may change workspace settings. */
   canManage: boolean;
-  roles: Pick<RoleRow, "id" | "name" | "color">[];
+  roles: Pick<RoleRow, "id" | "name" | "color" | "active">[];
+  /** How many steps (any revision), people and clients name each role, by role id. */
+  roleUsage: Record<string, RoleUsage>;
   /** Steps someone does (working steps with a role) in the workspace's live processes, for skills. */
   steps: Pick<StepRow, "id" | "name" | "role_id">[];
   people: PersonDetail[];
@@ -157,10 +178,10 @@ export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSett
     supabase.from("demand_settings").select(DEMAND_SETTINGS_COLUMNS).eq("workspace_id", ws).maybeSingle(),
     supabase.from("service_servicing").select(SERVICE_SERVICING_COLUMNS).eq("workspace_id", ws).order("created_at").order("id"),
   ]);
-  const [canEdit, canManage, roles, steps, people, personRoles, personSkills, personLeave, services, tags] = await Promise.all([
+  const [canEdit, canManage, roles, steps, people, personRoles, personSkills, personLeave, services, tags, roleSteps, assignments] = await Promise.all([
     supabase.rpc("can_edit_workspace", { ws }),
     supabase.rpc("can_manage_workspace", { ws }),
-    supabase.from("roles").select("id, name, color").eq("workspace_id", ws).order("name"),
+    supabase.from("roles").select("id, name, color, active").eq("workspace_id", ws).order("name"),
     supabase
       .from("steps")
       .select("id, name, role_id")
@@ -183,9 +204,12 @@ export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSett
       .order("start_date"),
     supabase.from("services").select(SERVICE_COLUMNS).eq("workspace_id", ws).order("created_at").order("id"),
     supabase.from("edges").select("condition_tag").in("revision_id", revisions).not("condition_tag", "is", null),
+    // Every revision, live or not: a role a superseded step names can't be deleted either.
+    supabase.from("steps").select("id, role_id").eq("workspace_id", ws).not("role_id", "is", null),
+    supabase.from("client_assignments").select("client_id, role_id").eq("workspace_id", ws),
   ]);
   const [leadSources, seasonality, demand, servicingLinks] = await demandQueries;
-  for (const r of [canEdit, canManage, roles, steps, people, personRoles, personSkills, personLeave, services, tags, leadSources, seasonality, demand, servicingLinks]) {
+  for (const r of [canEdit, canManage, roles, steps, people, personRoles, personSkills, personLeave, services, tags, roleSteps, assignments, leadSources, seasonality, demand, servicingLinks]) {
     if (r.error) throw r.error;
   }
 
@@ -194,6 +218,7 @@ export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSett
     canEdit: canEdit.data === true,
     canManage: canManage.data === true,
     roles: roles.data ?? [],
+    roleUsage: roleUsage(roleSteps.data ?? [], personRoles.data ?? [], assignments.data ?? []),
     steps: steps.data ?? [],
     people: people.data ?? [],
     personRoles: personRoles.data ?? [],

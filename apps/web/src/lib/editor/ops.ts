@@ -4,7 +4,7 @@
 // editor applies these to its local copy of the bundle, and a ProcessStore
 // saves them.
 
-import type { EdgeRow, ProcessBundle, StepRow } from "@transpera-flow/db";
+import { partitionSteps, type EdgeRow, type ProcessBundle, type StepRow } from "@transpera-flow/db";
 import type { Provenance } from "./provenance";
 
 /** A value one field can hold. */
@@ -111,11 +111,14 @@ export function pick(row: object, fields: Iterable<string>): Patch {
 export function applyOp(bundle: ProcessBundle, op: Op): ProcessBundle {
   switch (op.kind) {
     case "insert": {
-      const stepIds = new Set(bundle.steps.map((s) => s.id));
+      const stepIds = new Set([...bundle.steps, ...(bundle.retired ?? [])].map((s) => s.id));
       const edgeIds = new Set(bundle.edges.map((e) => e.id));
+      // A split or replaced step's row (with replaced_by) is kept apart: never drawn or simulated (issue #16).
+      const added = partitionSteps(op.steps.filter((s) => !stepIds.has(s.id)));
       return {
         ...bundle,
-        steps: [...bundle.steps, ...op.steps.filter((s) => !stepIds.has(s.id))],
+        steps: [...bundle.steps, ...added.steps],
+        ...(added.retired.length ? { retired: [...(bundle.retired ?? []), ...added.retired] } : {}),
         edges: [...bundle.edges, ...op.edges.filter((e) => !edgeIds.has(e.id))],
       };
     }
@@ -125,6 +128,7 @@ export function applyOp(bundle: ProcessBundle, op: Op): ProcessBundle {
       return {
         ...bundle,
         steps: bundle.steps.filter((s) => !stepIds.has(s.id)),
+        ...(bundle.retired?.some((s) => stepIds.has(s.id)) ? { retired: bundle.retired.filter((s) => !stepIds.has(s.id)) } : {}),
         // Edges of removed steps go too, as the database's cascade does.
         edges: bundle.edges.filter((e) => !edgeIds.has(e.id) && !stepIds.has(e.from_step_id) && !stepIds.has(e.to_step_id)),
       };

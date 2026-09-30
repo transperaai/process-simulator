@@ -4,9 +4,9 @@
 // the map, badges on the steps, and the "Run the fix" request handed to the
 // scenario panel. Kept out of process-view.tsx so that file only wires it in.
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { IssueRow, ProcessBundle, ScenarioRow } from "@transpera-flow/db";
-import { detectIssues, type EngineModel, type SimulationResult } from "@transpera-flow/engine";
+import { detectBrokenScenarios, detectIssues, type EngineModel, type RetiredSteps, type SimulationResult } from "@transpera-flow/engine";
 import { entryView, fixFor, registerEntries, stepBadges, type FixRequest } from "@/lib/issues/register";
 import { useIssues } from "@/lib/issues/use-issues";
 import { IssuesRegister } from "./issues-register";
@@ -22,7 +22,11 @@ export interface ProcessIssues {
   fix: FixRequest | null;
   /** The scenario panel reports its saved scenarios here, so issues can link and run them. */
   onScenariosChange: (scenarios: ScenarioRow[]) => void;
+  /** The saved scenarios as the scenario panel last reported them. */
+  scenarios: ScenarioRow[];
 }
+
+const NO_RETIRED: RetiredSteps = {};
 
 export function useProcessIssues({
   bundle,
@@ -34,6 +38,7 @@ export function useProcessIssues({
   initialScenarios,
   initialFix,
   registerHref,
+  retired = NO_RETIRED,
 }: {
   bundle: ProcessBundle;
   model: EngineModel | null;
@@ -46,6 +51,8 @@ export function useProcessIssues({
   initialFix?: string | null;
   /** Link to the full register page, if there is one. */
   registerHref?: string;
+  /** Steps the model no longer has and what replaced them, for broken-scenario issues (issue #16). */
+  retired?: RetiredSteps;
 }): ProcessIssues {
   const state = useIssues(bundle.workspace.id, initialIssues, mode);
   const [scenarios, setScenarios] = useState(initialScenarios);
@@ -53,7 +60,24 @@ export function useProcessIssues({
   const [tab, setTab] = useState<"utilisation" | "issues">(initialFix ? "issues" : "utilisation");
   const [stepFilter, setStepFilter] = useState("");
 
-  const detected = useMemo(() => (model && result ? detectIssues(model, result) : null), [model, result]);
+  // Saved scenarios whose targets no longer resolve raise a broken_scenario issue each (issue #16).
+  const broken = useMemo(() => (model ? detectBrokenScenarios(model, scenarios, retired) : []), [model, scenarios, retired]);
+  const detected = useMemo(() => (model && result ? [...broken, ...detectIssues(model, result)] : null), [model, result, broken]);
+  const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);
+
+  // A tracked broken-scenario issue resolves itself once its scenario is fixed (re-pointed or deleted).
+  const resolving = useRef(new Set<string>());
+  const { issues: tracked, saver } = state;
+  useEffect(() => {
+    if (mode === "readonly" || !model) return;
+    const still = new Set(broken.map((d) => d.key));
+    for (const i of tracked) {
+      if (i.type !== "broken_scenario" || !i.detected_key || still.has(i.detected_key)) continue;
+      if ((i.status !== "open" && i.status !== "in_progress") || resolving.current.has(i.id)) continue;
+      resolving.current.add(i.id);
+      void saver(i.id, "status")(i.status, "done").finally(() => resolving.current.delete(i.id));
+    }
+  }, [mode, model, broken, tracked, saver]);
   const entries = useMemo(() => registerEntries(state.issues, detected ?? []), [state.issues, detected]);
   // Issues on this process, or on none in particular.
   const here = useMemo(
@@ -115,6 +139,7 @@ export function useProcessIssues({
               steps={steps}
               people={people}
               scenarios={scenarios}
+              brokenScenarios={brokenScenarios}
               canEdit={mode !== "readonly"}
               stepFilter={stepFilter}
               onStepFilterChange={setStepFilter}
@@ -144,5 +169,6 @@ export function useProcessIssues({
     rail,
     fix,
     onScenariosChange: setScenarios,
+    scenarios,
   };
 }

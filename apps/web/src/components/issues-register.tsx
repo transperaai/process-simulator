@@ -30,6 +30,8 @@ import type { IssuesState } from "@/lib/issues/use-issues";
 import { ISSUE_STATUSES, MAX_EVIDENCE, MAX_TITLE, type IssueField } from "@/lib/issues/validate";
 import { SelectField, TextField, type SelectOption } from "./fields";
 
+const NONE: ReadonlySet<string> = new Set();
+
 export interface Named {
   id: string;
   name: string;
@@ -68,6 +70,7 @@ export function IssuesRegister({
   steps,
   people,
   scenarios,
+  brokenScenarios = NONE,
   canEdit,
   stepFilter,
   onStepFilterChange,
@@ -85,6 +88,8 @@ export function IssuesRegister({
   steps: Named[];
   people: Named[];
   scenarios: ScenarioRow[];
+  /** Ids of saved scenarios that need attention: issues whose fix is one say so (issue #16). */
+  brokenScenarios?: ReadonlySet<string>;
   canEdit: boolean;
   /** Show only issues on this step (from a badge on the map). */
   stepFilter: string;
@@ -207,6 +212,7 @@ export function IssuesRegister({
               steps={steps}
               people={people}
               scenarios={scenarios}
+              brokenScenarios={brokenScenarios}
               canEdit={canEdit}
               state={state}
               processId={processId}
@@ -226,6 +232,7 @@ function IssueItem({
   steps,
   people,
   scenarios,
+  brokenScenarios,
   canEdit,
   state,
   processId,
@@ -237,6 +244,7 @@ function IssueItem({
   steps: Named[];
   people: Named[];
   scenarios: ScenarioRow[];
+  brokenScenarios: ReadonlySet<string>;
   canEdit: boolean;
   state: IssuesState;
   processId: string;
@@ -247,6 +255,8 @@ function IssueItem({
   const [confirming, setConfirming] = useState(false);
   const v = entryView(entry);
   const fix = fixFor(entry, scenarios);
+  // A fix that needs attention can't be run until it is re-pointed (issue #16).
+  const fixBroken = Boolean(fix?.scenarioId && brokenScenarios.has(fix.scenarioId));
   const issue = entry.kind === "tracked" ? entry.issue : null;
   const meta: ReactNode[] = [
     <span key="source" className={`${chip} ${entry.kind === "detected" ? "border-accent" : ""}`}>
@@ -302,14 +312,22 @@ function IssueItem({
               {editing ? "Done editing" : "Edit"}
             </button>
           )}
-          {fix && (
+          {fix && !fixBroken && v.type !== "broken_scenario" && (
             <button type="button" className={primary} onClick={() => onRunFix(fix, v.id)} title={`Apply “${fix.name}” and compare it with the baseline`}>
               Run the fix →
             </button>
           )}
         </span>
       </div>
-      {fix && <p className="mt-1 text-xs text-fg-3">Fix: {fix.name}</p>}
+      {v.type === "broken_scenario" ? (
+        <p className="mt-1 text-xs text-fg-3">Re-point its changes under Scenarios; this issue resolves itself once the scenario applies again.</p>
+      ) : fixBroken ? (
+        <p className="mt-1 text-xs text-crit" data-fix-broken>
+          Fix: {fix!.name} needs attention (a change in it no longer resolves), so it can&apos;t be run until it is re-pointed under Scenarios.
+        </p>
+      ) : (
+        fix && <p className="mt-1 text-xs text-fg-3">Fix: {fix.name}</p>
+      )}
       {issue && editing && canEdit && (
         <div className="mt-2 grid gap-2 border-t border-line pt-2">
           <IssueFields issue={issue} steps={steps} people={people} scenarios={scenarios} state={state} />

@@ -12,3 +12,6 @@ test-results/
 playwright-report/
 packages/db/supabase/.temp/
 .claude/worktrees/
+
+# Local process files from test servers
+*.pid

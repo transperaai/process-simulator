@@ -46,7 +46,8 @@ The MCP end-to-end suite (`packages/mcp/test/postgrest.test.ts`) also needs
 PostgREST; it is skipped locally unless `POSTGREST_URL` and
 `POSTGREST_JWT_SECRET` are set. CI prepares its database with
 `packages/mcp/test/postgrest-db.ts` and then starts PostgREST (see
-`.github/workflows/ci.yml`).
+`.github/workflows/ci.yml`). To run it beside another checkout, set
+`POSTGREST_DATABASE` to a database name of your own for both steps.
 
 ## MCP server
 
@@ -60,7 +61,11 @@ claude mcp add --transport http transpera-flow https://<host>/api/mcp \
 ```
 
 Tools: `list_workspaces`, `set_active_workspace`, `get_workspace_summary`,
-`get_process`, `run_scenario`. The endpoint acts as the token's user under
+`get_process`, `run_scenario`, and the analysis tools `save_scenario`,
+`compare_scenarios`, `check_robustness` (time-capped; a capped check is flagged
+`partial`), `get_bottlenecks` (with the shadow price: extra completions per
+quarter from one more FTE in the top bottleneck role; see
+`packages/engine/src/shadow-price.ts`), `log_issue` and `list_issues`. The endpoint acts as the token's user under
 RLS and uses only `NEXT_PUBLIC_SUPABASE_URL` and
 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; no extra environment variables. How it
 does that without the service-role key:

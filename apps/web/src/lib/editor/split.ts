@@ -23,6 +23,21 @@ const part = (name: string, n: number) => {
 
 const half = (v: number | null | undefined) => (typeof v === "number" ? Math.round((v / 2) * 1000) / 1000 : v);
 
+/** Near a step's position, the first spot no other step covers (below, above, right, then further down). */
+function freeSpot(bundle: ProcessBundle, id: string, x: number, y: number): { x: number; y: number } {
+  const others = bundle.steps.filter((s) => s.id !== id);
+  const clear = (px: number, py: number) => others.every((s) => Math.abs(Number(s.x) - px) >= 180 || Math.abs(Number(s.y) - py) >= 100);
+  const tries = [
+    [0, 130],
+    [0, -130],
+    [220, 0],
+    [220, 130],
+    [0, 260],
+  ] as const;
+  const [dx, dy] = tries.find(([dx, dy]) => clear(x + dx, y + dy)) ?? tries[0];
+  return { x: Math.round(x + dx), y: Math.round(y + dy) };
+}
+
 /** Why a step can't be split, or null if it can. */
 export function splitProblem(bundle: ProcessBundle, id: string): string | null {
   const step = bundle.steps.find((s) => s.id === id);
@@ -73,7 +88,7 @@ export function splitStep(bundle: ProcessBundle, id: string, newId: () => string
     work_hours: half(old.work_hours)!,
     rework_to_step_id: old.rework_to_step_id === id ? null : old.rework_to_step_id,
     current_wip: null,
-    x: Math.round(Number(old.x) + 220),
+    ...freeSpot(bundle, id, Number(old.x), Number(old.y)),
   };
   // Kept for scenarios to re-point: never drawn or simulated, and never an unconfirmed estimate.
   const retired = { ...old, replaced_by: [a, b], assumption: false, conflict: false, current_wip: null } as StepRow;

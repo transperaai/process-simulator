@@ -46,6 +46,7 @@ export {
 } from "./queries";
 export {
   EVIDENCE_COLUMNS,
+  applyStepPatch,
   EVIDENCE_LABELS,
   PERCEPTION_GAP_RATIO,
   badgeQuote,

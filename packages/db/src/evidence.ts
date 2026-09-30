@@ -266,6 +266,17 @@ export function removeEvidence(step: StepRow, column: EvidenceColumn, index: num
   return patch;
 }
 
+/** A step with a patch applied (`column.key` sets one key of a jsonb column), for fixtures and tests. */
+export function applyStepPatch(step: StepRow, patch: StepPatch): StepRow {
+  const out: Record<string, unknown> = { ...step };
+  for (const [field, value] of Object.entries(patch)) {
+    const [col, sub] = field.split(".", 2) as [string, string | undefined];
+    if (sub === undefined) out[col] = value;
+    else out[col] = { ...(isObject(out[col]) ? out[col] : {}), [sub]: value };
+  }
+  return out as unknown as StepRow;
+}
+
 // ---------------------------------------------------------------------------
 // The draft's checklist rail
 // ---------------------------------------------------------------------------
@@ -372,8 +383,8 @@ export function perceptionGaps(steps: readonly StepRow[]): PerceptionGap[] {
         column,
         values: conflict.values,
         ratio,
-        title: `Sources disagree on ${step.name}: ${EVIDENCE_LABELS[column]}`,
-        evidence: `${said} (${apart}). Measure it before relying on it.`,
+        title: `Sources disagree on ${step.name}: ${EVIDENCE_LABELS[column]}`.slice(0, 200),
+        evidence: `${said} (${apart}). Measure it before relying on it.`.slice(0, 5000),
         citations: evidenceOf(step, column),
       });
     }

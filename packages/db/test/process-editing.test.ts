@@ -104,6 +104,7 @@ describe("editing a process on the canvas", () => {
   });
 
   it("saves current WIP with its provenance as one compare-and-set, keyed per column in the provenance jsonb", async () => {
+    // Onboarding: a step whose provenance the seed leaves empty.
     await db.as(users.editor!.claims, async (c) => {
       await openDraft(c);
       const entered = { source: "entered", at: "2026-09-29T10:00:00.000Z", by: users.editor!.id };
@@ -111,23 +112,23 @@ describe("editing a process on the canvas", () => {
       const saved = await saveFields(
         c,
         "steps",
-        ids.audit,
+        ids.onboard,
         { current_wip: null, "provenance.current_wip": null },
         { current_wip: 7, "provenance.current_wip": entered },
       );
       expect(saved.status).toBe("saved");
-      const row = (await c.query("select current_wip, provenance from steps where revision_id = $1 and id = $2", [rev, ids.audit])).rows[0];
+      const row = (await c.query("select current_wip, provenance from steps where revision_id = $1 and id = $2", [rev, ids.onboard])).rows[0];
       expect(row).toEqual({ current_wip: 7, provenance: { current_wip: entered } });
 
       // Another column's provenance merges into the same jsonb.
       const work = { source: "entered", at: "2026-09-29T11:00:00.000Z", by: users.editor!.id };
-      expect((await saveFields(c, "steps", ids.audit, { "provenance.work_hours": null }, { "provenance.work_hours": work })).status).toBe("saved");
+      expect((await saveFields(c, "steps", ids.onboard, { "provenance.work_hours": null }, { "provenance.work_hours": work })).status).toBe("saved");
 
       // Someone who loaded before the first save conflicts on both, and learns the stored entry.
       const stale = await saveFields(
         c,
         "steps",
-        ids.audit,
+        ids.onboard,
         { current_wip: null, "provenance.current_wip": null },
         { current_wip: 3, "provenance.current_wip": { ...entered, at: "2026-09-29T12:00:00.000Z" } },
       );
@@ -136,10 +137,10 @@ describe("editing a process on the canvas", () => {
 
       // Undo: both go back to what they were.
       expect(
-        (await saveFields(c, "steps", ids.audit, { current_wip: 7, "provenance.current_wip": entered }, { current_wip: null, "provenance.current_wip": null }))
+        (await saveFields(c, "steps", ids.onboard, { current_wip: 7, "provenance.current_wip": entered }, { current_wip: null, "provenance.current_wip": null }))
           .status,
       ).toBe("saved");
-      const undone = (await c.query("select current_wip, provenance from steps where revision_id = $1 and id = $2", [rev, ids.audit])).rows[0];
+      const undone = (await c.query("select current_wip, provenance from steps where revision_id = $1 and id = $2", [rev, ids.onboard])).rows[0];
       expect(undone).toEqual({ current_wip: null, provenance: { current_wip: null, work_hours: work } });
     });
   });

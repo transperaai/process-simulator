@@ -177,6 +177,7 @@ describe("save_fields", () => {
       "seasonality",
       "demand_settings",
       "issues",
+      "sources",
     ];
     for (const target of editable) {
       const outcome = await db

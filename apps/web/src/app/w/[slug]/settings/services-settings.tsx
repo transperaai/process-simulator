@@ -3,6 +3,7 @@
 import { useActionState, useState, useTransition } from "react";
 import type { PricingModel, ServiceRow } from "@transpera-flow/db";
 import { NumberField, SelectField, TextField, ToggleField } from "@/components/fields";
+import { Help } from "@/components/help";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -228,6 +229,10 @@ function ServiceItem({ service: sv, share, data }: { service: ServiceRow; share:
           onLabel="Active"
           offLabel="Inactive: left out of simulations"
           disabled={disabled}
+          help={{
+            description: "Inactive services are left out of simulations, but the service and its history are kept.",
+            example: "Mark a service inactive when you stop selling it, instead of deleting it.",
+          }}
         />
         <div className="sm:col-span-2 lg:col-span-3">
           <TextField
@@ -260,7 +265,14 @@ function FallbackLoad({ service: sv, data }: { service: ServiceRow; data: Worksp
   const any = Object.values(load).some((h) => typeof h === "number");
   return (
     <fieldset className="sm:col-span-2 lg:col-span-3">
-      <legend className="mb-1 text-xs font-medium text-fg-2">Ongoing load per client (hours a month, by role)</legend>
+      <legend className="mb-1 flex items-center text-xs font-medium text-fg-2">
+        Ongoing load per client (hours a month, by role)
+        <Help
+          label="Ongoing load per client"
+          description="How many hours a month each role spends looking after one client of this service. It takes that time away from sales work."
+          example="Account manager 4 and SEO specialist 6 mean each client costs 10 hours a month of team time."
+        />
+      </legend>
       <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {data.roles.map((r) => (
           <NumberField

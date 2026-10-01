@@ -136,7 +136,16 @@ export default async function AccessPage(props: PageProps<"/w/[slug]/settings/ac
             <TableHeader>
               <TableRow>
                 <TableHead>Email</TableHead>
-                <TableHead>Role and person</TableHead>
+                <TableHead>
+                  <span className="flex items-center">
+                    Role and person
+                    <Help
+                      label="Role and person"
+                      description="Role is what they can do: owners and editors can change things, members and viewers can look. Person links the sign-in to a person record, so their work shows under their name."
+                      example="Add maya@northbeam.example as an editor, linked to the person Maya Collins."
+                    />
+                  </span>
+                </TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>

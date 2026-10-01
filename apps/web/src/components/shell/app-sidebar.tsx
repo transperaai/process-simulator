@@ -35,7 +35,7 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { countLabel, demoNav, workspaceNav, type CountTone, type NavCounts, type NavIcon, type NavItem } from "@/lib/shell/nav";
+import { demoNav, workspaceNav, type CountTone, type NavCounts, type NavIcon, type NavItem } from "@/lib/shell/nav";
 import { cn } from "@/lib/utils";
 import { useMapPanelRequest } from "./map-panel-request";
 import { WorkspaceSwitcher, type SwitcherWorkspace } from "./workspace-switcher";
@@ -106,10 +106,11 @@ export function AppSidebar(props: ShellProps) {
           >
             <Icon />
             <span>{i.label}</span>
+            {showCount && <span className="sr-only">, {i.count} {i.countNoun ?? ""}</span>}
           </Link>
         </SidebarMenuButton>
         {showCount && (
-          <SidebarMenuBadge aria-label={countLabel(i)} className={cn("rounded-full font-mono text-[11px]", BADGE[i.tone ?? "plain"])}>
+          <SidebarMenuBadge aria-hidden className={cn("rounded-full font-mono text-[11px]", BADGE[i.tone ?? "plain"])}>
             {i.count}
           </SidebarMenuBadge>
         )}

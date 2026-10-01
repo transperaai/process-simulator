@@ -4,7 +4,7 @@
 // example. Hover or focus shows it; a click, tap, Enter or Space pins it open; Escape closes it. The button
 // swallows its click, so putting it inside a switch's label or row never toggles the switch.
 
-import { useReducer, type MouseEvent, type PointerEvent } from "react";
+import { useId, useReducer, type MouseEvent, type PointerEvent } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { HELP_CLOSED, helpStep, type HelpEvent } from "@/lib/shell/help-state";
 import { cn } from "@/lib/utils";
@@ -21,6 +21,7 @@ export interface HelpProps {
 
 export function Help({ label, description, example, className }: HelpProps) {
   const [state, send] = useReducer(helpStep, HELP_CLOSED);
+  const textId = useId();
   const mouse = (e: PointerEvent) => e.pointerType === "mouse" || e.pointerType === "pen";
   const activate = (e: MouseEvent) => {
     // Inside a label or a clickable row this must not toggle the control next to it.
@@ -30,11 +31,17 @@ export function Help({ label, description, example, className }: HelpProps) {
   };
   const on = (event: HelpEvent) => () => send(event);
   return (
-    <Popover open={state.open} onOpenChange={(o) => !o && send("outside")}>
+    <>
+      {/* Always in the page, so a screen reader hears it whether or not the popover is open. */}
+      <span id={textId} className="sr-only">
+        {description} Example: {example}
+      </span>
+      <Popover open={state.open} onOpenChange={(o) => !o && send("outside")}>
       <PopoverTrigger asChild>
         <button
           type="button"
           aria-label={`About ${label}`}
+          aria-describedby={textId}
           data-slot="help"
           className={cn(
             "ml-1 inline-grid size-[18px] shrink-0 cursor-help place-items-center rounded-full border-[1.5px] border-fg-3 bg-panel align-middle font-serif text-[11px] leading-none font-bold text-fg-2 italic",
@@ -67,5 +74,6 @@ export function Help({ label, description, example, className }: HelpProps) {
         </span>
       </PopoverContent>
     </Popover>
+    </>
   );
 }

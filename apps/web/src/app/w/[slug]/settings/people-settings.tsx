@@ -3,6 +3,7 @@
 import { useActionState, useState, useTransition } from "react";
 import { DEFAULT_AVAILABILITY_FLOOR } from "@transpera-flow/engine";
 import { ChecklistField, DateField, NumberField, TextField, ToggleField } from "@/components/fields";
+import { Help } from "@/components/help";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -261,7 +262,14 @@ function Leave({
   const [removeError, setRemoveError] = useState<string>();
   return (
     <fieldset>
-      <legend className="mb-1 text-xs font-medium text-fg-2">Leave</legend>
+      <legend className="mb-1 flex items-center text-xs font-medium text-fg-2">
+        Leave
+        <Help
+          label="Leave"
+          description="Days when this person is away. The simulation takes those working days off their hours."
+          example="Add 4 to 15 August, holiday, and Maya has no hours in those two weeks."
+        />
+      </legend>
       {leave.length === 0 ? (
         <p className="text-fg-3">No leave booked.</p>
       ) : (

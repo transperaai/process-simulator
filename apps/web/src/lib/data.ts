@@ -5,6 +5,8 @@ import {
   LEAD_SOURCE_COLUMNS,
   listProcesses,
   loadBlocks,
+  loadSolutionIssues,
+  loadSolutions,
   loadChurnDrivers,
   loadClientGroups,
   loadMarket,
@@ -41,6 +43,8 @@ import {
   type ScenarioRow,
   type SeasonalityRow,
   type ServiceRow,
+  type SolutionIssueRow,
+  type SolutionRow,
   type StepRow,
   type WorkspaceRow,
   type WorkspaceSettings,
@@ -109,6 +113,23 @@ export async function loadProcessList(workspaceId: string): Promise<{ id: string
 /** The workspace's block library, oldest first (RLS: everyone in the workspace can read it). */
 export async function loadWorkspaceBlocks(workspaceId: string): Promise<BlockRow[]> {
   return loadBlocks(await createClient(), workspaceId);
+}
+
+/**
+ * The workspace's solutions, newest first, and which issues each solves (RLS: everyone in the workspace can read them),
+ * optionally only those that change one process. If they can't be read (say the tables aren't there yet), pages show none
+ * rather than break.
+ */
+export async function loadWorkspaceSolutions(workspaceId: string, processId?: string): Promise<{ solutions: SolutionRow[]; links: SolutionIssueRow[] }> {
+  try {
+    const db = await createClient();
+    const [solutions, links] = await Promise.all([loadSolutions(db, workspaceId, processId), loadSolutionIssues(db, workspaceId)]);
+    const ids = new Set(solutions.map((s) => s.id));
+    return { solutions, links: links.filter((l) => ids.has(l.solution_id)) };
+  } catch (err) {
+    console.error("Couldn't load the solutions; showing none.", err instanceof Error ? err.message : err);
+    return { solutions: [], links: [] };
+  }
 }
 
 /** The workspace's saved scenarios, oldest first (RLS: everyone in the workspace can read them). */

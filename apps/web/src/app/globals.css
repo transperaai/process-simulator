@@ -218,3 +218,14 @@
     opacity: 0.6;
   }
 }
+
+/* The Editor's solution mode (issue #114): the steps of the issue being solved are outlined in red, and the rest of the
+   map stays at full strength so it can be edited (a normal highlight dims it). */
+[data-highlight-tone="issue"] [data-lit="true"] {
+  border-color: var(--crit) !important;
+  outline: 2px solid var(--crit) !important;
+  outline-offset: 2px;
+}
+[data-highlight-tone="issue"] [data-lit="false"] {
+  opacity: 1 !important;
+}

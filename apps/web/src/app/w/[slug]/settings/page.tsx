@@ -20,9 +20,14 @@ export default async function WorkspaceSettingsPage(props: PageProps<"/w/[slug]/
       title="Settings"
       eyebrow="Company"
       actions={
-        <Link href={`/w/${slug}/settings/rules`} className={buttonVariants({ variant: "outline", size: "sm" })}>
-          Analysis rules
-        </Link>
+        <>
+          <Link href={`/w/${slug}/settings/levers`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+            Levers
+          </Link>
+          <Link href={`/w/${slug}/settings/rules`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+            Analysis rules
+          </Link>
+        </>
       }
       description="Changes save as you go. If someone else changes the same field at the same time, you'll be asked which value to keep."
     >

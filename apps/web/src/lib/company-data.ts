@@ -93,6 +93,18 @@ export async function loadSuggestionsPage(slug: string): Promise<SuggestionsPage
   };
 }
 
+/** The numbers beside the sidebar's Processes and Issues items: how many processes, and tracked issues still open. */
+export const shellCounts = cache(async (workspaceId: string): Promise<{ processes: number; openIssues: number }> => {
+  const supabase = await createClient();
+  const [processes, issues] = await Promise.all([
+    supabase.from("processes").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId),
+    supabase.from("issues").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId).in("status", ["open", "in_progress"]),
+  ]);
+  if (processes.error) throw processes.error;
+  if (issues.error) throw issues.error;
+  return { processes: processes.count ?? 0, openIssues: issues.count ?? 0 };
+});
+
 /** How many suggestions wait for review (for the workspace nav). */
 export const pendingSuggestionCount = cache(async (workspaceId: string): Promise<number> => {
   const supabase = await createClient();

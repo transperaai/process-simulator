@@ -7,7 +7,7 @@ const UPDATED = "30 September 2026";
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-2">
-      <h2 className="text-lg font-bold">{title}</h2>
+      <h2 className="font-heading text-lg font-semibold text-fg">{title}</h2>
       {children}
     </section>
   );
@@ -17,11 +17,14 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export default function PrivacyPage() {
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-12 text-base leading-relaxed text-fg-2">
-      <div>
-        <p className="font-mono text-xs uppercase tracking-widest text-fg-3">Transpera Flow</p>
-        <h1 className="text-2xl font-bold text-fg">Privacy policy</h1>
-        <p className="text-sm text-fg-3">Last updated {UPDATED}</p>
-      </div>
+      <header className="flex flex-col gap-1">
+        <p className="flex items-center gap-2.5 font-display text-base font-bold tracking-tight text-fg">
+          <span aria-hidden className="size-[22px] rounded-md bg-[conic-gradient(from_200deg,var(--accent),var(--chart-1),var(--chart-5),var(--accent))]" />
+          Transpera Flow
+        </p>
+        <h1 className="font-heading text-2xl font-semibold tracking-tight text-fg">Privacy policy</h1>
+        <p className="text-sm text-muted-foreground">Last updated {UPDATED}</p>
+      </header>
 
       <p>
         Transpera Flow is a process-simulation tool provided by Transpera AI (&ldquo;we&rdquo;) to its clients as part

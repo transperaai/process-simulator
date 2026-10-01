@@ -28,7 +28,7 @@ Tick a box when the **Expected** result happens. If it doesn't, don't stop: writ
 - [ ] Click Continue with Google and sign in with your agency admin account. (#4) **Expected:** you land on **Workspaces** with a card for **Northbeam Digital**. (Note: the ticket says magic link; the app uses Google sign-in. That is expected, but tell us if you'd prefer the ticket's wording.)
 - [ ] Click the Northbeam Digital card. (#4) **Expected:** you go to `/w/northbeam` and see the process name as the page title, a key results strip, and the process map.
 - [ ] Look at the top of the sidebar and its foot. (#4, #93) **Expected:** the workspace name (it opens the list of workspaces), and at the foot your name and email; that menu has **API tokens** and **Sign out**.
-- [ ] Look at the sidebar. (#4, #76, #93) **Expected:** Map, Issues, People, Suggestions, Sources, then Settings and Access at the bottom. (Access shows for managers.) No Clients, Scenarios, Runs or Report items.
+- [ ] Look at the sidebar. (#4, #76, #93) **Expected:** Overview, Processes; then under **Improve** Issues, Solutions, Block library, Suggestions; then under **Company** Sources, People, Settings (and Access, for managers). Issues shows the open count, Suggestions the pending count, Processes how many there are. Overview, Solutions and Block library open a "Coming in A3x" page; People opens the People section of Settings. The current page is highlighted. No Clients, Scenarios, Runs or Report items.
 - [ ] Optional, only if you have a second Google account with no access to any workspace: sign in with it. (#4) **Expected:** a **No workspace yet** page naming that account and offering **Sign out**; no workspace data is visible. Sign back in as yourself afterwards.
 - [ ] Click Sign out, then try to open `/w/northbeam` directly. (#4) **Expected:** you are sent back to the Sign in page. Sign in again to continue.
 
@@ -135,7 +135,7 @@ The Clients page is removed (A32, #97), replaced by client groups (A55, #120). N
 
 Settings save as you type and change live data. Note each old value and restore it.
 
-- [ ] Open **Settings** in the sidebar. (#6, #93) **Expected:** a **Workspace settings** page with sections in this order: **Simulation**, **Services**, **Client health**, **Demand**, **People**. (**People** in the sidebar opens the last of these.)
+- [ ] Open **Settings** in the sidebar. (#6, #93, #98) **Expected:** a **Settings** page with cards in this order: **Simulation**, **Roles**, **Services**, **Client health**, **Demand**, **People**; each setting has a small (i) that explains it in plain words with an example. (**People** in the sidebar opens the last of these.)
 - [ ] Simulation: read **Availability floor** and **Overtime cap**. (#6, #18) **Expected:** each shows a value or "(default)" placeholder and a one-line explanation. Change the availability floor (for example to 10), then put it back; the tiles re-run on the process page.
 - [ ] People: look at the list of 11 people. (#6) **Expected:** names such as Priya Shah, Maya Collins and Rosa Diaz, each with their role, status and details (Name, Email, Status, FTE, Capacity, Cost rate, Start date, End date, Notes, Roles, Skills, Leave).
 - [ ] Add a person with **Add person** (name and role). (#6) **Expected:** they appear in the list and in the Utilisation "people" view after the next run.

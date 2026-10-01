@@ -75,6 +75,7 @@ export function IssuesRegister({
   canEdit,
   stepFilter,
   onStepFilterChange,
+  onHighlight,
 }: {
   /** `rail`: narrow, beside the map; `page`: the full register screen. */
   layout: "rail" | "page";
@@ -94,6 +95,8 @@ export function IssuesRegister({
   /** Show only issues on this step (from a badge on the map). */
   stepFilter: string;
   onStepFilterChange: (stepId: string) => void;
+  /** Hovering or focusing an issue (null when leaving it) names the step it sits on, so the map can highlight it (issue #99). */
+  onHighlight?: (stepId: string | null) => void;
 }) {
   const [filters, setFilters] = useState<IssueFilters>(NO_FILTERS);
   const [logging, setLogging] = useState(false);
@@ -215,6 +218,7 @@ export function IssuesRegister({
               canEdit={canEdit}
               state={state}
               showProcess={processes.length > 1}
+              onHighlight={onHighlight}
             />
           ))}
         </ul>
@@ -233,6 +237,7 @@ function IssueItem({
   canEdit,
   state,
   showProcess,
+  onHighlight,
 }: {
   entry: RegisterEntry;
   names: { step: Map<string, string>; person: Map<string, string>; process: Map<string, string> };
@@ -243,6 +248,7 @@ function IssueItem({
   canEdit: boolean;
   state: IssuesState;
   showProcess: boolean;
+  onHighlight?: (stepId: string | null) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -281,6 +287,10 @@ function IssueItem({
     <li
       data-issue={v.id}
       data-source={v.source}
+      onMouseEnter={onHighlight && v.stepId ? () => onHighlight(v.stepId) : undefined}
+      onMouseLeave={onHighlight && v.stepId ? () => onHighlight(null) : undefined}
+      onFocus={onHighlight && v.stepId ? () => onHighlight(v.stepId) : undefined}
+      onBlur={onHighlight && v.stepId ? () => onHighlight(null) : undefined}
       className={`relative rounded-lg border border-line bg-panel py-2 pr-2 pl-3.5 before:absolute before:inset-y-0 before:left-0 before:w-1 before:rounded-l-lg ${RATING_STRIPE[v.rating]}`}
     >
       <p className="text-sm font-semibold">{v.title}</p>

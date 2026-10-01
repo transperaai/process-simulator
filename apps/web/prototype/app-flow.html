@@ -266,7 +266,7 @@ tr.mapcard .mapwrap { background: var(--panel); }
 table.rules td { vertical-align: middle; }
 table.rules .inp.band { font-family: var(--f-mono); font-size: 11.5px; padding: 4px 6px; min-width: 0; width: 100%; border-left: 3px solid var(--pc); }
 table.rules td:first-child { width: 56px; }
-table.rules td:nth-child(2) { min-width: 210px; }
+table.rules td:nth-child(2) { min-width: 280px; }
 .tog .tl { font-size: 13px; }
 table.rules td:nth-child(n+3):nth-child(-n+6) { width: 14%; }
 table.rules th { white-space: normal; }
@@ -290,6 +290,15 @@ tr.ruleoff td:not(:first-child) { opacity: .45; }
 .bandrow span { font-family: var(--f-mono); font-size: 11.5px; }
 @media (max-width: 600px) { .bandrow { grid-template-columns: 1fr 1fr; } }
 .ovr { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+.help { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; color: var(--fg-2); max-width: 72ch; }
+.help .ex { color: var(--fg-2); }
+.help .ex b { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); margin-right: 4px; }
+.help.compact { font-size: 12px; margin-top: 3px; }
+.help.card { color: var(--fg-2); gap: 4px; }
+.help.card > b { color: var(--fg); font-size: 13.5px; }
+.optrow { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-top: 1px solid var(--line); }
+.optrow:first-of-type { border-top: 0; }
+.optrow .help { padding-left: 44px; }
 /* Lists */
 .status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; padding: 1px 8px; border-radius: 4px; background: var(--panel-2); white-space: nowrap; }
 .status.done { background: var(--good-soft); }
@@ -424,7 +433,7 @@ svg.chart { width: 100%; height: auto; display: block; }
 .mk button b { font-size: 13.5px; }
 .mk button.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-soft); }
 @media (max-width: 900px) { .mk { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.factor { display: grid; grid-template-columns: 170px minmax(0, 1fr) 64px; gap: 12px; align-items: center; padding: 6px 0; }
+.factor { display: grid; grid-template-columns: minmax(220px, 1.2fr) minmax(0, 1fr) 64px; gap: 12px; align-items: center; padding: 6px 0; }
 .factor input[type=range] { width: 100%; accent-color: var(--accent); }
 @media (max-width: 600px) { .factor { grid-template-columns: 1fr 64px; } .factor input { grid-column: 1 / -1; } }
 .timeline { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 2px; }
@@ -656,6 +665,65 @@ let MARKETS = {
 const MCOL = { boom: "var(--good-soft)", stable: "var(--panel-2)", soft: "var(--warn-soft)", downturn: "var(--crit-soft)", c1: "var(--teal-soft)" };
 let SCHED = [{ from: 1, to: 6, m: "stable" }, { from: 7, to: 14, m: "soft" }, { from: 15, to: 24, m: "c1" }];
 
+/* Plain-English description and a worked example for every rule, setting and lever. */
+const HELP = {
+  // Analysis rules
+  "rule.busy": ["How much of a role's or person's working week is taken up, on average across the simulated runs.", "Maya works about 31 of her 37.5 hours (82%): Good, could improve. A bad month hits 97%, which bumps it to Bad."],
+  "rule.spare": ["Roles with a lot of free time that could take work off a busier role.", "Sales is 12% busy, about 33 h a week free: an opportunity to take Check fit off the strategist."],
+  "rule.overtime": ["Hours worked beyond a normal week to keep up with client work. Only applies if the workspace allows overtime.", "Nina works 3 h a week overtime on PPC clients: Bad. If she reaches the 10% cap: Operational risk."],
+  "rule.queue": ["Work arrives faster than it gets done, so the pile keeps growing and never settles.", "Report reviews pile up by 0.8 a week: Operational risk, even while waits still look fine."],
+  "rule.wait": ["How long work sits waiting for someone to pick it up, compared with the wait expected at that step. Built-in delays, like a client deciding, don't count.", "Check fit should be answered within 4 h. Leads wait 20 h, 5× expected: Operational risk."],
+  "rule.rework": ["How much work has to be done again because it came back wrong or incomplete.", "8 in every 100 proposals get redone: Good, could improve."],
+  "rule.sla": ["How often a step misses the time limit you've promised for it (its SLA).", "Monthly reports are due by the 5th working day; 14% are late: Bad."],
+  "rule.spof": ["What happens when the only person who can do a step is away. The engine simulates them off for 2 weeks and compares.", "With Maya away, 24% of proposals stall and it takes 5 weeks to catch up: Operational risk."],
+  "rule.health": ["A 0–100 score per client group. It rises when client work is on time and falls when it's late or missed.", "PPC clients average 61 because their reports run late: Bad."],
+  "rule.driver": ["Which churn driver (Settings → Churn drivers) explains most of the clients lost in the simulation.", "Late reports explain 41% of churn: Bad. If the PPC group is also under 50 health: Operational risk."],
+  "rule.success": ["The success measures written in a process's first principles, checked against every simulated run.", "“Proposal out within 3 working days” is met in 58% of runs: Good, could improve."],
+  "rule.dropoff": ["The share of work lost at a step (leads going cold, proposals declined), compared with a benchmark you set for that step.", "Benchmark 60% lost at Client decision; actual 68%, 1.13×: Good, could improve."],
+  "rule.cycle": ["Total time from start to finish of a process, compared with its target.", "Target lead-to-signed is 10 days; simulated 12.4 days, 1.24×: Good, could improve."],
+  "rule.sources": ["Two sources give very different numbers for the same thing, such as two people's estimates of how long a step takes.", "Tom says Check fit takes 10 minutes; the CRM log says 25 (2.5×): Bad, worth measuring."],
+  "rule.broken": ["A saved solution points at a step that has since been changed or removed, so it can't be tested any more.", "“AI lead qualifier” replaces Qualify lead, which was later renamed: Bad until you reopen the solution."],
+  // Escalators and money settings
+  "set.p90": ["Looks at the worst 10% of runs as well as the average, so problems that only show up in busy months still count.", "Maya averages 82% (Good). In a bad month she's at 97%, past the 85% cut-off, so she's rated Bad."],
+  "set.bottleneck": ["Problems on the step that limits the whole process count for more, because they hold up everything after it.", "Maya's steps are the bottleneck, so her Bad becomes Operational risk."],
+  "set.cap": ["The most future revenue one lost lead or client can count for.", "A client on A$4,000 a month who leaves in month 2 counts as A$48,000 (12 months), not the 20 months they had left."],
+  "set.absence": ["How long the absence test keeps someone away, and how often a year that's likely to happen.", "2 weeks, twice a year: the damage of one absence × 2 ÷ 12 is shown as the monthly cost."],
+  "set.wait": ["The expected wait for steps that don't have their own. Used by the Long wait rule.", "Pipeline 8 h is one working day; servicing 16 h is two days."],
+  "set.currency": ["The currency every cost is shown in. Set once per workspace in Company settings.", "A$ for Northbeam: “≈ A$18,400/mo”."],
+  // Churn drivers
+  "drv.late": ["Client work, like reports and calls, that's done after its due date or missed.", "14% of reports are late; each late one knocks about 5 points off that client's health."],
+  "drv.resp": ["How long clients wait for an answer to ad-hoc requests.", "20 h on average, when clients expect a same-day reply."],
+  "drv.onb": ["Days from signing to the first piece of delivered work.", "19 days today; under 10 keeps new clients keen."],
+  "drv.rework": ["Deliverables that had to be corrected after the client saw them.", "1 in 10 reports corrected after sending."],
+  "drv.load": ["The client's team is over 85% busy, so attention and quality slip.", "Strategist at 82%, 97% in a bad month."],
+  "drv.handoff": ["Clients moved to a different account manager.", "0.3 changes per client a year."],
+  "drv.results": ["Whether clients are happy with outcomes like rankings and leads. You enter it.", "7 out of 10 average from the last check-in survey."],
+  "drv.tenure": ["New clients leave more easily in their first months.", "Churn is 1.6× higher in months 1–6."],
+  "drv.price": ["A price rise makes some clients leave for a while.", "A 10% rise planned for March."],
+  "drv.market": ["In a tougher market, clients cut spend. Taken from Market conditions.", "The Soft market from month 7 raises churn by 15%."],
+  "drv.weight": ["How strongly a driver raises churn. 1 is normal, 0 ignores it, 3 triples its effect.", "Late work at 1.5 means each late report hurts 50% more than the default."],
+  // Market factors
+  "mk.leads": ["How many enquiries arrive, compared with today.", "85% means 15% fewer leads: 14 a week becomes about 12."],
+  "mk.conv": ["How many leads become clients.", "90% means a 31% win rate drops to about 28%."],
+  "mk.cycle": ["How long buyers take to decide.", "120% means Client decision takes 6 days instead of 5."],
+  "mk.price": ["How much you can charge before clients push back.", "95% means about 5% discounting on new deals."],
+  "mk.churn": ["How easily existing clients leave.", "115% means 15% more churn on top of the drivers."],
+  "mk.hire": ["How long it takes to hire someone.", "130% means an 8-week hire takes about 10 weeks."],
+  "mk.pay": ["How late clients pay invoices.", "115% means invoices are paid about 5 days later."],
+  "mk.boom": ["Strong demand: more leads, faster decisions, fewer clients leaving, but harder to hire.", "Leads 125%, churn 85%, time to hire 130%."],
+  "mk.stable": ["Today's conditions. Every factor at 100%.", "The baseline every other condition is compared with."],
+  "mk.soft": ["Slower market: fewer leads, longer decisions, a little more churn.", "Leads 85%, sales cycle 120%, churn 115%."],
+  "mk.downturn": ["Recession: far fewer leads, clients cut spend and pay late.", "Leads 65%, conversion 75%, churn 135%."],
+  "mk.custom": ["Your own mix of factors, saved under a name.", "“Cautious 2027”: leads 92%, churn 108%."],
+  // AI analysis
+  "ai.0": ["After you publish a new version of a process, AI reads its results and writes insights.", "Publish Sales v8 → AI notes that proposal turnaround improved but win rate dipped."],
+  "ai.1": ["When the market schedule changes, AI checks which processes it hurts most.", "Switching to Downturn from month 4 → AI flags that the strategist frees up but churn rises."],
+  "ai.2": ["AI can propose issues. They wait in Suggestions until you accept them.", "“Ad-hoc requests wait 20 h for an SEO specialist” lands in Suggestions."],
+  "ai.3": ["AI can propose solution ideas built from blocks in your library. They wait in Suggestions until someone builds them.", "“Fast-track partner leads past Check fit”, using a routing block."],
+  "ai.4": ["AI reads the quotes in your linked sources to explain what the numbers mean.", "Quotes Maya: “Most weeks that's my Sunday” next to the strategist finding."],
+};
+const help = (key, compact) => { const h = HELP[key]; if (!h) return ""; return `<span class="help ${compact ? "compact" : ""}"><span>${esc(h[0])}</span><span class="ex"><b>Example</b> ${esc(h[1])}</span></span>`; };
+
 const RULE_DEFS = [
   { id: "busy", name: "Busy role or person", num: "Simulated utilisation", cuts: [["Great up to", 70, "%"], ["Good up to", 85, "%"], ["Bad up to", 95, "%"]], show: c => [`under ${c[0]}%`, `${c[0]}–${c[1]}%`, `${c[1]}–${c[2]}%`, `over ${c[2]}%`], cost: "Extra wins one more person would bring × value of a loss, plus overtime", over: "role" },
   { id: "spare", name: "Spare capacity", num: "Simulated utilisation", cuts: [["Opportunity under", 40, "%"]], show: c => ["", `under ${c[0]}% · shown as an opportunity`, "", ""], cost: "Idle hours × cost rate", over: "role" },
@@ -680,12 +748,12 @@ const RULESET = { p90: true, bottleneck: true, capMonths: 12, absenceWeeks: 2, a
 
 
 const LEVERS = [
-  ["Demand", ["Leads per week, per source", "Conversion per source", "Seasonality", "Growth per month"]],
-  ["People", ["Headcount per role", "FTE per person", "Hire dates", "Leave"]],
-  ["Process", ["Hands-on time per step", "Wait per step", "Rework per step", "Routing percentages"]],
-  ["Clients and churn", ["Client groups per service", "Average fee", "Base churn", "Churn driver weights"]],
-  ["Finances", ["Price per service", "Cost rate per role", "Overhead"]],
-  ["Market", ["Market condition", "Market schedule"]],
+  ["Demand", [["Leads per week, per source", "How many new enquiries arrive each week from each source.", "Website 7 a week, referrals 5. Try website ×1.5 to test a marketing push."], ["Conversion per source", "The share of a source's leads that become qualified.", "Partner leads 60%, website leads 25%."], ["Seasonality", "Monthly multipliers on lead volume.", "December ×0.6, January ×1.3."], ["Growth per month", "Steady growth or decline in demand over time.", "+2% a month."]]],
+  ["People", [["Headcount per role", "How many people work in each role.", "Strategists 1 → 2 to test a hire."], ["FTE per person", "How much of a full week each person works.", "Arjun 0.8 → 1.0 from November."], ["Hire dates", "When a new person starts, with time to get up to speed.", "A junior strategist starts 1 February."], ["Leave", "Planned time off that removes capacity.", "Maya away for 2 weeks in July."]]],
+  ["Process", [["Hands-on time per step", "Working time a step takes for each item.", "Write proposal 2 h → 1.2 h with a template."], ["Wait per step", "A built-in delay before a step can start, not waiting for a person.", "Collect access: 3.8 days waiting on the client."], ["Rework per step", "The share of items sent back to be done again.", "Proposals 15% → 5% with a checklist."], ["Routing percentages", "Where work goes after a step.", "Client decision: 32% sign, 68% lost."]]],
+  ["Clients and churn", [["Client groups per service", "How many clients you have on each service.", "15 SEO, 7 PPC, 4 on both."], ["Average fee", "Monthly fee per client in a group.", "SEO retainer A$3,600 a month."], ["Base churn", "The share of clients who leave each month when everything runs well.", "1.5% a month for SEO."], ["Churn driver weights", "How strongly each driver raises churn (Settings → Churn drivers).", "Late work weight 1.5."]]],
+  ["Finances", [["Price per service", "What you charge for each service.", "PPC A$4,300 → A$4,600."], ["Cost rate per role", "Hourly cost of each role, used for costs and savings.", "Strategist A$95 an hour."], ["Overhead", "Fixed monthly costs that don't change with work.", "A$18,000 a month."]]],
+  ["Market", [["Market condition", "The climate the model runs in (Settings → Market conditions).", "Switch to Downturn: leads ×0.65."], ["Market schedule", "How the market changes over the next 24 months.", "Soft from month 7."]]],
 ];
 
 /* ---------------- State ---------------- */
@@ -1287,10 +1355,11 @@ const SETTINGS = {
     const tot = DRV.filter(d => d.on).reduce((a, d) => a + d.w * d.base, 0);
     const churn = (0.82 * (tot / 1.33)).toFixed(2);
     return `<div class="sechead"><h2>Churn drivers</h2><p>Base churn per service is multiplied by these drivers. Weights are your estimates; the simulation measures the drivers marked Measured. Contribution shows how much of the churn in the latest run each driver explains.</p></div>
+    <div class="card">${help("drv.weight")}</div>
     <div class="row"><div class="kpi" style="min-width:220px"><span class="eyebrow">Projected churn</span><span class="v">${churn} <small>clients / month</small></span><span class="r">with these weights</span></div><button class="btn" data-act="adddrv">+ Add driver</button></div>
     <div class="list">${DRV.map(d => { const c = d.on ? d.w * d.base / tot : 0; return `<div class="drv ${d.on ? "" : "off"}">
       <input type="checkbox" ${d.on ? "checked" : ""} data-act="drvon" data-id="${d.id}" aria-label="Use ${esc(d.name)}">
-      <div class="stack" style="gap:2px">${d.custom ? `<input class="inp" value="${esc(d.name)}" data-act="drvname" data-id="${d.id}">` : `<b>${esc(d.name)}</b>`}<span class="small muted">${esc(d.src)} · ${esc(d.val)}</span></div>
+      <div class="stack" style="gap:2px">${d.custom ? `<input class="inp" value="${esc(d.name)}" data-act="drvname" data-id="${d.id}">` : `<b>${esc(d.name)}</b>`}${d.custom ? `<input class="inp" placeholder="What it is, in one sentence" value="${esc(d.desc || "")}" data-act="drvdesc" data-id="${d.id}"><input class="inp" placeholder="An example" value="${esc(d.ex || "")}" data-act="drvex" data-id="${d.id}">` : help("drv." + d.id, true)}<span class="small muted">${esc(d.src)} · now: ${esc(d.val)}</span></div>
       <label class="field">Weight <span class="num" id="dw-${d.id}">${d.w.toFixed(1)}</span><input type="range" min="0" max="3" step="0.1" value="${d.w}" data-act="drvw" data-id="${d.id}"></label>
       <div class="stack" style="gap:4px"><span class="small muted">Contribution</span><div class="bar"><i style="width:${(c * 100).toFixed(0)}%"></i></div></div>
       <span class="num">${(c * 100).toFixed(0)}%</span></div>`; }).join("")}</div>`;
@@ -1298,9 +1367,10 @@ const SETTINGS = {
   market() {
     const m = MARKETS[S.mk];
     return `<div class="sechead"><h2>Market conditions</h2><p>The climate the model lives in. Pick a preset or build your own, then schedule how it changes over the next 24 months.</p></div>
-    <div class="mk">${Object.entries(MARKETS).map(([k, x]) => `<button class="${S.mk === k ? "on" : ""}" data-act="mksel" data-k="${k}"><b>${esc(x.name)}</b><span class="muted">${x.preset ? "Preset" : "Custom"}</span></button>`).join("")}<button data-act="mknew"><b>+ Custom</b><span class="muted">Start from Stable</span></button></div>
+    <div class="mk">${Object.entries(MARKETS).map(([k, x]) => `<button class="${S.mk === k ? "on" : ""}" data-act="mksel" data-k="${k}"><b>${esc(x.name)}</b><span class="muted">${x.preset ? "Preset" : "Custom"}</span>${HELP["mk." + k] ? `<span class="small">${esc(HELP["mk." + k][0])}</span>` : `<span class="small">${esc(HELP["mk.custom"][0])}</span>`}</button>`).join("")}<button data-act="mknew"><b>+ Custom</b><span class="muted">Start from Stable</span></button></div>
     <div class="card stack"><div class="spread">${m.preset ? `<h3>${esc(m.name)} <span class="small muted">preset, read only</span></h3><button class="btn sm" data-act="mkdup">Duplicate to customise</button>` : `<label class="field" style="max-width:320px">Name<input id="mkname" value="${esc(m.name)}" data-act="mkname"></label>`}</div>
-      ${MKF.map(([k, l]) => `<div class="factor"><span>${l}</span><input type="range" min="50" max="150" value="${m.v[k]}" ${m.preset ? "disabled" : ""} data-act="mkv" data-f="${k}" aria-label="${l}"><span class="num" id="mkv-${k}">${m.v[k]}%</span></div>`).join("")}
+      ${HELP["mk." + S.mk] ? help("mk." + S.mk) : help("mk.custom")}
+      ${MKF.map(([k, l]) => `<div class="factor"><span class="stack" style="gap:2px"><b class="small">${l}</b>${help("mk." + k, true)}</span><input type="range" min="50" max="150" value="${m.v[k]}" ${m.preset ? "disabled" : ""} data-act="mkv" data-f="${k}" aria-label="${l}"><span class="num" id="mkv-${k}">${m.v[k]}%</span></div>`).join("")}
       <span class="small muted">100% is today's normal. Lower lead volume or higher churn is a tougher market.</span></div>
     <div class="card stack"><div class="spread"><h3>Schedule over 24 months</h3><button class="btn sm" data-act="mksched">+ Add change</button></div>
       <div class="timeline">${Array.from({ length: 24 }, (_, i) => { const seg = SCHED.find(s => i + 1 >= s.from && i + 1 <= s.to); return `<div style="background:${MCOL[seg.m] || "var(--panel-2)"}">${i + 1 === seg.from ? esc(MARKETS[seg.m].name) : ""}</div>`; }).join("")}</div>
@@ -1314,30 +1384,32 @@ const SETTINGS = {
     <div class="grid2">
       <div class="card stack"><b>How a rating is set</b>
         <span class="small">The <b>average</b> across 30 runs picks the level. Then:</span>
-        ${sw("p90", RULESET.p90, "A <b>bad month</b> (P90) crossing the next cut-off bumps it up one level")}
-        ${sw("bottleneck", RULESET.bottleneck, "Being <b>on the bottleneck</b> bumps it up one more")}
+        ${sw("p90", RULESET.p90, "A <b>bad month</b> (P90) crossing the next cut-off bumps it up one level")}${help("set.p90")}
+        ${sw("bottleneck", RULESET.bottleneck, "Being <b>on the bottleneck</b> bumps it up one more")}${help("set.bottleneck")}
         <span class="small muted">Never higher than Operational risk. Example: strategist 82% (Good) → bad month 97% (Bad) → bottleneck (Operational risk).</span></div>
       <div class="card stack"><b>Money and defaults</b>
         <div class="kvgrid">
-          <span>A loss is worth</span><span class="small">the revenue still to come when it's lost (chance-weighted before signing, remaining tenure after), capped at <input class="inp num tiny" value="${RULESET.capMonths}" data-rs="capMonths"> months</span>
-          <span>Absence test</span><span class="small">person off for <input class="inp num tiny" value="${RULESET.absenceWeeks}" data-rs="absenceWeeks"> weeks, about <input class="inp num tiny" value="${RULESET.absencesYear}" data-rs="absencesYear"> times a year</span>
-          <span>Expected wait if a step has none</span><span class="small">pipeline <input class="inp num tiny" value="${RULESET.waitPipeline}" data-rs="waitPipeline"> h · servicing <input class="inp num tiny" value="${RULESET.waitServicing}" data-rs="waitServicing"> h</span>
-          <span>Currency</span><span class="small">A$ (from Company settings)</span>
+          <span>A loss is worth</span><span class="small">the revenue still to come when it's lost (chance-weighted before signing, remaining tenure after), capped at <input class="inp num tiny" value="${RULESET.capMonths}" data-rs="capMonths"> months${help("set.cap", true)}</span>
+          <span>Absence test</span><span class="small">person off for <input class="inp num tiny" value="${RULESET.absenceWeeks}" data-rs="absenceWeeks"> weeks, about <input class="inp num tiny" value="${RULESET.absencesYear}" data-rs="absencesYear"> times a year${help("set.absence", true)}</span>
+          <span>Expected wait if a step has none</span><span class="small">pipeline <input class="inp num tiny" value="${RULESET.waitPipeline}" data-rs="waitPipeline"> h · servicing <input class="inp num tiny" value="${RULESET.waitServicing}" data-rs="waitServicing"> h${help("set.wait", true)}</span>
+          <span>Currency</span><span class="small">A$ (from Company settings)${help("set.currency", true)}</span>
         </div></div>
     </div>
     <div class="tblwrap"><table class="rules"><thead><tr><th>On</th><th>Rule</th>${order.map(r => `<th><span class="cdot" style="background:${RT[r].c}"></span> ${RT[r].l}</th>`).join("")}<th>Overrides</th><th></th></tr></thead><tbody>
-    ${RULES.map(r => { const b = r.show(r.v); return `<tr class="${r.on ? "" : "ruleoff"}"><td><label class="tog"><input type="checkbox" ${r.on ? "checked" : ""} data-act="ruleon" data-id="${r.id}" aria-label="Use ${esc(r.name)}"><span></span></label></td><td><b>${esc(r.name)}</b><div class="small muted">${esc(r.num)}</div></td>${b.map((v, j) => `<td>${v ? `<span class="band" style="--pc:${RT[order[j]].c}">${esc(v)}</span>` : `<span class="muted small">—</span>`}</td>`).join("")}<td class="small">${r.overrides.length ? `<span class="chip">${r.overrides.length}</span>` : `<span class="muted">—</span>`}</td><td><button class="btn sm" data-act="ruleedit" data-id="${r.id}">Edit</button></td></tr>`; }).join("")}</tbody></table></div>`;
+    ${RULES.map(r => { const b = r.show(r.v); return `<tr class="${r.on ? "" : "ruleoff"}"><td><label class="tog"><input type="checkbox" ${r.on ? "checked" : ""} data-act="ruleon" data-id="${r.id}" aria-label="Use ${esc(r.name)}"><span></span></label></td><td><b>${esc(r.name)}</b><div class="small muted">Rates: ${esc(r.num)}</div>${help("rule." + r.id, true)}</td>${b.map((v, j) => `<td>${v ? `<span class="band" style="--pc:${RT[order[j]].c}">${esc(v)}</span>` : `<span class="muted small">—</span>`}</td>`).join("")}<td class="small">${r.overrides.length ? `<span class="chip">${r.overrides.length}</span>` : `<span class="muted">—</span>`}</td><td><button class="btn sm" data-act="ruleedit" data-id="${r.id}">Edit</button></td></tr>`; }).join("")}</tbody></table></div>`;
   },
   ai() {
     return `<div class="sechead"><h2>AI analysis</h2><p>Runs alongside the rules. It reads the results, each process's first principles and your sources, and writes insights labelled AI. It never invents numbers: every figure it uses comes from the simulation.</p></div>
-    <div class="card stack">${[["Review after each published version", true], ["Review when market conditions change", true], ["Suggest issues (they land in Suggestions)", true], ["Suggest solutions using blocks from the library", true], ["Read linked sources and quotes", true]].map(([l, on], i) => `<label class="row"><input type="checkbox" ${on ? "checked" : ""} id="ai-${i}"> ${l}</label>`).join("")}</div>`;
+    <div class="card stack">${[["Review after each published version", true], ["Review when market conditions change", true], ["Suggest issues (they land in Suggestions)", true], ["Suggest solution ideas using blocks from the library", true], ["Read linked sources and quotes", true]].map(([l, on], i) => `<div class="optrow"><label class="tog"><input type="checkbox" ${on ? "checked" : ""} id="ai-${i}"><span></span><span class="tl"><b>${l}</b></span></label>${help("ai." + i)}</div>`).join("")}</div>`;
   },
   levers() {
     return `<div class="sechead"><h2>Levers</h2><p>Every input you can change when testing. Choose which appear on process pages.</p></div>
-    <div class="grid2">${LEVERS.map(([g, ls], gi) => `<div class="card stack"><h3>${g}</h3>${ls.map((l, i) => `<label class="row small"><input type="checkbox" checked id="lv-${gi}-${i}"> ${l}</label>`).join("")}</div>`).join("")}</div>`;
+    <div class="grid2">${LEVERS.map(([g, ls], gi) => `<div class="card stack"><h3>${g}</h3>${ls.map(([l, dsc, ex], i) => `<div class="optrow"><label class="tog"><input type="checkbox" checked id="lv-${gi}-${i}"><span></span><span class="tl"><b>${esc(l)}</b></span></label><span class="help"><span>${esc(dsc)}</span><span class="ex"><b>Example</b> ${esc(ex)}</span></span></div>`).join("")}</div>`).join("")}</div>`;
   },
   services() {
+    const cols = [["Clients", "How many clients are on this service today.", "15 clients on the SEO retainer."], ["Average fee", "What one client pays a month.", "A$3,600 a month."], ["Base churn", "The share who leave each month when everything runs well, before churn drivers.", "1.5% a month: about 1 SEO client every 4 months."], ["Typical tenure", "How long a client usually stays. Used to value a lost client.", "22 months."], ["Starting health", "Where client health starts (0–100) before the simulation moves it.", "80 for SEO clients."]];
     return `<div class="sechead"><h2>Services and client groups</h2><p>Clients are counted per service rather than named. The simulation creates unnamed clients from these numbers so late work still affects health and churn.</p></div>
+    <div class="grid3">${cols.map(([l, d, e]) => `<div class="help card"><b>${l}</b><span>${esc(d)}</span><span class="ex"><b>Example</b> ${esc(e)}</span></div>`).join("")}</div>
     <div class="tblwrap"><table><thead><tr><th>Service</th><th class="n">Clients</th><th class="n">Average fee / mo</th><th class="n">Base churn / mo</th><th class="n">Typical tenure</th><th class="n">Starting health</th></tr></thead><tbody>
     ${[["SEO retainer", 15, "A$3,600", "1.5%", "22 mo", 80], ["PPC management", 7, "A$4,300", "2.0%", "16 mo", 76], ["SEO + PPC", 4, "A$7,900", "1.2%", "26 mo", 70]].map(r => `<tr>${r.map((c, i) => `<td class="${i ? "n" : ""}">${i ? `<input class="inp mono" style="width:90px;text-align:right" value="${c}" aria-label="${r[0]}">` : `<b>${c}</b>`}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
   },
@@ -1438,6 +1510,7 @@ function ruleModal(id) {
   const r = RULES.find(x => x.id === id), def = RULE_DEFS.find(x => x.id === id), order = ["great", "good", "bad", "risk"], b = r.show(r.v);
   const targets = { role: Object.values(ROLES).slice(0, 6).map(x => x + " (role)").concat(PEOPLE.filter(p => p.u != null).map(p => p.name + " (person)")), person: PEOPLE.filter(p => p.u != null).map(p => p.name + " (person)"), step: Object.values(BASE).filter(x => !x.cols && x.role).map(x => x.name + " (step)"), service: ["SEO retainer (service)", "PPC management (service)", "SEO + PPC (service)"], process: procList().filter(([i]) => i !== "company").map(([i]) => BASE[i].name + " (process)") }[r.over] || [];
   modal(`${mhead(`Edit rule: ${esc(r.name)}`, `<span class="small muted">${esc(r.num)}</span>`)}<div class="mbody">
+    ${help("rule." + r.id)}
     <label class="tog"><input type="checkbox" ${r.on ? "checked" : ""} data-act="ruleon" data-id="${r.id}" data-modal="1"><span></span><span class="tl">Use this rule</span></label>
     ${r.cuts.length ? `<div class="stack" style="gap:8px"><span class="eyebrow">Cut-offs</span><div class="cutgrid">${r.cuts.map((c, i) => `<label class="field">${esc(c[0])}<span class="row" style="flex-wrap:nowrap"><input type="number" step="any" class="inp num" value="${r.v[i]}" data-cut="${i}" data-id="${r.id}"><span class="small muted">${esc(c[2])}</span></span><span class="small muted">default ${def.cuts[i][1]}</span></label>`).join("")}</div></div>` : `<p class="small muted">This rule has no numbers to set.</p>`}
     <div class="stack" style="gap:6px"><span class="eyebrow">Gives these ratings</span><div class="bandrow" id="bandprev">${b.map((v, j) => `<div style="--pc:${RT[order[j]].c};--ps:${RT[order[j]].s}"><b>${RT[order[j]].l}</b><span>${esc(v || "—")}</span></div>`).join("")}</div></div>
@@ -1661,6 +1734,8 @@ document.addEventListener("input", e => {
   const a = e.target.closest("[data-act]"); if (!a) return; const d = a.dataset;
   if (d.act === "drvw") { const dr = DRV.find(x => x.id === d.id); dr.w = +a.value; $("#dw-" + d.id).textContent = dr.w.toFixed(1); clearTimeout(window._dt); window._dt = setTimeout(() => { const y = window.scrollY; render(); window.scrollTo(0, y); }, 250); }
   if (d.act === "drvname") DRV.find(x => x.id === d.id).name = a.value;
+  if (d.act === "drvdesc") DRV.find(x => x.id === d.id).desc = a.value;
+  if (d.act === "drvex") DRV.find(x => x.id === d.id).ex = a.value;
   if (d.act === "mkv") { MARKETS[S.mk].v[d.f] = +a.value; $("#mkv-" + d.f).textContent = a.value + "%"; }
   if (d.act === "mkname") MARKETS[S.mk].name = a.value;
   if (d.act === "vnote") SOL.find(x => x.id === d.id).note = a.value;

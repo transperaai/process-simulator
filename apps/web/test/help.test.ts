@@ -47,13 +47,18 @@ describe("Help", () => {
     createElement(Help, { label: "Availability floor", description: "Share of the week kept for sales work.", example: "At 20%, a 40-hour week keeps 8 hours." }),
   );
   it("is a button with an accessible name that says what it is about", () => {
-    expect(html).toMatch(/^<button /);
+    expect(html).toContain('<button ');
     expect(html).toContain('aria-label="About Availability floor"');
   });
   it("is type=button, so it never submits a form it sits in", () => expect(html).toContain('type="button"'));
   it("starts closed", () => {
     expect(html).toContain('aria-expanded="false"');
-    expect(html).not.toContain("Example");
+    expect(html).not.toContain("Example</b>");
+  });
+  it("describes itself to screen readers, open or not", () => {
+    const id = /aria-describedby="([^"]+)"/.exec(html)?.[1];
+    expect(id).toBeTruthy();
+    expect(html).toContain(`<span id="${id}" class="sr-only">Share of the week kept for sales work. Example: At 20%, a 40-hour week keeps 8 hours.</span>`);
   });
   it("shows the letter i, hidden from screen readers", () => expect(html).toContain('<span aria-hidden="true">i</span>'));
 });

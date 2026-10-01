@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import type { RecurrenceJson, ServiceRow } from "@transpera-flow/db";
 import { NumberField, SelectField } from "@/components/fields";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { SettingsSection } from "./section";
 import type { WorkspaceSettingsData } from "@/lib/data";
 import { HEALTH_SETTINGS, recurrenceFromValue, recurrenceOptions, type HealthSetting } from "@/lib/servicing";
@@ -92,13 +93,13 @@ export function ServicingLinks({ service: sv, data }: { service: ServiceRow; dat
             <label className="sr-only" htmlFor={`link-${sv.id}`}>
               Servicing process to link
             </label>
-            <select id={`link-${sv.id}`} value={adding} onChange={(e) => setAdding(e.target.value)} className="rounded-lg border border-line bg-panel px-2 py-1">
+            <NativeSelect id={`link-${sv.id}`} value={adding} onChange={(e) => setAdding(e.target.value)} className="w-auto">
               {unlinked.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
             <Button variant="outline" size="sm"
               type="button"
               disabled={pending || !adding}

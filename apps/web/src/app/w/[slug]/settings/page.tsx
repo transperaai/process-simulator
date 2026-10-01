@@ -2,7 +2,6 @@ import { notFound } from "next/navigation";
 import { Page } from "@/components/shell/page";
 import { loadWorkspaceSettings } from "@/lib/data";
 import { DemandSettings } from "./demand-settings";
-import { MarketSettings } from "./market-settings";
 import { PeopleSettings, SimulationSettings } from "./people-settings";
 import { RolesSettings } from "./roles-settings";
 import { ServicesSettings } from "./services-settings";
@@ -23,7 +22,6 @@ export default async function WorkspaceSettingsPage(props: PageProps<"/w/[slug]/
       <ServicesSettings data={data} />
       <HealthSettings data={data} />
       <DemandSettings data={data} />
-      <MarketSettings data={data} />
       <PeopleSettings data={data} />
     </Page>
   );

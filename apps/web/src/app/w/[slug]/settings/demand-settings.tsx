@@ -5,6 +5,7 @@ import { seasonalityCurve, type LeadSourceRow, type ProvenanceMap } from "@trans
 import { NumberField, TextField } from "@/components/fields";
 import { Help } from "@/components/help";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { SettingsSection } from "./section";
 import type { WorkspaceSettingsData } from "@/lib/data";
 import {
@@ -108,20 +109,19 @@ export function DemandSettings({ data }: { data: WorkspaceSettingsData }) {
 
 function AddLeadSource({ workspaceId }: { workspaceId: string }) {
   const [state, action, pending] = useActionState<ActionResult, FormData>(createLeadSource.bind(null, workspaceId), {});
-  const input = "rounded-lg border border-line bg-panel px-2 py-1.5";
   return (
     <form action={action} className="mb-4 flex flex-wrap items-end gap-2">
       <label className="flex min-w-0 flex-col gap-1">
         <span className="text-xs font-medium text-fg-2">Name</span>
-        <input name="name" required maxLength={200} placeholder="e.g. Website enquiries" className={input} />
+        <Input name="name" required maxLength={200} placeholder="e.g. Website enquiries" />
       </label>
       <label className="flex w-32 flex-col gap-1">
         <span className="text-xs font-medium text-fg-2">Leads a week</span>
-        <input name="volume_week" type="number" inputMode="decimal" min={0} max={MAX_VOLUME_WEEK} step="any" required className={`${input} tabular-nums`} />
+        <Input name="volume_week" type="number" inputMode="decimal" min={0} max={MAX_VOLUME_WEEK} step="any" required className="tabular-nums" />
       </label>
       <label className="flex w-32 flex-col gap-1">
         <span className="text-xs font-medium text-fg-2">Qualified (%)</span>
-        <input
+        <Input
           name="conversion_pct"
           type="number"
           inputMode="decimal"
@@ -129,7 +129,7 @@ function AddLeadSource({ workspaceId }: { workspaceId: string }) {
           max={100}
           step="any"
           placeholder="100"
-          className={`${input} tabular-nums`}
+          className="tabular-nums"
         />
       </label>
       <Button

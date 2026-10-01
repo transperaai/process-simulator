@@ -1,12 +1,14 @@
 "use client";
 
-// The issues a run detects, with their cost per month (issue #108). Most costs
-// come straight from the run; the "too busy" cost needs the extra run behind the
-// shadow price (what one more person in the role would bring), so the issues
-// show first without it and again, costed, once a worker has run it.
+// The issues a run detects under the workspace's analysis rules, with their cost
+// per month (issue #108). Most costs come straight from the run; the "too busy"
+// cost needs the extra run behind the shadow price (what one more person in the
+// role would bring), so the issues show first without it and again, costed, once a
+// worker has run it.
 
 import { useEffect, useMemo, useState } from "react";
-import { detectIssues, type DetectedIssue, type EngineModel, type SimulationResult } from "@transpera-flow/engine";
+import type { AnalysisSettings, DetectedIssue, EngineModel, SimulationResult } from "@transpera-flow/engine";
+import { rerate } from "@/lib/rules/edit";
 
 export interface IssueCostsRequest {
   id: number;
@@ -25,14 +27,26 @@ export function costedRoleIds(issues: readonly DetectedIssue[]): string[] {
 
 const DEBOUNCE_MS = 250;
 
-/** `detectIssues` for a run, then again with the shadow prices of the roles it flags. Null until there is a run. */
-export function useDetectedIssues(model: EngineModel | null, result: SimulationResult | null, currency: string): DetectedIssue[] | null {
-  const first = useMemo(() => (model && result ? detectIssues(model, result, {}, { cost: { currency } }) : null), [model, result, currency]);
+/**
+ * A run rated under these rules (`rerate`), then again with the shadow prices of the roles it flags. Null until there
+ * is a run. A change to the rules re-rates the same run; the shadow prices are of the model, so they are kept.
+ */
+export function useDetectedIssues(
+  model: EngineModel | null,
+  result: SimulationResult | null,
+  rules: AnalysisSettings,
+  processId: string,
+  currency: string,
+): DetectedIssue[] | null {
+  const first = useMemo(() => (model && result ? rerate(model, result, rules, processId, { currency }) : null), [model, result, rules, processId, currency]);
   const roleIds = useMemo(() => (first ? costedRoleIds(first) : []), [first]);
+  const wanted = roleIds.join("\n");
   const [prices, setPrices] = useState<{ model: EngineModel; result: SimulationResult; value: Record<string, number> } | null>(null);
 
   useEffect(() => {
-    if (!model || !result || !roleIds.length) return;
+    if (!model || !result || !wanted) return;
+    // Already run for this model and run, for these roles (a rules change can add a role, never needs a re-run for the same ones).
+    if (prices && prices.model === model && prices.result === result && wanted.split("\n").every((id) => id in prices.value)) return;
     let worker: Worker | null = null;
     const timer = setTimeout(() => {
       worker = new Worker(new URL("../../workers/issue-costs.worker.ts", import.meta.url), { type: "module" });
@@ -42,16 +56,20 @@ export function useDetectedIssues(model: EngineModel | null, result: SimulationR
       };
       // Without the extra run the issues keep the costs they have; nothing to report.
       worker.onerror = () => worker?.terminate();
-      worker.postMessage({ id: 1, model, roleIds, reps: result.reps, seed: result.seed } satisfies IssueCostsRequest);
+      worker.postMessage({ id: 1, model, roleIds: wanted.split("\n"), reps: result.reps, seed: result.seed } satisfies IssueCostsRequest);
     }, DEBOUNCE_MS);
     return () => {
       clearTimeout(timer);
       worker?.terminate();
     };
-  }, [model, result, roleIds]);
+    // `prices` is read to skip a repeat run, not to start one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [model, result, wanted]);
 
   return useMemo(() => {
     if (!model || !result || !first) return first;
-    return prices && prices.model === model && prices.result === result ? detectIssues(model, result, {}, { cost: { currency }, shadowPrices: prices.value }) : first;
-  }, [model, result, first, prices, currency]);
+    return prices && prices.model === model && prices.result === result
+      ? rerate(model, result, rules, processId, { currency, shadowPrices: prices.value })
+      : first;
+  }, [model, result, first, prices, rules, processId, currency]);
 }

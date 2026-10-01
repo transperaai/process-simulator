@@ -11,6 +11,7 @@ export {
   workingDaysBetween,
   type ModelOptions,
 } from "./model";
+export { loadAnalysisRules, saveAnalysisRules, type AnalysisRules, type SaveAnalysisRulesOutcome } from "./analysis-rules";
 export { isRetiredStep, partitionSteps } from "./retired";
 export {
   MAX_POISSON_PER_MONTH,

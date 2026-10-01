@@ -12,6 +12,7 @@ import { z } from "zod";
 import {
   ISSUE_COLUMNS,
   listProcesses,
+  loadAnalysisRules,
   loadIssues,
   loadProcessBundle,
   loadScenarios,
@@ -23,7 +24,7 @@ import {
   type ProcessBundle,
   type ScenarioRow,
 } from "@transpera-flow/db";
-import { DEFAULT_COST_CONFIG, applyPatches, detectIssues, ENGINE_VERSION, isBlocking, ISSUE_TYPES, MAX_PATCHES, PATCH_OPS, RATINGS, STORED_SEVERITIES, ratingOfStored, shadowPricesFor, simulate, storedOfRating, type EngineModel } from "@transpera-flow/engine";
+import { applyPatches, detectIssues, ENGINE_VERSION, isBlocking, ISSUE_TYPES, MAX_PATCHES, PATCH_OPS, RATINGS, STORED_SEVERITIES, ratingOfStored, resolveMoney, shadowPricesFor, simulate, storedOfRating, toRatingConfig, withoutDisabledRules, type EngineModel } from "@transpera-flow/engine";
 import { bottleneckReport, checkScenarioRobustness, compareScenarios, matchNamed, type NamedScenario } from "./analysis";
 import { resolveProcess, resolveWorkspace, revisionIdFor, type ProcessWithDraft, type ToolContext, type WorkspaceRef } from "./context";
 import { runTool, ToolError } from "./result";
@@ -501,24 +502,23 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
           assumptions.push(`Detections come from a run of the live model at ${DEFAULT_REPS} replications, seed ${DEFAULT_SEED}.`);
           const run = simulate(loaded.model, DEFAULT_REPS, DEFAULT_SEED);
           const keys = new Set(issues.map((i) => i.detected_key).filter(Boolean));
+          // The workspace's analysis rules, as the app rates with them.
+          const rules = await loadAnalysisRules(ctx.db, ws.id).catch(() => ({ settings: {}, version: null }));
           const currency = loaded.bundle.workspace.settings.currency;
-          const money = { currency };
-          const wanted = (d: { key: string; type: string }) => !keys.has(d.key) && (!args.type || d.type === args.type) && !client;
+          // The money settings (the cap on what a loss is worth, absences a year) are the workspace's too (issue #108).
+          const money = { ...resolveMoney(rules.settings), currency };
+          const config = toRatingConfig(rules.settings, loaded.model.hoursPerWeek);
+          const rate = (shadowPrices?: Record<string, number>) =>
+            withoutDisabledRules(rules.settings, detectIssues(loaded.model, run, config, { processId: proc.id, cost: money, ...(shadowPrices ? { shadowPrices } : {}) })).filter(
+              (d) => !keys.has(d.key) && (!args.type || d.type === args.type) && !client,
+            );
           const dropped = Boolean(args.status && args.status !== "open");
-          // The "too busy" cost needs the extra run of one more person in each flagged role (issue #108): one time budget
-          // for all of them together, and none when the filters leave no capacity issue to cost.
-          const roleIds = dropped
-            ? []
-            : detectIssues(loaded.model, run, {}, { cost: money }).flatMap((d) => (wanted(d) && d.key.startsWith("capacity:") && d.roleId ? [d.roleId] : []));
+          // The "too busy" cost needs the extra run of one more person in each flagged role: one time budget for all of
+          // them together, and none when the filters leave no capacity issue to cost.
+          const roleIds = dropped ? [] : rate().flatMap((d) => (d.key.startsWith("capacity:") && d.roleId ? [d.roleId] : []));
           const shadowPrices = roleIds.length ? shadowPricesFor(loaded.model, roleIds, { reps: DEFAULT_REPS, seed: DEFAULT_SEED, timeBudgetMs: 5000 }) : {};
-          assumptions.push(
-            `Costs per month are estimates in ${currency}: what a loss is worth is the revenue still to come, capped at ${DEFAULT_COST_CONFIG.capMonths} months.`,
-          );
-          detected = dropped
-            ? []
-            : detectIssues(loaded.model, run, {}, { cost: money, shadowPrices })
-                .filter(wanted)
-                .map((d) => ({ ...d, cost: { ...d.cost, currency, estimate: true }, source: "detected", status: null }));
+          assumptions.push(`Costs per month are estimates in ${currency}: what a loss is worth is the revenue still to come, capped at ${money.capMonths} months.`);
+          detected = dropped ? [] : rate(shadowPrices).map((d) => ({ ...d, cost: { ...d.cost, currency, estimate: true }, source: "detected", status: null }));
         }
         return {
           workspace: { id: ws.id, name: ws.name },

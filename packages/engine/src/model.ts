@@ -181,6 +181,26 @@ export interface EngineClient {
   assignments: Record<string, string>;
 }
 
+/**
+ * The clients of one service, counted instead of named (docs/PRD.md §3 "Client
+ * group", decision D27). The engine simulates that many unnamed clients, each
+ * billing `fee` a month, churning at `churnMonthly` and starting at `health`,
+ * so late or missed servicing work still lowers health and drives churn
+ * (see `withClientGroups` in clients.ts).
+ */
+export interface EngineClientGroup {
+  /** How many clients the service has today (whole clients; rounded). */
+  count: number;
+  /** Average fee one client pays a month. */
+  fee: number;
+  /** Normal churn a month (0-1) at full health: the service's base churn for these clients and for clients won later. */
+  churnMonthly: number;
+  /** Typical stay in months: the service's expected tenure (lifetime value and lost revenue). */
+  stayMonths: number;
+  /** Average health at the start, 0-100. */
+  health: number;
+}
+
 export interface EngineStep {
   id: string;
   name: string;
@@ -285,6 +305,15 @@ export interface EngineModel {
    * Omitted: the pooled `activeClients` × `ongoing` load, as before.
    */
   clients?: Record<string, EngineClient>;
+  /**
+   * Client groups by service id (decision D27): the clients counted per
+   * service. When present, the engine builds the roster from them (unnamed
+   * clients, nobody assigned, so their work is shared across each role's
+   * people) and they replace `clients`. A group also sets its service's base
+   * churn and expected tenure. Omitted or empty: `clients` (named) or the
+   * pooled `activeClients`, as before.
+   */
+  clientGroups?: Record<string, EngineClientGroup>;
   /**
    * Servicing processes by id (see `EngineService.servicing`). Omitted or
    * empty: no servicing, and the model runs exactly as before it existed.

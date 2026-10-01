@@ -1,7 +1,7 @@
 {
   "model": "northbeam-seeded",
   "description": "Northbeam as seeded: SEO and PPC services, named people, its 26-client roster, 10% overtime cap and two servicing processes.",
-  "engineVersion": "1.1.0",
+  "engineVersion": "1.2.0",
   "seed": 1,
   "reps": 30,
   "outputs": {

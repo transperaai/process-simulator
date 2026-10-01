@@ -318,3 +318,19 @@ const RATING_TO_STORED: Record<Rating, StoredSeverity> = { risk: "critical", bad
 
 export const ratingOfStored = (s: StoredSeverity): Rating => STORED_TO_RATING[s];
 export const storedOfRating = (r: Rating): StoredSeverity => RATING_TO_STORED[r];
+
+/**
+ * Rule 9, client health (docs/analysis-rules.md): a client group's simulated
+ * health, 0 to 100, where higher is better. Great from 75, Good from 65, Bad
+ * from 50, Operational risk under 50. The cut-offs are listed best first, so
+ * they run the other way round to the other rules'.
+ */
+export const CLIENT_HEALTH_CUTOFFS: Cutoffs = [75, 65, 50];
+
+/** Rate a client group's (or the company's) health. A cut-off belongs to the better band: 75 is Great, 65 is Good, 50 is Bad. */
+export function rateClientHealth(health: number, cutoffs: Cutoffs = CLIENT_HEALTH_CUTOFFS): Rating {
+  if (health >= cutoffs[0]) return "great";
+  if (health >= cutoffs[1]) return "good";
+  if (health >= cutoffs[2]) return "bad";
+  return "risk";
+}

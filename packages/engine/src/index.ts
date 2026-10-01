@@ -4,12 +4,14 @@ export { DEFAULT_AVAILABILITY_FLOOR, initialState, pct, resolvePeople, runOnce, 
 export { checkDemand, demandFactor, isFlatDemand, WEEKS_PER_CALENDAR_MONTH } from "./demand";
 export { mulberry32 } from "./random";
 export {
+  NORTHBEAM_CLIENT_GROUPS,
   NORTHBEAM_FALLBACK_LOAD,
   NORTHBEAM_ROSTER,
   NORTHBEAM_SERVICING,
   NORTHBEAM_TEAM,
   northbeamClientKey,
   northbeamModel,
+  northbeamWithClientGroups,
   northbeamWithClients,
   northbeamWithServices,
   northbeamWithServicing,
@@ -58,6 +60,13 @@ export {
 export { churnRiskIssues } from "./churn-issues";
 export {
   LOAD_WEEKS_PER_MONTH,
+  MAX_GROUP_CLIENTS,
+  clientHealthSummary,
+  groupClientKey,
+  groupServiceOf,
+  withClientGroups,
+  type ClientGroupHealth,
+  type ClientHealthSummary,
   carriersFor,
   clientChurnMonthly,
   clientRoleLoads,
@@ -194,6 +203,7 @@ export {
   type StepConstraint,
 } from "./bottlenecks";
 export {
+  CLIENT_HEALTH_CUTOFFS,
   DEFAULT_RATING_CONFIG,
   DEFAULT_RATING_CUTOFFS,
   OVERRIDE_KINDS,
@@ -211,6 +221,7 @@ export {
   ratingFields,
   ratingOfStored,
   ratingRank,
+  rateClientHealth,
   rateRule,
   rateValue,
   resolveRatingConfig,

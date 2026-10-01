@@ -75,5 +75,16 @@ export const NORTHBEAM_FALLBACK_LOAD: Record<"seo" | "ppc", Record<string, numbe
   ppc: { strat: 1.5, am: 6, ppc: 19, fin: 1.2 },
 };
 
+/**
+ * Northbeam's clients counted per service instead of named (issue #120, decision D27): what an audit
+ * would enter. They are the roster above rolled up by service: a client on both services counts in
+ * each, at half its fee. Normal churn and typical stay are the services' own (3% and 18 months for
+ * SEO, 4% and 12 for PPC). Starting health is the roster's average.
+ */
+export const NORTHBEAM_CLIENT_GROUPS: { service: "seo" | "ppc"; count: number; fee: number; churnMonthly: number; stayMonths: number; health: number }[] = [
+  { service: "seo", count: 17, fee: 3456, churnMonthly: 0.03, stayMonths: 18, health: 83 },
+  { service: "ppc", count: 12, fee: 4229, churnMonthly: 0.04, stayMonths: 12, health: 71 },
+];
+
 /** Client ids of the roster, in roster order ("c01" …). */
 export const northbeamClientKey = (i: number) => `c${String(i + 1).padStart(2, "0")}`;

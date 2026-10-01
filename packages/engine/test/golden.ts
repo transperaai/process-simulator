@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { detectIssues, larkspurModel, northbeamModel, northbeamWithServicing, simulate, type EngineModel, type SimulationResult, type Stat } from "../src";
+import { detectIssues, larkspurModel, northbeamModel, northbeamWithClientGroups, northbeamWithServicing, simulate, type EngineModel, type SimulationResult, type Stat } from "../src";
 
 export const GOLDEN_DIR = new URL("../golden/", import.meta.url);
 export const VERSION_FILE = new URL("../src/version.ts", import.meta.url);
@@ -36,6 +36,13 @@ export const GOLDEN_MODELS: GoldenModel[] = [
     name: "northbeam-seeded",
     description: "Northbeam as seeded: SEO and PPC services, named people, its 26-client roster, 10% overtime cap and two servicing processes.",
     model: northbeamWithServicing,
+    seed: 1,
+    reps: 30,
+  },
+  {
+    name: "northbeam-groups",
+    description: "Northbeam as the seed loads it since client groups: its clients counted per service (17 SEO, 12 PPC) and simulated as unnamed clients, with the same servicing.",
+    model: northbeamWithClientGroups,
     seed: 1,
     reps: 30,
   },

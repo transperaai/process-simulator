@@ -1,7 +1,7 @@
 # Engine versioning and golden models
 
 The engine's numbers are the product, so none may move unnoticed (docs/PRD.md §6.9 layer 3, decision D16;
-issue #22; ADR 0009). Three golden models are run at a fixed seed on every push, their key outputs are compared
+issue #22; ADR 0009). Four golden models are run at a fixed seed on every push, their key outputs are compared
 exactly with approved baselines, and every change that moves one needs a new baseline and a new `ENGINE_VERSION`,
 which every run records.
 
@@ -11,6 +11,7 @@ which every run records.
 |---|---|---|
 | `northbeam` | `northbeamModel()` | The prototype's model, re-baselined after the §6.8 fixes: pooled head-counts, one implicit retainer, automatic warm-up. |
 | `northbeam-seeded` | `northbeamWithServicing()` | Northbeam as the seed loads it: SEO and PPC services with condition-tag routing, 11 named people, the 26-client roster, a 10% overtime cap, and two servicing processes whose late and missed tasks move health and churn. |
+| `northbeam-groups` | `northbeamWithClientGroups()` | Northbeam with its clients counted per service (17 SEO, 12 PPC, from `NORTHBEAM_CLIENT_GROUPS`) and simulated as unnamed clients, with the same servicing (issue #120). |
 | `larkspur` | `larkspurModel()` | Larkspur Creative, the "second, messier sample agency" (§6.9): overloaded designers, a copywriter past her week on overtime, an 18-client named roster whose health drives churn, and the corners Northbeam leaves alone (below). |
 
 Each runs with the app's defaults, 30 replications at seed 1. The outputs kept (`keyOutputs` in

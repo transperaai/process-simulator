@@ -252,10 +252,37 @@ describe("a dismissal lasts until the process's next published version", () => {
     expect(Object.keys(mapFeed(entries).badges)).toEqual([uuid("a")]);
   });
 
-  it("a dismissal with no revision on record (migrated, unknown) stays hidden", () => {
-    const row = { ...rowsOfDismissed(), dismissed_revision_id: null };
-    expect(buildInsights(registerEntries([row], [d], at(R2)))).toEqual([]);
-    expect(isDismissalCurrent(row, R2)).toBe(true);
+  it("a dismissal made before the process was ever published expires on its first publish", async () => {
+    // No live revision at the time: it is stored as "before any version".
+    const store = new MemoryIssueStore("w1");
+    const [i] = buildInsights(registerEntries([], [d]));
+    expect(await dismissInsight(state(store, {}), i!, ctx)).toBe(true);
+    const rows = rowsOf(store);
+    expect(rows[0]).toMatchObject({ status: "dismissed", dismissed_revision_id: null });
+    // Still never published (or the page doesn't know): hidden.
+    expect(buildInsights(registerEntries(rows, [d]))).toEqual([]);
+    expect(buildInsights(registerEntries(rows, [d], () => undefined))).toEqual([]);
+    // The first version is published: it comes back.
+    expect(buildInsights(registerEntries(rows, [d], at(R1)))).toHaveLength(1);
+  });
+
+  it("is measured against the step's own process, not the page's", async () => {
+    const P2 = uuid("q");
+    const nested = {
+      ...ctx,
+      options: { ...options, steps: [{ id: uuid("a"), name: "Check fit", processId: P2, sourceIds: [] as string[] }, ...options.steps.slice(1)] },
+    };
+    const store = new MemoryIssueStore("w1");
+    const [i] = buildInsights(registerEntries([], [d]));
+    // The page is P1 (at R1), but the insight is on a step of P2 (at R2).
+    expect(await dismissInsight(state(store, { [P1]: R1, [P2]: R2 }), i!, nested)).toBe(true);
+    const rows = rowsOf(store);
+    expect(rows[0]).toMatchObject({ dismissed_revision_id: R2, process_id: P2 });
+    const live = (p1: string, p2: string) => (processId: string | null | undefined) => (processId === P1 ? p1 : processId === P2 ? p2 : undefined);
+    // The page's process is published again: the insight's own process hasn't changed, so it stays hidden.
+    expect(buildInsights(registerEntries(rows, [d], live(R3, R2)))).toEqual([]);
+    // Its own process is published again: it comes back.
+    expect(buildInsights(registerEntries(rows, [d], live(R1, R3)))).toHaveLength(1);
   });
 
   it("isDismissalCurrent: current only for a dismissed row on the same live revision", () => {
@@ -265,6 +292,10 @@ describe("a dismissal lasts until the process's next published version", () => {
     expect(isDismissalCurrent({ ...row, status: "open", dismissed_revision_id: R1 }, R1)).toBe(false);
     // The process's revision isn't known (never published, or not loaded): it can't have changed.
     expect(isDismissalCurrent({ ...row, dismissed_revision_id: R1 }, undefined)).toBe(true);
+    expect(isDismissalCurrent({ ...row, dismissed_revision_id: R1 }, null)).toBe(true);
+    // Dismissed before any version: held until there is one, then over.
+    expect(isDismissalCurrent({ ...row, dismissed_revision_id: null }, undefined)).toBe(true);
+    expect(isDismissalCurrent({ ...row, dismissed_revision_id: null }, R1)).toBe(false);
   });
 
   it("without revisions to compare, a dismissal holds (a page that doesn't know its versions never lists it again)", async () => {

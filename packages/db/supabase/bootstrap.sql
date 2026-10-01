@@ -13211,89 +13211,367 @@ grant execute on function public.restore_version(uuid, uuid, boolean) to authent
 grant execute on function public.duplicate_version(uuid, text) to authenticated;
 ']);
 
+-- 20261119000000_first_principles.sql
+-- First principles per process version (issue #119, A54; docs/research/first-principles.md Part B).
+--
+-- A consultant strips a process back to seven short answers: the job it does, hard truths against assumptions,
+-- requirements with a named owner, delete candidates, what to simplify, accelerate and automate, the root cause of
+-- the biggest problem, and success measures. The analysis judges the process against them, and the "goals met" rule
+-- (docs/analysis-rules.md rule 11) reads the success measures.
+--
+-- One row per process revision (a draft, the live version or an earlier one), so a published version keeps the
+-- first principles it was published with and the History page can show how they changed. The seven answers are
+-- stored as the research note's sketch has them: the job and the root cause as plain text columns, the lists the
+-- rule checks read (truths and assumptions, requirements, delete candidates, improvements, success measures) as
+-- jsonb arrays. The database checks that each part is the right kind of JSON and its size; the shape of the items
+-- is held by the app (packages/engine/src/first-principles.ts), so adding a field later needs no migration.
+--
+-- Each jsonb part is also capped at 512 KB as text (the app's own largest list, 50 items of 2,000-character fields, is about
+-- 310 KB: FP_MAX_JSON_BYTES in the engine), so no row can be made large. 
+--
+-- Edits go into the process's draft, like the steps and edges (docs/adr/0004-drafts-as-revisions.md): the existing
+-- `edit_drafts_only` trigger refuses a write to a published or superseded revision. A draft opened from live starts
+-- with no row; the app copies the live row into it on the first save, and reads the nearest earlier row for a
+-- revision that has none. Everyone in the workspace reads; owners and editors write; `anon` has nothing. The same
+-- policies as `lever_settings` and `client_groups`. MCP writes are audit-logged by the `audit_mcp` trigger, as for
+-- sources and issues.
+--
+-- Strictly additive: a unique index on `process_revisions (id, process_id, workspace_id)` (so a row can name its revision AND
+-- its process in one foreign key), table `public.first_principles`, its `set_updated_at`, `edit_drafts_only` and `audit_mcp`
+-- triggers, row-level security and four policies. `save_fields`, `save_links`, `open_draft`, `publish_process` and
+-- every existing table are unchanged.
+--
+-- Preflight (run with `bash packages/db/scripts/prod-sql.sh -c "..."`):
+--
+--   1. The table must not exist yet. Expect 0 rows:
+--        select table_name from information_schema.tables
+--        where table_schema = 'public' and table_name = 'first_principles';
+--   2. The three things it relies on exist. Expect 3 rows:
+--        select proname from pg_proc where pronamespace in ('public'::regnamespace, 'private'::regnamespace)
+--        and proname in ('edit_drafts_only', 'audit_mcp_write', 'set_updated_at');
+--   3. Nothing of ours is applied past this one. Expect 0 rows:
+--        select version from supabase_migrations.schema_migrations where version >= '20261119000000';
+--
+-- Rollback (run as one transaction):
+--
+--   begin;
+--   drop table if exists public.first_principles;   -- drops its triggers, policies and indexes with it
+--   drop index if exists public.process_revisions_id_process_workspace_key;
+--   delete from supabase_migrations.schema_migrations where version = '20261119000000';
+--   commit;
+--
+-- Production data: none needed (a process with no row has "not started").
+
+-- A row's revision must belong to the row's process: one foreign key over all three ids.
+create unique index process_revisions_id_process_workspace_key on public.process_revisions (id, process_id, workspace_id);
+
+create table public.first_principles (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  process_id uuid not null,
+  revision_id uuid not null,
+
+  -- 1. The job: who it is for, the progress they want, the situation, and what done looks like.
+  job_who text not null default '' check (char_length(job_who) <= 2000),
+  job_progress text not null default '' check (char_length(job_progress) <= 2000),
+  job_situation text not null default '' check (char_length(job_situation) <= 2000),
+  job_done text not null default '' check (char_length(job_done) <= 2000),
+
+  -- 2. Truths and assumptions: [{text, kind: truth|assumption, source, test, linked_parameter}].
+  statements jsonb not null default '[]'
+    check (jsonb_typeof(statements) = 'array' and jsonb_array_length(statements) <= 50
+      and octet_length(statements::text) <= 524288),
+  -- 3. Requirements: [{text, owner_person_id, owner_text, why, verdict: keep|change|drop|challenge, step_id}].
+  requirements jsonb not null default '[]'
+    check (jsonb_typeof(requirements) = 'array' and jsonb_array_length(requirements) <= 50
+      and octet_length(requirements::text) <= 524288),
+  -- 4. Delete candidates: [{step_id, breaks_if_removed, agreed_by, added_back}].
+  deletes jsonb not null default '[]'
+    check (jsonb_typeof(deletes) = 'array' and jsonb_array_length(deletes) <= 50
+      and octet_length(deletes::text) <= 524288),
+  -- 5. Simplify, accelerate, automate: [{step_id, stage: simplify|accelerate|automate, text, scenario_id}].
+  improvements jsonb not null default '[]'
+    check (jsonb_typeof(improvements) = 'array' and jsonb_array_length(improvements) <= 50
+      and octet_length(improvements::text) <= 524288),
+
+  -- 6. The biggest problem, the chain of whys that follows it, and the root cause.
+  why_problem text not null default '' check (char_length(why_problem) <= 2000),
+  why_chain jsonb not null default '[]'
+    check (jsonb_typeof(why_chain) = 'array' and jsonb_array_length(why_chain) <= 10
+      and octet_length(why_chain::text) <= 524288),
+  root_cause text not null default '' check (char_length(root_cause) <= 2000),
+
+  -- 7. Success measures: [{id, text, kpi, comparator: atLeast|atMost, target, horizon}]. `kpi` is one of the
+  -- engine's success numbers (SUCCESS_KPIS), or null when the simulation can't compute it.
+  measures jsonb not null default '[]'
+    check (jsonb_typeof(measures) = 'array' and jsonb_array_length(measures) <= 50
+      and octet_length(measures::text) <= 524288),
+
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  created_by uuid references auth.users (id) on delete set null default auth.uid(),
+
+  -- One record per revision.
+  unique (revision_id),
+  foreign key (revision_id, process_id, workspace_id) references public.process_revisions (id, process_id, workspace_id) on delete cascade
+);
+
+create index on public.first_principles (workspace_id);
+create index on public.first_principles (process_id);
+
+create trigger set_updated_at before update on public.first_principles
+  for each row execute function public.set_updated_at();
+
+-- A published or superseded revision is history: the same guard the steps and edges have.
+create trigger edit_drafts_only before insert or update or delete on public.first_principles
+  for each row execute function public.edit_drafts_only();
+
+-- Writes made through the MCP server are audit-logged (actor_kind 'mcp'), as for sources and issues.
+create trigger audit_mcp after insert or update or delete on public.first_principles
+  for each row execute function private.audit_mcp_write();
+
+alter table public.first_principles enable row level security;
+
+create policy "read first_principles" on public.first_principles for select to authenticated
+  using (public.can_read_workspace(workspace_id));
+create policy "insert first_principles" on public.first_principles for insert to authenticated
+  with check (public.can_edit_workspace(workspace_id));
+create policy "update first_principles" on public.first_principles for update to authenticated
+  using (public.can_edit_workspace(workspace_id)) with check (public.can_edit_workspace(workspace_id));
+create policy "delete first_principles" on public.first_principles for delete to authenticated
+  using (public.can_edit_workspace(workspace_id));
+
+grant select, insert, update, delete on public.first_principles to authenticated;
+revoke all on public.first_principles from anon;
+
+insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261119000000', 'first_principles', array['-- First principles per process version (issue #119, A54; docs/research/first-principles.md Part B).
+--
+-- A consultant strips a process back to seven short answers: the job it does, hard truths against assumptions,
+-- requirements with a named owner, delete candidates, what to simplify, accelerate and automate, the root cause of
+-- the biggest problem, and success measures. The analysis judges the process against them, and the "goals met" rule
+-- (docs/analysis-rules.md rule 11) reads the success measures.
+--
+-- One row per process revision (a draft, the live version or an earlier one), so a published version keeps the
+-- first principles it was published with and the History page can show how they changed. The seven answers are
+-- stored as the research note''s sketch has them: the job and the root cause as plain text columns, the lists the
+-- rule checks read (truths and assumptions, requirements, delete candidates, improvements, success measures) as
+-- jsonb arrays. The database checks that each part is the right kind of JSON and its size; the shape of the items
+-- is held by the app (packages/engine/src/first-principles.ts), so adding a field later needs no migration.
+--
+-- Each jsonb part is also capped at 512 KB as text (the app''s own largest list, 50 items of 2,000-character fields, is about
+-- 310 KB: FP_MAX_JSON_BYTES in the engine), so no row can be made large. 
+--
+-- Edits go into the process''s draft, like the steps and edges (docs/adr/0004-drafts-as-revisions.md): the existing
+-- `edit_drafts_only` trigger refuses a write to a published or superseded revision. A draft opened from live starts
+-- with no row; the app copies the live row into it on the first save, and reads the nearest earlier row for a
+-- revision that has none. Everyone in the workspace reads; owners and editors write; `anon` has nothing. The same
+-- policies as `lever_settings` and `client_groups`. MCP writes are audit-logged by the `audit_mcp` trigger, as for
+-- sources and issues.
+--
+-- Strictly additive: a unique index on `process_revisions (id, process_id, workspace_id)` (so a row can name its revision AND
+-- its process in one foreign key), table `public.first_principles`, its `set_updated_at`, `edit_drafts_only` and `audit_mcp`
+-- triggers, row-level security and four policies. `save_fields`, `save_links`, `open_draft`, `publish_process` and
+-- every existing table are unchanged.
+--
+-- Preflight (run with `bash packages/db/scripts/prod-sql.sh -c "..."`):
+--
+--   1. The table must not exist yet. Expect 0 rows:
+--        select table_name from information_schema.tables
+--        where table_schema = ''public'' and table_name = ''first_principles'';
+--   2. The three things it relies on exist. Expect 3 rows:
+--        select proname from pg_proc where pronamespace in (''public''::regnamespace, ''private''::regnamespace)
+--        and proname in (''edit_drafts_only'', ''audit_mcp_write'', ''set_updated_at'');
+--   3. Nothing of ours is applied past this one. Expect 0 rows:
+--        select version from supabase_migrations.schema_migrations where version >= ''20261119000000'';
+--
+-- Rollback (run as one transaction):
+--
+--   begin;
+--   drop table if exists public.first_principles;   -- drops its triggers, policies and indexes with it
+--   drop index if exists public.process_revisions_id_process_workspace_key;
+--   delete from supabase_migrations.schema_migrations where version = ''20261119000000'';
+--   commit;
+--
+-- Production data: none needed (a process with no row has "not started").
+
+-- A row''s revision must belong to the row''s process: one foreign key over all three ids.
+create unique index process_revisions_id_process_workspace_key on public.process_revisions (id, process_id, workspace_id);
+
+create table public.first_principles (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  process_id uuid not null,
+  revision_id uuid not null,
+
+  -- 1. The job: who it is for, the progress they want, the situation, and what done looks like.
+  job_who text not null default '''' check (char_length(job_who) <= 2000),
+  job_progress text not null default '''' check (char_length(job_progress) <= 2000),
+  job_situation text not null default '''' check (char_length(job_situation) <= 2000),
+  job_done text not null default '''' check (char_length(job_done) <= 2000),
+
+  -- 2. Truths and assumptions: [{text, kind: truth|assumption, source, test, linked_parameter}].
+  statements jsonb not null default ''[]''
+    check (jsonb_typeof(statements) = ''array'' and jsonb_array_length(statements) <= 50
+      and octet_length(statements::text) <= 524288),
+  -- 3. Requirements: [{text, owner_person_id, owner_text, why, verdict: keep|change|drop|challenge, step_id}].
+  requirements jsonb not null default ''[]''
+    check (jsonb_typeof(requirements) = ''array'' and jsonb_array_length(requirements) <= 50
+      and octet_length(requirements::text) <= 524288),
+  -- 4. Delete candidates: [{step_id, breaks_if_removed, agreed_by, added_back}].
+  deletes jsonb not null default ''[]''
+    check (jsonb_typeof(deletes) = ''array'' and jsonb_array_length(deletes) <= 50
+      and octet_length(deletes::text) <= 524288),
+  -- 5. Simplify, accelerate, automate: [{step_id, stage: simplify|accelerate|automate, text, scenario_id}].
+  improvements jsonb not null default ''[]''
+    check (jsonb_typeof(improvements) = ''array'' and jsonb_array_length(improvements) <= 50
+      and octet_length(improvements::text) <= 524288),
+
+  -- 6. The biggest problem, the chain of whys that follows it, and the root cause.
+  why_problem text not null default '''' check (char_length(why_problem) <= 2000),
+  why_chain jsonb not null default ''[]''
+    check (jsonb_typeof(why_chain) = ''array'' and jsonb_array_length(why_chain) <= 10
+      and octet_length(why_chain::text) <= 524288),
+  root_cause text not null default '''' check (char_length(root_cause) <= 2000),
+
+  -- 7. Success measures: [{id, text, kpi, comparator: atLeast|atMost, target, horizon}]. `kpi` is one of the
+  -- engine''s success numbers (SUCCESS_KPIS), or null when the simulation can''t compute it.
+  measures jsonb not null default ''[]''
+    check (jsonb_typeof(measures) = ''array'' and jsonb_array_length(measures) <= 50
+      and octet_length(measures::text) <= 524288),
+
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  created_by uuid references auth.users (id) on delete set null default auth.uid(),
+
+  -- One record per revision.
+  unique (revision_id),
+  foreign key (revision_id, process_id, workspace_id) references public.process_revisions (id, process_id, workspace_id) on delete cascade
+);
+
+create index on public.first_principles (workspace_id);
+create index on public.first_principles (process_id);
+
+create trigger set_updated_at before update on public.first_principles
+  for each row execute function public.set_updated_at();
+
+-- A published or superseded revision is history: the same guard the steps and edges have.
+create trigger edit_drafts_only before insert or update or delete on public.first_principles
+  for each row execute function public.edit_drafts_only();
+
+-- Writes made through the MCP server are audit-logged (actor_kind ''mcp''), as for sources and issues.
+create trigger audit_mcp after insert or update or delete on public.first_principles
+  for each row execute function private.audit_mcp_write();
+
+alter table public.first_principles enable row level security;
+
+create policy "read first_principles" on public.first_principles for select to authenticated
+  using (public.can_read_workspace(workspace_id));
+create policy "insert first_principles" on public.first_principles for insert to authenticated
+  with check (public.can_edit_workspace(workspace_id));
+create policy "update first_principles" on public.first_principles for update to authenticated
+  using (public.can_edit_workspace(workspace_id)) with check (public.can_edit_workspace(workspace_id));
+create policy "delete first_principles" on public.first_principles for delete to authenticated
+  using (public.can_edit_workspace(workspace_id));
+
+grant select, insert, update, delete on public.first_principles to authenticated;
+revoke all on public.first_principles from anon;
+']);
+
 -- 20261120000000_issues_v2.sql
 -- Issues v2: data (issue #112, ticket A47). An issue is a problem someone confirmed, from acknowledging an insight
 -- or added by hand. This migration reshapes the register's data; the Acknowledge dialog (apps/web) writes it.
 --
+-- STRICTLY ADDITIVE (expand only). It drops, renames and rewrites nothing that exists: the `issues_status` check, the
+-- existing status values, `private.issues_before_write` and its trigger are all left exactly as they are, so the
+-- deployed app and MCP server keep working before, during and after this is applied, in either order with the deploy.
+-- A later "contract" migration (rewrite the stored statuses, tighten the check) is future work that needs Austin's
+-- go-ahead; see docs/production-migrations.md.
+--
 -- What is new, all next to the existing `issues` table:
 --
 --   * `issue_links`: what an issue touches. A row with a null `step_id` is the whole process; rows with a `step_id`
---     are steps (a step's stable id, so no foreign key: steps are keyed by revision). An issue may touch several
---     steps, even in different processes. `issues.process_id` and `issues.step_id` stay, as the first link, for
---     compatibility (the app and the MCP server still read them); `save_issue` keeps them in step.
---   * `issue_owners`: several owners, people. `issues.owner_person_id` stays as the first owner.
+--     are steps (a step's stable id, so no foreign key: steps are keyed by revision; `save_issue` checks each is a step
+--     of the link's process in the workspace). An issue may touch several steps, even in different processes.
+--     `issues.process_id` and `issues.step_id` stay, as the first link, for compatibility; `save_issue` keeps them in
+--     step, and a trigger seeds the links of an issue inserted any other way from those columns.
+--   * `issue_owners`: several owners, people. `issues.owner_person_id` stays as the first owner, and a trigger seeds an
+--     issue inserted any other way from it.
 --   * `issue_sources`: linked sources. (`issues.evidence_sources` stays, unused by new code.)
---   * `issues.target_measure`, `target_now`, `target_goal`: "Wait at Check fit", "1.4 d", "under 4 hours". Free text,
---     so a person writes it the way they say it.
---   * `issues.number`: a stable number per workspace (Issue #12), assigned by a trigger from `private.issue_counters`
---     (one row per workspace, `update ... returning` takes the row lock, so two inserts never share a number). A
---     number is never reused, even after the issue is deleted, and can't be changed. A dismissed insight is not an
---     issue, so it has no number (null) and uses none up; it gets one if it is acknowledged later.
+--   * `issues.target_measure`, `target_now`, `target_goal`: "Wait at Check fit", "1.4 d", "under 4 hours". Free text.
+--   * Statuses, held as the values the check already allows plus one new column:
+--         shown               status         resolution
+--         Open                open           null
+--         Testing solutions   in_progress    null
+--         Resolved            done           null
+--         Won't fix           done           'wont_fix'
+--         (dismissed insight) dismissed      null
+--     `issues.resolution` (null, or 'wont_fix') is new; a trigger clears it unless the status is `done`. The app and the
+--     MCP server map between the two in one place (packages/db/src/issue-status.ts); `save_issue` takes the shown names
+--     and stores the old spellings plus the resolution. `resolved_at` is set for `done` and `dismissed` as it always was.
+--     `dismissed` is not an issue a person sees: it is what A45 stores for an insight someone dismissed (a tracked row,
+--     so the insight stays gone). The register, the map, the counts and the insight list leave it out, and nothing in the
+--     app lets a person pick it; `save_issue` only sets it on a row that carries a detection key.
+--   * `issues.number`: a stable number per workspace (Issue #12), assigned by a new BEFORE INSERT/UPDATE trigger
+--     (`issues_number`) from `private.issue_counters` (one row per workspace; the upsert's row lock makes concurrent
+--     inserts take turns). Never reused, even after a delete, and can't be changed. A dismissed insight is not an issue,
+--     so it has no number (null) and uses none up; it gets one if it is acknowledged later. The number is taken before
+--     a conflict is known, so an `INSERT ... ON CONFLICT DO NOTHING` that does nothing still uses one: expect a gap there
+--     (a rolled-back insert gives its number back, as the counter row is part of the transaction).
 --   * `issues.dismissed_revision_id`: the process's live revision a dismissed insight was dismissed against. A
 --     dismissal lasts until the process's next published version: the app lists a dismissed insight again once its
---     process's live revision is no longer this one and the analysis still detects it, and a re-dismiss writes the new
---     revision here. Null for rows migrated from before this column whose process can't be worked out: those stay
---     hidden. The trigger clears it when the row stops being dismissed.
---   * Statuses: `open`, `testing` (Testing solutions), `resolved`, `wont_fix` (Won't fix), and `dismissed`.
---     Existing rows map `in_progress` -> `testing`, `done` -> `resolved`; `open` and `dismissed` stay.
---     `dismissed` is not one of the four statuses a person sees: it is what A45 stores for an insight someone
---     dismissed (a tracked row, so the insight stays gone next run). It is never an issue: the register, the map,
---     the counts and the insight list leave `status = 'dismissed'` out, and nothing in the app lets a person pick it.
---     `resolved_at` is set for `resolved`, `wont_fix` and `dismissed`, as it was for `done` and `dismissed`.
---   * `issue_events`: the history log. created, edited, solution_tested, resolved, reopened, each with a date
---     (`at`) and who (`actor`, null for a system change), and a `detail` (changed fields, status from and to). A
---     dismissed insight writes none (it is not an issue yet); acknowledging it writes `created`.
---     Written only by triggers (security definer) on `issues` and on the three link tables, so every change logs
---     whichever way it is made (the app's actions, `save_fields`, a direct update, the MCP server) and nobody can
---     edit or forge a row. A link change is not logged again when the same transaction already logged that issue.
+--     process has a different live revision and the analysis still detects it, and a re-dismiss writes the new revision
+--     here. Null means "before any version" (the process had never been published): it expires on the first publish.
+--     The trigger clears it when the row stops being dismissed.
+--   * `issue_events`: the history log. created, edited, solution_tested, resolved, reopened, each with a date (`at`)
+--     and who (`actor`, null for a system change), and a `detail` (changed fields, status from and to, and the links,
+--     owners and sources added or removed). A dismissed insight writes none (it is not an issue yet); acknowledging it
+--     writes `created`. Written only by triggers (security definer) on `issues` and on the three link tables, so every
+--     change logs whichever way it is made and nobody can edit or forge a row. A link change inside a transaction that
+--     already logged the issue is added to that event's detail instead of a second event.
 --   * `public.save_issue(...)`: one call that creates or edits an issue with its links, owners and sources in one
 --     transaction (so one history entry), as the signed-in user (security invoker: RLS applies).
 --
 -- Severity: the `severity` column already holds the four ratings (critical = Operational risk, serious = Bad, warning =
 -- Good could improve, info = Great; engine `ratingOfStored`, A41). No data changes; the migration test checks it.
 --
--- Existing issues are migrated in place: their step and process become `issue_links` rows (a step's process looked
--- up from `steps` when the issue didn't name one), their owner an `issue_owners` row, their cited sources
+-- Existing issues are migrated in place, additively: their step and process become `issue_links` rows (a step's process
+-- looked up from `steps` when the issue didn't name one), their owner an `issue_owners` row, their cited sources
 -- `issue_sources` rows, they get numbers in the order they were logged (oldest first; a dismissed one gets none), and
 -- each gets a `created` event at its `created_at` (plus `resolved` at `resolved_at` for the closed ones). A migrated
--- dismissed row takes the live revision of its process (`dismissed_revision_id`) where that can be worked out.
+-- dismissed row takes the live revision of its process (`dismissed_revision_id`) where that can be worked out. No
+-- existing column value changes, so nothing is lost.
 --
--- `save_fields` is not redefined: `issues` is already in its allow-list, and a status edit through it now logs too.
---
--- Strictly additive: five new tables, five columns, one function; the status check is replaced by a wider one.
+-- `save_fields` is not redefined: `issues` is already in its allow-list, and an edit through it logs too.
 --
 -- Preflight (run first, each should be as described):
---   1. No other status than the old four exists. Expect 0 rows:
---        select status, count(*) from public.issues where status not in ('open','in_progress','done','dismissed') group by 1;
+--   1. The new tables do not exist yet. Expect 0:
+--        select count(*) from information_schema.tables where table_schema = 'public' and table_name in ('issue_links', 'issue_owners', 'issue_sources', 'issue_events');
 --   2. Nothing of ours is applied past this one. Expect 0 rows:
 --        select version from supabase_migrations.schema_migrations where version >= '20261120000000';
 --   3. A look at what will be migrated (counts per status and how many name a step or an owner):
 --        select status, count(*), count(step_id) as with_step, count(owner_person_id) as with_owner from public.issues group by 1;
 --
--- Rollback (run as one transaction; the old status values come back, `testing` as `in_progress`, `resolved` as `done`;
--- `wont_fix` has no old equivalent and becomes `dismissed`, which hides it, so copy those rows somewhere first if
--- they matter):
+-- Rollback (run as one transaction; nothing existing was changed, so there is nothing to put back and nothing is mapped
+-- to `dismissed`; it loses the history log, the extra links, owners and sources, targets, numbers and resolutions):
 --
 --   begin;
 --   drop function if exists public.save_issue(uuid, jsonb, uuid, jsonb, uuid[], uuid[]);
 --   drop table if exists public.issue_events, public.issue_sources, public.issue_owners, public.issue_links;
 --   drop trigger if exists issue_log on public.issues;
+--   drop trigger if exists audit_mcp on public.issue_links;  -- (and the other two; dropping the tables below drops them too)
+--   drop trigger if exists issue_seed_links on public.issues;
+--   drop trigger if exists issues_number on public.issues;
 --   drop function if exists private.log_issue_change();
 --   drop function if exists private.log_issue_link_change();
+--   drop function if exists private.seed_issue_links();
+--   drop function if exists private.issues_v2_before_write();
+--   drop function if exists private.issue_ui_status(text, text);
 --   drop table if exists private.issue_counters;
 --   drop function if exists private.next_issue_number(uuid);
---   alter table public.issues disable trigger issues_before_write;
---   alter table public.issues disable trigger set_updated_at;
---   alter table public.issues drop constraint issues_status;
---   update public.issues set status = case status when 'testing' then 'in_progress' when 'resolved' then 'done'
---     when 'wont_fix' then 'dismissed' else status end;
---   alter table public.issues add constraint issues_status check (status in ('open', 'in_progress', 'done', 'dismissed'));
---   alter table public.issues drop constraint issues_target_lengths;
+--   alter table public.issues drop constraint if exists issues_target_lengths, drop constraint if exists issues_resolution,
+--     drop constraint if exists issues_workspace_number_key;
 --   alter table public.issues drop column number, drop column target_measure, drop column target_now, drop column target_goal,
---     drop column dismissed_revision_id;
---   alter table public.issues enable trigger set_updated_at;
---   -- restore private.issues_before_write() from 20261005000000_issues.sql (create or replace; its done/dismissed logic), then:
---   alter table public.issues enable trigger issues_before_write;
+--     drop column dismissed_revision_id, drop column resolution;
 --   delete from supabase_migrations.schema_migrations where version = '20261120000000';
 --   commit;
 
@@ -13303,10 +13581,12 @@ grant execute on function public.duplicate_version(uuid, text) to authenticated;
 
 alter table public.issues
   add column number integer,
+  add column resolution text,
   add column target_measure text,
   add column target_now text,
   add column target_goal text,
   add column dismissed_revision_id uuid,
+  add constraint issues_resolution check (resolution in ('wont_fix')),
   add constraint issues_dismissed_revision_fkey foreign key (dismissed_revision_id, workspace_id)
     references public.process_revisions (id, workspace_id) on delete set null (dismissed_revision_id),
   add constraint issues_target_lengths check (
@@ -13335,46 +13615,37 @@ $$;
 revoke all on function private.next_issue_number(uuid) from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
--- The write trigger: status values, resolved_at, the number
+-- A new write trigger (the existing `issues_before_write` is untouched and runs first): the number, the resolution and
+-- the dismissal's revision. Security definer, so the writer needs no access to the private counter table.
 -- ---------------------------------------------------------------------------
 
--- Replaces the one from 20261005000000_issues.sql: `source` and `detected_key` stay fixed, `resolved_at` follows the
--- status (now `resolved`, `wont_fix` and `dismissed`), and `number` is assigned on insert and then fixed. Security
--- definer, so the writer needs no access to the private counter table.
-create or replace function private.issues_before_write() returns trigger
+create function private.issues_v2_before_write() returns trigger
 language plpgsql
 security definer
 set search_path = ''
 as $$
 begin
-  if tg_op = 'UPDATE' then
-    if new.source is distinct from old.source or new.detected_key is distinct from old.detected_key then
-      raise exception 'issues: source and detected_key cannot be changed' using errcode = '23514';
-    end if;
-    if old.number is not null then
-      if new.number is distinct from old.number then
-        raise exception 'issues: the number cannot be changed' using errcode = '23514';
-      end if;
-    else
-      -- A dismissed insight has no number; it gets the next one when it becomes an issue.
-      new.number := case when new.status <> 'dismissed' then private.next_issue_number(new.workspace_id) end;
-    end if;
-    if new.status in ('resolved', 'wont_fix', 'dismissed') then
-      new.resolved_at := case when old.status in ('resolved', 'wont_fix', 'dismissed') then old.resolved_at else now() end;
-    else
-      new.resolved_at := null;
+  if tg_op = 'INSERT' then
+    -- A dismissed insight is not an issue: no number until it is acknowledged. A number the writer supplies is ignored.
+    new.number := case when new.status <> 'dismissed' then private.next_issue_number(new.workspace_id) end;
+  elsif old.number is not null then
+    if new.number is distinct from old.number then
+      raise exception 'issues: the number cannot be changed' using errcode = '23514';
     end if;
   else
     new.number := case when new.status <> 'dismissed' then private.next_issue_number(new.workspace_id) end;
-    new.resolved_at := case when new.status in ('resolved', 'wont_fix', 'dismissed') then now() else null end;
   end if;
-  -- A dismissal's revision means something only while the row is dismissed.
+  -- Won't fix is a kind of done, and a dismissal's revision means something only while the row is dismissed.
+  if new.status <> 'done' then
+    new.resolution := null;
+  end if;
   if new.status <> 'dismissed' then
     new.dismissed_revision_id := null;
   end if;
   return new;
 end;
 $$;
+revoke all on function private.issues_v2_before_write() from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Link tables
@@ -13434,14 +13705,30 @@ create table public.issue_events (
   at timestamptz not null default clock_timestamp(),
   -- Who did it; null for a change made outside a signed-in session, or by a user since deleted.
   actor uuid references auth.users (id) on delete set null,
-  -- What changed: {"fields": [...]} for an edit, {"from": "...", "to": "..."} for a status change, {"linked": "..."} for a link.
+  -- What changed: {"fields": [...]} for an edit, {"from": "...", "to": "..."} for a status change (the statuses as shown),
+  -- {"linked": {"steps"|"owners"|"sources": {"added": [...], "removed": [...]}}} for what an issue touches, who owns it
+  -- and its sources.
   detail jsonb not null default '{}' constraint issue_events_detail_shape check (jsonb_typeof(detail) = 'object'),
-  -- The transaction that wrote it: a link change isn't logged again in a transaction that already logged the issue.
+  -- The transaction that wrote it: a link change inside it is added to this entry instead of making another.
   tx bigint default txid_current(),
   foreign key (issue_id, workspace_id) references public.issues (id, workspace_id) on delete cascade
 );
 create index on public.issue_events (issue_id, seq);
 create index on public.issue_events (workspace_id, at);
+
+-- A stored status as it is shown (see packages/db/src/issue-status.ts).
+create function private.issue_ui_status(status text, resolution text) returns text
+language sql
+immutable
+set search_path = ''
+as $$
+  select case status
+    when 'in_progress' then 'testing'
+    when 'done' then case when resolution = 'wont_fix' then 'wont_fix' else 'resolved' end
+    else status
+  end;
+$$;
+revoke all on function private.issue_ui_status(text, text) from public, anon, authenticated;
 
 -- Every change to an issue logs: one trigger on the row, one on each link table. Security definer, so the log is
 -- written whoever the caller is and nobody else can write it.
@@ -13452,12 +13739,14 @@ set search_path = ''
 as $$
 declare
   fields text[];
+  ui_old text;
+  ui_new text;
 begin
   if tg_op = 'INSERT' then
     -- A dismissed insight is not an issue: nothing to log until it is acknowledged.
     if new.status <> 'dismissed' then
       insert into public.issue_events (issue_id, workspace_id, kind, actor, detail)
-        values (new.id, new.workspace_id, 'created', auth.uid(), jsonb_build_object('status', new.status));
+        values (new.id, new.workspace_id, 'created', auth.uid(), jsonb_build_object('status', private.issue_ui_status(new.status, new.resolution)));
     end if;
     return null;
   end if;
@@ -13465,7 +13754,8 @@ begin
     -- Dismissed again (a new revision), or acknowledged: the issue is born now.
     if new.status <> 'dismissed' then
       insert into public.issue_events (issue_id, workspace_id, kind, actor, detail)
-        values (new.id, new.workspace_id, 'created', auth.uid(), jsonb_build_object('status', new.status, 'acknowledged', true));
+        values (new.id, new.workspace_id, 'created',
+          auth.uid(), jsonb_build_object('status', private.issue_ui_status(new.status, new.resolution), 'acknowledged', true));
     end if;
     return null;
   end if;
@@ -13485,16 +13775,18 @@ begin
     union all select 'target_goal' where new.target_goal is distinct from old.target_goal
   ) changed;
 
-  if new.status is distinct from old.status then
+  ui_old := private.issue_ui_status(old.status, old.resolution);
+  ui_new := private.issue_ui_status(new.status, new.resolution);
+  if ui_new is distinct from ui_old then
     insert into public.issue_events (issue_id, workspace_id, kind, actor, detail) values (
       new.id, new.workspace_id,
       case
-        when new.status = 'testing' and old.status = 'open' then 'solution_tested'
-        when new.status in ('resolved', 'wont_fix') then 'resolved'
-        when old.status in ('resolved', 'wont_fix') and new.status in ('open', 'testing') then 'reopened'
+        when ui_new = 'testing' and ui_old = 'open' then 'solution_tested'
+        when ui_new in ('resolved', 'wont_fix') and ui_old not in ('resolved', 'wont_fix') then 'resolved'
+        when ui_old in ('resolved', 'wont_fix') and ui_new in ('open', 'testing') then 'reopened'
         else 'edited'
       end,
-      auth.uid(), jsonb_build_object('from', old.status, 'to', new.status));
+      auth.uid(), jsonb_build_object('from', ui_old, 'to', ui_new));
   end if;
   if cardinality(fields) > 0 then
     insert into public.issue_events (issue_id, workspace_id, kind, actor, detail)
@@ -13508,52 +13800,59 @@ revoke all on function private.log_issue_change() from public, anon, authenticat
 create trigger issue_log after insert or update on public.issues
   for each row execute function private.log_issue_change();
 
--- A change to what an issue touches, who owns it or its sources: one 'edited' event, unless this transaction already
--- logged the issue (a create or an edit through save_issue), or the issue itself is being deleted.
+-- A change to what an issue touches, who owns it or its sources. It is added to the detail of the entry this
+-- transaction already wrote for the issue (a create, or an edit of fields or status through save_issue), or, when there
+-- is none, written as an 'edited' entry of its own. Nothing is logged for a dismissed insight or an issue being deleted.
 create function private.log_issue_link_change() returns trigger
 language plpgsql
 security definer
 set search_path = ''
 as $$
 declare
-  row_issue uuid := coalesce(new.issue_id, old.issue_id);
-  row_workspace uuid := coalesce(new.workspace_id, old.workspace_id);
+  j jsonb := case when tg_op = 'DELETE' then to_jsonb(old) else to_jsonb(new) end;
+  row_issue uuid := (j ->> 'issue_id')::uuid;
+  row_workspace uuid := (j ->> 'workspace_id')::uuid;
+  what text := tg_argv[0];
+  dir text := case when tg_op = 'DELETE' then 'removed' else 'added' end;
+  item jsonb := case what
+    when 'steps' then jsonb_build_object('process_id', j -> 'process_id', 'step_id', j -> 'step_id')
+    when 'owners' then j -> 'person_id'
+    else j -> 'source_id'
+  end;
+  ev_id uuid;
+  d jsonb;
 begin
-  if exists (select 1 from public.issues where id = row_issue and status <> 'dismissed')
-     and not exists (select 1 from public.issue_events where issue_id = row_issue and tx = txid_current()) then
-    insert into public.issue_events (issue_id, workspace_id, kind, actor, detail)
-      values (row_issue, row_workspace, 'edited', auth.uid(), jsonb_build_object('linked', tg_argv[0]));
+  if not exists (select 1 from public.issues where id = row_issue and status <> 'dismissed') then
+    return null;
+  end if;
+  select e.id, e.detail into ev_id, d from public.issue_events e where e.issue_id = row_issue and e.tx = txid_current() order by e.seq desc limit 1;
+  d := coalesce(d, '{}');
+  if d -> 'linked' is null then
+    d := d || jsonb_build_object('linked', '{}'::jsonb);
+  end if;
+  if d -> 'linked' -> what is null then
+    d := jsonb_set(d, array['linked', what], '{}'::jsonb);
+  end if;
+  d := jsonb_set(d, array['linked', what, dir], coalesce(d #> array['linked', what, dir], '[]'::jsonb) || jsonb_build_array(item));
+  if ev_id is null then
+    insert into public.issue_events (issue_id, workspace_id, kind, actor, detail) values (row_issue, row_workspace, 'edited', auth.uid(), d);
+  else
+    update public.issue_events set detail = d where id = ev_id;
   end if;
   return null;
 end;
 $$;
 revoke all on function private.log_issue_link_change() from public, anon, authenticated;
 
-create trigger issue_log after insert or delete on public.issue_links
-  for each row execute function private.log_issue_link_change('steps');
-create trigger issue_log after insert or delete on public.issue_owners
-  for each row execute function private.log_issue_link_change('owners');
-create trigger issue_log after insert or delete on public.issue_sources
-  for each row execute function private.log_issue_link_change('sources');
-
 -- ---------------------------------------------------------------------------
--- Migrate the existing issues (the log triggers are switched off while the data moves, so no spurious events are
--- written; the real history is backfilled below)
+-- Migrate the existing issues (the log triggers are not on yet, and the old triggers see no update: nothing existing is
+-- changed, so no spurious history and no new updated_at)
 -- ---------------------------------------------------------------------------
 
+-- Numbers, oldest first (a dismissed insight has none). `updated_at` is not touched: the trigger that sets it is paused
+-- for these two updates and switched back on.
 alter table public.issues disable trigger set_updated_at;
-alter table public.issues disable trigger issues_before_write;
-alter table public.issues disable trigger issue_log;
-alter table public.issue_links disable trigger issue_log;
-alter table public.issue_owners disable trigger issue_log;
-alter table public.issue_sources disable trigger issue_log;
 
-alter table public.issues drop constraint issues_status;
-update public.issues set status = case status when 'in_progress' then 'testing' when 'done' then 'resolved' else status end
-  where status in ('in_progress', 'done');
-alter table public.issues add constraint issues_status check (status in ('open', 'testing', 'resolved', 'wont_fix', 'dismissed'));
-
--- Numbers, oldest first.
 with ranked as (
   select id, row_number() over (partition by workspace_id order by created_at, id) as n from public.issues where status <> 'dismissed'
 )
@@ -13568,6 +13867,8 @@ update public.issues i set dismissed_revision_id = p.live_revision_id
   from public.processes p
   where i.status = 'dismissed' and p.workspace_id = i.workspace_id and p.live_revision_id is not null
     and p.id = coalesce(i.process_id, (select s.process_id from public.steps s where s.id = i.step_id and s.workspace_id = i.workspace_id limit 1));
+
+alter table public.issues enable trigger set_updated_at;
 
 -- What each touches: its step (with the step's process when the issue didn't name one), else its process.
 insert into public.issue_links (issue_id, workspace_id, process_id, step_id)
@@ -13595,18 +13896,70 @@ insert into public.issue_sources (issue_id, source_id, workspace_id)
 
 -- Their history so far: created, and resolved for the closed ones. (actor: the creator; the resolver isn't recorded.)
 insert into public.issue_events (issue_id, workspace_id, kind, at, actor, detail, tx)
-  select id, workspace_id, 'created', created_at, created_by, jsonb_build_object('status', status, 'migrated', true), null from public.issues
-  where status <> 'dismissed';
+  select id, workspace_id, 'created', created_at, created_by,
+    jsonb_build_object('status', private.issue_ui_status(status, resolution), 'migrated', true), null
+  from public.issues where status <> 'dismissed';
 insert into public.issue_events (issue_id, workspace_id, kind, at, actor, detail, tx)
-  select id, workspace_id, 'resolved', resolved_at, null, jsonb_build_object('to', status, 'migrated', true), null
-  from public.issues where status in ('resolved', 'wont_fix') and resolved_at is not null;
+  select id, workspace_id, 'resolved', resolved_at, null, jsonb_build_object('to', private.issue_ui_status(status, resolution), 'migrated', true), null
+  from public.issues where status = 'done' and resolved_at is not null;
 
-alter table public.issues enable trigger set_updated_at;
-alter table public.issues enable trigger issues_before_write;
-alter table public.issues enable trigger issue_log;
-alter table public.issue_links enable trigger issue_log;
-alter table public.issue_owners enable trigger issue_log;
-alter table public.issue_sources enable trigger issue_log;
+-- ---------------------------------------------------------------------------
+-- Triggers on issues and the link tables, now the data is in
+-- ---------------------------------------------------------------------------
+
+-- Fires after the existing `issues_before_write` (triggers run in name order).
+create trigger issues_number before insert or update on public.issues
+  for each row execute function private.issues_v2_before_write();
+
+create trigger issue_log after insert on public.issue_links
+  for each row execute function private.log_issue_link_change('steps');
+create trigger issue_log_delete after delete on public.issue_links
+  for each row execute function private.log_issue_link_change('steps');
+create trigger issue_log after insert on public.issue_owners
+  for each row execute function private.log_issue_link_change('owners');
+create trigger issue_log_delete after delete on public.issue_owners
+  for each row execute function private.log_issue_link_change('owners');
+create trigger issue_log after insert on public.issue_sources
+  for each row execute function private.log_issue_link_change('sources');
+create trigger issue_log_delete after delete on public.issue_sources
+  for each row execute function private.log_issue_link_change('sources');
+
+-- An issue inserted any way other than save_issue (a perception gap `log_perception_gaps` logs, a direct insert, the
+-- seed) still gets the link and owner rows its `process_id`, `step_id` and `owner_person_id` say, when it has none.
+create function private.seed_issue_links() returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if (new.process_id is not null or new.step_id is not null)
+     and not exists (select 1 from public.issue_links where issue_id = new.id) then
+    insert into public.issue_links (issue_id, workspace_id, process_id, step_id)
+      values (
+        new.id, new.workspace_id,
+        coalesce(new.process_id, (select s.process_id from public.steps s where s.id = new.step_id and s.workspace_id = new.workspace_id limit 1)),
+        new.step_id)
+      on conflict do nothing;
+  end if;
+  if new.owner_person_id is not null and not exists (select 1 from public.issue_owners where issue_id = new.id) then
+    insert into public.issue_owners (issue_id, person_id, workspace_id) values (new.id, new.owner_person_id, new.workspace_id) on conflict do nothing;
+  end if;
+  return null;
+end;
+$$;
+revoke all on function private.seed_issue_links() from public, anon, authenticated;
+
+-- Named to run after `issue_log`, so the issue's `created` entry is there for the links to be added to.
+create trigger issue_seed_links after insert on public.issues
+  for each row execute function private.seed_issue_links();
+
+-- MCP writes are audited like the peers (steps, edges, sources, scenarios, issues).
+create trigger audit_mcp after insert or update or delete on public.issue_links
+  for each row execute function private.audit_mcp_write();
+create trigger audit_mcp after insert or update or delete on public.issue_owners
+  for each row execute function private.audit_mcp_write();
+create trigger audit_mcp after insert or update or delete on public.issue_sources
+  for each row execute function private.audit_mcp_write();
 
 -- ---------------------------------------------------------------------------
 -- Row-level security: the issues policies, for every new table
@@ -13652,11 +14005,15 @@ revoke all on public.issue_links, public.issue_owners, public.issue_sources, pub
 -- ---------------------------------------------------------------------------
 
 -- p_id null (or left out) creates; otherwise edits that issue. Everything after p_fields is optional, so a client that
--- names its arguments (PostgREST) can leave out what it doesn't set. p_fields holds only the columns to set (the allow-list below).
--- p_links is [{"process_id": uuid|null, "step_id": uuid|null}, ...], p_owners and p_sources are arrays of ids; null
--- leaves the existing set alone, an array replaces it (only the differences are written, so an unchanged save writes
--- no history). Returns the issue row. Security invoker: row-level security applies to every write, and the caller must be
--- able to edit the workspace (checked first, so a viewer's save fails loudly instead of changing nothing).
+-- names its arguments (PostgREST) can leave out what it doesn't set. p_fields holds only the columns to set (the
+-- allow-list below). `status` takes the names as shown (open, testing, resolved, wont_fix, dismissed) or the stored ones,
+-- and the function stores the stored spelling and the resolution. `dismissed` is only for a row that carries a detection
+-- key. p_links is [{"process_id": uuid|null, "step_id": uuid|null}, ...]: whole process (no step) or steps, not both,
+-- and each step must be a step of that process in this workspace (a step with no process named takes its own).
+-- p_owners and p_sources are arrays of ids. For all three, null leaves the existing set alone and an array replaces it
+-- (only the differences are written, so an unchanged save writes no history). Returns the issue row. Security invoker:
+-- row-level security applies to every write, and the caller must be able to edit the workspace (checked first, so a
+-- viewer's save fails loudly instead of changing nothing).
 create function public.save_issue(
   p_workspace uuid, p_fields jsonb, p_id uuid default null, p_links jsonb default null, p_owners uuid[] default null, p_sources uuid[] default null)
 returns jsonb
@@ -13671,6 +14028,11 @@ declare
   field text;
   cols text;
   v_issue uuid := p_id;
+  v_links jsonb;
+  st text;
+  key_known boolean;
+  lk record;
+  step_process uuid;
   first_link record;
   result jsonb;
 begin
@@ -13697,6 +14059,50 @@ begin
     if not p_fields ? 'type' then
       p_fields := p_fields || '{"type": "manual"}';
     end if;
+  elsif not exists (select 1 from public.issues where id = p_id and workspace_id = p_workspace) then
+    raise exception 'save_issue: no such issue' using errcode = '42501';
+  end if;
+
+  -- Statuses as shown are stored as the older spellings plus a resolution.
+  if p_fields ? 'status' then
+    st := p_fields ->> 'status';
+    if st = 'dismissed' then
+      key_known := case when p_id is null then (p_fields ->> 'detected_key') is not null
+        else (select detected_key is not null from public.issues where id = p_id) end;
+      if not coalesce(key_known, false) then
+        raise exception 'save_issue: only an insight can be dismissed' using errcode = '22023';
+      end if;
+    end if;
+    p_fields := p_fields || case st
+      when 'testing' then '{"status": "in_progress", "resolution": null}'::jsonb
+      when 'resolved' then '{"status": "done", "resolution": null}'::jsonb
+      when 'wont_fix' then '{"status": "done", "resolution": "wont_fix"}'::jsonb
+      else jsonb_build_object('status', st, 'resolution', null)
+    end;
+  end if;
+
+  -- What it touches: whole process or steps, never both, and every step a step of that process in this workspace.
+  if p_links is not null then
+    if exists (select 1 from jsonb_array_elements(p_links) e where (e ->> 'step_id') is null)
+       and exists (select 1 from jsonb_array_elements(p_links) e where (e ->> 'step_id') is not null) then
+      raise exception 'save_issue: link the whole process or pick steps, not both' using errcode = '22023';
+    end if;
+    v_links := '[]'::jsonb;
+    for lk in select (e.v ->> 'process_id')::uuid as process_id, (e.v ->> 'step_id')::uuid as step_id
+             from jsonb_array_elements(p_links) with ordinality as e(v, ord) order by e.ord loop
+      if lk.process_id is null and lk.step_id is null then
+        raise exception 'save_issue: a link needs a process or a step' using errcode = '22023';
+      end if;
+      step_process := lk.process_id;
+      if lk.step_id is not null then
+        select s.process_id into step_process from public.steps s
+          where s.id = lk.step_id and s.workspace_id = p_workspace and (lk.process_id is null or s.process_id = lk.process_id) limit 1;
+        if step_process is null then
+          raise exception 'save_issue: step % is not a step of that process in this workspace', lk.step_id using errcode = '22023';
+        end if;
+      end if;
+      v_links := v_links || jsonb_build_array(jsonb_build_object('process_id', step_process, 'step_id', lk.step_id));
+    end loop;
   end if;
 
   select string_agg(quote_ident(k), ', ') into cols from jsonb_object_keys(p_fields) as k;
@@ -13706,30 +14112,25 @@ begin
       'insert into public.issues (workspace_id, %1$s) select $1, %1$s from jsonb_populate_record(null::public.issues, $2) returning id',
       cols)
     into v_issue using p_workspace, p_fields;
-  else
-    if not exists (select 1 from public.issues where id = p_id and workspace_id = p_workspace) then
-      raise exception 'save_issue: no such issue' using errcode = '42501';
-    end if;
-    if cols is not null then
-      execute format(
-        'update public.issues set (%1$s) = (select %1$s from jsonb_populate_record(null::public.issues, $3)) where id = $1 and workspace_id = $2',
-        cols)
-      using p_id, p_workspace, p_fields;
-    end if;
+  elsif cols is not null then
+    execute format(
+      'update public.issues set (%1$s) = (select %1$s from jsonb_populate_record(null::public.issues, $3)) where id = $1 and workspace_id = $2',
+      cols)
+    using p_id, p_workspace, p_fields;
   end if;
 
-  if p_links is not null then
+  if v_links is not null then
     delete from public.issue_links l where l.issue_id = v_issue and not exists (
-      select 1 from jsonb_to_recordset(p_links) as n(process_id uuid, step_id uuid)
+      select 1 from jsonb_to_recordset(v_links) as n(process_id uuid, step_id uuid)
       where n.process_id is not distinct from l.process_id and n.step_id is not distinct from l.step_id);
     insert into public.issue_links (issue_id, workspace_id, process_id, step_id)
       select v_issue, p_workspace, n.process_id, n.step_id
-      from jsonb_to_recordset(p_links) as n(process_id uuid, step_id uuid)
+      from jsonb_to_recordset(v_links) as n(process_id uuid, step_id uuid)
       where not exists (select 1 from public.issue_links l where l.issue_id = v_issue
         and l.process_id is not distinct from n.process_id and l.step_id is not distinct from n.step_id);
     -- The compatibility columns: the first link given.
     select (e.v ->> 'process_id')::uuid as process_id, (e.v ->> 'step_id')::uuid as step_id into first_link
-      from jsonb_array_elements(p_links) with ordinality as e(v, ord) order by e.ord limit 1;
+      from jsonb_array_elements(v_links) with ordinality as e(v, ord) order by e.ord limit 1;
     update public.issues set process_id = first_link.process_id, step_id = first_link.step_id where id = v_issue;
   end if;
 
@@ -13757,85 +14158,97 @@ grant execute on function public.save_issue(uuid, jsonb, uuid, jsonb, uuid[], uu
 insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261120000000', 'issues_v2', array['-- Issues v2: data (issue #112, ticket A47). An issue is a problem someone confirmed, from acknowledging an insight
 -- or added by hand. This migration reshapes the register''s data; the Acknowledge dialog (apps/web) writes it.
 --
+-- STRICTLY ADDITIVE (expand only). It drops, renames and rewrites nothing that exists: the `issues_status` check, the
+-- existing status values, `private.issues_before_write` and its trigger are all left exactly as they are, so the
+-- deployed app and MCP server keep working before, during and after this is applied, in either order with the deploy.
+-- A later "contract" migration (rewrite the stored statuses, tighten the check) is future work that needs Austin''s
+-- go-ahead; see docs/production-migrations.md.
+--
 -- What is new, all next to the existing `issues` table:
 --
 --   * `issue_links`: what an issue touches. A row with a null `step_id` is the whole process; rows with a `step_id`
---     are steps (a step''s stable id, so no foreign key: steps are keyed by revision). An issue may touch several
---     steps, even in different processes. `issues.process_id` and `issues.step_id` stay, as the first link, for
---     compatibility (the app and the MCP server still read them); `save_issue` keeps them in step.
---   * `issue_owners`: several owners, people. `issues.owner_person_id` stays as the first owner.
+--     are steps (a step''s stable id, so no foreign key: steps are keyed by revision; `save_issue` checks each is a step
+--     of the link''s process in the workspace). An issue may touch several steps, even in different processes.
+--     `issues.process_id` and `issues.step_id` stay, as the first link, for compatibility; `save_issue` keeps them in
+--     step, and a trigger seeds the links of an issue inserted any other way from those columns.
+--   * `issue_owners`: several owners, people. `issues.owner_person_id` stays as the first owner, and a trigger seeds an
+--     issue inserted any other way from it.
 --   * `issue_sources`: linked sources. (`issues.evidence_sources` stays, unused by new code.)
---   * `issues.target_measure`, `target_now`, `target_goal`: "Wait at Check fit", "1.4 d", "under 4 hours". Free text,
---     so a person writes it the way they say it.
---   * `issues.number`: a stable number per workspace (Issue #12), assigned by a trigger from `private.issue_counters`
---     (one row per workspace, `update ... returning` takes the row lock, so two inserts never share a number). A
---     number is never reused, even after the issue is deleted, and can''t be changed. A dismissed insight is not an
---     issue, so it has no number (null) and uses none up; it gets one if it is acknowledged later.
+--   * `issues.target_measure`, `target_now`, `target_goal`: "Wait at Check fit", "1.4 d", "under 4 hours". Free text.
+--   * Statuses, held as the values the check already allows plus one new column:
+--         shown               status         resolution
+--         Open                open           null
+--         Testing solutions   in_progress    null
+--         Resolved            done           null
+--         Won''t fix           done           ''wont_fix''
+--         (dismissed insight) dismissed      null
+--     `issues.resolution` (null, or ''wont_fix'') is new; a trigger clears it unless the status is `done`. The app and the
+--     MCP server map between the two in one place (packages/db/src/issue-status.ts); `save_issue` takes the shown names
+--     and stores the old spellings plus the resolution. `resolved_at` is set for `done` and `dismissed` as it always was.
+--     `dismissed` is not an issue a person sees: it is what A45 stores for an insight someone dismissed (a tracked row,
+--     so the insight stays gone). The register, the map, the counts and the insight list leave it out, and nothing in the
+--     app lets a person pick it; `save_issue` only sets it on a row that carries a detection key.
+--   * `issues.number`: a stable number per workspace (Issue #12), assigned by a new BEFORE INSERT/UPDATE trigger
+--     (`issues_number`) from `private.issue_counters` (one row per workspace; the upsert''s row lock makes concurrent
+--     inserts take turns). Never reused, even after a delete, and can''t be changed. A dismissed insight is not an issue,
+--     so it has no number (null) and uses none up; it gets one if it is acknowledged later. The number is taken before
+--     a conflict is known, so an `INSERT ... ON CONFLICT DO NOTHING` that does nothing still uses one: expect a gap there
+--     (a rolled-back insert gives its number back, as the counter row is part of the transaction).
 --   * `issues.dismissed_revision_id`: the process''s live revision a dismissed insight was dismissed against. A
 --     dismissal lasts until the process''s next published version: the app lists a dismissed insight again once its
---     process''s live revision is no longer this one and the analysis still detects it, and a re-dismiss writes the new
---     revision here. Null for rows migrated from before this column whose process can''t be worked out: those stay
---     hidden. The trigger clears it when the row stops being dismissed.
---   * Statuses: `open`, `testing` (Testing solutions), `resolved`, `wont_fix` (Won''t fix), and `dismissed`.
---     Existing rows map `in_progress` -> `testing`, `done` -> `resolved`; `open` and `dismissed` stay.
---     `dismissed` is not one of the four statuses a person sees: it is what A45 stores for an insight someone
---     dismissed (a tracked row, so the insight stays gone next run). It is never an issue: the register, the map,
---     the counts and the insight list leave `status = ''dismissed''` out, and nothing in the app lets a person pick it.
---     `resolved_at` is set for `resolved`, `wont_fix` and `dismissed`, as it was for `done` and `dismissed`.
---   * `issue_events`: the history log. created, edited, solution_tested, resolved, reopened, each with a date
---     (`at`) and who (`actor`, null for a system change), and a `detail` (changed fields, status from and to). A
---     dismissed insight writes none (it is not an issue yet); acknowledging it writes `created`.
---     Written only by triggers (security definer) on `issues` and on the three link tables, so every change logs
---     whichever way it is made (the app''s actions, `save_fields`, a direct update, the MCP server) and nobody can
---     edit or forge a row. A link change is not logged again when the same transaction already logged that issue.
+--     process has a different live revision and the analysis still detects it, and a re-dismiss writes the new revision
+--     here. Null means "before any version" (the process had never been published): it expires on the first publish.
+--     The trigger clears it when the row stops being dismissed.
+--   * `issue_events`: the history log. created, edited, solution_tested, resolved, reopened, each with a date (`at`)
+--     and who (`actor`, null for a system change), and a `detail` (changed fields, status from and to, and the links,
+--     owners and sources added or removed). A dismissed insight writes none (it is not an issue yet); acknowledging it
+--     writes `created`. Written only by triggers (security definer) on `issues` and on the three link tables, so every
+--     change logs whichever way it is made and nobody can edit or forge a row. A link change inside a transaction that
+--     already logged the issue is added to that event''s detail instead of a second event.
 --   * `public.save_issue(...)`: one call that creates or edits an issue with its links, owners and sources in one
 --     transaction (so one history entry), as the signed-in user (security invoker: RLS applies).
 --
 -- Severity: the `severity` column already holds the four ratings (critical = Operational risk, serious = Bad, warning =
 -- Good could improve, info = Great; engine `ratingOfStored`, A41). No data changes; the migration test checks it.
 --
--- Existing issues are migrated in place: their step and process become `issue_links` rows (a step''s process looked
--- up from `steps` when the issue didn''t name one), their owner an `issue_owners` row, their cited sources
+-- Existing issues are migrated in place, additively: their step and process become `issue_links` rows (a step''s process
+-- looked up from `steps` when the issue didn''t name one), their owner an `issue_owners` row, their cited sources
 -- `issue_sources` rows, they get numbers in the order they were logged (oldest first; a dismissed one gets none), and
 -- each gets a `created` event at its `created_at` (plus `resolved` at `resolved_at` for the closed ones). A migrated
--- dismissed row takes the live revision of its process (`dismissed_revision_id`) where that can be worked out.
+-- dismissed row takes the live revision of its process (`dismissed_revision_id`) where that can be worked out. No
+-- existing column value changes, so nothing is lost.
 --
--- `save_fields` is not redefined: `issues` is already in its allow-list, and a status edit through it now logs too.
---
--- Strictly additive: five new tables, five columns, one function; the status check is replaced by a wider one.
+-- `save_fields` is not redefined: `issues` is already in its allow-list, and an edit through it logs too.
 --
 -- Preflight (run first, each should be as described):
---   1. No other status than the old four exists. Expect 0 rows:
---        select status, count(*) from public.issues where status not in (''open'',''in_progress'',''done'',''dismissed'') group by 1;
+--   1. The new tables do not exist yet. Expect 0:
+--        select count(*) from information_schema.tables where table_schema = ''public'' and table_name in (''issue_links'', ''issue_owners'', ''issue_sources'', ''issue_events'');
 --   2. Nothing of ours is applied past this one. Expect 0 rows:
 --        select version from supabase_migrations.schema_migrations where version >= ''20261120000000'';
 --   3. A look at what will be migrated (counts per status and how many name a step or an owner):
 --        select status, count(*), count(step_id) as with_step, count(owner_person_id) as with_owner from public.issues group by 1;
 --
--- Rollback (run as one transaction; the old status values come back, `testing` as `in_progress`, `resolved` as `done`;
--- `wont_fix` has no old equivalent and becomes `dismissed`, which hides it, so copy those rows somewhere first if
--- they matter):
+-- Rollback (run as one transaction; nothing existing was changed, so there is nothing to put back and nothing is mapped
+-- to `dismissed`; it loses the history log, the extra links, owners and sources, targets, numbers and resolutions):
 --
 --   begin;
 --   drop function if exists public.save_issue(uuid, jsonb, uuid, jsonb, uuid[], uuid[]);
 --   drop table if exists public.issue_events, public.issue_sources, public.issue_owners, public.issue_links;
 --   drop trigger if exists issue_log on public.issues;
+--   drop trigger if exists audit_mcp on public.issue_links;  -- (and the other two; dropping the tables below drops them too)
+--   drop trigger if exists issue_seed_links on public.issues;
+--   drop trigger if exists issues_number on public.issues;
 --   drop function if exists private.log_issue_change();
 --   drop function if exists private.log_issue_link_change();
+--   drop function if exists private.seed_issue_links();
+--   drop function if exists private.issues_v2_before_write();
+--   drop function if exists private.issue_ui_status(text, text);
 --   drop table if exists private.issue_counters;
 --   drop function if exists private.next_issue_number(uuid);
---   alter table public.issues disable trigger issues_before_write;
---   alter table public.issues disable trigger set_updated_at;
---   alter table public.issues drop constraint issues_status;
---   update public.issues set status = case status when ''testing'' then ''in_progress'' when ''resolved'' then ''done''
---     when ''wont_fix'' then ''dismissed'' else status end;
---   alter table public.issues add constraint issues_status check (status in (''open'', ''in_progress'', ''done'', ''dismissed''));
---   alter table public.issues drop constraint issues_target_lengths;
+--   alter table public.issues drop constraint if exists issues_target_lengths, drop constraint if exists issues_resolution,
+--     drop constraint if exists issues_workspace_number_key;
 --   alter table public.issues drop column number, drop column target_measure, drop column target_now, drop column target_goal,
---     drop column dismissed_revision_id;
---   alter table public.issues enable trigger set_updated_at;
---   -- restore private.issues_before_write() from 20261005000000_issues.sql (create or replace; its done/dismissed logic), then:
---   alter table public.issues enable trigger issues_before_write;
+--     drop column dismissed_revision_id, drop column resolution;
 --   delete from supabase_migrations.schema_migrations where version = ''20261120000000'';
 --   commit;
 
@@ -13845,10 +14258,12 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 
 alter table public.issues
   add column number integer,
+  add column resolution text,
   add column target_measure text,
   add column target_now text,
   add column target_goal text,
   add column dismissed_revision_id uuid,
+  add constraint issues_resolution check (resolution in (''wont_fix'')),
   add constraint issues_dismissed_revision_fkey foreign key (dismissed_revision_id, workspace_id)
     references public.process_revisions (id, workspace_id) on delete set null (dismissed_revision_id),
   add constraint issues_target_lengths check (
@@ -13877,46 +14292,37 @@ $$;
 revoke all on function private.next_issue_number(uuid) from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
--- The write trigger: status values, resolved_at, the number
+-- A new write trigger (the existing `issues_before_write` is untouched and runs first): the number, the resolution and
+-- the dismissal''s revision. Security definer, so the writer needs no access to the private counter table.
 -- ---------------------------------------------------------------------------
 
--- Replaces the one from 20261005000000_issues.sql: `source` and `detected_key` stay fixed, `resolved_at` follows the
--- status (now `resolved`, `wont_fix` and `dismissed`), and `number` is assigned on insert and then fixed. Security
--- definer, so the writer needs no access to the private counter table.
-create or replace function private.issues_before_write() returns trigger
+create function private.issues_v2_before_write() returns trigger
 language plpgsql
 security definer
 set search_path = ''''
 as $$
 begin
-  if tg_op = ''UPDATE'' then
-    if new.source is distinct from old.source or new.detected_key is distinct from old.detected_key then
-      raise exception ''issues: source and detected_key cannot be changed'' using errcode = ''23514'';
-    end if;
-    if old.number is not null then
-      if new.number is distinct from old.number then
-        raise exception ''issues: the number cannot be changed'' using errcode = ''23514'';
-      end if;
-    else
-      -- A dismissed insight has no number; it gets the next one when it becomes an issue.
-      new.number := case when new.status <> ''dismissed'' then private.next_issue_number(new.workspace_id) end;
-    end if;
-    if new.status in (''resolved'', ''wont_fix'', ''dismissed'') then
-      new.resolved_at := case when old.status in (''resolved'', ''wont_fix'', ''dismissed'') then old.resolved_at else now() end;
-    else
-      new.resolved_at := null;
+  if tg_op = ''INSERT'' then
+    -- A dismissed insight is not an issue: no number until it is acknowledged. A number the writer supplies is ignored.
+    new.number := case when new.status <> ''dismissed'' then private.next_issue_number(new.workspace_id) end;
+  elsif old.number is not null then
+    if new.number is distinct from old.number then
+      raise exception ''issues: the number cannot be changed'' using errcode = ''23514'';
     end if;
   else
     new.number := case when new.status <> ''dismissed'' then private.next_issue_number(new.workspace_id) end;
-    new.resolved_at := case when new.status in (''resolved'', ''wont_fix'', ''dismissed'') then now() else null end;
   end if;
-  -- A dismissal''s revision means something only while the row is dismissed.
+  -- Won''t fix is a kind of done, and a dismissal''s revision means something only while the row is dismissed.
+  if new.status <> ''done'' then
+    new.resolution := null;
+  end if;
   if new.status <> ''dismissed'' then
     new.dismissed_revision_id := null;
   end if;
   return new;
 end;
 $$;
+revoke all on function private.issues_v2_before_write() from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Link tables
@@ -13976,14 +14382,30 @@ create table public.issue_events (
   at timestamptz not null default clock_timestamp(),
   -- Who did it; null for a change made outside a signed-in session, or by a user since deleted.
   actor uuid references auth.users (id) on delete set null,
-  -- What changed: {"fields": [...]} for an edit, {"from": "...", "to": "..."} for a status change, {"linked": "..."} for a link.
+  -- What changed: {"fields": [...]} for an edit, {"from": "...", "to": "..."} for a status change (the statuses as shown),
+  -- {"linked": {"steps"|"owners"|"sources": {"added": [...], "removed": [...]}}} for what an issue touches, who owns it
+  -- and its sources.
   detail jsonb not null default ''{}'' constraint issue_events_detail_shape check (jsonb_typeof(detail) = ''object''),
-  -- The transaction that wrote it: a link change isn''t logged again in a transaction that already logged the issue.
+  -- The transaction that wrote it: a link change inside it is added to this entry instead of making another.
   tx bigint default txid_current(),
   foreign key (issue_id, workspace_id) references public.issues (id, workspace_id) on delete cascade
 );
 create index on public.issue_events (issue_id, seq);
 create index on public.issue_events (workspace_id, at);
+
+-- A stored status as it is shown (see packages/db/src/issue-status.ts).
+create function private.issue_ui_status(status text, resolution text) returns text
+language sql
+immutable
+set search_path = ''''
+as $$
+  select case status
+    when ''in_progress'' then ''testing''
+    when ''done'' then case when resolution = ''wont_fix'' then ''wont_fix'' else ''resolved'' end
+    else status
+  end;
+$$;
+revoke all on function private.issue_ui_status(text, text) from public, anon, authenticated;
 
 -- Every change to an issue logs: one trigger on the row, one on each link table. Security definer, so the log is
 -- written whoever the caller is and nobody else can write it.
@@ -13994,12 +14416,14 @@ set search_path = ''''
 as $$
 declare
   fields text[];
+  ui_old text;
+  ui_new text;
 begin
   if tg_op = ''INSERT'' then
     -- A dismissed insight is not an issue: nothing to log until it is acknowledged.
     if new.status <> ''dismissed'' then
       insert into public.issue_events (issue_id, workspace_id, kind, actor, detail)
-        values (new.id, new.workspace_id, ''created'', auth.uid(), jsonb_build_object(''status'', new.status));
+        values (new.id, new.workspace_id, ''created'', auth.uid(), jsonb_build_object(''status'', private.issue_ui_status(new.status, new.resolution)));
     end if;
     return null;
   end if;
@@ -14007,7 +14431,8 @@ begin
     -- Dismissed again (a new revision), or acknowledged: the issue is born now.
     if new.status <> ''dismissed'' then
       insert into public.issue_events (issue_id, workspace_id, kind, actor, detail)
-        values (new.id, new.workspace_id, ''created'', auth.uid(), jsonb_build_object(''status'', new.status, ''acknowledged'', true));
+        values (new.id, new.workspace_id, ''created'',
+          auth.uid(), jsonb_build_object(''status'', private.issue_ui_status(new.status, new.resolution), ''acknowledged'', true));
     end if;
     return null;
   end if;
@@ -14027,16 +14452,18 @@ begin
     union all select ''target_goal'' where new.target_goal is distinct from old.target_goal
   ) changed;
 
-  if new.status is distinct from old.status then
+  ui_old := private.issue_ui_status(old.status, old.resolution);
+  ui_new := private.issue_ui_status(new.status, new.resolution);
+  if ui_new is distinct from ui_old then
     insert into public.issue_events (issue_id, workspace_id, kind, actor, detail) values (
       new.id, new.workspace_id,
       case
-        when new.status = ''testing'' and old.status = ''open'' then ''solution_tested''
-        when new.status in (''resolved'', ''wont_fix'') then ''resolved''
-        when old.status in (''resolved'', ''wont_fix'') and new.status in (''open'', ''testing'') then ''reopened''
+        when ui_new = ''testing'' and ui_old = ''open'' then ''solution_tested''
+        when ui_new in (''resolved'', ''wont_fix'') and ui_old not in (''resolved'', ''wont_fix'') then ''resolved''
+        when ui_old in (''resolved'', ''wont_fix'') and ui_new in (''open'', ''testing'') then ''reopened''
         else ''edited''
       end,
-      auth.uid(), jsonb_build_object(''from'', old.status, ''to'', new.status));
+      auth.uid(), jsonb_build_object(''from'', ui_old, ''to'', ui_new));
   end if;
   if cardinality(fields) > 0 then
     insert into public.issue_events (issue_id, workspace_id, kind, actor, detail)
@@ -14050,52 +14477,59 @@ revoke all on function private.log_issue_change() from public, anon, authenticat
 create trigger issue_log after insert or update on public.issues
   for each row execute function private.log_issue_change();
 
--- A change to what an issue touches, who owns it or its sources: one ''edited'' event, unless this transaction already
--- logged the issue (a create or an edit through save_issue), or the issue itself is being deleted.
+-- A change to what an issue touches, who owns it or its sources. It is added to the detail of the entry this
+-- transaction already wrote for the issue (a create, or an edit of fields or status through save_issue), or, when there
+-- is none, written as an ''edited'' entry of its own. Nothing is logged for a dismissed insight or an issue being deleted.
 create function private.log_issue_link_change() returns trigger
 language plpgsql
 security definer
 set search_path = ''''
 as $$
 declare
-  row_issue uuid := coalesce(new.issue_id, old.issue_id);
-  row_workspace uuid := coalesce(new.workspace_id, old.workspace_id);
+  j jsonb := case when tg_op = ''DELETE'' then to_jsonb(old) else to_jsonb(new) end;
+  row_issue uuid := (j ->> ''issue_id'')::uuid;
+  row_workspace uuid := (j ->> ''workspace_id'')::uuid;
+  what text := tg_argv[0];
+  dir text := case when tg_op = ''DELETE'' then ''removed'' else ''added'' end;
+  item jsonb := case what
+    when ''steps'' then jsonb_build_object(''process_id'', j -> ''process_id'', ''step_id'', j -> ''step_id'')
+    when ''owners'' then j -> ''person_id''
+    else j -> ''source_id''
+  end;
+  ev_id uuid;
+  d jsonb;
 begin
-  if exists (select 1 from public.issues where id = row_issue and status <> ''dismissed'')
-     and not exists (select 1 from public.issue_events where issue_id = row_issue and tx = txid_current()) then
-    insert into public.issue_events (issue_id, workspace_id, kind, actor, detail)
-      values (row_issue, row_workspace, ''edited'', auth.uid(), jsonb_build_object(''linked'', tg_argv[0]));
+  if not exists (select 1 from public.issues where id = row_issue and status <> ''dismissed'') then
+    return null;
+  end if;
+  select e.id, e.detail into ev_id, d from public.issue_events e where e.issue_id = row_issue and e.tx = txid_current() order by e.seq desc limit 1;
+  d := coalesce(d, ''{}'');
+  if d -> ''linked'' is null then
+    d := d || jsonb_build_object(''linked'', ''{}''::jsonb);
+  end if;
+  if d -> ''linked'' -> what is null then
+    d := jsonb_set(d, array[''linked'', what], ''{}''::jsonb);
+  end if;
+  d := jsonb_set(d, array[''linked'', what, dir], coalesce(d #> array[''linked'', what, dir], ''[]''::jsonb) || jsonb_build_array(item));
+  if ev_id is null then
+    insert into public.issue_events (issue_id, workspace_id, kind, actor, detail) values (row_issue, row_workspace, ''edited'', auth.uid(), d);
+  else
+    update public.issue_events set detail = d where id = ev_id;
   end if;
   return null;
 end;
 $$;
 revoke all on function private.log_issue_link_change() from public, anon, authenticated;
 
-create trigger issue_log after insert or delete on public.issue_links
-  for each row execute function private.log_issue_link_change(''steps'');
-create trigger issue_log after insert or delete on public.issue_owners
-  for each row execute function private.log_issue_link_change(''owners'');
-create trigger issue_log after insert or delete on public.issue_sources
-  for each row execute function private.log_issue_link_change(''sources'');
-
 -- ---------------------------------------------------------------------------
--- Migrate the existing issues (the log triggers are switched off while the data moves, so no spurious events are
--- written; the real history is backfilled below)
+-- Migrate the existing issues (the log triggers are not on yet, and the old triggers see no update: nothing existing is
+-- changed, so no spurious history and no new updated_at)
 -- ---------------------------------------------------------------------------
 
+-- Numbers, oldest first (a dismissed insight has none). `updated_at` is not touched: the trigger that sets it is paused
+-- for these two updates and switched back on.
 alter table public.issues disable trigger set_updated_at;
-alter table public.issues disable trigger issues_before_write;
-alter table public.issues disable trigger issue_log;
-alter table public.issue_links disable trigger issue_log;
-alter table public.issue_owners disable trigger issue_log;
-alter table public.issue_sources disable trigger issue_log;
 
-alter table public.issues drop constraint issues_status;
-update public.issues set status = case status when ''in_progress'' then ''testing'' when ''done'' then ''resolved'' else status end
-  where status in (''in_progress'', ''done'');
-alter table public.issues add constraint issues_status check (status in (''open'', ''testing'', ''resolved'', ''wont_fix'', ''dismissed''));
-
--- Numbers, oldest first.
 with ranked as (
   select id, row_number() over (partition by workspace_id order by created_at, id) as n from public.issues where status <> ''dismissed''
 )
@@ -14110,6 +14544,8 @@ update public.issues i set dismissed_revision_id = p.live_revision_id
   from public.processes p
   where i.status = ''dismissed'' and p.workspace_id = i.workspace_id and p.live_revision_id is not null
     and p.id = coalesce(i.process_id, (select s.process_id from public.steps s where s.id = i.step_id and s.workspace_id = i.workspace_id limit 1));
+
+alter table public.issues enable trigger set_updated_at;
 
 -- What each touches: its step (with the step''s process when the issue didn''t name one), else its process.
 insert into public.issue_links (issue_id, workspace_id, process_id, step_id)
@@ -14137,18 +14573,70 @@ insert into public.issue_sources (issue_id, source_id, workspace_id)
 
 -- Their history so far: created, and resolved for the closed ones. (actor: the creator; the resolver isn''t recorded.)
 insert into public.issue_events (issue_id, workspace_id, kind, at, actor, detail, tx)
-  select id, workspace_id, ''created'', created_at, created_by, jsonb_build_object(''status'', status, ''migrated'', true), null from public.issues
-  where status <> ''dismissed'';
+  select id, workspace_id, ''created'', created_at, created_by,
+    jsonb_build_object(''status'', private.issue_ui_status(status, resolution), ''migrated'', true), null
+  from public.issues where status <> ''dismissed'';
 insert into public.issue_events (issue_id, workspace_id, kind, at, actor, detail, tx)
-  select id, workspace_id, ''resolved'', resolved_at, null, jsonb_build_object(''to'', status, ''migrated'', true), null
-  from public.issues where status in (''resolved'', ''wont_fix'') and resolved_at is not null;
+  select id, workspace_id, ''resolved'', resolved_at, null, jsonb_build_object(''to'', private.issue_ui_status(status, resolution), ''migrated'', true), null
+  from public.issues where status = ''done'' and resolved_at is not null;
 
-alter table public.issues enable trigger set_updated_at;
-alter table public.issues enable trigger issues_before_write;
-alter table public.issues enable trigger issue_log;
-alter table public.issue_links enable trigger issue_log;
-alter table public.issue_owners enable trigger issue_log;
-alter table public.issue_sources enable trigger issue_log;
+-- ---------------------------------------------------------------------------
+-- Triggers on issues and the link tables, now the data is in
+-- ---------------------------------------------------------------------------
+
+-- Fires after the existing `issues_before_write` (triggers run in name order).
+create trigger issues_number before insert or update on public.issues
+  for each row execute function private.issues_v2_before_write();
+
+create trigger issue_log after insert on public.issue_links
+  for each row execute function private.log_issue_link_change(''steps'');
+create trigger issue_log_delete after delete on public.issue_links
+  for each row execute function private.log_issue_link_change(''steps'');
+create trigger issue_log after insert on public.issue_owners
+  for each row execute function private.log_issue_link_change(''owners'');
+create trigger issue_log_delete after delete on public.issue_owners
+  for each row execute function private.log_issue_link_change(''owners'');
+create trigger issue_log after insert on public.issue_sources
+  for each row execute function private.log_issue_link_change(''sources'');
+create trigger issue_log_delete after delete on public.issue_sources
+  for each row execute function private.log_issue_link_change(''sources'');
+
+-- An issue inserted any way other than save_issue (a perception gap `log_perception_gaps` logs, a direct insert, the
+-- seed) still gets the link and owner rows its `process_id`, `step_id` and `owner_person_id` say, when it has none.
+create function private.seed_issue_links() returns trigger
+language plpgsql
+security definer
+set search_path = ''''
+as $$
+begin
+  if (new.process_id is not null or new.step_id is not null)
+     and not exists (select 1 from public.issue_links where issue_id = new.id) then
+    insert into public.issue_links (issue_id, workspace_id, process_id, step_id)
+      values (
+        new.id, new.workspace_id,
+        coalesce(new.process_id, (select s.process_id from public.steps s where s.id = new.step_id and s.workspace_id = new.workspace_id limit 1)),
+        new.step_id)
+      on conflict do nothing;
+  end if;
+  if new.owner_person_id is not null and not exists (select 1 from public.issue_owners where issue_id = new.id) then
+    insert into public.issue_owners (issue_id, person_id, workspace_id) values (new.id, new.owner_person_id, new.workspace_id) on conflict do nothing;
+  end if;
+  return null;
+end;
+$$;
+revoke all on function private.seed_issue_links() from public, anon, authenticated;
+
+-- Named to run after `issue_log`, so the issue''s `created` entry is there for the links to be added to.
+create trigger issue_seed_links after insert on public.issues
+  for each row execute function private.seed_issue_links();
+
+-- MCP writes are audited like the peers (steps, edges, sources, scenarios, issues).
+create trigger audit_mcp after insert or update or delete on public.issue_links
+  for each row execute function private.audit_mcp_write();
+create trigger audit_mcp after insert or update or delete on public.issue_owners
+  for each row execute function private.audit_mcp_write();
+create trigger audit_mcp after insert or update or delete on public.issue_sources
+  for each row execute function private.audit_mcp_write();
 
 -- ---------------------------------------------------------------------------
 -- Row-level security: the issues policies, for every new table
@@ -14194,11 +14682,15 @@ revoke all on public.issue_links, public.issue_owners, public.issue_sources, pub
 -- ---------------------------------------------------------------------------
 
 -- p_id null (or left out) creates; otherwise edits that issue. Everything after p_fields is optional, so a client that
--- names its arguments (PostgREST) can leave out what it doesn''t set. p_fields holds only the columns to set (the allow-list below).
--- p_links is [{"process_id": uuid|null, "step_id": uuid|null}, ...], p_owners and p_sources are arrays of ids; null
--- leaves the existing set alone, an array replaces it (only the differences are written, so an unchanged save writes
--- no history). Returns the issue row. Security invoker: row-level security applies to every write, and the caller must be
--- able to edit the workspace (checked first, so a viewer''s save fails loudly instead of changing nothing).
+-- names its arguments (PostgREST) can leave out what it doesn''t set. p_fields holds only the columns to set (the
+-- allow-list below). `status` takes the names as shown (open, testing, resolved, wont_fix, dismissed) or the stored ones,
+-- and the function stores the stored spelling and the resolution. `dismissed` is only for a row that carries a detection
+-- key. p_links is [{"process_id": uuid|null, "step_id": uuid|null}, ...]: whole process (no step) or steps, not both,
+-- and each step must be a step of that process in this workspace (a step with no process named takes its own).
+-- p_owners and p_sources are arrays of ids. For all three, null leaves the existing set alone and an array replaces it
+-- (only the differences are written, so an unchanged save writes no history). Returns the issue row. Security invoker:
+-- row-level security applies to every write, and the caller must be able to edit the workspace (checked first, so a
+-- viewer''s save fails loudly instead of changing nothing).
 create function public.save_issue(
   p_workspace uuid, p_fields jsonb, p_id uuid default null, p_links jsonb default null, p_owners uuid[] default null, p_sources uuid[] default null)
 returns jsonb
@@ -14213,6 +14705,11 @@ declare
   field text;
   cols text;
   v_issue uuid := p_id;
+  v_links jsonb;
+  st text;
+  key_known boolean;
+  lk record;
+  step_process uuid;
   first_link record;
   result jsonb;
 begin
@@ -14239,6 +14736,50 @@ begin
     if not p_fields ? ''type'' then
       p_fields := p_fields || ''{"type": "manual"}'';
     end if;
+  elsif not exists (select 1 from public.issues where id = p_id and workspace_id = p_workspace) then
+    raise exception ''save_issue: no such issue'' using errcode = ''42501'';
+  end if;
+
+  -- Statuses as shown are stored as the older spellings plus a resolution.
+  if p_fields ? ''status'' then
+    st := p_fields ->> ''status'';
+    if st = ''dismissed'' then
+      key_known := case when p_id is null then (p_fields ->> ''detected_key'') is not null
+        else (select detected_key is not null from public.issues where id = p_id) end;
+      if not coalesce(key_known, false) then
+        raise exception ''save_issue: only an insight can be dismissed'' using errcode = ''22023'';
+      end if;
+    end if;
+    p_fields := p_fields || case st
+      when ''testing'' then ''{"status": "in_progress", "resolution": null}''::jsonb
+      when ''resolved'' then ''{"status": "done", "resolution": null}''::jsonb
+      when ''wont_fix'' then ''{"status": "done", "resolution": "wont_fix"}''::jsonb
+      else jsonb_build_object(''status'', st, ''resolution'', null)
+    end;
+  end if;
+
+  -- What it touches: whole process or steps, never both, and every step a step of that process in this workspace.
+  if p_links is not null then
+    if exists (select 1 from jsonb_array_elements(p_links) e where (e ->> ''step_id'') is null)
+       and exists (select 1 from jsonb_array_elements(p_links) e where (e ->> ''step_id'') is not null) then
+      raise exception ''save_issue: link the whole process or pick steps, not both'' using errcode = ''22023'';
+    end if;
+    v_links := ''[]''::jsonb;
+    for lk in select (e.v ->> ''process_id'')::uuid as process_id, (e.v ->> ''step_id'')::uuid as step_id
+             from jsonb_array_elements(p_links) with ordinality as e(v, ord) order by e.ord loop
+      if lk.process_id is null and lk.step_id is null then
+        raise exception ''save_issue: a link needs a process or a step'' using errcode = ''22023'';
+      end if;
+      step_process := lk.process_id;
+      if lk.step_id is not null then
+        select s.process_id into step_process from public.steps s
+          where s.id = lk.step_id and s.workspace_id = p_workspace and (lk.process_id is null or s.process_id = lk.process_id) limit 1;
+        if step_process is null then
+          raise exception ''save_issue: step % is not a step of that process in this workspace'', lk.step_id using errcode = ''22023'';
+        end if;
+      end if;
+      v_links := v_links || jsonb_build_array(jsonb_build_object(''process_id'', step_process, ''step_id'', lk.step_id));
+    end loop;
   end if;
 
   select string_agg(quote_ident(k), '', '') into cols from jsonb_object_keys(p_fields) as k;
@@ -14248,30 +14789,25 @@ begin
       ''insert into public.issues (workspace_id, %1$s) select $1, %1$s from jsonb_populate_record(null::public.issues, $2) returning id'',
       cols)
     into v_issue using p_workspace, p_fields;
-  else
-    if not exists (select 1 from public.issues where id = p_id and workspace_id = p_workspace) then
-      raise exception ''save_issue: no such issue'' using errcode = ''42501'';
-    end if;
-    if cols is not null then
-      execute format(
-        ''update public.issues set (%1$s) = (select %1$s from jsonb_populate_record(null::public.issues, $3)) where id = $1 and workspace_id = $2'',
-        cols)
-      using p_id, p_workspace, p_fields;
-    end if;
+  elsif cols is not null then
+    execute format(
+      ''update public.issues set (%1$s) = (select %1$s from jsonb_populate_record(null::public.issues, $3)) where id = $1 and workspace_id = $2'',
+      cols)
+    using p_id, p_workspace, p_fields;
   end if;
 
-  if p_links is not null then
+  if v_links is not null then
     delete from public.issue_links l where l.issue_id = v_issue and not exists (
-      select 1 from jsonb_to_recordset(p_links) as n(process_id uuid, step_id uuid)
+      select 1 from jsonb_to_recordset(v_links) as n(process_id uuid, step_id uuid)
       where n.process_id is not distinct from l.process_id and n.step_id is not distinct from l.step_id);
     insert into public.issue_links (issue_id, workspace_id, process_id, step_id)
       select v_issue, p_workspace, n.process_id, n.step_id
-      from jsonb_to_recordset(p_links) as n(process_id uuid, step_id uuid)
+      from jsonb_to_recordset(v_links) as n(process_id uuid, step_id uuid)
       where not exists (select 1 from public.issue_links l where l.issue_id = v_issue
         and l.process_id is not distinct from n.process_id and l.step_id is not distinct from n.step_id);
     -- The compatibility columns: the first link given.
     select (e.v ->> ''process_id'')::uuid as process_id, (e.v ->> ''step_id'')::uuid as step_id into first_link
-      from jsonb_array_elements(p_links) with ordinality as e(v, ord) order by e.ord limit 1;
+      from jsonb_array_elements(v_links) with ordinality as e(v, ord) order by e.ord limit 1;
     update public.issues set process_id = first_link.process_id, step_id = first_link.step_id where id = v_issue;
   end if;
 
@@ -14910,20 +15446,12 @@ Tom: clients take a week to decide, sometimes longer.', null, '2026-09-29T09:00:
 
 -- Issues register: audit findings and a promoted detection
 
-insert into public.issues (target_measure, target_now, target_goal, workspace_id, process_id, role_id, person_id, client_id, evidence_metrics, owner_person_id, scenario_id, detected_key, dismissed_revision_id, created_at, updated_at, id, step_id, type, severity, title, evidence, status, source) values
-  ('Hands-on time per proposal', '6 hours', 'under 3 hours', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000002', null, null, '{}', '90000000-0000-4000-8000-00000000000b', '50000000-0000-4000-8000-000000000002', null, null, '2026-09-29T09:00:00Z', '2026-09-29T09:00:00Z', '40000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000003', 'manual', 'serious', 'Every proposal is built by hand', 'Audit interview, 12 Sep: 5–8 hours per proposal, and 15% go back for rework after sales review.', 'open', 'manual'),
-  (null, null, null, 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000003', null, '{}', '90000000-0000-4000-8000-00000000000b', '50000000-0000-4000-8000-000000000001', 'spof:step:e0000000-0000-4000-8000-000000000003', null, '2026-09-29T09:00:00Z', '2026-09-29T09:00:00Z', '40000000-0000-4000-8000-000000000002', 'e0000000-0000-4000-8000-000000000003', 'spof', 'serious', 'Only Maya Collins can do Audit & proposal', 'Detected: nobody else can pick up audits when Maya is away. Proposals stalled for 9 days in July.', 'testing', 'promoted'),
-  (null, null, null, 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', null, null, '{}', '90000000-0000-4000-8000-000000000001', null, null, null, '2026-09-29T09:00:00Z', '2026-09-29T09:00:00Z', '40000000-0000-4000-8000-000000000003', 'e0000000-0000-4000-8000-000000000001', 'idea', 'info', 'Lead scoring could skip unqualified discovery calls', '45% of leads drop out at qualification but still get a 4-hour response.', 'open', 'manual');
+insert into public.issues (target_measure, target_now, target_goal, workspace_id, process_id, role_id, person_id, client_id, evidence_metrics, owner_person_id, scenario_id, detected_key, dismissed_revision_id, created_at, updated_at, id, step_id, type, severity, title, evidence, source, status, resolution) values
+  ('Hands-on time per proposal', '6 hours', 'under 3 hours', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000002', null, null, '{}', '90000000-0000-4000-8000-00000000000b', '50000000-0000-4000-8000-000000000002', null, null, '2026-09-29T09:00:00Z', '2026-09-29T09:00:00Z', '40000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000003', 'manual', 'serious', 'Every proposal is built by hand', 'Audit interview, 12 Sep: 5–8 hours per proposal, and 15% go back for rework after sales review.', 'manual', 'open', null),
+  (null, null, null, 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000003', null, '{}', '90000000-0000-4000-8000-00000000000b', '50000000-0000-4000-8000-000000000001', 'spof:step:e0000000-0000-4000-8000-000000000003', null, '2026-09-29T09:00:00Z', '2026-09-29T09:00:00Z', '40000000-0000-4000-8000-000000000002', 'e0000000-0000-4000-8000-000000000003', 'spof', 'serious', 'Only Maya Collins can do Audit & proposal', 'Detected: nobody else can pick up audits when Maya is away. Proposals stalled for 9 days in July.', 'promoted', 'in_progress', null),
+  (null, null, null, 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', null, null, '{}', '90000000-0000-4000-8000-000000000001', null, null, null, '2026-09-29T09:00:00Z', '2026-09-29T09:00:00Z', '40000000-0000-4000-8000-000000000003', 'e0000000-0000-4000-8000-000000000001', 'idea', 'info', 'Lead scoring could skip unqualified discovery calls', '45% of leads drop out at qualification but still get a 4-hour response.', 'manual', 'open', null);
 
-insert into public.issue_links (issue_id, workspace_id, process_id, step_id) values
-  ('40000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000003'),
-  ('40000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000003'),
-  ('40000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000001');
 
-insert into public.issue_owners (issue_id, workspace_id, person_id) values
-  ('40000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', '90000000-0000-4000-8000-00000000000b'),
-  ('40000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', '90000000-0000-4000-8000-00000000000b'),
-  ('40000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', '90000000-0000-4000-8000-000000000001');
 
 insert into public.issue_sources (issue_id, workspace_id, source_id) values
   ('40000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001');

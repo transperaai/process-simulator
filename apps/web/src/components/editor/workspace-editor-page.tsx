@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { EditorView } from "@/components/editor/editor-view";
 import { canEditWorkspace, currentViewer } from "@/lib/access-data";
 import { loadProcessForEditing, loadWorkspaceBlocks, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
+import { firstPrinciplesDraftChanged } from "@/lib/first-principles/data";
 import { exitHref, parseEditorMode, parseHorizon } from "@/lib/editor/modes";
 
 /**
@@ -23,11 +24,12 @@ export async function WorkspaceEditorPage({
   const base = `/w/${slug}/p/${processId}`;
   const canEdit = await canEditWorkspace(live.workspace.id);
   if (!canEdit) redirect(base);
-  const [scenarios, blocks, sources, viewer] = await Promise.all([
+  const [scenarios, blocks, sources, viewer, fpChanged] = await Promise.all([
     loadWorkspaceScenarios(live.workspace.id),
     loadWorkspaceBlocks(live.workspace.id),
     loadWorkspaceSources(live.workspace.id),
     currentViewer(),
+    firstPrinciplesDraftChanged(live.process.id, live.revision.id, draft?.revision.id ?? null),
   ]);
   return (
     <EditorView
@@ -35,6 +37,7 @@ export async function WorkspaceEditorPage({
       live={live}
       draft={draft}
       mode="live"
+      extraChanges={fpChanged ? 1 : 0}
       editorMode={parseEditorMode(searchParams.mode)}
       scenarios={scenarios}
       blocks={blocks}

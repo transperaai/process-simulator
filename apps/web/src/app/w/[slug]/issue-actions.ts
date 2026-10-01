@@ -1,8 +1,8 @@
 "use server";
 
-import { loadIssue, saveIssue, type IssueLinkRef, type Json } from "@transpera-flow/db";
+import { ISSUE_STATUSES, loadIssue, saveIssue, storedStatus, uiStatus, type IssueLinkRef, type IssueStatus, type Json, type StoredIssueStatus } from "@transpera-flow/db";
 import type { SaveOutcome } from "@/lib/fields/field-controller";
-import { saveField } from "@/lib/fields/server";
+import { saveField, saveFields } from "@/lib/fields/server";
 import { ALREADY_TRACKED, type RemoveIssueResult, type SaveIssueResult } from "@/lib/issues/store";
 import { cleanFieldValue, isId, isIssueField, parseIssueInput, parsePromoteInput, parseSaveInput, type Scalar } from "@/lib/issues/validate";
 import { createClient } from "@/lib/supabase/server";
@@ -121,7 +121,27 @@ export async function saveIssueField(id: unknown, field: unknown, base: unknown,
   const isScalar = base === null || ["string", "number", "boolean"].includes(typeof base);
   if (!clean || !isScalar) return { status: "error", message: "That value isn't valid." };
   if (!(await signedInClient())) return signedOut;
+  if (field === "status") return saveStatus(id, base as Scalar, clean.value);
   return saveField("issues", { id }, field, base as Scalar, clean.value);
+}
+
+/**
+ * The status as shown (Open, Testing solutions, Resolved, Won't fix) is stored as the older spellings plus a
+ * resolution, so a status edit saves both fields together, each checked against what the person last saw
+ * (issue-status.ts in packages/db is the one place that maps them).
+ */
+async function saveStatus(id: string, base: Scalar, next: Scalar): Promise<SaveOutcome<Scalar>> {
+  const isShown = (v: Scalar): v is IssueStatus => (ISSUE_STATUSES as readonly Scalar[]).includes(v);
+  if (!isShown(base) || !isShown(next)) return { status: "error", message: "That value isn't valid." };
+  const from = storedStatus(base);
+  const to = storedStatus(next);
+  const r = await saveFields<Scalar>("issues", { id }, { status: from.status, resolution: from.resolution }, { status: to.status, resolution: to.resolution });
+  if (r.status === "saved") return { status: "saved", value: next };
+  if (r.status === "conflict") {
+    const theirs = uiStatus((r.theirs.status ?? from.status) as StoredIssueStatus, (r.theirs.resolution ?? from.resolution) as string | null);
+    return { status: "conflict", theirs };
+  }
+  return r;
 }
 
 /** Delete an issue. A row that is gone, or that the user may not delete, reads as forbidden. */

@@ -4,7 +4,7 @@
 // bottom fail the typecheck if they drift from it.
 
 import type { IssueType, ScenarioPatch, StoredSeverity } from "@transpera-flow/engine";
-import type { Database } from "./database.types";
+import type { Database, Json } from "./database.types";
 
 export type MembershipRole = "agency_admin" | "owner" | "editor" | "member" | "viewer";
 export type StepKind = "task" | "wait" | "decision" | "subprocess" | "group" | "start" | "end";
@@ -388,6 +388,31 @@ export interface ClientGroupRow {
   provenance: ProvenanceMap;
 }
 
+/**
+ * A process revision's first principles (issue #119, A54): the job and root cause as text, the lists the rule checks
+ * read as jsonb arrays. `FirstPrinciples` (engine) is the app-side shape of the whole, read with
+ * `firstPrinciplesFromRow`.
+ */
+export interface FirstPrinciplesRow {
+  id: string;
+  workspace_id: string;
+  process_id: string;
+  revision_id: string;
+  job_who: string;
+  job_progress: string;
+  job_situation: string;
+  job_done: string;
+  statements: Json;
+  requirements: Json;
+  deletes: Json;
+  improvements: Json;
+  why_problem: string;
+  why_chain: Json;
+  root_cause: string;
+  measures: Json;
+  updated_at: string;
+}
+
 export type SourceKind = "transcript" | "notes" | "screenshot";
 
 /**
@@ -646,7 +671,8 @@ export interface BlockRow {
 }
 
 /**
- * Open, Testing solutions, Resolved, Won't fix; and `dismissed`, which is not an issue a person sees: it is what an
+ * Open, Testing solutions, Resolved, Won't fix, as the app shows them; the database holds them as the older
+ * `open`, `in_progress`, `done` plus a `resolution` (see issue-status.ts). And `dismissed`, which is not an issue a person sees: it is what an
  * insight someone dismissed is stored as, so it stays gone. The register, the map and the counts leave it out
  * (`isVisibleIssue`).
  */
@@ -656,12 +682,16 @@ export const ISSUE_STATUSES = ["open", "testing", "resolved", "wont_fix"] as con
 export type VisibleIssueStatus = (typeof ISSUE_STATUSES)[number];
 /**
  * A dismissed insight stays dismissed until its process's next published version. True while the process's live
- * revision is the one it was dismissed against (or it is unknown which that was: a row migrated without one). A
- * different live revision means it has expired, and the analysis may list the insight again.
+ * revision is the one it was dismissed against. A different live revision means it has expired, and the analysis may
+ * list the insight again. A dismissal with no revision on record was made before the process had any version (or
+ * migrated without one that could be worked out), so it ends on the first publish.
  */
 export function isDismissalCurrent(i: { status: IssueStatus; dismissed_revision_id: string | null }, liveRevisionId: string | null | undefined): boolean {
   if (i.status !== "dismissed") return false;
-  if (!i.dismissed_revision_id || !liveRevisionId) return true;
+  // Nothing to compare with (the page doesn't know the process's versions, or it has never been published): it holds.
+  if (!liveRevisionId) return true;
+  // Dismissed before the process had any version: the first publish ends it.
+  if (!i.dismissed_revision_id) return false;
   return i.dismissed_revision_id === liveRevisionId;
 }
 
@@ -847,6 +877,7 @@ export type _SchemaDriftChecks = [
   Assert<Matches<ClientServiceRow, "client_services">>,
   Assert<Matches<ClientAssignmentRow, "client_assignments">>,
   Assert<Matches<ClientGroupRow, "client_groups">>,
+  Assert<Matches<FirstPrinciplesRow, "first_principles">>,
   // recurrence and provenance are jsonb; RecurrenceJson and ProvenanceMap are their app-side shapes.
   Assert<Matches<Omit<ServiceServicingRow, "recurrence">, "service_servicing">>,
   Assert<Matches<LeadSourceRow, "lead_sources">>,
@@ -863,7 +894,7 @@ export type _SchemaDriftChecks = [
   Assert<Matches<Omit<ScenarioRow, "patch">, "scenarios">>,
   // evidence_metrics is jsonb; Record<string, number> is its app-side shape.
   // The three relation arrays are embedded from the link tables.
-  Assert<Matches<Omit<IssueRow, "evidence_metrics" | "links" | "owner_ids" | "source_ids">, "issues">>,
+  Assert<Matches<Omit<IssueRow, "evidence_metrics" | "links" | "owner_ids" | "source_ids" | "status">, "issues">>,
   Assert<Matches<Omit<IssueEventRow, "kind" | "detail">, "issue_events">>,
   Assert<Matches<SourceRow, "sources">>,
   // steps is jsonb; BlockBundle is its checked shape, and the check constraint limits type to BlockType.

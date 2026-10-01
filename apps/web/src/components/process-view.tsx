@@ -5,7 +5,8 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { PanelRight } from "lucide-react";
 import { isUnpublished, ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow, type SourceRow } from "@transpera-flow/db";
-import type { AnalysisSettings, EngineModel } from "@transpera-flow/engine";
+import type { AnalysisSettings, EngineModel, FirstPrinciples } from "@transpera-flow/engine";
+import { useSuccessMeasures } from "@/lib/first-principles/use-measures";
 import { discardChange, revertField } from "@/lib/drafts/discard";
 import { EMPTY_DIFF, diffBundles, unresolvedSteps } from "@/lib/drafts/diff";
 import { useDraftSession } from "@/lib/drafts/use-draft-session";
@@ -90,6 +91,7 @@ export function ProcessView({
   sources = [],
   liveRevisions,
   analysisRules,
+  firstPrinciples,
   hiddenLevers,
   processPicker,
   notice,
@@ -116,6 +118,8 @@ export function ProcessView({
   liveRevisions?: Record<string, string>;
   /** The workspace's analysis rules, which rate the run (Settings → Analysis rules). Omitted: the defaults. */
   analysisRules?: AnalysisSettings;
+  /** The live version's first principles (success measures for rule 11). */
+  firstPrinciples?: FirstPrinciples | null;
   /** The lever kinds the workspace has switched off in Settings -> Levers (the demo keeps its own in the tab). */
   hiddenLevers?: string[];
   /** The process picker (and page heading), shown at the left of the top bar. */
@@ -345,6 +349,8 @@ export function ProcessView({
 
   const sourceTitles = useMemo(() => Object.fromEntries(sources.map((s) => [s.id, s.title])), [sources]);
 
+  // Rule 11 (goals met) reads the live version's first principles, as every page does.
+  const successMeasures = useSuccessMeasures(live.process.id, mode === "demo", firstPrinciples);
   // Issues, levers and scenarios follow the model on screen (the draft, or live when shown).
   const issuesUi = useProcessIssues({
     bundle,
@@ -359,6 +365,7 @@ export function ProcessView({
     analysisRules,
     sources,
     liveRevisions: liveRevisions ?? { [bundle.process.id]: bundle.revision.id },
+    successMeasures,
     onShowIssues: () => {
       setPanelOpen(true);
       setPanelTab("insights");

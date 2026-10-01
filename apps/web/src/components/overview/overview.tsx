@@ -8,6 +8,8 @@
 // cards and the busy chart read. The recurring-revenue chart adds a few shorter runs, so it has a point for each
 // stretch of the way. Everything is the same 30 runs the process pages use.
 
+import { useSuccessMeasures } from "@/lib/first-principles/use-measures";
+import type { FirstPrinciples } from "@transpera-flow/engine";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, type ReactNode } from "react";
@@ -57,6 +59,8 @@ export interface OverviewProps {
   mode: "live" | "demo" | "readonly";
   /** The workspace's analysis rules; omitted means the defaults. On the demo, the ones edited in this tab. */
   analysisRules?: AnalysisSettings;
+  /** The pipeline's live first principles, whose success measures rule 11 (goals met) rates. */
+  firstPrinciples?: FirstPrinciples | null;
   /** Where each process's page is, by process id. */
   hrefs: Record<string, string>;
   processesHref: string;
@@ -105,7 +109,7 @@ function Section({ title, description, action, help, children }: { title: string
   );
 }
 
-export function Overview({ workspaceName, live, parts, issues, sources = NO_SOURCES, mode, analysisRules, hrefs, processesHref, issuesHref, rulesHref }: OverviewProps) {
+export function Overview({ workspaceName, live, parts, issues, sources = NO_SOURCES, mode, analysisRules, firstPrinciples, hrefs, processesHref, issuesHref, rulesHref }: OverviewProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -134,10 +138,11 @@ export function Overview({ workspaceName, live, parts, issues, sources = NO_SOUR
   // The findings, from the run at the workspace's own length, re-rated under the workspace's rules.
   const rules = useRatingSettings(mode === "demo", analysisRules);
   const absence = useAbsenceTest(base && baseResult ? base : null, baseResult?.seed ?? 1, resolveMoney(rules).absenceWeeks);
+  const successMeasures = useSuccessMeasures(live.process.id, mode === "demo", firstPrinciples);
   const gaps = useMemo(() => visibleFindings(rules, perceptionGapDetections(parts.flatMap((p) => p.steps))), [rules, parts]);
   const findings = useMemo(
-    () => (base && baseResult ? sortFindings(visibleFindings(rules, [...rerate(base, baseResult, rules, live.process.id, absence), ...gaps])) : null),
-    [base, baseResult, rules, live.process.id, absence, gaps],
+    () => (base && baseResult ? sortFindings(visibleFindings(rules, [...rerate(base, baseResult, rules, live.process.id, absence, { successMeasures }), ...gaps])) : null),
+    [base, baseResult, rules, live.process.id, absence, gaps, successMeasures],
   );
   // Acknowledging an insight tracks it here, so it badges the map straight away.
   // A dismissed insight stays away until its process's next published version: each part is at its live revision.

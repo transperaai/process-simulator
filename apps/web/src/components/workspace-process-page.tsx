@@ -4,10 +4,11 @@ import { isUnpublished } from "@transpera-flow/db";
 import { ProcessNav } from "@/components/process-nav";
 import { ProcessPage } from "@/components/process-page";
 import { canEditWorkspace } from "@/lib/access-data";
+import { loadProcessFirstPrinciples } from "@/lib/first-principles/data";
 import { loadWorkspaceLeverSettings } from "@/lib/levers/data";
 import { processRatings } from "@/lib/processes/rows";
 import { loadWorkspaceAnalysisRules } from "@/lib/rules/data";
-import { loadProcessForEditing, loadProcessVersion, loadWorkspaceIssues, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
+import { loadProcessForEditing, loadProcessVersion, loadWorkspaceIssues, loadWorkspaceLiveRevisionIds, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
 
 /**
  * A process of the workspace on the canvas, at `/w/[slug]/p/[processId]` (any process, never-published ones
@@ -19,14 +20,23 @@ export async function WorkspaceProcessPage({ slug, processId, version }: { slug:
   const { live, draft, processes } = process;
   // `?version=N` shows an earlier version, read only; a number that isn't an earlier version shows live.
   const earlier = version ? await loadProcessVersion(live, version) : null;
-  const [canEdit, scenarios, issues, sources, rules, levers] = await Promise.all([
+  const [canEdit, scenarios, issues, sources, rules, levers, liveRevisions] = await Promise.all([
     canEditWorkspace(live.workspace.id),
     loadWorkspaceScenarios(live.workspace.id),
     loadWorkspaceIssues(live.workspace.id),
     loadWorkspaceSources(live.workspace.id),
     loadWorkspaceAnalysisRules(live.workspace.id),
     loadWorkspaceLeverSettings(live.workspace.id),
+    // Every process, so a dismissal on a step of a process inside this one is measured against that process.
+    loadWorkspaceLiveRevisionIds(live.workspace.id),
   ]);
+  // First principles of the version on screen, and whether the draft has answers live doesn't (A54).
+  const shown = earlier ?? (isUnpublished(live) && draft ? draft : live);
+  const fpIds = [shown.revision.id, ...(draft && draft !== shown ? [draft.revision.id] : [])];
+  const fp = await loadProcessFirstPrinciples(live.process.id, fpIds);
+  const fpShown = fp[shown.revision.id]!;
+  const fpDraft = draft && draft !== shown && !earlier ? fp[draft.revision.id]! : null;
+  const draftChanged = fpDraft !== null && JSON.stringify(fpDraft.doc) !== JSON.stringify(fpShown.doc);
   const base = `/w/${slug}`;
   const hrefs = Object.fromEntries(processes.map((p) => [p.id, `${base}/p/${p.id}`]));
   const ratings = processRatings(processes, issues, [...live.steps, ...(live.otherProcesses ?? []).flatMap((p) => p.steps)]);
@@ -34,7 +44,7 @@ export async function WorkspaceProcessPage({ slug, processId, version }: { slug:
     <ProcessPage
       key={live.process.id}
       // A process never published has only its draft to show.
-      bundle={earlier ?? (isUnpublished(live) && draft ? draft : live)}
+      bundle={shown}
       viewingVersion={earlier ? earlier.revision.number : null}
       liveVersion={isUnpublished(live) ? 0 : live.revision.number}
       // An earlier version is read only, so nothing on it can be logged or edited.
@@ -42,7 +52,7 @@ export async function WorkspaceProcessPage({ slug, processId, version }: { slug:
       scenarios={scenarios}
       issues={issues}
       sources={sources}
-      liveRevisions={isUnpublished(live) ? {} : { [live.process.id]: live.revision.id }}
+      liveRevisions={liveRevisions}
       analysisRules={rules.settings}
       hiddenLevers={levers.hidden}
       registerHref={`${base}/issues`}
@@ -50,6 +60,7 @@ export async function WorkspaceProcessPage({ slug, processId, version }: { slug:
       rating={ratings[live.process.id] ?? null}
       editHref={canEdit ? `${base}/p/${live.process.id}/edit` : undefined}
       historyHref={`${base}/p/${live.process.id}/history`}
+      firstPrinciples={{ doc: fpShown.doc, href: `${base}/p/${live.process.id}/first-principles`, draftChanged, inheritedFrom: fpShown.inheritedFrom }}
       inside={processes.filter((p) => p.parentId === live.process.id).map((p) => ({ id: p.id, name: p.name, href: hrefs[p.id]! }))}
       processPicker={
         <ProcessNav

@@ -1,7 +1,7 @@
 // The Processes page's rows (issue #101): every process in the company map's order (each followed by the processes
 // inside it), with the numbers beside it. Pure: the page loads the facts, this works out the rows.
 
-import { companyMap, flattenCompanyMap, type IssueRow, type StepRow } from "@transpera-flow/db";
+import { companyMap, flattenCompanyMap, type IssueLinkRef, type IssueRow, type StepRow } from "@transpera-flow/db";
 import { compareRatingsDesc, ratingOfStored, type Rating } from "@transpera-flow/engine";
 
 export interface ProcessFacts {
@@ -38,12 +38,17 @@ export interface ProcessRowData extends ProcessFacts {
 }
 
 type StepFact = Pick<StepRow, "process_id" | "kind" | "child_process_id"> & { id?: string };
-type IssueFact = Pick<IssueRow, "process_id" | "step_id" | "severity" | "status">;
+/** An issue as these tallies need it: where it sits (the compatibility columns, and every link when it has them), and how bad and open it is. */
+type IssueFact = Pick<IssueRow, "process_id" | "step_id" | "severity" | "status"> & { links?: readonly IssueLinkRef[] };
 type Tally = { steps: number; issues: number; rating: Rating | null };
 
-/** An issue belongs to a process when it names it, or (a manual issue with no process) names one of its steps. */
-export function isOnProcess(i: Pick<IssueRow, "process_id" | "step_id">, processId: string, stepIds: ReadonlySet<string>): boolean {
-  return i.process_id === processId || (!i.process_id && !!i.step_id && stepIds.has(i.step_id));
+/**
+ * An issue belongs to a process when it names it, or (a manual issue with no process) names one of its steps, or
+ * any of the things it links to is the process or one of its steps (an issue can touch steps in several processes).
+ */
+export function isOnProcess(i: Pick<IssueRow, "process_id" | "step_id"> & { links?: readonly IssueLinkRef[] }, processId: string, stepIds: ReadonlySet<string>): boolean {
+  if (i.process_id === processId || (!i.process_id && !!i.step_id && stepIds.has(i.step_id))) return true;
+  return (i.links ?? []).some((l) => l.process_id === processId || (!!l.step_id && stepIds.has(l.step_id)));
 }
 
 const isWorking = (s: StepFact) => (s.kind === "task" || s.kind === "wait" || s.kind === "decision" || s.kind === "subprocess") && !s.child_process_id;
@@ -73,12 +78,20 @@ export function processRows(input: {
   }
   for (const i of input.issues) {
     if (i.status !== "open" && i.status !== "testing") continue;
-    const pid = i.process_id ?? (i.step_id ? stepProcess.get(i.step_id) : undefined);
-    if (!pid) continue;
-    const o = mine(pid);
-    o.issues++;
+    // Every process it touches counts it once: the one the compatibility columns name, and each its links reach.
+    const where = new Set<string>();
+    const add = (processId: string | null | undefined, stepId: string | null | undefined) => {
+      const pid = processId ?? (stepId ? stepProcess.get(stepId) : undefined);
+      if (pid) where.add(pid);
+    };
+    add(i.process_id, i.step_id);
+    for (const l of i.links ?? []) add(l.process_id, l.step_id);
     const r = ratingOfStored(i.severity);
-    if (r !== "great") o.rating = worse(o.rating, r);
+    for (const pid of where) {
+      const o = mine(pid);
+      o.issues++;
+      if (r !== "great") o.rating = worse(o.rating, r);
+    }
   }
 
   // Each process's numbers include those of the processes inside it.

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Page } from "@/components/shell/page";
 import { IssuesPage } from "@/components/issues-page";
+import { loadLiveFirstPrinciples } from "@/lib/first-principles/data";
 import { canEditWorkspace } from "@/lib/access-data";
 import { loadWorkspaceAnalysisRules } from "@/lib/rules/data";
 import { loadLiveProcess, loadProcessNames, loadWorkspaceIssues, loadWorkspaceLiveRevisionIds, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
@@ -12,7 +13,7 @@ export default async function WorkspaceIssuesPage(props: PageProps<"/w/[slug]/is
   const bundle = await loadLiveProcess(slug);
   if (!bundle) notFound();
   const ws = bundle.workspace.id;
-  const [canEdit, issues, scenarios, processes, rules, sources, liveRevisions] = await Promise.all([
+  const [canEdit, issues, scenarios, processes, rules, sources, liveRevisions, firstPrinciples] = await Promise.all([
     canEditWorkspace(ws),
     loadWorkspaceIssues(ws),
     loadWorkspaceScenarios(ws),
@@ -20,6 +21,7 @@ export default async function WorkspaceIssuesPage(props: PageProps<"/w/[slug]/is
     loadWorkspaceAnalysisRules(ws),
     loadWorkspaceSources(ws),
     loadWorkspaceLiveRevisionIds(ws),
+    loadLiveFirstPrinciples(bundle.process.id, bundle.revision.id),
   ]);
   return (
     <Page
@@ -43,6 +45,7 @@ export default async function WorkspaceIssuesPage(props: PageProps<"/w/[slug]/is
         sources={sources}
         liveRevisions={liveRevisions}
         analysisRules={rules.settings}
+        firstPrinciples={firstPrinciples}
         mode={canEdit ? "live" : "readonly"}
       />
     </Page>

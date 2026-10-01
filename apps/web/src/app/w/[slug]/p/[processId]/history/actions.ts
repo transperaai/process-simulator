@@ -1,6 +1,8 @@
 "use server";
 
 import { isId } from "@/lib/editor/validate";
+import { firstPrinciplesDraftChanged } from "@/lib/first-principles/data";
+import { mustAskBeforeRestore } from "@/lib/history/restore-check";
 import { loadVersionModel, type ModelEntry } from "@/lib/history/data";
 import { createClient } from "@/lib/supabase/server";
 
@@ -33,6 +35,12 @@ export async function restoreVersion(processId: string, revisionId: string, repl
   if (!isId(processId) || !isId(revisionId) || typeof replaceDraft !== "boolean") return invalid;
   const session = await signedIn();
   if (!session.ok) return signedOut;
+  // The database looks at the draft's steps and edges; a draft whose first principles differ from live's has changes too (A54).
+  if (!replaceDraft) {
+    const { data: proc } = await session.supabase.from("processes").select("live_revision_id, draft_revision_id").eq("id", processId).maybeSingle();
+    const differ = proc?.live_revision_id && proc.draft_revision_id ? await firstPrinciplesDraftChanged(processId, proc.live_revision_id, proc.draft_revision_id) : false;
+    if (mustAskBeforeRestore(replaceDraft, Boolean(proc?.draft_revision_id), differ)) return { status: "draft_exists" };
+  }
   const { data, error } = await session.supabase.rpc("restore_version", { target_process: processId, source_revision: revisionId, replace_draft: replaceDraft });
   if (error) return error.code === "42501" ? forbidden : failed;
   const r = data as { status: string; number?: number; unlinked_children?: number };

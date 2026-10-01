@@ -15,6 +15,7 @@ import {
   saveIssue,
   listProcesses,
   loadAnalysisRules,
+  loadFirstPrinciples,
   loadIssues,
   loadProcessBundle,
   loadScenarios,
@@ -25,7 +26,7 @@ import {
   type ProcessBundle,
   type ScenarioRow,
 } from "@transpera-flow/db";
-import { absenceTest, applyPatches, detectIssues, ENGINE_VERSION, isBlocking, ISSUE_TYPES, MAX_PATCHES, PATCH_OPS, RATINGS, STORED_SEVERITIES, ratingOfStored, resolveMoney, shadowPricesFor, simulate, storedOfRating, toRatingConfig, withoutDisabledRules, type EngineModel } from "@transpera-flow/engine";
+import { absenceTest, applyPatches, detectIssues, ENGINE_VERSION, isBlocking, ISSUE_TYPES, MAX_PATCHES, PATCH_OPS, RATINGS, STORED_SEVERITIES, ratingOfStored, resolveMoney, shadowPricesFor, simulate, successMeasureSource, storedOfRating, toRatingConfig, withoutDisabledRules, type EngineModel } from "@transpera-flow/engine";
 import { bottleneckReport, checkScenarioRobustness, compareScenarios, matchNamed, type NamedScenario } from "./analysis";
 import { resolveProcess, resolveWorkspace, revisionIdFor, type ProcessWithDraft, type ToolContext, type WorkspaceRef } from "./context";
 import { runTool, ToolError } from "./result";
@@ -519,6 +520,9 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
           // The money settings (the cap on what a loss is worth, absences a year) are the workspace's too (issue #108).
           const money = { ...resolveMoney(rules.settings), currency };
           const config = toRatingConfig(rules.settings, loaded.model.hoursPerWeek);
+          // The success measures of the live version's first principles, which rule 11 (goals met) rates, as the app does.
+          const firstPrinciples = await loadFirstPrinciples(ctx.db, proc.id, loaded.bundle.revision.id).catch(() => null);
+          const successMeasures = firstPrinciples?.doc ? successMeasureSource(firstPrinciples.doc, proc.id) : undefined;
           // The absence test (rule 8) is its own pass, a few more replications per person who is the only one for a step.
           // Skip it when the filters would drop its findings anyway, and cap its time; say so when it didn't finish.
           const wantsAbsence = config.rules.spof.enabled && !client && (!args.type || args.type === "spof") && (!args.status || args.status === "open");
@@ -528,7 +532,7 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
             if (!absence.complete) assumptions.push(`The absence test ran out of time (${ABSENCE_BUDGET_MS / 1000} s) and tested ${absence.people.length} of the people who are the only one for a step; "only one person can do it" lists only those.`);
           }
           const rate = (shadowPrices?: Record<string, number>) =>
-            withoutDisabledRules(rules.settings, detectIssues(loaded.model, run, config, { processId: proc.id, absence, cost: money, ...(shadowPrices ? { shadowPrices } : {}) })).filter(
+            withoutDisabledRules(rules.settings, detectIssues(loaded.model, run, config, { processId: proc.id, absence, cost: money, ...(successMeasures ? { successMeasures } : {}), ...(shadowPrices ? { shadowPrices } : {}) })).filter(
               (d) => !keys.has(d.key) && (!args.type || d.type === args.type) && !client,
             );
           const dropped = Boolean(args.status && args.status !== "open");

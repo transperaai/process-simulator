@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "./database.types";
 import type { CompanyModel, SnapshotProcess } from "./company";
 import type { CitingRow } from "./evidence";
+import { uiStatus, type StoredIssueStatus } from "./issue-status";
 import { partitionSteps } from "./retired";
 import type { RunRow } from "./runs";
 import type {
@@ -361,12 +362,13 @@ export async function loadBlocks(db: Db, workspaceId: string): Promise<BlockRow[
 }
 
 export const ISSUE_COLUMNS =
-  "id, workspace_id, process_id, step_id, role_id, person_id, client_id, type, severity, title, evidence, evidence_metrics, owner_person_id, status, scenario_id, source, detected_key, resolved_at, created_at, updated_at, number, dismissed_revision_id, target_measure, target_now, target_goal" as const;
+  "id, workspace_id, process_id, step_id, role_id, person_id, client_id, type, severity, title, evidence, evidence_metrics, owner_person_id, status, scenario_id, source, detected_key, resolved_at, created_at, updated_at, number, dismissed_revision_id, resolution, target_measure, target_now, target_goal" as const;
 
 /** The history log's columns. */
 export const ISSUE_EVENT_COLUMNS = "id, issue_id, workspace_id, seq, kind, at, actor, detail, tx" as const;
 
-type IssueTableRow = Omit<IssueRow, "links" | "owner_ids" | "source_ids">;
+/** An `issues` row as stored: the status as the check allows it, and the resolution that tells Resolved from Won't fix. */
+type IssueTableRow = Omit<IssueRow, "links" | "owner_ids" | "source_ids" | "status"> & { status: StoredIssueStatus; resolution: string | null };
 
 /** Join issue rows from `issues` with what each links to, who owns it and its sources. */
 export function assembleIssues(
@@ -387,8 +389,10 @@ export function assembleIssues(
   const l = by(links);
   const o = by(owners);
   const s = by(sources);
-  return issues.map((i) => ({
+  return issues.map(({ resolution, status, ...i }) => ({
     ...i,
+    // The new statuses are held as the old ones plus a resolution (issue-status.ts).
+    status: uiStatus(status, resolution),
     // In the order they were added (the reads are ordered).
     links: (l.get(i.id) ?? []).map(({ process_id, step_id }) => ({ process_id, step_id })),
     owner_ids: (o.get(i.id) ?? []).map((r) => r.person_id),

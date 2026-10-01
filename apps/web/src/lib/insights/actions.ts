@@ -18,7 +18,15 @@ export interface InsightContext {
   options?: Pick<IssueFormOptions, "steps">;
 }
 
-export const processFor = (i: Insight, ctx: InsightContext): string | null => (i.stepIds[0] ? ctx.processOfStep?.(i.stepIds[0]) : null) ?? ctx.processId;
+/**
+ * The process an insight is about: the one its step belongs to (a step of a process inside the page's process is in
+ * that one), else the page's own. A dismissal is measured against that process's versions, not the page's.
+ */
+export const processFor = (i: Insight, ctx: InsightContext): string | null => {
+  const step = i.stepIds[0];
+  if (!step) return ctx.processId;
+  return ctx.options?.steps.find((s) => s.id === step)?.processId ?? ctx.processOfStep?.(step) ?? ctx.processId;
+};
 
 /** The draft the Acknowledge dialog opens with for an insight: its rating, steps and sources. */
 export function acknowledgeDraft(insight: Insight, ctx: InsightContext): IssueDraft {

@@ -22,6 +22,47 @@ const issue = (process_id: string | null, severity: "info" | "warning" | "seriou
   status,
 });
 
+describe("an issue that links several processes", () => {
+  const processes = [proc("a"), proc("b"), proc("c", "b")];
+  const linked = (links: { process_id: string | null; step_id: string | null }[], over: Partial<ReturnType<typeof issue>> = {}) => ({ ...issue(links[0]!.process_id, "critical", "open", links[0]!.step_id), links, ...over });
+
+  it("counts toward every process its links touch, once each, and rates each by it", () => {
+    const steps = [step("s1", "a"), step("s2", "b"), step("s3", "c")];
+    const rows = processRows({
+      processes,
+      steps,
+      issues: [linked([{ process_id: "a", step_id: "s1" }, { process_id: "a", step_id: null }, { process_id: "c", step_id: "s3" }])],
+      versions: new Map(),
+    });
+    const by = Object.fromEntries(rows.map((r) => [r.id, [r.openIssues, r.rating]]));
+    expect(by.a).toEqual([1, "risk"]);
+    expect(by.c).toEqual([1, "risk"]);
+    // b has c inside it, so its total includes c's; the issue is not counted in b on its own.
+    expect(by.b).toEqual([1, "risk"]);
+  });
+
+  it("looks a step's process up when the link names none", () => {
+    const rows = processRows({ processes, steps: [step("s1", "a")], issues: [linked([{ process_id: null, step_id: "s1" }])], versions: new Map() });
+    expect(rows.find((r) => r.id === "a")!.openIssues).toBe(1);
+  });
+
+  it("ratings count it for each process too, and a closed one counts nowhere", () => {
+    const steps = [step("s1", "a"), step("s2", "b")];
+    const open = linked([{ process_id: "a", step_id: "s1" }, { process_id: "b", step_id: "s2" }]);
+    const closed = { ...open, status: "resolved" as const };
+    expect(processRatings(processes, [open], steps).a).toBe("risk");
+    expect(processRatings(processes, [open], steps).b).toBe("risk");
+    expect(processRatings(processes, [closed], steps).b).toBeNull();
+  });
+
+  it("isOnProcess finds an issue through any of its links", () => {
+    const i = linked([{ process_id: "a", step_id: "s1" }, { process_id: "b", step_id: "s2" }]);
+    expect(isOnProcess(i, "b", new Set(["s2"]))).toBe(true);
+    expect(isOnProcess(i, "z", new Set(["s2"]))).toBe(true);
+    expect(isOnProcess(i, "z", new Set(["other"]))).toBe(false);
+  });
+});
+
 describe("processRows", () => {
   const processes = [proc("a"), proc("b", "a"), proc("c", "b"), proc("d", null, { kind: "servicing" })];
 

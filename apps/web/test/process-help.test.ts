@@ -30,7 +30,7 @@ describe("process page help", () => {
 
   it("the sections carry help through <Section help>", () => {
     const text = read("components/process-page.tsx");
-    for (const label of ["Map colours", "Insights", "Issues"]) expect(text).toContain(`label: "${label}"`);
+    for (const label of ["First principles", "Map colours", "Insights", "Issues"]) expect(text).toContain(`label: "${label}"`);
   });
 
   it("every control in the Insights rows and pop-up has an (i) with a description and an example (issue #110)", () => {

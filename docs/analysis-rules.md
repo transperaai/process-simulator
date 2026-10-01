@@ -43,8 +43,9 @@ run their old logic, mapped onto ratings until their tickets land. Choices the s
   rated). A bad month raises it, like the other rules.
 - **Too slow overall (13)** rates the mean cycle time of completed items against the process's target (set on the
   pipeline's start step; none, not rated). A bad month is the 90th percentile of the replications' mean cycle time.
-- **Goals met (11)** reads success measures through `SuccessMeasureSource` (A54 implements it; `NO_SUCCESS_MEASURES` is
-  the stub, so nothing is rated yet). Measures map to a `SuccessKpi` (wins, wins a week, win rate, new MRR, billed,
+- **Goals met (11)** reads success measures through `SuccessMeasureSource`. A54 (issue #119) implements it over the process's first principles
+  (`successMeasureSource` in `packages/engine/src/first-principles.ts`), and the process page passes it to the detectors, so goals-met findings appear in its insights;
+  a process with no first principles still rates nothing (`NO_SUCCESS_MEASURES`). The Issues register and the Overview don't pass it yet. Measures map to a `SuccessKpi` (wins, wins a week, win rate, new MRR, billed,
   cycle time, labour cost, WIP at the end); one that doesn't is returned by `checkSuccessMeasures` as "Not checked by
   simulation" and not rated. Rated on the share of replications that meet the target: 80%+ Great, 50–80% Good, 20–50%
   Bad, under 20% Operational risk (lower is worse, a value on a cut-off in the better band).
@@ -226,7 +227,8 @@ forever:
 - If the analysis no longer finds it, nothing is listed.
 - A dismissed insight is never an issue: it is not in the issues register, not on the map, not in the counts, and it
   has no issue number. It gets a number only if someone acknowledges it later.
-- A dismissal recorded before this rule, with no version on record, stays hidden.
+- The version is the live version of the insight's own process (the process its step belongs to), not of the page it was dismissed from.
+- A dismissal made before the process had ever been published has no version on record: it holds until the first publish, then ends like any other. Dismissals recorded before this rule take their process's live version at the time of the migration where that can be worked out, and otherwise end on the next publish.
 
 ## Changes from today
 

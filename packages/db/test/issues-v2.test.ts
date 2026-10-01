@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { NORTHBEAM_PROCESS_ID, NORTHBEAM_WORKSPACE_ID, northbeamIssues, northbeamPersonIds, northbeamSourceIds, northbeamStepIds } from "../src";
+import { assembleIssues, storedStatus, uiStatus, type IssueStatus, NORTHBEAM_PROCESS_ID, NORTHBEAM_WORKSPACE_ID, northbeamIssues, northbeamPersonIds, northbeamSourceIds, northbeamStepIds } from "../src";
 import { createTestDb, createUser, type TestDb } from "./harness";
 
 // Issues v2 (issue #112, A47): links to a process or several steps, several owners, targets, the four statuses, a
@@ -76,21 +76,22 @@ describe("migrating existing issues", () => {
 
   const after = async () => Object.fromEntries((await client.query("select * from issues")).rows.map((r) => [r.id, r]));
 
-  it("loses nothing: every old column keeps its value, apart from the statuses that were renamed", async () => {
+  it("loses nothing: every old column keeps its value, statuses included (the migration changes no existing value)", async () => {
     const now = await after();
     expect(Object.keys(now).sort()).toEqual(Object.keys(before).sort());
     for (const [id, old] of Object.entries(before)) {
-      const { status: _s, number: _n, target_measure: _a, target_now: _b, target_goal: _c, dismissed_revision_id: _d, ...rest } = now[id] as Record<string, unknown>;
-      const { status: _os, ...oldRest } = old;
-      expect(rest, id).toEqual(oldRest);
+      const { number: _n, resolution: _r, target_measure: _a, target_now: _b, target_goal: _c, dismissed_revision_id: _d, ...rest } = now[id] as Record<string, unknown>;
+      expect(rest, id).toEqual(old);
     }
   });
 
-  it("maps statuses: in progress to testing, done to resolved; open and dismissed stay (dismissed stays hidden)", async () => {
+  it("leaves the stored statuses alone: in progress is shown as Testing solutions, done as Resolved, dismissed stays hidden", async () => {
     const now = await after();
-    expect([ids.a, ids.b, ids.c, ids.d].map((i) => now[i].status)).toEqual(["testing", "resolved", "dismissed", "open"]);
+    expect([ids.a, ids.b, ids.c, ids.d].map((i) => now[i].status)).toEqual(["in_progress", "done", "dismissed", "open"]);
+    expect([ids.a, ids.b, ids.c, ids.d].map((i) => now[i].resolution)).toEqual([null, null, null, null]);
     expect(now[ids.b].resolved_at).toEqual(before[ids.b]!.resolved_at);
     expect(now[ids.a].resolved_at).toBeNull();
+    expect(now[ids.a].updated_at).toEqual(before[ids.a]!.updated_at);
   });
 
   it("keeps severities, which already hold the four ratings", async () => {
@@ -178,7 +179,7 @@ describe("seed", () => {
     const rows = (await db.client.query("select id, number, status from issues where workspace_id = $1 order by number", [ws])).rows;
     expect(rows.map((r) => r.id)).toEqual(northbeamIssues().map((i) => i.id));
     expect(rows.map((r) => r.number)).toEqual([1, 2, 3]);
-    expect(rows.map((r) => r.status)).toEqual(["open", "testing", "open"]);
+    expect(rows.map((r) => r.status)).toEqual(["open", "in_progress", "open"]);
     const first = northbeamIssues()[0]!;
     expect((await db.client.query("select step_id from issue_links where issue_id = $1", [first.id])).rows).toEqual([{ step_id: audit }]);
     expect((await db.client.query("select source_id from issue_sources where issue_id = $1", [first.id])).rows).toEqual([{ source_id: northbeamSourceIds.strategyInterview }]);
@@ -254,7 +255,7 @@ describe("save_issue", () => {
   it("checks the target lengths and statuses in the database", async () => {
     await db.as(users.editor!.claims, async (c) => {
       await fails(c, () => save(c, ws, null, { title: "t", target_goal: "x".repeat(201) }), /issues_target_lengths/);
-      await fails(c, () => save(c, ws, null, { title: "t", status: "done" }), /issues_status/);
+      await fails(c, () => save(c, ws, null, { title: "t", status: "finished" }), /issues_status/);
     });
   });
 });
@@ -380,7 +381,7 @@ describe("history", () => {
       const r = await save(c, ws, null, { title: "Other routes" });
       await c.query("update issues set evidence = 'Seen on the call' where id = $1", [r.id]);
       await c.query("update issues set evidence = 'Seen on the call' where id = $1", [r.id]);
-      const saved = (await c.query("select public.save_fields('issues', $1, $2, $3) as r", [JSON.stringify({ id: r.id }), JSON.stringify({ status: "open" }), JSON.stringify({ status: "testing" })])).rows[0].r;
+      const saved = (await c.query("select public.save_fields('issues', $1, $2, $3) as r", [JSON.stringify({ id: r.id }), JSON.stringify({ status: "open" }), JSON.stringify({ status: "in_progress" })])).rows[0].r;
       expect(saved.status).toBe("saved");
       expect(await kinds(c, r.id)).toEqual(["created", "edited", "solution_tested"]);
     });
@@ -394,7 +395,7 @@ describe("history", () => {
       await c.query("insert into issue_sources (issue_id, source_id, workspace_id) values ($1, $2, $3)", [r.id, northbeamSourceIds.salesNotes, ws]);
       expect(await kinds(c, r.id)).toEqual(["created"]);
     });
-    // In a later transaction each change logs once.
+    // In a later transaction each change logs once, as an entry of its own.
     const id = northbeamIssues()[2]!.id;
     const before = (await db.client.query("select count(*)::int as n from issue_events where issue_id = $1", [id])).rows[0].n;
     await db.client.query("insert into issue_owners (issue_id, person_id, workspace_id) values ($1, $2, $3)", [id, rosa, ws]);
@@ -402,9 +403,34 @@ describe("history", () => {
     const log = (await db.client.query("select kind, detail from issue_events where issue_id = $1 order by seq", [id])).rows.slice(before);
     // Both ran in autocommit, so each is its own transaction and its own event.
     expect(log).toEqual([
-      { kind: "edited", detail: { linked: "owners" } },
-      { kind: "edited", detail: { linked: "owners" } },
+      { kind: "edited", detail: { linked: { owners: { added: [rosa] } } } },
+      { kind: "edited", detail: { linked: { owners: { removed: [rosa] } } } },
     ]);
+  });
+
+  it("records link, owner and source changes in the same entry as a field or status change made by the same save", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      const r = await save(c, ws, null, { title: "Both" }, [{ process_id: NORTHBEAM_PROCESS_ID, step_id: audit }], [rosa], []);
+      const created = (await events(c, r.id))[0]!;
+      expect(created.detail).toMatchObject({ linked: { steps: { added: [{ process_id: NORTHBEAM_PROCESS_ID, step_id: audit }] }, owners: { added: [rosa] } } });
+      await save(c, ws, r.id, { title: "Both, renamed" }, [{ process_id: NORTHBEAM_PROCESS_ID, step_id: northbeamStepIds.qualify }], [priya], [northbeamSourceIds.salesNotes]);
+      const edited = (await events(c, r.id)).filter((e) => e.kind === "edited");
+      expect(edited).toHaveLength(1);
+      expect(edited[0]!.detail).toEqual({
+        fields: ["title"],
+        linked: {
+          steps: { added: [{ process_id: NORTHBEAM_PROCESS_ID, step_id: northbeamStepIds.qualify }], removed: [{ process_id: NORTHBEAM_PROCESS_ID, step_id: audit }] },
+          owners: { added: [priya], removed: [rosa] },
+          sources: { added: [northbeamSourceIds.salesNotes] },
+        },
+      });
+      // A status change with a link change: the link change is in the status entry.
+      await save(c, ws, r.id, { status: "testing" }, [{ process_id: NORTHBEAM_PROCESS_ID, step_id: audit }]);
+      const log = await events(c, r.id);
+      const testing = log[log.length - 1]!;
+      expect(testing.kind).toBe("solution_tested");
+      expect(testing.detail).toMatchObject({ from: "open", to: "testing", linked: { steps: { added: [{ step_id: audit }], removed: [{ step_id: northbeamStepIds.qualify }] } } });
+    });
   });
 
   it("does not log an unchanged save, and deleting an issue takes its history with it", async () => {
@@ -497,5 +523,164 @@ describe("row-level security on the new tables", () => {
       return counts;
     });
     expect(r).toEqual([0, 0, 0, 0]);
+  });
+});
+
+describe("additive: statuses stay as they are, with a resolution beside them", () => {
+  it("stores the shown names as the old spellings plus a resolution", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      const r = await save(c, ws, null, { title: "Statuses" });
+      const stored = async (status: string) => {
+        const row = await save(c, ws, r.id, { status });
+        return [row.status, row.resolution];
+      };
+      expect(await stored("testing")).toEqual(["in_progress", null]);
+      expect(await stored("resolved")).toEqual(["done", null]);
+      expect(await stored("wont_fix")).toEqual(["done", "wont_fix"]);
+      // Reopening clears it, and the old spellings still work.
+      expect(await stored("open")).toEqual(["open", null]);
+      expect(await stored("wont_fix")).toEqual(["done", "wont_fix"]);
+      expect(await stored("in_progress")).toEqual(["in_progress", null]);
+      expect(await stored("done")).toEqual(["done", null]);
+    });
+  });
+
+  it("clears the resolution when the status changes any other way, and refuses other resolutions", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      const r = await save(c, ws, null, { title: "Won't fix, reopened" });
+      await save(c, ws, r.id, { status: "wont_fix" });
+      expect((await c.query("update issues set status = 'open' where id = $1 returning resolution", [r.id])).rows[0].resolution).toBeNull();
+      await fails(c, () => c.query("update issues set status = 'done', resolution = 'later' where id = $1", [r.id]), /issues_resolution/);
+      // The resolution only means something on done.
+      expect((await c.query("update issues set resolution = 'wont_fix' where id = $1 returning resolution", [r.id])).rows[0].resolution).toBeNull();
+    });
+  });
+
+  it("leaves the existing status check and the existing trigger exactly as they were", async () => {
+    const check = (await db.client.query("select pg_get_constraintdef(oid) as def from pg_constraint where conname = 'issues_status'")).rows[0].def as string;
+    expect(check).toMatch(/open.*in_progress.*done.*dismissed/);
+    expect(check).not.toMatch(/testing|wont_fix/);
+    const fn = (await db.client.query("select pg_get_functiondef('private.issues_before_write'::regproc) as def")).rows[0].def as string;
+    expect(fn).toContain("new.status in ('done', 'dismissed')");
+    // The number trigger is a separate one, running after it.
+    const triggers = (await db.client.query("select tgname from pg_trigger where tgrelid = 'public.issues'::regclass and not tgisinternal order by tgname")).rows.map((r) => r.tgname);
+    expect(triggers).toEqual(expect.arrayContaining(["issues_before_write", "issues_number", "issue_log", "issue_seed_links", "audit_mcp", "set_updated_at"]));
+  });
+
+  it("refuses a status the check never allowed, in a plain update as before", async () => {
+    await expect(db.client.query("update issues set status = 'testing' where workspace_id = $1", [ws])).rejects.toThrow(/issues_status/);
+  });
+});
+
+describe("save_issue checks what an issue links to", () => {
+  let otherProcessStep: string;
+  let otherWorkspaceStep: string;
+  beforeAll(async () => {
+    otherProcessStep = (await db.client.query("select id from steps where workspace_id = $1 and process_id <> $2 limit 1", [ws, NORTHBEAM_PROCESS_ID])).rows[0].id;
+    otherWorkspaceStep = (await db.client.query("select id from steps where workspace_id <> $1 limit 1", [ws])).rows[0].id;
+  });
+  const link = (c: Client, links: unknown) => save(c, ws, null, { title: "Links" }, links);
+
+  it("refuses a step from another workspace", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      await fails(c, () => link(c, [{ process_id: NORTHBEAM_PROCESS_ID, step_id: otherWorkspaceStep }]), /not a step of that process/);
+      await fails(c, () => link(c, [{ process_id: null, step_id: otherWorkspaceStep }]), /not a step of that process/);
+      await fails(c, () => link(c, [{ process_id: NORTHBEAM_PROCESS_ID, step_id: randomUUID() }]), /not a step of that process/);
+    });
+  });
+
+  it("refuses a step that belongs to a different process than the link says", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      await fails(c, () => link(c, [{ process_id: NORTHBEAM_PROCESS_ID, step_id: otherProcessStep }]), /not a step of that process/);
+    });
+  });
+
+  it("takes the step's own process when the link names none, and accepts a step of another process under its own", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      const r = await link(c, [{ process_id: null, step_id: audit }]);
+      expect((await c.query("select process_id, step_id from issue_links where issue_id = $1", [r.id])).rows).toEqual([{ process_id: NORTHBEAM_PROCESS_ID, step_id: audit }]);
+      const own = (await c.query("select process_id from steps where id = $1 limit 1", [otherProcessStep])).rows[0].process_id;
+      const s2 = await link(c, [{ process_id: own, step_id: otherProcessStep }]);
+      expect(s2.process_id).toBe(own);
+    });
+  });
+
+  it("refuses a whole-process link mixed with steps, and a link that names nothing", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      await fails(c, () => link(c, [{ process_id: NORTHBEAM_PROCESS_ID, step_id: null }, { process_id: NORTHBEAM_PROCESS_ID, step_id: audit }]), /not both/);
+      await fails(c, () => link(c, [{ process_id: null, step_id: null }]), /needs a process or a step/);
+      const r = await link(c, [{ process_id: NORTHBEAM_PROCESS_ID, step_id: audit }]);
+      await fails(c, () => save(c, ws, r.id, {}, [{ process_id: NORTHBEAM_PROCESS_ID, step_id: null }, { process_id: NORTHBEAM_PROCESS_ID, step_id: audit }]), /not both/);
+    });
+  });
+
+  it("only lets an insight with a detection key be dismissed", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      await fails(c, () => save(c, ws, null, { title: "Not an insight", status: "dismissed" }), /only an insight can be dismissed/);
+      const manual = await save(c, ws, null, { title: "A real issue" });
+      await fails(c, () => save(c, ws, manual.id, { status: "dismissed" }), /only an insight can be dismissed/);
+      const insight = await save(c, ws, null, { title: "Insight", type: "delay", source: "promoted", detected_key: `wait:step:${audit}`, status: "dismissed" });
+      expect(insight.status).toBe("dismissed");
+      expect((await save(c, ws, insight.id, { status: "dismissed" })).status).toBe("dismissed");
+    });
+  });
+});
+
+describe("issues inserted outside save_issue", () => {
+  it("get the link and owner rows their process_id, step_id and owner_person_id say", async () => {
+    const ins = async (cols: string, vals: unknown[]) =>
+      (await db.client.query(`insert into issues (workspace_id, type, title, ${cols}) values ($1, 'delay', 'Direct', ${vals.map((_, i) => `$${i + 2}`).join(", ")}) returning id`, [ws, ...vals])).rows[0].id as string;
+    const withStep = await ins("step_id, owner_person_id", [audit, rosa]);
+    expect((await db.client.query("select process_id, step_id from issue_links where issue_id = $1", [withStep])).rows).toEqual([{ process_id: NORTHBEAM_PROCESS_ID, step_id: audit }]);
+    expect((await db.client.query("select person_id from issue_owners where issue_id = $1", [withStep])).rows).toEqual([{ person_id: rosa }]);
+    const withProcess = await ins("process_id", [NORTHBEAM_PROCESS_ID]);
+    expect((await db.client.query("select process_id, step_id from issue_links where issue_id = $1", [withProcess])).rows).toEqual([{ process_id: NORTHBEAM_PROCESS_ID, step_id: null }]);
+    const none = await ins("evidence", ["nothing linked"]);
+    expect((await db.client.query("select count(*)::int as n from issue_links where issue_id = $1", [none])).rows[0].n).toBe(0);
+    // Its history starts with the link added to the created entry.
+    expect((await db.client.query("select kind, detail from issue_events where issue_id = $1", [withStep])).rows).toMatchObject([{ kind: "created", detail: { linked: { steps: { added: [{ step_id: audit }] } } } }]);
+  });
+
+  it("don't get a second link when save_issue already wrote them", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      const r = await save(c, ws, null, { title: "Once" }, [{ process_id: NORTHBEAM_PROCESS_ID, step_id: audit }], [rosa]);
+      expect((await c.query("select count(*)::int as n from issue_links where issue_id = $1", [r.id])).rows[0].n).toBe(1);
+      expect((await c.query("select count(*)::int as n from issue_owners where issue_id = $1", [r.id])).rows[0].n).toBe(1);
+    });
+  });
+
+  it("includes the perception-gap issues the database logs when a step's sources disagree", async () => {
+    const rows = (await db.client.query("select i.id from issues i where i.type = 'perception_gap' and i.workspace_id = $1", [ws])).rows;
+    for (const { id } of rows) {
+      const withStep = (await db.client.query("select step_id from issues where id = $1", [id])).rows[0].step_id;
+      if (withStep) expect((await db.client.query("select count(*)::int as n from issue_links where issue_id = $1", [id])).rows[0].n).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("MCP audit", () => {
+  it("covers the link tables like their peers", async () => {
+    const rows = (await db.client.query("select tgrelid::regclass::text as t from pg_trigger where tgname = 'audit_mcp' and not tgisinternal")).rows.map((r) => r.t);
+    for (const t of ["issues", "issue_links", "issue_owners", "issue_sources"]) expect(rows).toContain(t);
+  });
+});
+
+describe("the status mapping", () => {
+  it("round-trips every status a person sees through the stored spelling", () => {
+    const shown: IssueStatus[] = ["open", "testing", "resolved", "wont_fix", "dismissed"];
+    for (const s of shown) {
+      const { status, resolution } = storedStatus(s);
+      expect(["open", "in_progress", "done", "dismissed"]).toContain(status);
+      expect(uiStatus(status, resolution)).toBe(s);
+    }
+    expect(storedStatus("wont_fix")).toEqual({ status: "done", resolution: "wont_fix" });
+    expect(uiStatus("done", null)).toBe("resolved");
+  });
+
+  it("reads stored rows as the statuses shown, and drops the resolution", () => {
+    const row = { id: "i", status: "done", resolution: "wont_fix", title: "T" } as unknown as Parameters<typeof assembleIssues>[0][number];
+    const [out] = assembleIssues([row], [], [], []);
+    expect(out!.status).toBe("wont_fix");
+    expect(out).not.toHaveProperty("resolution");
   });
 });

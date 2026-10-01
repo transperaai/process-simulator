@@ -346,10 +346,30 @@ describe("issue Server Actions", () => {
     expect(await promoteIssue(WS, promoteInput(d, NORTHBEAM_PROCESS_ID, scenarios))).toEqual({ status: "error", message: ALREADY_TRACKED });
   });
   it("save one field through save_fields with its base", async () => {
-    db.result = { data: { status: "saved", row: { status: "resolved" } }, error: null };
+    db.result = { data: { status: "saved", row: { title: "New" } }, error: null };
     const id = northbeamIssues()[0]!.id;
-    expect(await saveIssueField(id, "status", "open", "resolved")).toEqual({ status: "saved", value: "resolved" });
-    expect(db.calls).toEqual([{ op: "rpc", args: ["save_fields", { target: "issues", key: { id }, base: { status: "open" }, changes: { status: "resolved" } }] }]);
+    expect(await saveIssueField(id, "title", "Old", "New")).toEqual({ status: "saved", value: "New" });
+    expect(db.calls).toEqual([{ op: "rpc", args: ["save_fields", { target: "issues", key: { id }, base: { title: "Old" }, changes: { title: "New" } }] }]);
+  });
+
+  it("save a status as the older spelling plus a resolution, each checked against what the person saw", async () => {
+    const id = northbeamIssues()[0]!.id;
+    const change = async (from: string, to: string) => {
+      db.calls.length = 0;
+      db.result = { data: { status: "saved", row: {} }, error: null };
+      const r = await saveIssueField(id, "status", from, to);
+      return { r, call: db.calls[0]!.args[1] as { base: unknown; changes: unknown } };
+    };
+    expect((await change("open", "testing")).call).toMatchObject({ base: { status: "open", resolution: null }, changes: { status: "in_progress", resolution: null } });
+    expect((await change("testing", "resolved")).call).toMatchObject({ base: { status: "in_progress", resolution: null }, changes: { status: "done", resolution: null } });
+    expect((await change("resolved", "wont_fix")).call).toMatchObject({ base: { status: "done", resolution: null }, changes: { status: "done", resolution: "wont_fix" } });
+    expect((await change("wont_fix", "open")).call).toMatchObject({ base: { status: "done", resolution: "wont_fix" }, changes: { status: "open", resolution: null } });
+    expect((await change("open", "testing")).r).toEqual({ status: "saved", value: "testing" });
+    // Someone else moved it on: what they stored is shown as the status it stands for.
+    db.result = { data: { status: "conflict", conflicts: { status: "done", resolution: "wont_fix" } }, error: null };
+    expect(await saveIssueField(id, "status", "open", "testing")).toEqual({ status: "conflict", theirs: "wont_fix" });
+    // "dismissed" is never offered, and never saved through here.
+    expect(await saveIssueField(id, "status", "open", "dismissed")).toMatchObject({ status: "error" });
   });
 
   const dialog = (extra: Record<string, unknown> = {}) => ({

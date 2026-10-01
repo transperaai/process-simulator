@@ -88,7 +88,7 @@ describe("row-level security", () => {
     for (const role of ["admin", "owner", "editor"]) {
       const result = await db.as(users[role]!.claims, async (c) => {
         const row = (await logIssue(c, ws, { step_id: audit, process_id: NORTHBEAM_PROCESS_ID })).rows[0];
-        const closed = (await c.query("update issues set status = 'resolved' where id = $1 returning resolved_at", [row.id])).rows[0];
+        const closed = (await c.query("update issues set status = 'done' where id = $1 returning resolved_at", [row.id])).rows[0];
         const deleted = (await c.query("delete from issues where id = $1", [row.id])).rowCount;
         return { createdBy: row.created_by, resolved: closed.resolved_at !== null, deleted };
       });
@@ -155,12 +155,12 @@ describe("constraints", () => {
           evidence: "Seen in the audit.",
           evidence_metrics: { utilisation: 0.97 },
           owner_person_id: northbeamPersonIds["Rosa Diaz"],
-          status: "testing",
+          status: "in_progress",
           scenario_id: northbeamScenarios()[0]!.id,
         })
       ).rows[0],
     );
-    expect(row).toMatchObject({ type: "bottleneck", severity: "critical", status: "testing", source: "manual", evidence_metrics: { utilisation: 0.97 } });
+    expect(row).toMatchObject({ type: "bottleneck", severity: "critical", status: "in_progress", source: "manual", evidence_metrics: { utilisation: 0.97 } });
   });
 
   it.each([
@@ -212,17 +212,17 @@ describe("constraints", () => {
     });
   });
 
-  it("resolved_at is set when an issue is resolved, won't fix or dismissed, kept while it stays closed, and cleared on reopening", async () => {
+  it("resolved_at is set when an issue is done or dismissed, kept while it stays closed, and cleared on reopening", async () => {
     await as(async (c) => {
       const row = (await logIssue(c, ws, { resolved_at: "2020-01-01T00:00:00Z" })).rows[0];
       expect(row.resolved_at).toBeNull();
-      const done = (await c.query("update issues set status = 'resolved' where id = $1 returning resolved_at", [row.id])).rows[0].resolved_at;
+      const done = (await c.query("update issues set status = 'done' where id = $1 returning resolved_at", [row.id])).rows[0].resolved_at;
       expect(done).toBeInstanceOf(Date);
       const dismissed = (await c.query("update issues set status = 'dismissed', resolved_at = null where id = $1 returning resolved_at", [row.id])).rows[0].resolved_at;
       expect(dismissed).toEqual(done);
       const reopened = (await c.query("update issues set status = 'open' where id = $1 returning resolved_at", [row.id])).rows[0].resolved_at;
       expect(reopened).toBeNull();
-      const closedOnInsert = (await logIssue(c, ws, { status: "resolved" })).rows[0].resolved_at;
+      const closedOnInsert = (await logIssue(c, ws, { status: "done" })).rows[0].resolved_at;
       expect(closedOnInsert).toBeInstanceOf(Date);
     });
   });
@@ -249,18 +249,18 @@ describe("per-field saves", () => {
 
   it("saves a field whose base matches, and reports a same-field conflict", async () => {
     await db.as(users.editor!.claims, async (c) => {
-      const saved = await save(c, seeded.id, { status: "open" }, { status: "testing" });
+      const saved = await save(c, seeded.id, { status: "open" }, { status: "in_progress" });
       expect(saved.status).toBe("saved");
-      expect(saved.row.status).toBe("testing");
-      const conflict = await save(c, seeded.id, { status: "open" }, { status: "resolved" });
-      expect(conflict).toMatchObject({ status: "conflict", conflicts: { status: "testing" } });
+      expect(saved.row.status).toBe("in_progress");
+      const conflict = await save(c, seeded.id, { status: "open" }, { status: "done" });
+      expect(conflict).toMatchObject({ status: "conflict", conflicts: { status: "in_progress" } });
       // A different field of the same row merges.
       expect((await save(c, seeded.id, { severity: "serious" }, { severity: "critical" })).status).toBe("saved");
     });
   });
 
   it("closing through save_fields sets resolved_at", async () => {
-    const row = await db.as(users.owner!.claims, (c) => save(c, seeded.id, { status: "open" }, { status: "resolved" }));
+    const row = await db.as(users.owner!.claims, (c) => save(c, seeded.id, { status: "open" }, { status: "done" }));
     expect(row.row.resolved_at).not.toBeNull();
   });
 

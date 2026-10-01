@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { IssueRow, ProcessBundle, ScenarioRow, SourceRow } from "@transpera-flow/db";
-import { detectBrokenScenarios, resolveMoney, type AnalysisSettings, type EngineModel, type RetiredSteps, type SimulationResult } from "@transpera-flow/engine";
+import { detectBrokenScenarios, resolveMoney, type AnalysisSettings, type EngineModel, type RetiredSteps, type SimulationResult, type SuccessMeasureSource } from "@transpera-flow/engine";
 import { processStepIds, processSteps } from "@/lib/process-steps";
 import { perceptionGapDetections } from "@/lib/issues/perception";
 import { visibleFindings } from "@/lib/rules/edit";
@@ -60,6 +60,7 @@ export function useProcessIssues({
   rulesHref,
   retired = NO_RETIRED,
   analysisRules,
+  successMeasures,
   onShowIssues,
   sources = NO_SOURCES,
   liveRevisions,
@@ -79,6 +80,8 @@ export function useProcessIssues({
   retired?: RetiredSteps;
   /** The workspace's analysis rules (Settings → Analysis rules); omitted means the defaults. On the demo, the ones edited in this tab. */
   analysisRules?: AnalysisSettings;
+  /** The process's success measures (its first principles), which rule 11 rates; none rates nothing. */
+  successMeasures?: SuccessMeasureSource;
   /** A step's issue badge was clicked: the caller opens the panel the Issues tab is in. */
   onShowIssues?: () => void;
   /** The workspace's sources, which the Acknowledge dialog can link to an issue. */
@@ -100,7 +103,7 @@ export function useProcessIssues({
   const gaps = useMemo(() => visibleFindings(rules, perceptionGapDetections(bundle.steps)), [bundle.steps, rules]);
   // The absence test (rule 8) runs in its own worker once the baseline is done; until it returns, that rule raises nothing.
   const absence = useAbsenceTest(model && result && !running ? model : null, result?.seed ?? 1, resolveMoney(rules).absenceWeeks);
-  const found = useDetectedIssues(model, result, rules, bundle.process.id, bundle.workspace.settings.currency, absence);
+  const found = useDetectedIssues(model, result, rules, bundle.process.id, bundle.workspace.settings.currency, absence, successMeasures);
   const detected = useMemo(() => (found ? visibleFindings(rules, [...broken, ...found, ...gaps]) : null), [found, broken, gaps, rules]);
   const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);
 

@@ -130,7 +130,6 @@ const step = (
   notes: null,
   sla_hours: null,
   current_wip: null,
-  lost_per_day: null,
   x,
   y,
   assumption: false,
@@ -424,7 +423,6 @@ function servicingProcesses(firstEdge: number): { parts: ProcessPart[]; links: S
         notes: null,
         sla_hours: null,
         current_wip: null,
-        lost_per_day: null,
         x: s.x,
         y: s.y,
         assumption: false,
@@ -503,8 +501,7 @@ export function northbeamBundle(): ProcessBundle {
     steps: withEvidence([
       step("qualify", "Qualify lead", "sales", 0.5, 4, 0, "HubSpot", 60, 50),
       step("discovery", "Discovery call", "sales", 1.5, 24, 0, "Zoom + HubSpot", 290, 50),
-      // 5% of leads a day go cold while they wait for the audit: the waiting insight shows money (issue #108).
-      { ...step("audit", "Audit & proposal", "strat", 6, 0, 0.15, "SEMrush, Google Docs", 520, 50), lost_per_day: 0.05 },
+      step("audit", "Audit & proposal", "strat", 6, 0, 0.15, "SEMrush, Google Docs", 520, 50),
       step("decision", "Client decision", null, 0, 40, 0, "Email", 750, 50),
       step("onboard", "Contract & onboarding", "am", 3, 16, 0.1, "PandaDoc, Notion", 60, 290),
       step("kickoff", "Kickoff & strategy", "strat", 4, 8, 0, "Notion", 290, 290),

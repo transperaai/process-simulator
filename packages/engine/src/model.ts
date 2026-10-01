@@ -228,7 +228,7 @@ export interface EngineStep {
    * waiting insight money (items lost × what a loss is worth at this step);
    * omitted, the insight shows time instead. It doesn't change the simulation.
    */
-  lostPerDay?: number;
+  lostPerDayWaiting?: number;
   next: EngineEdge[];
 }
 

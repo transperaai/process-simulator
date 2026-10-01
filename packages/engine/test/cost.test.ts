@@ -117,7 +117,7 @@ describe("what a loss is worth", () => {
 
 describe("the cost of each insight", () => {
   it("waiting: items lost through 'lost per day of waiting' × what a loss is worth at that step", () => {
-    const m = line(8, [{ id: "a", work: 4, lostPerDay: 0.05 }], { entry: "a" });
+    const m = line(8, [{ id: "a", work: 4, lostPerDayWaiting: 0.05 }], { entry: "a" });
     const r = simulate(m, 12, 1);
     const issue = find(detectIssues(m, r, { ...NO_ESC, expectedWaitDays: { pipeline: 0.25 } }), "wait:step:a")!;
     expect(issue).toBeDefined();

@@ -114,4 +114,4 @@ the unfiltered deletes.
 
 ## Cost per month (issue #108, migration 20261109000000)
 
-Verified only against plain Postgres (the db test harness), not against Supabase: `public.create_workspace` now defaults new workspaces to `AUD` (it is `security invoker`, as before, and was redefined with `create or replace` from the 20261021000000 copy, so its grants are re-applied in the migration), and `steps.lost_per_day` is a plain nullable numeric with a 0-to-1 check. `database.types.ts` was edited by hand for the new column (the `gen:types` command needs the linked Supabase project); regenerate it after applying to production and check the diff.
+Verified only against plain Postgres (the db test harness), not against Supabase: `public.create_workspace` now defaults new workspaces to `AUD`. It is `security invoker`, as before, and was redefined with `create or replace` from the 20261021000000 copy, so the migration re-applies its grants.

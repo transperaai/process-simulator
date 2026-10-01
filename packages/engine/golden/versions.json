@@ -14,7 +14,7 @@
   {
     "version": "1.2.0",
     "date": "2026-10-01",
-    "note": "Cost per month (issue #108): detected issues carry an estimated cost per month and sort by it within a rating; the golden outputs now lock each issue's cost, and Northbeam's audit step carries a 5% lost-per-day of waiting so its wait insight is costed. No simulated number changed.",
-    "digest": "sha256:1e8d50523ed38f113f634099a7b4bf2c30ac8340d0bb5dfd7565a8c9202d2b5e"
+    "note": "Cost per month (issue #108): detected issues carry an estimated cost per month and sort by it within a rating; the golden outputs now lock each issue's cost. No simulated number changed.",
+    "digest": "sha256:314a0e8d6d23441bfba741522f925f37b230900c6eff0d85c08346fe4a0e13eb"
   }
 ]

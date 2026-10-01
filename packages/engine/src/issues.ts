@@ -225,14 +225,14 @@ export function detectIssues(
   /** Rule 5: items lost through the step's "lost per day of waiting" × what a loss is worth; time only when none is set. */
   const waitCost = (s: EngineStep, st: SimulationResult["steps"][string]): IssueCost => {
     const itemsMonth = (st.arrivals / model.horizonWeeks) * WEEKS_PER_MONTH;
-    if (!(s.lostPerDay !== undefined && s.lostPerDay > 0)) {
+    if (!(s.lostPerDayWaiting !== undefined && s.lostPerDayWaiting > 0)) {
       return {
         perMonth: null,
         hoursPerMonth: itemsMonth * st.avgWait,
         method: "Time, not money: set this step's lost per day of waiting to put a cost on it.",
       };
     }
-    const lostShare = Math.min(1, s.lostPerDay * (st.avgWait / hoursPerDay));
+    const lostShare = Math.min(1, s.lostPerDayWaiting * (st.avgWait / hoursPerDay));
     const value = stepLoss(s);
     return {
       perMonth: itemsMonth * lostShare * value,

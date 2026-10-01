@@ -384,7 +384,6 @@ export function buildNewStep(
     notes: f.notes?.trim() || null,
     sla_hours: f.sla_hours ?? null,
     current_wip: f.current_wip ?? null,
-    lost_per_day: null,
     x: Math.round(f.x ?? 0),
     y: Math.round(f.y ?? 0),
     assumption: false,

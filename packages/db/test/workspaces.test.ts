@@ -66,14 +66,14 @@ describe("create_workspace", () => {
   it("existing workspaces keep their currency: the migration never writes workspace rows", async () => {
     // The seeded Northbeam workspace predates the AUD default and is still in pounds...
     expect((await db.client.query("select settings ->> 'currency' as currency from workspaces where id = $1", [ws])).rows[0].currency).toBe("GBP");
-    // ...and nothing in the migration could have changed it: it only adds a column to steps and redefines create_workspace.
+    // ...and nothing in the migration could have changed it: it only redefines create_workspace.
     const sql = readFileSync(new URL("../supabase/migrations/20261109000000_cost_per_month.sql", import.meta.url), "utf8")
       .split("\n")
       .filter((line) => !line.trim().startsWith("--"))
       .join("\n");
     expect(sql).not.toMatch(/\bupdate\s+(only\s+)?(public\.)?workspaces\b/i);
     expect(sql).not.toMatch(/\bdelete\s+from\b/i);
-    expect(sql).toMatch(/alter table public\.steps/);
+    expect(sql).toMatch(/create or replace function public\.create_workspace/);
   });
 
   it("an agency admin reads every workspace; a stranger reads none of them", async () => {

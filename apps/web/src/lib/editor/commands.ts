@@ -68,7 +68,6 @@ function newStepRow(bundle: ProcessBundle, kind: NewStepKind, outcome: StepOutco
     notes: null,
     sla_hours: null,
     current_wip: null,
-    lost_per_day: null,
     x: Math.round(x),
     y: Math.round(y),
     assumption: false,

@@ -43,7 +43,6 @@ function step(over: Partial<StepRow> & { id: string; name: string }): StepRow {
     notes: null,
     sla_hours: null,
     current_wip: null,
-    lost_per_day: null,
     x: 0,
     y: 0,
     assumption: false,

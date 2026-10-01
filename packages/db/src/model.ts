@@ -96,8 +96,6 @@ function resolveGraph(steps: StepRow[], edges: EdgeRow[], tags: boolean): Graph 
         ...(step.current_wip != null ? { currentWip: Number(step.current_wip) } : {}),
         // An SLA only counts breaches (detected issues); it doesn't change the run.
         ...(step.sla_hours != null ? { sla: Number(step.sla_hours) } : {}),
-        // How many items go cold per day of waiting costs the waiting insight money; it doesn't change the run.
-        ...(step.lost_per_day != null ? { lostPerDay: Number(step.lost_per_day) } : {}),
         next,
       };
     });

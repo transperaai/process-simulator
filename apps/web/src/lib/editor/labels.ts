@@ -23,7 +23,6 @@ export const FIELD_LABELS: Record<string, string> = {
   notes: "notes",
   sla_hours: "SLA",
   current_wip: "current WIP",
-  lost_per_day: "lost per day of waiting",
   x: "position",
   y: "position",
   assumption: "estimate",

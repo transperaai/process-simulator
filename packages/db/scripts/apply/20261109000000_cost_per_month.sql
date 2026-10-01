@@ -2,37 +2,29 @@ begin;
 
 -- Cost per month (docs/analysis-rules.md "Cost per month"; issue #108).
 --
--- Two small changes:
---   * New workspaces default to AUD. `public.create_workspace` is redefined as
---     a copy of the 20261021000000 version whose default settings carry
---     "currency":"AUD" instead of "GBP". Existing workspaces keep their
---     currency (nothing here touches `workspaces` rows), and a caller can still
---     pass any three-letter code.
---   * Each step gets an optional `lost_per_day`: the share of items that go cold
---     for each working day they wait there (0.05 is 5% of leads a day). The
---     "waiting too long" insight costs money through it (items lost × what a
---     loss is worth at that step); with none set the insight shows time instead.
---     `save_fields` accepts any column the stored row has, so it needs nothing.
+-- New workspaces default to AUD. `public.create_workspace` is redefined as a
+-- copy of the 20261021000000 version whose default settings carry
+-- "currency":"AUD" instead of "GBP". Existing workspaces keep their currency
+-- (nothing here touches `workspaces` rows), and a caller can still pass any
+-- three-letter code.
 --
--- Strictly additive: one nullable column with a check, and a function
--- replaced by a copy that differs only in the default currency.
+-- (The step setting "lost per day of waiting" that costs the waiting insight is
+-- A42's column, `steps.lost_per_day_waiting`, in 20261106000000.)
+--
+-- Strictly additive: a function replaced by a copy that differs only in the
+-- default currency.
 --
 -- Preflight (run each with `bash packages/db/scripts/prod-sql.sh -c "..."`):
 --
---   1. The column must not exist yet. Expect 0 rows:
---        select column_name from information_schema.columns
---        where table_schema='public' and table_name='steps' and column_name='lost_per_day';
---   2. The function is the 20261021000000 one (it has the 'GBP' default). Expect 1 row:
+--   1. The function is the 20261021000000 one (it has the 'GBP' default). Expect 1 row:
 --        select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
 --        where n.nspname='public' and p.proname='create_workspace' and pg_get_functiondef(p.oid) like '%"currency":"GBP"%';
---   3. This migration is not applied yet. Expect 0 rows:
+--   2. This migration is not applied yet. Expect 0 rows:
 --        select version from supabase_migrations.schema_migrations where version >= '20261109000000';
 --
 -- Rollback (run as one transaction):
 --
 --   begin;
---   alter table public.steps drop constraint if exists steps_lost_per_day;
---   alter table public.steps drop column if exists lost_per_day;
 --   -- Restore the GBP default: the same function with "currency":"GBP".
 --   create or replace function public.create_workspace(ws_name text, ws_slug text, ws_settings jsonb default '{}')
 --   returns uuid
@@ -93,15 +85,6 @@ begin;
 --   commit;
 --
 -- Production data: none needed. Workspaces already created keep their currency.
-
--- ---------------------------------------------------------------------------
--- Steps: lost per day of waiting
--- ---------------------------------------------------------------------------
-
-alter table public.steps
-  -- The share of items that go cold for each working day they wait at this step (0 to 1); null: not set.
-  add column lost_per_day numeric,
-  add constraint steps_lost_per_day check (lost_per_day is null or (lost_per_day >= 0 and lost_per_day <= 1));
 
 -- ---------------------------------------------------------------------------
 -- Creating a workspace: AUD by default
@@ -170,37 +153,29 @@ grant execute on function public.create_workspace(text, text, jsonb) to authenti
 
 insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261109000000', 'cost_per_month', array[$mig$-- Cost per month (docs/analysis-rules.md "Cost per month"; issue #108).
 --
--- Two small changes:
---   * New workspaces default to AUD. `public.create_workspace` is redefined as
---     a copy of the 20261021000000 version whose default settings carry
---     "currency":"AUD" instead of "GBP". Existing workspaces keep their
---     currency (nothing here touches `workspaces` rows), and a caller can still
---     pass any three-letter code.
---   * Each step gets an optional `lost_per_day`: the share of items that go cold
---     for each working day they wait there (0.05 is 5% of leads a day). The
---     "waiting too long" insight costs money through it (items lost × what a
---     loss is worth at that step); with none set the insight shows time instead.
---     `save_fields` accepts any column the stored row has, so it needs nothing.
+-- New workspaces default to AUD. `public.create_workspace` is redefined as a
+-- copy of the 20261021000000 version whose default settings carry
+-- "currency":"AUD" instead of "GBP". Existing workspaces keep their currency
+-- (nothing here touches `workspaces` rows), and a caller can still pass any
+-- three-letter code.
 --
--- Strictly additive: one nullable column with a check, and a function
--- replaced by a copy that differs only in the default currency.
+-- (The step setting "lost per day of waiting" that costs the waiting insight is
+-- A42's column, `steps.lost_per_day_waiting`, in 20261106000000.)
+--
+-- Strictly additive: a function replaced by a copy that differs only in the
+-- default currency.
 --
 -- Preflight (run each with `bash packages/db/scripts/prod-sql.sh -c "..."`):
 --
---   1. The column must not exist yet. Expect 0 rows:
---        select column_name from information_schema.columns
---        where table_schema='public' and table_name='steps' and column_name='lost_per_day';
---   2. The function is the 20261021000000 one (it has the 'GBP' default). Expect 1 row:
+--   1. The function is the 20261021000000 one (it has the 'GBP' default). Expect 1 row:
 --        select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
 --        where n.nspname='public' and p.proname='create_workspace' and pg_get_functiondef(p.oid) like '%"currency":"GBP"%';
---   3. This migration is not applied yet. Expect 0 rows:
+--   2. This migration is not applied yet. Expect 0 rows:
 --        select version from supabase_migrations.schema_migrations where version >= '20261109000000';
 --
 -- Rollback (run as one transaction):
 --
 --   begin;
---   alter table public.steps drop constraint if exists steps_lost_per_day;
---   alter table public.steps drop column if exists lost_per_day;
 --   -- Restore the GBP default: the same function with "currency":"GBP".
 --   create or replace function public.create_workspace(ws_name text, ws_slug text, ws_settings jsonb default '{}')
 --   returns uuid
@@ -261,15 +236,6 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --   commit;
 --
 -- Production data: none needed. Workspaces already created keep their currency.
-
--- ---------------------------------------------------------------------------
--- Steps: lost per day of waiting
--- ---------------------------------------------------------------------------
-
-alter table public.steps
-  -- The share of items that go cold for each working day they wait at this step (0 to 1); null: not set.
-  add column lost_per_day numeric,
-  add constraint steps_lost_per_day check (lost_per_day is null or (lost_per_day >= 0 and lost_per_day <= 1));
 
 -- ---------------------------------------------------------------------------
 -- Creating a workspace: AUD by default

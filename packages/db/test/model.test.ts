@@ -164,14 +164,6 @@ describe("toEngineModel", () => {
     expect(r.steps[northbeamStepIds.audit]!.slaBreaches).toBeGreaterThan(0);
   });
 
-  it("maps a step's lost per day of waiting for the waiting cost (issue #108), and leaves it out when blank", () => {
-    const b = northbeamBundle();
-    b.steps = b.steps.map((s) => (s.id === northbeamStepIds.qualify ? { ...s, lost_per_day: 0.05 } : s));
-    const steps = new Map(toEngineModel(b, { startDate: START }).steps.map((s) => [s.id, s]));
-    expect(steps.get(northbeamStepIds.qualify)!.lostPerDay).toBe(0.05);
-    expect(steps.get(northbeamStepIds.discovery)!).not.toHaveProperty("lostPerDay");
-  });
-
   it("maps entered current WIP, 0 included, and leaves unentered WIP out", () => {
     const b = northbeamBundle();
     b.steps = b.steps.map((s) =>

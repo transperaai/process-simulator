@@ -65,7 +65,6 @@ export const STEP_FIELDS = {
   notes: optionalText(4000),
   sla_hours: optionalAtLeast0,
   current_wip: optionalCount,
-  lost_per_day: (v) => v === null || share(v),
   x: coordinate,
   y: coordinate,
   // Confirming an estimate clears it (issue #9).

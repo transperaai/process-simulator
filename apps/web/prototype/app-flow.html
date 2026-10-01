@@ -1,0 +1,1188 @@
+<title>Transpera Flow Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- PROTOTYPE, throwaway. Clickable flow for the Transpera Flow redesign. Sample data only; nothing is saved. -->
+<style>
+/* Layout: ops console. Sidebar nav, one screen at a time, map first, analysis underneath. Editor is its own full-screen mode. */
+:root {
+  --bg: #f3f4f2; --panel: #ffffff; --panel-2: #e9ebe7; --line: #d5d8d2; --line-2: #c2c6bf;
+  --fg: #15181a; --fg-2: #4d5451; --fg-3: #5f6761;
+  --accent: #1c5cab; --accent-soft: #dbe7f7; --accent-fg: #ffffff;
+  --good: #1baf7a; --good-soft: #d8f3e8; --teal: #1f8a94; --teal-soft: #d5eef0;
+  --warn: #eda100; --warn-soft: #fdf0d1; --crit: #e34948; --crit-soft: #fbe1e0;
+  --edit: #6d3fc4; --edit-soft: #ece4fa; --edit-fg: #ffffff;
+  --shadow: 0 1px 2px rgba(20,24,30,.06), 0 4px 14px rgba(20,24,30,.05);
+  --shadow-overlay: 0 8px 24px rgba(20,24,30,.14), 0 2px 6px rgba(20,24,30,.06);
+  --scrim: rgba(20,24,30,.38);
+  --f-display: "Bricolage Grotesque", "IBM Plex Sans", system-ui, sans-serif;
+  --f-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #151716; --panel: #1e211f; --panel-2: #272b29; --line: #343936; --line-2: #454b47;
+  --fg: #eceeea; --fg-2: #b5bbb6; --fg-3: #959c97;
+  --accent: #5598e7; --accent-soft: #1f3350; --accent-fg: #0b1220;
+  --good: #22b07e; --good-soft: #153f30; --teal: #3bb0b8; --teal-soft: #133a3d;
+  --warn: #d99a0b; --warn-soft: #45360f; --crit: #e66767; --crit-soft: #4a2424;
+  --edit: #a37ef0; --edit-soft: #2e2248; --edit-fg: #140a26;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.3);
+  --shadow-overlay: 0 8px 24px rgba(0,0,0,.5), 0 2px 6px rgba(0,0,0,.35);
+  --scrim: rgba(0,0,0,.55); color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #151716; --panel: #1e211f; --panel-2: #272b29; --line: #343936; --line-2: #454b47;
+  --fg: #eceeea; --fg-2: #b5bbb6; --fg-3: #959c97;
+  --accent: #5598e7; --accent-soft: #1f3350; --accent-fg: #0b1220;
+  --good: #22b07e; --good-soft: #153f30; --teal: #3bb0b8; --teal-soft: #133a3d;
+  --warn: #d99a0b; --warn-soft: #45360f; --crit: #e66767; --crit-soft: #4a2424;
+  --edit: #a37ef0; --edit-soft: #2e2248; --edit-fg: #140a26;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.3);
+  --shadow-overlay: 0 8px 24px rgba(0,0,0,.5), 0 2px 6px rgba(0,0,0,.35);
+  --scrim: rgba(0,0,0,.55); color-scheme: dark; }
+
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--f-sans); font-size: 14px; line-height: 1.45; }
+* { box-sizing: border-box; }
+h1, h2, h3 { font-family: var(--f-display); margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+h1 { font-size: 26px; font-weight: 700; }
+h2 { font-size: 18px; font-weight: 700; }
+h3 { font-size: 14.5px; font-weight: 600; font-family: var(--f-sans); }
+p { margin: 0; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.num, .mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--fg-2); }
+.small { font-size: 12.5px; }
+.eyebrow { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); font-weight: 600; }
+
+/* Shell */
+.app { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: 100%; }
+.side { border-right: 1px solid var(--line); padding: 16px 10px 24px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+.brand { font-family: var(--f-display); font-weight: 700; font-size: 16px; padding: 2px 10px 10px; display: flex; align-items: baseline; gap: 8px; }
+.brand span { font-family: var(--f-mono); font-size: 10px; font-weight: 500; color: var(--edit); border: 1px solid var(--edit); border-radius: 4px; padding: 0 4px; }
+.ws { padding: 8px 10px; margin-bottom: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); display: flex; flex-direction: column; }
+.ws b { font-weight: 600; }
+.navlabel { padding: 14px 10px 4px; }
+.nav { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 6px 10px; border-radius: 6px; border: 0; background: none; color: var(--fg-2); }
+.nav:hover { background: var(--panel-2); color: var(--fg); }
+.nav.on { background: var(--panel); color: var(--fg); font-weight: 600; box-shadow: inset 0 0 0 1px var(--line); }
+.nav .cnt { margin-left: auto; font-family: var(--f-mono); font-size: 11px; background: var(--panel-2); border-radius: 99px; padding: 0 7px; }
+.nav .cnt.warn { background: var(--warn-soft); }
+.nav .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.tree .nav { font-size: 13px; padding-block: 4px; }
+.main { padding: 24px 28px 72px; min-width: 0; display: flex; flex-direction: column; gap: 28px; }
+.head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+.head .t { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.crumbs { display: flex; gap: 6px; flex-wrap: wrap; font-size: 12.5px; color: var(--fg-2); }
+.crumbs button { border: 0; background: none; padding: 0; color: var(--accent); }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.spread { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+section { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.sechead { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+.sechead p { color: var(--fg-2); font-size: 13px; max-width: 70ch; }
+@media (max-width: 860px) {
+  .app { grid-template-columns: 1fr; }
+  .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); padding: 12px 16px; }
+  .side .navlabel, .side .ws, .side .tree { display: none; }
+  .nav { width: auto; }
+  .main { padding: 20px 16px 64px; }
+}
+
+/* Controls */
+.btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-2); background: var(--panel); border-radius: 6px; padding: 6px 12px; font-weight: 500; font-size: 13px; white-space: nowrap; }
+.btn:hover { border-color: var(--fg-3); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.btn.edit { background: var(--edit); border-color: var(--edit); color: var(--edit-fg); }
+.btn.ghost { border-color: transparent; background: none; color: var(--accent); padding-inline: 6px; }
+.btn.sm { padding: 3px 9px; font-size: 12.5px; }
+.btn.on { background: var(--accent-soft); border-color: var(--accent); }
+.seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 7px; overflow: hidden; background: var(--panel); }
+.seg button { border: 0; background: none; padding: 5px 11px; font-size: 12.5px; font-family: var(--f-mono); color: var(--fg-2); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.on { background: var(--accent); color: var(--accent-fg); }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--fg-2); }
+.field input, .field select, .field textarea, .inp { border: 1px solid var(--line-2); background: var(--panel); border-radius: 6px; padding: 6px 9px; color: var(--fg); font-size: 13.5px; width: 100%; }
+.field textarea { min-height: 64px; resize: vertical; }
+.chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--panel); border-radius: 99px; padding: 2px 10px; font-size: 12.5px; white-space: nowrap; }
+.chip.btnchip { cursor: pointer; }
+.chip.on { border-color: var(--accent); background: var(--accent-soft); }
+.chip .x { color: var(--fg-3); }
+.avatar { width: 24px; height: 24px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 10.5px; font-weight: 600; background: var(--panel-2); border: 2px solid var(--panel); }
+.avatars { display: inline-flex; }
+.avatars .avatar + .avatar { margin-left: -6px; }
+
+/* Rating spectrum */
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 99px; background: var(--ps); color: var(--fg); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--pc); flex: none; }
+.pill.plain { background: var(--panel-2); }
+.verdict { font-family: var(--f-mono); font-size: 11.5px; font-weight: 500; padding: 1px 7px; border-radius: 4px; }
+.verdict.pass { background: var(--good-soft); }
+.verdict.fail { background: var(--crit-soft); }
+.verdict.wait { background: var(--panel-2); color: var(--fg-2); }
+.spectrum { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.spectrum button { border: 1px solid var(--line-2); background: var(--panel); border-radius: 8px; padding: 8px; text-align: left; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+.spectrum button b { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.spectrum button b i { width: 10px; height: 10px; border-radius: 50%; background: var(--pc); }
+.spectrum button.on { border-color: var(--pc); background: var(--ps); box-shadow: inset 0 0 0 1px var(--pc); }
+@media (max-width: 600px) { .spectrum { grid-template-columns: 1fr 1fr; } }
+
+/* Cards and KPIs */
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 0; }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.kpi .v { font-family: var(--f-display); font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.kpi .v small { font-size: 14px; font-weight: 500; color: var(--fg-2); }
+.kpi .r { font-family: var(--f-mono); font-size: 11.5px; color: var(--fg-2); }
+.kpi.focus { border-color: var(--crit); box-shadow: inset 3px 0 0 var(--crit); }
+@media (max-width: 980px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 980px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+.principles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; padding: 0; overflow: hidden; }
+.principles > div { padding: 12px 16px; border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.principles > div:first-child { border-left: 0; }
+@media (max-width: 980px) { .principles { grid-template-columns: 1fr 1fr; } .principles > div:nth-child(3) { border-left: 0; } .principles > div:nth-child(n+3) { border-top: 1px solid var(--line); } }
+@media (max-width: 560px) { .principles { grid-template-columns: 1fr; } .principles > div { border-left: 0; border-top: 1px solid var(--line); } .principles > div:first-child { border-top: 0; } }
+.viewing { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 3px 10px 3px 8px; border-radius: 99px; background: var(--good-soft); }
+.viewing i { width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
+.viewing.old { background: var(--warn-soft); }
+.viewing.old i { background: var(--warn); }
+
+/* Map */
+.mapwrap { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; min-width: 0; display: flex; flex-direction: column; }
+.maptools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.mapscroll { overflow: auto; padding: 4px; max-height: 560px; }
+.mapwrap.tall .mapscroll { max-height: none; }
+svg.map { display: block; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; color: var(--fg-2); }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend i { width: 9px; height: 9px; border-radius: 2px; background: var(--pc); }
+.edge { fill: none; stroke: var(--line-2); stroke-width: 1.5; }
+.arrow { fill: var(--line-2); }
+.node { cursor: pointer; transition: opacity var(--m, 120ms); }
+.node .nbox { fill: var(--panel); stroke: var(--line-2); stroke-width: 1; }
+.node:hover .nbox { stroke: var(--fg-3); }
+.node.dim { opacity: .28; }
+.node.hl .nbox { stroke: var(--accent); stroke-width: 2.5; }
+.node.reg .nbox { stroke: var(--crit); stroke-width: 2; stroke-dasharray: 5 3; }
+.node.sel .nbox { stroke: var(--edit); stroke-width: 3; }
+.node.added .nbox { stroke: var(--edit); stroke-dasharray: 5 3; fill: var(--edit-soft); }
+.node.changed .nbox { stroke: var(--edit); }
+.nname { font: 600 12.5px var(--f-sans); fill: var(--fg); }
+.nsub { font: 400 10.5px var(--f-mono); fill: var(--fg-2); }
+.nsub.up { fill: var(--good); font-weight: 500; }
+.nsub.down { fill: var(--crit); font-weight: 500; }
+.nsub.dl { fill: var(--edit); font-weight: 500; }
+.nutil { font: 500 10.5px var(--f-mono); }
+.tgl rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1; }
+.tgl text { font: 600 10.5px var(--f-mono); fill: var(--accent); }
+.tgl { cursor: pointer; }
+.gbox { fill: var(--bg); stroke: var(--line-2); stroke-dasharray: 4 4; }
+.group.hl .gbox { stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: none; }
+.group.reg .gbox { stroke: var(--crit); stroke-width: 2; }
+.group.dim { opacity: .45; }
+.group.changed .gbox { stroke: var(--edit); stroke-width: 2; fill: var(--edit-soft); }
+.group.sel .gbox { stroke: var(--edit); stroke-width: 3; stroke-dasharray: none; }
+.ghead { font: 600 12px var(--f-sans); fill: var(--fg); }
+.gsub { font: 400 10.5px var(--f-mono); fill: var(--fg-2); }
+.badge circle { fill: var(--crit); }
+.badge text { font: 600 10px var(--f-mono); fill: #fff; }
+
+/* Lists */
+.list { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.irow { display: grid; grid-template-columns: 168px minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 11px 14px; border-top: 1px solid var(--line); cursor: pointer; }
+.irow:first-child { border-top: 0; }
+.irow:hover, .irow.on { background: var(--panel-2); }
+.irow .txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.irow .txt b { font-weight: 600; }
+.irow .txt span { font-size: 12.5px; color: var(--fg-2); }
+.src { font-family: var(--f-mono); font-size: 11px; color: var(--fg-2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+.src.ai { color: var(--edit); border-color: var(--edit); }
+.acked { font-size: 12.5px; color: var(--fg-2); white-space: nowrap; }
+@media (max-width: 760px) { .irow { grid-template-columns: 1fr; gap: 6px; } }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.tblwrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th { text-align: left; font-weight: 600; font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--fg-3); padding: 9px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 9px 12px; border-top: 1px solid var(--line); vertical-align: middle; }
+tr:first-child td { border-top: 0; }
+tbody tr.click { cursor: pointer; }
+tbody tr.click:hover td { background: var(--panel-2); }
+td.n, th.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.up { color: var(--good); }
+.down { color: var(--crit); }
+.ai-card { border: 1px solid var(--edit); background: linear-gradient(var(--edit-soft), var(--panel) 70%); }
+.ai-card .eyebrow { color: var(--edit); }
+.note { font-size: 12.5px; color: var(--fg-2); border-left: 3px solid var(--line-2); padding: 4px 10px; }
+.warnbox { background: var(--warn-soft); border-radius: 8px; padding: 8px 12px; font-size: 13px; }
+.sol { display: flex; flex-direction: column; gap: 10px; }
+.solgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 6px 12px; font-size: 13px; }
+.kv dt { color: var(--fg-2); }
+.kv dd { margin: 0; min-width: 0; }
+.side2 { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; }
+@media (max-width: 1100px) { .side2 { grid-template-columns: 1fr; } }
+.stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+/* Charts */
+svg.chart { width: 100%; height: auto; display: block; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .ax { font: 400 11px var(--f-mono); fill: var(--fg-2); }
+.chart .lbl { font: 500 12px var(--f-sans); fill: var(--fg); }
+.chart .band { fill: var(--accent); opacity: .16; }
+.chart .line { fill: none; stroke: var(--accent); stroke-width: 2.25; }
+.chart .line.b { stroke: var(--edit); stroke-dasharray: 5 3; }
+.chart .dot { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
+.chart .th { stroke: var(--crit); stroke-dasharray: 4 3; stroke-width: 1.25; }
+.chart .whisk { stroke: var(--fg-2); stroke-width: 1.25; }
+.chartcard { display: flex; flex-direction: column; gap: 8px; }
+.chartcard .legend i { border-radius: 2px; }
+
+/* Settings */
+.settings { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 24px; align-items: start; }
+.subnav { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 16px; }
+@media (max-width: 860px) { .settings { grid-template-columns: 1fr; } .subnav { position: static; flex-direction: row; flex-wrap: wrap; } }
+.drv { display: grid; grid-template-columns: 28px minmax(0, 1.6fr) 130px minmax(0, 1fr) 150px; gap: 12px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line); }
+.drv:first-child { border-top: 0; }
+.drv.off { opacity: .5; }
+.drv input[type=range] { width: 100%; accent-color: var(--accent); }
+.bar { height: 8px; border-radius: 4px; background: var(--panel-2); overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+@media (max-width: 860px) { .drv { grid-template-columns: 28px 1fr; } .drv > :nth-child(n+3) { grid-column: 2; } }
+.mk { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.mk button { text-align: left; border: 1px solid var(--line-2); background: var(--panel); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; }
+.mk button b { font-size: 13.5px; }
+.mk button.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-soft); }
+@media (max-width: 900px) { .mk { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.factor { display: grid; grid-template-columns: 170px minmax(0, 1fr) 64px; gap: 12px; align-items: center; padding: 6px 0; }
+.factor input[type=range] { width: 100%; accent-color: var(--accent); }
+@media (max-width: 600px) { .factor { grid-template-columns: 1fr 64px; } .factor input { grid-column: 1 / -1; } }
+.timeline { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 2px; }
+.timeline div { height: 34px; border-radius: 3px; display: grid; place-items: center; font-family: var(--f-mono); font-size: 10px; color: var(--fg); }
+.tlscale { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 2px; font-family: var(--f-mono); font-size: 10px; color: var(--fg-3); }
+
+/* Editor mode: its own screen, own colour, no sidebar */
+.ed { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; height: 100vh; }
+.edbar { background: var(--edit); color: var(--edit-fg); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 10px 16px; padding-top: calc(10px + env(safe-area-inset-top, 0px)); }
+.edbar .mode { font-family: var(--f-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; border: 1.5px solid currentColor; border-radius: 4px; padding: 1px 6px; font-weight: 600; }
+.edbar h1 { font-size: 17px; }
+.edbar .btn { border-color: color-mix(in srgb, var(--edit-fg) 50%, transparent); background: transparent; color: var(--edit-fg); }
+.edbar .btn.solid { background: var(--edit-fg); color: var(--edit); border-color: var(--edit-fg); }
+.edbar input { background: color-mix(in srgb, var(--edit-fg) 14%, transparent); border: 1px solid color-mix(in srgb, var(--edit-fg) 40%, transparent); color: var(--edit-fg); border-radius: 6px; padding: 5px 9px; min-width: 240px; }
+.edhint { background: var(--edit-soft); padding: 6px 16px; font-size: 12.5px; border-bottom: 1px solid var(--line); }
+.edbody { display: grid; grid-template-columns: 230px minmax(0, 1fr) 300px; min-height: 0; }
+.edcol { overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px; background: var(--panel); }
+.edcol.l { border-right: 1px solid var(--line); }
+.edcol.r { border-left: 1px solid var(--line); }
+.edcanvas { overflow: auto; min-width: 0; background-color: var(--bg); background-image: radial-gradient(var(--line) 1px, transparent 1px); background-size: 18px 18px; padding: 12px; }
+.edcanvas .mapwrap { background: transparent; border: 0; }
+.edcanvas .maptools { border: 0; padding: 0 0 8px; }
+.edcanvas .mapscroll { max-height: none; }
+.pal { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.pal button { border: 1px dashed var(--line-2); background: var(--bg); border-radius: 6px; padding: 8px 6px; font-size: 12.5px; }
+.pal button:hover { border-color: var(--edit); }
+.blk { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; background: var(--bg); }
+.blk .row { justify-content: space-between; }
+.edfoot { border-top: 1px solid var(--line); background: var(--panel); padding: 10px 16px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; }
+.delta { display: flex; flex-direction: column; gap: 1px; padding-right: 20px; border-right: 1px solid var(--line); }
+.delta:last-of-type { border-right: 0; }
+.delta b { font-family: var(--f-mono); font-size: 14px; font-weight: 500; }
+@media (max-width: 1000px) { .ed { height: auto; min-height: 100vh; } .edbody { grid-template-columns: 1fr; } .edcol.l, .edcol.r { border: 0; border-bottom: 1px solid var(--line); } }
+
+/* Modal and toast */
+.scrim { position: fixed; inset: 0; background: var(--scrim); display: grid; place-items: center; padding: 16px; z-index: 50; }
+.modal { background: var(--panel); border-radius: 12px; box-shadow: var(--shadow-overlay); width: min(680px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; display: flex; flex-direction: column; }
+.modal.wide { width: min(860px, 100%); }
+.mhead { padding: 18px 20px 12px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; border-bottom: 1px solid var(--line); }
+.mbody { padding: 16px 20px; display: flex; flex-direction: column; gap: 16px; }
+.mfoot { padding: 12px 20px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; position: sticky; bottom: 0; background: var(--panel); }
+.close { border: 0; background: none; font-size: 20px; line-height: 1; color: var(--fg-2); padding: 2px 6px; }
+.toast { position: fixed; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 9px 16px; border-radius: 8px; font-size: 13px; box-shadow: var(--shadow-overlay); z-index: 60; max-width: calc(100% - 32px); }
+.err { color: var(--crit); font-size: 12.5px; }
+.checks { display: flex; flex-wrap: wrap; gap: 6px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div id="app"></div>
+<div id="modal"></div>
+<div id="toast" hidden></div>
+
+<script>
+/* ---------------- Sample data (Northbeam Digital) ---------------- */
+const ROLES = { sales: "Sales", strat: "Strategist", am: "Account manager", seo: "SEO specialist", ppc: "PPC specialist", fin: "Finance", auto: "Automated", ai: "AI agent" };
+const PEOPLE = [
+  { id: "austin", name: "Austin Smith", role: "consultant", fte: null },
+  { id: "priya", name: "Priya Shah", role: "sales", fte: 1, u: .12 }, { id: "tom", name: "Tom Reed", role: "sales", fte: 1, u: .11 },
+  { id: "maya", name: "Maya Collins", role: "strat", fte: 1, u: .82, p90: .97 },
+  { id: "leah", name: "Leah Brooks", role: "am", fte: 1, u: .66 }, { id: "dan", name: "Dan Okafor", role: "am", fte: 1, u: .61 },
+  { id: "sam", name: "Sam Patel", role: "seo", fte: 1, u: .64 }, { id: "chloe", name: "Chloe Evans", role: "seo", fte: 1, u: .62 }, { id: "arjun", name: "Arjun Mehta", role: "seo", fte: .8, u: .63 },
+  { id: "nina", name: "Nina Kowalski", role: "ppc", fte: 1, u: .77 }, { id: "ben", name: "Ben Carter", role: "ppc", fte: 1, u: .73 },
+  { id: "rosa", name: "Rosa Diaz", role: "fin", fte: .6, u: .21 },
+];
+const person = id => PEOPLE.find(p => p.id === id);
+const initials = id => person(id).name.split(" ").map(s => s[0]).join("");
+
+const BASE = {};
+function n(id, name, o = {}) { BASE[id] = { id, name, ...o }; }
+n("company", "Northbeam Digital", { cols: [["leads"], ["sales"], ["onb"], ["deliv"], ["acct", "fin"]], kind: "Company map" });
+n("leads", "Lead sources", { rating: "good", sub: ["14 leads / week", "3 sources"], cols: [["l_ref", "l_web", "l_partner"]], kind: "Pipeline" });
+n("l_ref", "Referrals", { rating: "great", sub: ["5 / week", "40% qualify"] });
+n("l_web", "Website enquiries", { rating: "good", sub: ["7 / week", "25% qualify"] });
+n("l_partner", "Partner agencies", { rating: "great", sub: ["2 / week", "60% qualify"] });
+n("sales", "Sales", { rating: "bad", cols: [["qualify"], ["discovery"], ["audit"], ["decision"]], kind: "Pipeline" });
+n("qualify", "Qualify lead", { role: "sales", h: .5, w: 26, rating: "bad", cols: [["q_receive"], ["q_check"], ["q_enrich"], ["q_book"]], kind: "Pipeline" });
+n("q_receive", "Receive enquiry", { role: "sales", h: .05, w: 2, rating: "good" });
+n("q_check", "Check fit", { role: "sales", h: .2, w: 20, rating: "bad" });
+n("q_enrich", "Enrich in CRM", { role: "sales", h: .15, w: 6, rating: "bad" });
+n("q_book", "Book discovery call", { role: "sales", h: .1, w: 18, rating: "good" });
+n("discovery", "Discovery call", { role: "sales", h: 1.5, w: 24, u: .12, rating: "good" });
+n("audit", "Audit & proposal", { role: "strat", h: 6, w: 25, u: .82, rating: "risk", cols: [["a_site", "a_comp"], ["a_write"], ["a_review"]], kind: "Pipeline" });
+n("a_site", "Site audit", { role: "strat", h: 2.5, w: 14, rating: "bad" });
+n("a_comp", "Competitor scan", { role: "strat", h: 1, w: 6, rating: "good" });
+n("a_write", "Write proposal", { role: "strat", h: 2, w: 9, rating: "risk" });
+n("a_review", "Internal review", { role: "strat", h: .5, w: 4, rating: "good" });
+n("decision", "Client decision", { rating: "bad", sub: ["32% sign", "5d wait"] });
+n("onb", "Onboarding", { rating: "good", cols: [["contract"], ["access"], ["kickoff"]], kind: "Pipeline" });
+n("contract", "Contract & billing", { role: "am", h: 3, w: 16, u: .64, rating: "great" });
+n("access", "Collect access", { role: "am", h: 1, w: 30, rating: "good" });
+n("kickoff", "Kickoff & strategy", { role: "strat", h: 4, w: 8, u: .82, rating: "bad" });
+n("deliv", "Campaign setup", { rating: "great", cols: [["seo", "ppc"], ["golive"]], kind: "Pipeline" });
+n("seo", "SEO setup", { role: "seo", h: 10, w: 8, u: .63, rating: "great" });
+n("ppc", "PPC setup", { role: "ppc", h: 8, w: 8, u: .75, rating: "good" });
+n("golive", "Go live & first report", { role: "am", h: 2, w: 4, rating: "good" });
+n("acct", "Account management", { rating: "risk", cols: [["report", "checkin", "adhoc"]], kind: "Servicing" });
+n("report", "Monthly report", { rating: "risk", sub: ["26 clients", "14% late"], cols: [["r_pull"], ["r_write"], ["r_review"], ["r_send"]], kind: "Servicing" });
+n("r_pull", "Pull data", { role: "seo", h: 1.5, w: 0, rating: "good" });
+n("r_write", "Write insights", { role: "am", h: 2, w: 12, rating: "bad" });
+n("r_review", "Strategist review", { role: "strat", h: .5, w: 46, rating: "risk" });
+n("r_send", "Send & walk through", { role: "am", h: 1, w: 8, rating: "good" });
+n("checkin", "Check-in call", { role: "am", h: 1, w: 0, rating: "great" });
+n("adhoc", "Ad-hoc requests", { role: "seo", h: 1.5, w: 20, rating: "good" });
+n("fin", "Finance", { rating: "bad", cols: [["invoice"], ["chase"]], kind: "Servicing" });
+n("invoice", "Raise invoices", { role: "fin", h: .3, w: 0, rating: "great" });
+n("chase", "Chase late payment", { role: "fin", h: 3, w: 40, rating: "bad" });
+linkParents(BASE);
+
+const PRIN = {
+  company: { goal: "Grow retained SEO and PPC clients profitably without burning out a small senior team.", why: "We sell senior attention. One strategist sets direction for every client.", constraints: "One strategist. Overtime capped at 10%. No offshore delivery.", success: "4 new clients a month, churn under 2% a month, nobody above 85% busy." },
+  sales: { goal: "Turn good-fit enquiries into signed retainers at full price.", why: "The strategist writes every audit and proposal, because the audit is how we beat cheaper agencies.", constraints: "Every proposal is reviewed before it goes out. Sales can't price work.", success: "Proposal out within 3 working days of discovery. Win rate above 30%." },
+  acct: { goal: "Keep clients informed and confident so they stay past 12 months.", why: "Monthly reports and calls are the main contact clients have with us.", constraints: "Reports go out by the 5th working day. The strategist signs off every report.", success: "95% of reports on time. Churn under 2% a month." },
+  qualify: { goal: "Reply to every good-fit lead within 4 working hours.", why: "Speed to first contact is the biggest predictor of booking a call.", constraints: "Sales team of two, also running discovery calls.", success: "First contact under 4 hours. 50% of website leads booked." },
+};
+
+let INS = [
+  { id: "i1", rating: "risk", kind: "rule", rule: "Busy role or person", title: "The strategist is the bottleneck: 82% busy on average, 97% in a bad month", metric: "Strategist: 82% busy, P90 97%. One person.", nodes: ["audit", "kickoff", "r_review"], found: "Maya Collins is the only strategist. She sits on the path of proposals, kickoffs and every monthly report review.", why: "When she is busy or away, proposals stall and reports go out late. Adding leads makes this worse, not better.", ack: 12 },
+  { id: "i2", rating: "risk", kind: "rule", rule: "SLA missed", title: "Monthly reports go out late for 1 in 7 clients", metric: "14% of reports past the 5th working day (range 9–21%)", nodes: ["r_write", "r_review"], found: "Reports wait an average of 5.8 days for strategist review.", why: "Late reports lower client health. In the simulation they cause most of the churn.", ack: 14 },
+  { id: "i3", rating: "bad", kind: "rule", rule: "Long wait before a step", title: "Proposals wait 3.1 days for the strategist", metric: "Average wait 25 h before Audit & proposal (P90 41 h)", nodes: ["audit", "a_write"], found: "Leads that pass discovery queue for the strategist before the audit starts.", why: "Your principle says proposals go out within 3 working days. Today 58% do.", ack: null },
+  { id: "i4", rating: "bad", kind: "ai", rule: "AI analysis", title: "Website leads wait over a day for first contact", metric: "Check fit: 20 h average wait. Partner leads convert 2× better but share the queue.", nodes: ["q_check", "q_enrich"], found: "Enquiries sit in the inbox until a salesperson checks fit and enriches the record by hand.", why: "Your principle for Qualify lead is first contact within 4 hours. The simulation puts it at 1.4 days.", ack: 15 },
+  { id: "i5", rating: "good", kind: "rule", rule: "Long wait before a step", title: "Discovery calls convert well but take 3 days to book", metric: "70% of discovery calls lead to an audit. 24 h wait to book.", nodes: ["discovery", "q_book"], found: "The step works; the delay is calendar availability.", why: "Booking faster would shorten the sales cycle by around 2 days.", ack: null },
+  { id: "i6", rating: "great", kind: "rule", rule: "Working well", title: "Campaign setup has headroom and low rework", metric: "SEO 63% busy, PPC 75% busy, rework 10%", nodes: ["seo", "ppc"], found: "Both setup teams finish on time with capacity to spare.", why: "This can absorb about 30% more new clients without a hire.", ack: null },
+  { id: "i7", rating: "great", kind: "rule", rule: "Working well", title: "Contracts and billing go out on time", metric: "98% within SLA", nodes: ["contract"], found: "No queue and no rework.", why: "Protect this when you change onboarding.", ack: null },
+  { id: "i8", rating: "bad", kind: "ai", rule: "AI analysis", title: "Chasing late payments is manual and slow", metric: "3 h a week; invoices paid 40 h after due date on average", nodes: ["chase"], found: "Finance chases each late invoice by email.", why: "Not urgent, but it ties up cash and is easy to automate.", ack: null },
+  { id: "i9", rating: "good", kind: "rule", rule: "Busy role or person", title: "Account managers have room for about 3 more clients each", metric: "Account managers 64% busy (P90 69%)", nodes: ["checkin", "r_send", "contract"], found: "Their load is mostly servicing and steady.", why: "They could take on report drafting to relieve the strategist.", ack: null },
+  { id: "i10", rating: "risk", kind: "ai", rule: "AI analysis", title: "Late reports are the biggest churn driver (41%)", metric: "4.9 clients lost in 6 months; 2.0 traced to late reports", nodes: ["r_review", "report"], found: "Churn driver weights from Settings applied to this run's results.", why: "Fixing report timeliness is worth more than any sales change right now.", ack: null },
+  { id: "i11", rating: "bad", kind: "rule", rule: "Single point of failure", title: "Only one person can do the strategist steps", metric: "1 of 11 people can do Audit, Kickoff and Review", nodes: ["audit", "kickoff", "r_review"], found: "No one else has the strategist skill.", why: "A two-week absence stops proposals and report sign-off.", ack: null },
+];
+
+let ISS = [
+  { id: 12, title: "Strategist bottleneck holds up proposals and report reviews", rating: "risk", status: "Open", proc: "company", nodes: ["audit", "kickoff", "r_review"], owners: ["austin", "maya"], target: { label: "Strategist busy in a bad month (P90)", now: "97%", goal: "below 80%" }, from: "i1", sources: ["src1"], desc: "Maya is the only strategist. Every proposal, kickoff and monthly report review waits for her.", created: "26 Sep" },
+  { id: 14, title: "Monthly reports go out late", rating: "risk", status: "Testing solutions", proc: "acct", nodes: ["r_write", "r_review"], owners: ["leah", "maya"], target: { label: "Reports past the 5th working day", now: "14%", goal: "below 5%" }, from: "i2", sources: ["src1"], desc: "Reports are written by account managers, then wait for strategist sign-off.", created: "26 Sep" },
+  { id: 15, title: "Website leads wait too long for first contact", rating: "bad", status: "Solution passed", proc: "sales", nodes: ["q_check", "q_enrich"], owners: ["austin", "tom", "priya"], target: { label: "Time to first contact", now: "1.4 days", goal: "under 4 hours" }, from: "i4", sources: ["src2"], desc: "Sales checks fit and enriches each website enquiry by hand before replying.", created: "27 Sep" },
+];
+
+const BLK = {
+  blk_aiqual: { name: "AI lead qualifier", type: "AI", desc: "AI scores each enquiry as it arrives and books hot leads straight into the calendar.", cols: [["b_score"], ["b_hot"], ["b_book"]], defs: { b_score: { name: "AI scores enquiry", role: "ai", h: 0, w: .1, rating: "great" }, b_hot: { name: "Sales checks hot leads", role: "sales", h: .15, w: 2, rating: "good" }, b_book: { name: "Auto-book call", role: "auto", h: 0, w: 0, rating: "great" } } },
+  blk_aireport: { name: "AI report drafting", type: "AI", desc: "Data pulls itself, AI drafts the insights, the strategist approves in minutes.", cols: [["b_pull"], ["b_draft"], ["b_approve"], ["b_send"]], defs: { b_pull: { name: "Auto pull data", role: "auto", h: 0, w: 0, rating: "great" }, b_draft: { name: "AI drafts insights", role: "ai", h: 0, w: .5, rating: "great" }, b_approve: { name: "Strategist approves", role: "strat", h: .2, w: 8, rating: "good" }, b_send: { name: "Send & walk through", role: "am", h: 1, w: 8, rating: "good" } } },
+  blk_split: { name: "AM drafts, strategist approves", type: "Redesign", desc: "Account managers write the full report; the strategist only signs off.", cols: [["c_pull"], ["c_draft"], ["c_approve"], ["c_send"]], defs: { c_pull: { name: "Pull data", role: "seo", h: 1.5, w: 0, rating: "good" }, c_draft: { name: "AM writes report", role: "am", h: 3, w: 10, rating: "good" }, c_approve: { name: "Strategist signs off", role: "strat", h: .3, w: 30, rating: "bad" }, c_send: { name: "Send & walk through", role: "am", h: 1, w: 8, rating: "good" } } },
+  blk_onb: { name: "Self-serve onboarding pack", type: "Manual", desc: "One form collects access, logins and billing details before kickoff.", cols: [["d_form"], ["d_check"]], defs: { d_form: { name: "Client fills access form", role: "auto", h: 0, w: 24, rating: "good" }, d_check: { name: "AM checks access", role: "am", h: .3, w: 4, rating: "great" } } },
+};
+
+let SOL = [
+  { id: "s1", issue: 12, name: "AM drafts, strategist approves", type: "Redesign", date: "22 Sep", proc: "acct", replace: { report: "blk_split" }, auto: "fail", autoText: "Strategist P90 drops to 91%. The target is below 80%.", robust: null, yours: "fail", note: "Moves the work around, but Maya still signs off everything.",
+    rows: [["Strategist busy (P90)", "97%", "91%", 1], ["Reports late", "14%", "9%", 1], ["Clients lost to churn (6 mo)", "4.9", "4.2", 1], ["Account manager busy", "64%", "79%", 0]], deltas: { c_draft: "+1 h AM work", c_approve: "−0.2 h strategist" },
+    stress: [["Stable", "fail", "P90 91%"], ["Soft", "fail", "P90 88%"], ["Downturn", "pass", "P90 79%"], ["Boom", "fail", "P90 98%"]] },
+  { id: "s2", issue: 12, name: "AI report drafting", type: "AI block", date: "29 Sep", proc: "acct", replace: { report: "blk_aireport" }, auto: "pass", autoText: "Strategist P90 falls to 74% (target below 80%). Holds in 86% of perturbed runs.", robust: 86, yours: null, note: "",
+    rows: [["Strategist busy (P90)", "97%", "74%", 1], ["Reports late", "14%", "3%", 1], ["Clients lost to churn (6 mo)", "4.9", "3.1", 1], ["Account manager busy", "64%", "58%", 1]], deltas: { b_draft: "AI, ~0 h", b_approve: "−0.3 h, −38 h wait" },
+    stress: [["Stable", "pass", "P90 74%"], ["Soft", "pass", "P90 70%"], ["Downturn", "pass", "P90 63%"], ["Boom", "fail", "P90 84%"]] },
+  { id: "s3", issue: 14, name: "AI report drafting", type: "AI block", date: "29 Sep", proc: "acct", replace: { report: "blk_aireport" }, auto: "pass", autoText: "Reports late falls to 3% (target below 5%). Holds in 91% of perturbed runs.", robust: 91, yours: null, note: "",
+    rows: [["Reports late", "14%", "3%", 1], ["Strategist busy (P90)", "97%", "74%", 1], ["Average client health", "72", "81", 1], ["Clients lost to churn (6 mo)", "4.9", "3.1", 1]], deltas: { b_draft: "AI, ~0 h", b_approve: "−0.3 h, −38 h wait" },
+    stress: [["Stable", "pass", "3% late"], ["Soft", "pass", "2% late"], ["Downturn", "pass", "1% late"], ["Boom", "pass", "4% late"]] },
+  { id: "s4", issue: 15, name: "AI lead qualifier", type: "AI block", date: "28 Sep", proc: "sales", replace: { qualify: "blk_aiqual" }, auto: "pass", autoText: "First contact falls to 0.6 h (target under 4 h). Holds in 95% of perturbed runs.", robust: 95, yours: "pass", note: "Tom confirmed the CRM can trigger this.",
+    rows: [["Time to first contact", "1.4 d", "0.6 h", 1], ["Discovery calls booked", "55%", "63%", 1], ["New clients won (6 mo)", "23", "26", 1], ["Strategist busy (P90)", "97%", "99%", 0]], deltas: { b_score: "AI, instant", b_hot: "−18 h wait", b_book: "automated" },
+    stress: [["Stable", "pass", "0.6 h"], ["Soft", "pass", "0.5 h"], ["Downturn", "pass", "0.4 h"], ["Boom", "pass", "1.1 h"]] },
+];
+
+let SRC = [
+  { id: "src1", title: "Interview: Maya Collins (Strategist)", type: "Transcript", date: "12 Sep", quote: "I review every single report before it goes out. Most weeks that's my Sunday.", links: [["step", "r_review"], ["issue", 12], ["insight", "i2"]] },
+  { id: "src2", title: "Interview: Tom Reed (Sales)", type: "Transcript", date: "12 Sep", quote: "Website leads sit in the inbox until one of us gets to them. Sometimes a day, sometimes two.", links: [["step", "q_check"], ["issue", 15]] },
+  { id: "src3", title: "HubSpot export: deals Jan to Aug", type: "Data", date: "15 Sep", quote: "412 enquiries, 128 discovery calls, 39 wins.", links: [["process", "sales"], ["solution", "s4"]] },
+  { id: "src4", title: "Notes: ops walkthrough with Leah", type: "Notes", date: "18 Sep", quote: "Access requests go back and forth for about a week on most new clients.", links: [] },
+];
+
+let SUG = [
+  { id: "g1", kind: "Issue", title: "Ad-hoc requests wait 20 h for an SEO specialist", from: "AI analysis", detail: "Proposed rating: Good, could improve. Touches Ad-hoc requests.", nodes: ["adhoc"] },
+  { id: "g2", kind: "Solution", title: "Fast-track partner leads past Check fit", from: "AI analysis", detail: "For issue #15. Partner leads skip enrichment and go straight to booking." },
+  { id: "g3", kind: "Model change", title: "Arjun Mehta: FTE 0.8 → 1.0 from 1 Nov", from: "Claude (MCP)", detail: "From the 30 Sep call notes." },
+];
+
+const VERSIONS = {
+  sales: [
+    { v: 7, date: "24 Sep 2026", by: "Austin", note: "Split Audit & proposal into site audit, competitor scan, write and review", wins: 3.9, cycle: 9.6, live: true },
+    { v: 6, date: "17 Sep 2026", by: "Austin", note: "Added Client decision wait from HubSpot data", wins: 3.7, cycle: 10.2 },
+    { v: 5, date: "12 Sep 2026", by: "Claude (MCP)", note: "Imported from interview transcripts", wins: 4.2, cycle: 8.1 },
+    { v: 4, date: "5 Sep 2026", by: "Austin", note: "Qualify lead broken into 4 steps", wins: 4.1, cycle: 8.4 },
+    { v: 3, date: "29 Aug 2026", by: "Austin", note: "First full draft", wins: 4.4, cycle: 7.5 },
+  ],
+};
+
+const AISUM = {
+  company: "The business is limited by one person. Maya (Strategist) sits on the path of sales, onboarding and every monthly report, so any growth in leads lands on her desk first. Late reports now cause most of the churn. Campaign setup and account management have room to spare. Fix the strategist dependency before buying more leads.",
+  sales: "Win rate is healthy at 31%, but proposals wait over 3 days for the strategist, against your principle of 3 working days. Partner leads convert twice as well as website leads yet join the same queue at Check fit.",
+  acct: "Reports are the main contact clients have with you, and 14% go out late. All of the delay is at Strategist review. Account managers are 64% busy, so they could take on drafting.",
+  qualify: "Your principle is first contact within 4 hours; the simulation puts it at 1.4 days. The wait is at Check fit and Enrich in CRM, both manual.",
+};
+
+let DRV = [
+  { id: "late", name: "Late or missed servicing work", src: "Measured", w: 1.5, on: true, val: "14% of reports late", base: .27 },
+  { id: "resp", name: "Response time to ad-hoc requests", src: "Measured", w: 1.0, on: true, val: "20 h average", base: .14 },
+  { id: "onb", name: "Onboarding speed (won to first delivery)", src: "Measured", w: .8, on: true, val: "19 days", base: .11 },
+  { id: "rework", name: "Rework or errors on deliverables", src: "Measured", w: 1.0, on: true, val: "10% rework", base: .08 },
+  { id: "load", name: "Account team overload (above 85% busy)", src: "Measured", w: 1.2, on: true, val: "Strategist 82%", base: .14 },
+  { id: "handoff", name: "Account manager changes", src: "Partly measured", w: .6, on: true, val: "0.3 per client a year", base: .05 },
+  { id: "results", name: "Client results or satisfaction", src: "You enter it", w: 1.0, on: true, val: "7 / 10 average", base: .05 },
+  { id: "tenure", name: "Early tenure (first 6 months)", src: "You enter it", w: .8, on: true, val: "×1.6 in months 1–6", base: .05 },
+  { id: "price", name: "Price changes", src: "Lever", w: .5, on: true, val: "No change planned", base: .02 },
+  { id: "market", name: "Market conditions", src: "From market settings", w: 1.0, on: true, val: "Stable now, soft from month 7", base: .04 },
+];
+
+const MKF = [["leads", "Lead volume"], ["conv", "Conversion rate"], ["cycle", "Sales cycle length"], ["price", "Price pressure"], ["churn", "Client churn"], ["hire", "Time to hire"], ["pay", "Payment delays"]];
+let MARKETS = {
+  boom: { name: "Boom", preset: true, v: { leads: 125, conv: 110, cycle: 90, price: 100, churn: 85, hire: 130, pay: 90 } },
+  stable: { name: "Stable", preset: true, v: { leads: 100, conv: 100, cycle: 100, price: 100, churn: 100, hire: 100, pay: 100 } },
+  soft: { name: "Soft", preset: true, v: { leads: 85, conv: 90, cycle: 120, price: 95, churn: 115, hire: 90, pay: 115 } },
+  downturn: { name: "Downturn", preset: true, v: { leads: 65, conv: 75, cycle: 140, price: 88, churn: 135, hire: 80, pay: 135 } },
+  c1: { name: "Cautious 2027", preset: false, v: { leads: 92, conv: 95, cycle: 110, price: 97, churn: 108, hire: 100, pay: 110 } },
+};
+const MCOL = { boom: "var(--good-soft)", stable: "var(--panel-2)", soft: "var(--warn-soft)", downturn: "var(--crit-soft)", c1: "var(--teal-soft)" };
+let SCHED = [{ from: 1, to: 6, m: "stable" }, { from: 7, to: 14, m: "soft" }, { from: 15, to: 24, m: "c1" }];
+
+let RULES = [
+  { name: "Busy role or person", checks: "Average and bad-month (P90) utilisation", th: "85%", map: "under 75% great · 75–85% good · over 85% bad · P90 over 95% risk" },
+  { name: "Long wait before a step", checks: "Average wait in the queue", th: "16 h", map: "16–40 h bad · over 40 h risk" },
+  { name: "Queue keeps growing", checks: "Items waiting at the end vs the start", th: "+0.5 / week", map: "any growth → risk" },
+  { name: "Rework", checks: "Share of items sent back", th: "20%", map: "10–20% good · over 20% bad" },
+  { name: "SLA missed", checks: "Share of visits over the step's SLA", th: "10%", map: "5–10% bad · over 10% risk" },
+  { name: "Single point of failure", checks: "People able to do a step", th: "1 person", map: "1 person on a busy step → bad" },
+  { name: "Overtime", checks: "Overtime hours in the run", th: "0 h", map: "any → bad · at the cap → risk" },
+  { name: "Client health", checks: "Simulated client-group health at the end", th: "50 / 100", map: "under 65 bad · under 50 risk" },
+  { name: "Sources disagree", checks: "Two sources differ on a number", th: "2×", map: "→ bad (perception gap)" },
+  { name: "Working well", checks: "Under 75% busy, waits under 8 h, SLA met 95%+", th: "all three", map: "→ great" },
+];
+
+const LEVERS = [
+  ["Demand", ["Leads per week, per source", "Conversion per source", "Seasonality", "Growth per month"]],
+  ["People", ["Headcount per role", "FTE per person", "Hire dates", "Leave"]],
+  ["Process", ["Hands-on time per step", "Wait per step", "Rework per step", "Routing percentages"]],
+  ["Clients and churn", ["Client groups per service", "Average fee", "Base churn", "Churn driver weights"]],
+  ["Finances", ["Price per service", "Cost rate per role", "Overhead"]],
+  ["Market", ["Market condition", "Market schedule"]],
+];
+
+/* ---------------- State ---------------- */
+const S = { screen: "overview", p: null, h: 6, open: {}, all: {}, fit: {}, hl: {}, ratingFilter: {}, settings: "churn", mk: "c1", ed: null, nextIssue: 16, nextSol: 5, viewVersion: null };
+const MAPS = {};
+
+/* ---------------- Helpers ---------------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const RT = { great: { l: "Great", c: "var(--good)", s: "var(--good-soft)", d: "Working well. Protect it." }, good: { l: "Good, could improve", c: "var(--teal)", s: "var(--teal-soft)", d: "Fine today, with something to gain." }, bad: { l: "Bad, not urgent", c: "var(--warn)", s: "var(--warn-soft)", d: "Costing time or money. Plan a fix." }, risk: { l: "Operational risk", c: "var(--crit)", s: "var(--crit-soft)", d: "Could break delivery or lose clients. Fix now." } };
+const RORDER = ["risk", "bad", "good", "great"];
+const pill = r => r ? `<span class="pill" style="--pc:${RT[r].c};--ps:${RT[r].s}"><i></i>${RT[r].l}</span>` : `<span class="pill plain">Not rated</span>`;
+const verdict = v => v === "pass" ? `<span class="verdict pass">PASS</span>` : v === "fail" ? `<span class="verdict fail">FAIL</span>` : `<span class="verdict wait">NOT DECIDED</span>`;
+const avatars = ids => `<span class="avatars">${ids.map(i => `<span class="avatar" title="${esc(person(i).name)}">${initials(i)}</span>`).join("")}</span>`;
+const fmtH = h => h == null ? "" : h === 0 ? "0" : h < 1 ? `${Math.round(h * 60)}m` : h < 16 ? `${+h.toFixed(1)}h` : `${+(h / 8).toFixed(1)}d`;
+const gbp = v => v >= 1e6 ? `£${(v / 1e6).toFixed(2)}m` : `£${(v / 1000).toFixed(1)}k`;
+function clone(o) { return JSON.parse(JSON.stringify(o)); }
+function linkParents(t) { for (const id in t) (t[id].cols || []).flat().forEach(k => { if (t[k]) t[k].parent = id; }); }
+function leafCount(t, id) { const c = t[id].cols; return c ? c.flat().reduce((a, k) => a + leafCount(t, k), 0) : 1; }
+function desc(t, id, acc = new Set()) { acc.add(id); (t[id].cols || []).flat().forEach(k => desc(t, k, acc)); return acc; }
+function ancestors(id, t = BASE) { const a = []; let k = t[id]?.parent; while (k) { a.unshift(k); k = t[k].parent; } return a; }
+const nodeName = id => (BASE[id] || {}).name || id;
+const procOf = id => { const a = ancestors(id); return a.length > 1 ? a[1] : id; };
+function insFor(pid) { const d = desc(BASE, pid); return INS.filter(i => i.nodes.some(x => d.has(x))); }
+function issuesFor(pid) { const d = desc(BASE, pid); return ISS.filter(i => i.nodes.some(x => d.has(x))); }
+function solsFor(pid) { const ids = new Set(issuesFor(pid).map(i => i.id)); return SOL.filter(s => ids.has(s.issue)); }
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 3200); }
+function hl(key, nodes) { S.hl[key] = nodes; refreshMap(key); }
+function treeWith(replace) {
+  const t = clone(BASE);
+  for (const [g, b] of Object.entries(replace || {})) { const blk = BLK[b]; t[g].cols = clone(blk.cols); t[g].changed = true; for (const [id, d] of Object.entries(blk.defs)) t[id] = { id, ...d, parent: g, added: true }; }
+  return t;
+}
+
+/* ---------------- Map renderer ---------------- */
+const LW = 168, LH = 70, GX = 46, GY = 18, PAD = 18, HEAD = 40;
+const isOpen = (c, id) => !!(c.tree[id].cols && c.tree[id].cols.length) && (c.all || c.open.has(id));
+function meas(c, id) { if (isOpen(c, id)) { const m = measCols(c, c.tree[id].cols); return { w: Math.max(m.w + PAD * 2, 200), h: m.h + HEAD + PAD }; } return { w: LW, h: LH }; }
+function measCols(c, cols) {
+  const cm = cols.map(col => { const ms = col.map(id => meas(c, id)); return { ms, w: Math.max(...ms.map(m => m.w)), h: ms.reduce((a, m) => a + m.h, 0) + GY * (col.length - 1) }; });
+  return { cm, w: cm.reduce((a, x) => a + x.w, 0) + GX * (cols.length - 1), h: Math.max(...cm.map(x => x.h)) };
+}
+function place(c, cols, x0, y0, H) {
+  const m = measCols(c, cols); H = H ?? m.h; let x = x0; const colBoxes = [];
+  m.cm.forEach((cc, i) => {
+    let y = y0 + (H - cc.h) / 2; const bs = [];
+    cols[i].forEach((id, j) => {
+      const mm = cc.ms[j]; const b = { id, x: x + (cc.w - mm.w) / 2, y, w: mm.w, h: mm.h }; c.boxes[id] = b; bs.push(b);
+      if (isOpen(c, id)) { c.items.push({ kind: "group", b }); place(c, c.tree[id].cols, b.x + PAD, b.y + HEAD, b.h - HEAD - PAD); }
+      else c.items.push({ kind: "leaf", b });
+      y += mm.h + GY;
+    });
+    colBoxes.push(bs); x += cc.w + GX;
+  });
+  for (let i = 0; i < colBoxes.length - 1; i++) for (const a of colBoxes[i]) for (const b of colBoxes[i + 1]) c.edges.push([a, b]);
+  return m;
+}
+function trunc(s, n) { return s.length > n ? s.slice(0, n - 1) + "…" : s; }
+function issueCount(t, id, open) {
+  const set = open ? new Set([id]) : desc(t, id);
+  return ISS.filter(i => i.status !== "Closed" && i.nodes.some(x => set.has(x))).length;
+}
+function renderMap(key) {
+  const o = MAPS[key]; const ok = o.openKey || key;
+  const c = { tree: o.tree || BASE, open: S.open[ok] || (S.open[ok] = new Set(o.defaultOpen || [])), all: !!S.all[ok], boxes: {}, items: [], edges: [] };
+  const root = c.tree[o.root];
+  if (!root.cols || !root.cols.length) return `<p class="muted small" style="padding:24px">No steps yet. Add one from the left.</p>`;
+  const m = place(c, root.cols, 20, 20);
+  const W = m.w + 40, H = m.h + 40;
+  const vis = id => { let k = id; while (k && !c.boxes[k]) k = c.tree[k]?.parent; return k; };
+  const hlSet = new Set((S.hl[key] || o.hl || []).map(vis).filter(Boolean));
+  const regSet = new Set((o.region || []).map(vis).filter(Boolean));
+  const fit = S.fit[ok] !== false;
+  let s = `<svg class="map" viewBox="0 0 ${W} ${H}" style="width:${fit ? "100%" : W + "px"};min-width:${fit ? Math.min(W, 640) : W}px" role="img" aria-label="Process map: ${esc(root.name)}">
+  <defs><marker id="ar-${key}" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="arrow" d="M0,0 L8,4 L0,8 z"/></marker></defs>`;
+  for (const [a, b] of c.edges) { const x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x - 2, y2 = b.y + b.h / 2, mx = (x1 + x2) / 2; s += `<path class="edge" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" marker-end="url(#ar-${key})"/>`; }
+  for (const it of c.items) {
+    const b = it.b, nd = c.tree[b.id];
+    const cls = [hlSet.size && !hlSet.has(b.id) && !(it.kind === "group") ? "dim" : "", hlSet.has(b.id) ? "hl" : "", regSet.has(b.id) ? "reg" : "", o.sel === b.id ? "sel" : "", nd.added ? "added" : "", nd.changed ? "changed" : ""].join(" ");
+    const stripe = nd.rating ? RT[nd.rating].c : "var(--line-2)";
+    const ic = o.issues ? issueCount(c.tree, b.id, it.kind === "group") : 0;
+    const badge = ic ? `<g class="badge" transform="translate(${b.w - 4},4)"><circle r="9"/><text text-anchor="middle" y="3.5">${ic}</text></g>` : "";
+    if (it.kind === "group") {
+      s += `<g class="group ${cls}" data-node="${b.id}" data-map="${key}" transform="translate(${b.x},${b.y})">
+        <rect class="gbox" width="${b.w}" height="${b.h}" rx="12"/>
+        <rect x="10" y="12" width="4" height="18" rx="2" fill="${stripe}"/>
+        <g class="tgl" data-toggle="${b.id}" data-map="${key}"><rect x="20" y="10" width="22" height="20" rx="4"/><text x="31" y="24" text-anchor="middle">−</text></g>
+        <text class="ghead" x="50" y="20">${esc(nd.name)}</text>
+        <text class="gsub" x="50" y="33">${leafCount(c.tree, b.id)} steps${nd.changed ? " · changed" : ""}</text>${badge}</g>`;
+    } else {
+      const lines = nd.sub ? nd.sub : [nd.role ? ROLES[nd.role] : "", [nd.h != null ? fmtH(nd.h) + " work" : "", nd.w ? fmtH(nd.w) + " wait" : ""].filter(Boolean).join(" · ")];
+      const dl = o.deltas && o.deltas[b.id];
+      const u = nd.u != null ? `<text class="nutil" x="${b.w - 10}" y="22" text-anchor="end" fill="${nd.u >= .85 ? "var(--crit)" : nd.u >= .75 ? "var(--warn)" : "var(--fg-2)"}">${Math.round(nd.u * 100)}%</text>` : "";
+      const tg = nd.cols ? `<g class="tgl" data-toggle="${b.id}" data-map="${key}"><rect x="${b.w - 52}" y="${b.h - 24}" width="44" height="18" rx="4"/><text x="${b.w - 30}" y="${b.h - 11}" text-anchor="middle">+${leafCount(c.tree, b.id)}</text></g>` : "";
+      s += `<g class="node ${cls}" data-node="${b.id}" data-map="${key}" transform="translate(${b.x},${b.y})" tabindex="0">
+        <rect class="nbox" width="${b.w}" height="${b.h}" rx="9"/>
+        <rect x="5" y="8" width="4" height="${b.h - 16}" rx="2" fill="${stripe}"/>
+        <text class="nname" x="17" y="22">${esc(trunc(nd.name, u ? 19 : 22))}</text>${u}
+        <text class="nsub" x="17" y="40">${esc(trunc(lines[0] || "", 24))}</text>
+        <text class="nsub ${dl ? "dl" : ""}" x="17" y="56">${esc(trunc(dl || lines[1] || "", nd.cols ? 16 : 24))}</text>
+        ${tg}${badge}</g>`;
+    }
+  }
+  return s + "</svg>";
+}
+function mapBlock(key, o) {
+  MAPS[key] = o; const ok = o.openKey || key;
+  if (!S.open[ok]) S.open[ok] = new Set(o.defaultOpen || []);
+  const all = S.all[ok], fit = S.fit[ok] !== false;
+  return `<div class="mapwrap ${o.tall ? "tall" : ""}" id="mw-${key}">
+    <div class="maptools"><div class="row">
+      ${o.title ? `<b class="small">${o.title}</b>` : ""}
+      <button class="btn sm ${all ? "on" : ""}" data-act="expandall" data-map="${key}">${all ? "Collapse all" : "Expand all"}</button>
+      <button class="btn sm" data-act="fit" data-map="${key}">${fit ? "Actual size" : "Fit to width"}</button></div>
+      ${o.legend === false ? "" : `<div class="legend">${RORDER.map(r => `<span style="--pc:${RT[r].c}"><i></i>${RT[r].l}</span>`).join("")}${o.issues ? `<span><svg width="12" height="12"><circle cx="6" cy="6" r="6" fill="var(--crit)"/></svg>Confirmed issues</span>` : ""}</div>`}
+    </div><div class="mapscroll" id="ms-${key}">${renderMap(key)}</div></div>`;
+}
+function refreshMap(key) {
+  const ok = MAPS[key]?.openKey || key;
+  for (const k of Object.keys(MAPS)) if ((MAPS[k].openKey || k) === ok || k === key) { const el = document.getElementById("ms-" + k); if (el) el.innerHTML = renderMap(k); }
+}
+
+/* ---------------- Charts ---------------- */
+function niceTicks(min, max, n = 4) {
+  const span = max - min || 1, s0 = span / n, mag = 10 ** Math.floor(Math.log10(s0));
+  const step = [1, 2, 2.5, 5, 10].map(x => x * mag).find(x => x >= s0);
+  const t = []; for (let v = Math.floor(min / step) * step; v <= Math.ceil(max / step) * step + 1e-9; v += step) t.push(+v.toFixed(6)); return t;
+}
+function lineBand(pts, fmt, xl, alt) {
+  const W = 640, H = 230, L = 62, R = 74, T = 14, B = 30;
+  const all = pts.flatMap(p => [p.lo, p.hi]).concat(alt ? alt.map(p => p.mean) : []);
+  const t = niceTicks(Math.min(...all), Math.max(...all)), y0 = t[0], y1 = t.at(-1);
+  const X = i => L + i / (pts.length - 1) * (W - L - R), Y = v => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">`;
+  t.forEach(v => s += `<line class="grid" x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}"/><text class="ax" x="${L - 8}" y="${Y(v) + 4}" text-anchor="end">${fmt(v)}</text>`);
+  const st = Math.max(1, Math.ceil((pts.length - 1) / 6));
+  pts.forEach((p, i) => { if (i % st === 0 || i === pts.length - 1) s += `<text class="ax" x="${X(i)}" y="${H - 8}" text-anchor="middle">${xl(p, i)}</text>`; });
+  s += `<path class="band" d="M${pts.map((p, i) => `${X(i)},${Y(p.hi)}`).join(" L")} L${pts.map((p, i) => `${X(i)},${Y(p.lo)}`).reverse().join(" L")} Z"/>`;
+  if (alt) s += `<path class="line b" d="M${alt.map((p, i) => `${X(i)},${Y(p.mean)}`).join(" L")}"/>`;
+  s += `<path class="line" d="M${pts.map((p, i) => `${X(i)},${Y(p.mean)}`).join(" L")}"/>`;
+  const e = pts.at(-1); s += `<circle class="dot" cx="${X(pts.length - 1)}" cy="${Y(e.mean)}" r="4.5"/><text class="lbl" x="${X(pts.length - 1) + 8}" y="${Y(e.mean) + 4}">${fmt(e.mean)}</text>`;
+  return s + "</svg>";
+}
+function hbars(rows, { max = 1.1, th = .85, fmt = v => Math.round(v * 100) + "%", color, thLabel = "85% line" } = {}) {
+  const W = 640, rh = 30, T = 6, L = 150, R = 64, H = T + rows.length * rh + (th != null ? 22 : 6);
+  const X = v => L + Math.min(v, max) / max * (W - L - R);
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">`;
+  rows.forEach((r, i) => {
+    const y = T + i * rh; const c = color ? color(r.v) : r.v >= .95 ? "var(--crit)" : r.v >= .85 ? "var(--warn)" : "var(--accent)";
+    s += `<text class="ax" x="${L - 10}" y="${y + 19}" text-anchor="end" style="font-family:var(--f-sans);font-size:12px;fill:var(--fg)">${esc(r.label)}</text>
+      <rect x="${L}" y="${y + 9}" width="${Math.max(2, X(r.v) - L)}" height="13" rx="3" fill="${c}"/>`;
+    if (r.hi != null) s += `<line class="whisk" x1="${X(r.lo)}" x2="${X(r.hi)}" y1="${y + 15.5}" y2="${y + 15.5}"/><line class="whisk" x1="${X(r.hi)}" x2="${X(r.hi)}" y1="${y + 11}" y2="${y + 20}"/>`;
+    s += `<text class="ax" x="${W - R + 10}" y="${y + 19}">${fmt(r.v)}${r.hi != null ? "" : ""}</text>`;
+  });
+  if (th != null) s += `<line class="th" x1="${X(th)}" x2="${X(th)}" y1="${T}" y2="${H - 18}"/><text class="ax" x="${X(th)}" y="${H - 4}" text-anchor="middle">${thLabel}</text>`;
+  return s + "</svg>";
+}
+const ROLEU = [{ label: "Strategist", v: .82, lo: .73, hi: .97 }, { label: "PPC specialist", v: .75, lo: .66, hi: .86 }, { label: "Account manager", v: .64, lo: .59, hi: .69 }, { label: "SEO specialist", v: .63, lo: .57, hi: .73 }, { label: "Finance", v: .21, lo: .18, hi: .25 }, { label: "Sales", v: .12, lo: .10, hi: .13 }];
+
+/* ---------------- KPIs by horizon ---------------- */
+const HZ = [1, 3, 6, 12, 24];
+function horizonSeg() { return `<div class="row"><span class="small muted">Projection</span><div class="seg" role="group" aria-label="Time horizon">${HZ.map(h => `<button class="${S.h === h ? "on" : ""}" data-act="horizon" data-h="${h}">${h}m</button>`).join("")}</div>
+  <button class="chip btnchip" data-go="settings:market" title="Market conditions">Market: ${esc(MARKETS[SCHED[0].m].name)}, then ${esc(MARKETS[SCHED[1].m].name)} from M${SCHED[1].from}</button></div>`; }
+function kpi(label, v, r, extra = "", focus = false) { return `<div class="kpi ${focus ? "focus" : ""}"><span class="eyebrow">${label}</span><span class="v">${v}</span><span class="r">${r}</span>${extra ? `<span class="small muted">${extra}</span>` : ""}</div>`; }
+function mrrSeries(h, alt = 0) {
+  const steps = h <= 3 ? Math.round(h * 4.33) : h, pts = [];
+  for (let i = 0; i <= steps; i++) { const m = h <= 3 ? i / 4.33 : i; const soft = m > 6 ? (m - 6) * 900 : 0; const mean = 78400 + 2150 * m - soft + alt * m * 1100; const sp = 1300 * Math.sqrt(m) + 260 * m; pts.push({ m, mean, lo: mean - sp, hi: mean + sp * .9 }); }
+  return pts;
+}
+const xlab = h => (p, i) => i === 0 ? "Now" : h <= 3 ? `W${i}` : `M${p.m}`;
+function kpisFor(pid) {
+  const h = S.h, hl = `over ${h} month${h > 1 ? "s" : ""}`;
+  const mrr = mrrSeries(h).at(-1);
+  if (pid === "company" || pid === "leads" || pid === "deliv" || pid === "onb") return [
+    kpi("New clients won", Math.round(3.9 * h), `range ${Math.round(2.6 * h)}–${Math.round(5.7 * h)} ${hl}`),
+    kpi(`MRR at month ${h}`, gbp(mrr.mean), `range ${gbp(mrr.lo)}–${gbp(mrr.hi)}`, "Now £78.4k"),
+    kpi("Clients lost to churn", (0.82 * h).toFixed(1), `range ${(0.5 * h).toFixed(1)}–${(1.5 * h).toFixed(1)} ${hl}`, "41% traced to late reports"),
+    kpi("Bottleneck", "Strategist", "82% busy · 97% in a bad month", "Audit, Kickoff, Report review", true)].join("");
+  if (pid === "sales" || pid === "qualify" || pid === "audit") return [
+    kpi("New clients won", Math.round(3.9 * h), `range ${Math.round(2.6 * h)}–${Math.round(5.7 * h)} ${hl}`),
+    kpi("Discovery to proposal", "3.1 <small>days</small>", "P90 5.1 days", "Principle: within 3 working days"),
+    kpi("Win rate", "31%", "range 26–37%"),
+    kpi("Bottleneck", "Audit & proposal", "Strategist 82% busy", "Waits 25 h on average", true)].join("");
+  if (pid === "acct" || pid === "report") return [
+    kpi("Reports on time", "86%", "range 79–91%", "Principle: 95%", true),
+    kpi("Clients lost to churn", (0.82 * h).toFixed(1), `range ${(0.5 * h).toFixed(1)}–${(1.5 * h).toFixed(1)} ${hl}`),
+    kpi("Average client health", "72 <small>/ 100</small>", "18% of clients below 65"),
+    kpi("Bottleneck", "Strategist review", "Waits 5.8 days", "", false)].join("");
+  return [kpi("Items through", Math.round(17 * h), `range ${Math.round(14 * h)}–${Math.round(21 * h)} ${hl}`), kpi("Cycle time", "5.0 <small>days</small>", "P90 8.2 days"), kpi("Busiest role", "Finance", "21% busy"), kpi("Open insights", insFor(pid).length, "from the latest run")].join("");
+}
+
+/* ---------------- Sidebar ---------------- */
+function navBtn(go, label, extra = "", on = false) { return `<button class="nav ${on ? "on" : ""}" data-go="${go}">${label}${extra}</button>`; }
+function treeNav(id, depth) {
+  const nd = BASE[id]; if (!nd.cols) return "";
+  const on = S.screen === "process" && S.p === id;
+  let s = `<button class="nav ${on ? "on" : ""}" data-go="process:${id}" style="padding-left:${10 + depth * 14}px"><span class="dot" style="background:${nd.rating ? RT[nd.rating].c : "var(--fg-3)"}"></span>${esc(id === "company" ? "Company map" : nd.name)}</button>`;
+  nd.cols.flat().forEach(k => s += treeNav(k, depth + 1));
+  return s;
+}
+function sidebar() {
+  const sc = S.screen; const unlinked = SRC.filter(s => !s.links.length).length;
+  return `<aside class="side">
+    <div class="brand">Transpera Flow<span>PROTOTYPE</span></div>
+    <div class="ws"><b>Northbeam Digital</b><span class="small muted">Sample data · nothing is saved</span></div>
+    ${navBtn("overview", "Company overview", "", sc === "overview")}
+    <div class="navlabel eyebrow">Processes</div>
+    <div class="tree">${treeNav("company", 0)}</div>
+    <div class="navlabel eyebrow">Work</div>
+    ${navBtn("issues", "Issues", `<span class="cnt">${ISS.length}</span>`, sc === "issues" || sc === "issue" || sc === "compare")}
+    ${navBtn("library", "Block library", "", sc === "library")}
+    ${navBtn("suggestions", "Suggestions", SUG.length ? `<span class="cnt">${SUG.length}</span>` : "", sc === "suggestions")}
+    ${navBtn("sources", "Sources", unlinked ? `<span class="cnt warn" title="Not linked to anything">${unlinked}</span>` : "", sc === "sources")}
+    <div class="navlabel eyebrow">Company</div>
+    ${navBtn("people", "People", "", sc === "people")}
+    ${navBtn("settings", "Settings", "", sc === "settings")}
+  </aside>`;
+}
+
+/* ---------------- Screens ---------------- */
+function insightRows(list, mapKey) {
+  if (!list.length) return `<div class="card muted">Nothing in this group from the latest run.</div>`;
+  return `<div class="list" data-hlist="${mapKey}">${list.map(i => `
+    <div class="irow" data-hl="${i.nodes.join(",")}" data-map="${mapKey}" data-act="insight" data-id="${i.id}" tabindex="0">
+      <div>${pill(i.rating)}</div>
+      <div class="txt"><b>${esc(i.title)}</b><span>${esc(i.metric)} · ${i.nodes.map(nodeName).join(", ")}</span></div>
+      <span class="src ${i.kind === "ai" ? "ai" : ""}">${i.kind === "ai" ? "AI" : "Rule: " + esc(i.rule)}</span>
+      ${i.ack ? `<button class="btn ghost sm" data-go="issue:${i.ack}">Issue #${i.ack} →</button>` : `<button class="btn sm" data-act="ack" data-id="${i.id}">Acknowledge</button>`}
+    </div>`).join("")}</div>`;
+}
+function insightSection(pid, mapKey) {
+  const list = insFor(pid); const f = S.ratingFilter[pid];
+  const shown = list.filter(i => !f || i.rating === f).sort((a, b) => RORDER.indexOf(a.rating) - RORDER.indexOf(b.rating));
+  return `<section id="insights"><div class="sechead"><h2>Insights</h2><p>The raw analysis from the latest simulation. Hover a row to see it on the map. Nothing becomes an issue, or shows on the map, until you acknowledge it.</p></div>
+    <div class="filters"><button class="chip btnchip ${!f ? "on" : ""}" data-act="rfilter" data-p="${pid}" data-r="">All ${list.length}</button>${RORDER.map(r => { const c = list.filter(i => i.rating === r).length; return `<button class="chip btnchip ${f === r ? "on" : ""}" data-act="rfilter" data-p="${pid}" data-r="${r}"><span class="pill" style="--pc:${RT[r].c};--ps:transparent;padding:0"><i></i></span>${RT[r].l} ${c}</button>`; }).join("")}</div>
+    ${insightRows(shown, mapKey)}</section>`;
+}
+function issueTable(list) {
+  if (!list.length) return `<div class="card muted">No confirmed issues yet. Acknowledge an insight, or add one by hand.</div>`;
+  return `<div class="tblwrap"><table><thead><tr><th>#</th><th>Issue</th><th>Rating</th><th>Touches</th><th>Owners</th><th>Status</th><th>Solutions</th></tr></thead><tbody>
+  ${list.map(i => { const ss = SOL.filter(s => s.issue === i.id); const best = ss.find(s => (s.yours || s.auto) === "pass"); return `<tr class="click" data-go="issue:${i.id}"><td class="mono">#${i.id}</td><td><b>${esc(i.title)}</b></td><td>${pill(i.rating)}</td><td class="small">${i.nodes.map(nodeName).join(", ")}</td><td>${avatars(i.owners)}</td><td class="small">${esc(i.status)}</td><td class="small">${ss.length ? `${ss.length} tried ${best ? verdict("pass") : ""}` : "None yet"}</td></tr>`; }).join("")}
+  </tbody></table></div>`;
+}
+function solCards(list) {
+  if (!list.length) return `<div class="card muted">No solutions yet. Open an issue and choose Build solution.</div>`;
+  return `<div class="solgrid">${list.map(s => `<div class="card sol"><div class="spread"><span class="src ${s.type === "AI block" ? "ai" : ""}">${esc(s.type)}</span><span class="small muted">${s.date}</span></div>
+    <h3>${esc(s.name)}</h3><span class="small muted">For #${s.issue} · ${esc(ISS.find(i => i.id === s.issue).title)}</span>
+    <div class="row small"><span class="muted">Automatic</span>${verdict(s.auto)}<span class="muted">Yours</span>${verdict(s.yours)}</div>
+    <div class="row"><button class="btn sm" data-go="compare:${s.id}">Compare side by side</button><button class="btn sm" data-act="opensol" data-id="${s.id}">Open in Editor</button></div></div>`).join("")}</div>`;
+}
+
+const SCREENS = {
+  overview() {
+    const top = INS.slice().sort((a, b) => RORDER.indexOf(a.rating) - RORDER.indexOf(b.rating)).slice(0, 5);
+    return `<div class="head"><div class="t"><span class="eyebrow">Company overview</span><h1>Northbeam Digital</h1><span class="viewing"><i></i>Live model · simulated 30 times · 1 Oct</span></div>${horizonSeg()}</div>
+    <div class="kpis">${kpisFor("company")}</div>
+    <section><div class="sechead"><h2>Company map</h2><p>Each box is a process. Use + to open one in place, Expand all to see every step, or click a box to go to its page.</p></div>
+      ${mapBlock("ov", { root: "company", issues: true })}</section>
+    <div class="grid2">
+      <div class="card chartcard"><div class="spread"><h3>Monthly recurring revenue</h3><div class="legend"><span style="--pc:var(--accent)"><i></i>Average</span><span style="--pc:color-mix(in srgb,var(--accent) 25%,transparent)"><i></i>10–90% range</span></div></div>${lineBand(mrrSeries(S.h), v => "£" + Math.round(v / 1000) + "k", xlab(S.h))}<span class="small muted">The dip after month 6 is the Soft market from your market schedule.</span></div>
+      <div class="card chartcard"><div class="spread"><h3>How busy each role is</h3><div class="legend"><span style="--pc:var(--accent)"><i></i>Average</span><span>— Bad month (P90)</span></div></div>${hbars(ROLEU)}</div>
+    </div>
+    <div class="card ai-card stack"><div class="spread"><span class="eyebrow">AI analysis · reads results, principles and sources</span><button class="btn sm" data-act="aireview" data-p="company">Run AI review again</button></div><p style="max-width:80ch">${AISUM.company}</p><span class="small muted">Every number in this summary comes from the simulation. AI explains them; it doesn't make them up.</span></div>
+    <section><div class="sechead"><h2>Most important insights</h2><button class="btn ghost" data-go="process:company">See all on the company map →</button></div>${insightRows(top, "ov")}</section>`;
+  },
+  process() {
+    const pid = S.p, nd = BASE[pid], key = "pr-" + pid, pr = PRIN[pid], vers = VERSIONS[pid] || VERSIONS.sales;
+    const crumbs = ancestors(pid).map(a => `<button data-go="${a === "company" ? "process:company" : "process:" + a}">${esc(a === "company" ? "Company map" : BASE[a].name)}</button><span>›</span>`).join("");
+    const viewOld = S.viewVersion && S.viewVersion.p === pid;
+    return `<div class="head"><div class="t"><div class="crumbs">${crumbs}<span>${esc(pid === "company" ? "Company map" : nd.name)}</span></div>
+        <h1>${esc(pid === "company" ? "Company map" : nd.name)}</h1>
+        <div class="row">${viewOld ? `<span class="viewing old"><i></i>Viewing version ${S.viewVersion.v} · read only</span><button class="btn sm" data-act="backlive">Back to live</button>` : `<span class="viewing"><i></i>Viewing live · version ${vers[0].v}</span>`}<span class="chip">${esc(nd.kind || "Process")}</span>${nd.rating ? pill(nd.rating) : ""}</div></div>
+      <div class="row"><button class="btn" data-go="history:${pid}">History</button><button class="btn edit" data-act="editdraft" data-p="${pid}">✎ Open in Editor</button></div></div>
+    <section><div class="spread"><span class="eyebrow">First principles${pr ? "" : " · not written yet"}</span><button class="btn ghost sm" data-act="editprin" data-p="${pid}">Edit</button></div>
+      ${pr ? `<div class="card principles"><div><span class="eyebrow">Goal</span>${esc(pr.goal)}</div><div><span class="eyebrow">Why we do it this way</span>${esc(pr.why)}</div><div><span class="eyebrow">Constraints</span>${esc(pr.constraints)}</div><div><span class="eyebrow">Success looks like</span>${esc(pr.success)}</div></div>`
+        : `<div class="card muted small">Write the goal, the reason it works this way, the constraints and what success looks like. AI analysis uses these to judge the process.</div>`}</section>
+    <div class="spread"><h2>Projection</h2>${horizonSeg()}</div>
+    <div class="kpis">${kpisFor(pid)}</div>
+    ${mapBlock(key, { root: pid, issues: true, tall: false })}
+    ${insightSection(pid, key)}
+    <div class="grid2">
+      <div class="card chartcard"><h3>Wait before each step</h3>${hbars(Object.values(BASE).filter(x => !x.cols && x.w != null && desc(BASE, pid).has(x.id)).sort((a, b) => b.w - a.w).slice(0, 7).map(x => ({ label: x.name, v: x.w })), { max: 50, th: 16, fmt: fmtH, thLabel: "16 h rule", color: v => v >= 40 ? "var(--crit)" : v >= 16 ? "var(--warn)" : "var(--accent)" })}</div>
+      <div class="card chartcard"><h3>How busy each role is</h3>${hbars(ROLEU)}</div>
+    </div>
+    <div class="card ai-card stack"><div class="spread"><span class="eyebrow">AI analysis · uses this process's first principles</span><button class="btn sm" data-act="aireview" data-p="${pid}">Run AI review again</button></div><p style="max-width:80ch">${AISUM[pid] || "AI hasn't reviewed this process yet. Write its first principles first so the review can judge it against your goal."}</p></div>
+    <section><div class="sechead"><h2>Issues</h2><p>Only issues you've confirmed. They show as red badges on the map.</p><button class="btn" data-act="newissue" data-p="${pid}">+ New issue</button></div>${issueTable(issuesFor(pid))}</section>
+    <section><div class="sechead"><h2>Solutions</h2><p>Each solution is a bundle of steps tested against an issue. They never change the live map.</p></div>${solCards(solsFor(pid))}</section>`;
+  },
+  issues() {
+    return `<div class="head"><div class="t"><span class="eyebrow">Work</span><h1>Issues</h1><p class="muted">Confirmed problems, each linked to a process or to specific steps.</p></div><button class="btn primary" data-act="newissue" data-p="company">+ New issue</button></div>
+      ${issueTable(ISS)}
+      <section><div class="sechead"><h2>All solutions</h2></div>${solCards(SOL)}</section>`;
+  },
+  issue() {
+    const i = ISS.find(x => x.id === +S.p); const ss = SOL.filter(s => s.issue === i.id); const ins = INS.find(x => x.id === i.from);
+    const openGroups = [...new Set(i.nodes.flatMap(x => ancestors(x)).filter(a => a !== i.proc && a !== "company" && desc(BASE, i.proc).has(a)))];
+    return `<div class="head"><div class="t"><div class="crumbs"><button data-go="issues">Issues</button><span>›</span><span>#${i.id}</span></div><h1>${esc(i.title)}</h1><div class="row">${pill(i.rating)}<span class="chip">${esc(i.status)}</span><span class="small muted">Logged ${i.created}${ins ? ` from insight “${esc(ins.rule)}”` : ""}</span></div></div>
+      <div class="row"><button class="btn" data-act="editissue" data-id="${i.id}">Edit</button><button class="btn edit" data-act="buildsol" data-id="${i.id}">✎ Build solution</button></div></div>
+    <div class="side2"><div class="stack">
+      ${mapBlock("is-" + i.id, { root: i.proc, hl: i.nodes, defaultOpen: openGroups, title: "Where this issue sits", legend: false })}
+      <div class="card stack"><h3>What's wrong</h3><p>${esc(i.desc)}</p>${ins ? `<div class="note">${esc(ins.why)}</div>` : ""}</div>
+      <section><div class="sechead"><h2>Solutions tried</h2><p>Every attempt is kept, with the automatic verdict against the target and your own call.</p></div>
+        ${ss.length ? `<div class="tblwrap"><table><thead><tr><th>Solution</th><th>Type</th><th>Date</th><th>Automatic</th><th>Holds in</th><th>Yours</th><th></th></tr></thead><tbody>${ss.map(s => `<tr><td><b>${esc(s.name)}</b>${s.note ? `<div class="small muted">${esc(s.note)}</div>` : ""}</td><td><span class="src ${s.type === "AI block" ? "ai" : ""}">${esc(s.type)}</span></td><td class="small">${s.date}</td><td>${verdict(s.auto)}</td><td class="n">${s.robust ? s.robust + "%" : "—"}</td><td>${verdict(s.yours)}</td><td><button class="btn sm" data-go="compare:${s.id}">Compare</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="card muted">Nothing tried yet. Build solution opens the Editor with this issue's steps outlined.</div>`}
+      </section></div>
+      <div class="stack">
+        <div class="card stack"><span class="eyebrow">Target</span><b>${esc(i.target.label)}</b><div class="row"><span class="small muted">Now</span><span class="num">${esc(i.target.now)}</span><span class="small muted">Goal</span><span class="num">${esc(i.target.goal)}</span></div><span class="small muted">Solutions get an automatic pass or fail against this. You make the final call.</span></div>
+        <div class="card stack"><span class="eyebrow">Owners</span><div class="checks">${i.owners.map(o => `<span class="chip"><span class="avatar" style="width:20px;height:20px">${initials(o)}</span>${esc(person(o).name)}</span>`).join("")}</div></div>
+        <div class="card stack"><span class="eyebrow">Linked to</span><div class="checks"><span class="chip">Process: ${esc(i.proc === "company" ? "Company map" : nodeName(i.proc))}</span>${i.nodes.map(x => `<span class="chip">Step: ${esc(nodeName(x))}</span>`).join("")}</div></div>
+        <div class="card stack"><div class="spread"><span class="eyebrow">Sources</span><button class="btn ghost sm" data-act="addsource" data-k="issue" data-id="${i.id}">+ Link</button></div>${SRC.filter(s => s.links.some(([k, v]) => k === "issue" && v === i.id)).map(s => `<div class="small"><b>${esc(s.title)}</b><div class="muted">“${esc(s.quote)}”</div></div>`).join("") || `<span class="small muted">None yet</span>`}</div>
+      </div></div>`;
+  },
+  compare() {
+    const s = SOL.find(x => x.id === S.p), i = ISS.find(x => x.id === s.issue), groups = Object.keys(s.replace);
+    const okey = "cmp-" + s.id;
+    return `<div class="head"><div class="t"><div class="crumbs"><button data-go="issues">Issues</button><span>›</span><button data-go="issue:${i.id}">#${i.id}</button><span>›</span><span>Compare</span></div>
+      <h1>${esc(s.name)}</h1><div class="row"><span class="src ${s.type === "AI block" ? "ai" : ""}">${esc(s.type)}</span><span class="small muted">For #${i.id} · ${esc(i.title)}</span></div></div>
+      <div class="row"><button class="btn edit" data-act="opensol" data-id="${s.id}">✎ Open in Editor</button></div></div>
+    <div class="grid2">
+      ${mapBlock("cmpL-" + s.id, { root: s.proc, openKey: okey, defaultOpen: groups, title: "Live today", legend: false })}
+      ${mapBlock("cmpR-" + s.id, { root: s.proc, tree: treeWith(s.replace), openKey: okey, defaultOpen: groups, title: "With this solution", deltas: s.deltas, legend: false })}
+    </div>
+    <div class="side2"><div class="stack">
+      <div class="tblwrap"><table><thead><tr><th>Measure</th><th class="n">Live</th><th class="n">Solution</th><th>Better?</th></tr></thead><tbody>${s.rows.map(r => `<tr><td>${esc(r[0])}</td><td class="n">${r[1]}</td><td class="n">${r[2]}</td><td class="${r[3] ? "up" : "down"}">${r[3] ? "Better" : "Worse"}</td></tr>`).join("")}</tbody></table></div>
+      <div class="card chartcard"><div class="spread"><h3>MRR over ${S.h} months</h3><div class="legend"><span style="--pc:var(--accent)"><i></i>Live</span><span style="--pc:var(--edit)"><i></i>With solution</span></div></div>${lineBand(mrrSeries(S.h), v => "£" + Math.round(v / 1000) + "k", xlab(S.h), mrrSeries(S.h, s.auto === "pass" ? 1 : .2))}</div>
+      <section><div class="sechead"><h2>Market stress test</h2><p>Does it still meet the target under different market conditions?</p></div>
+        <div class="tblwrap"><table><thead><tr><th>Market</th><th>Result</th><th>Key number</th></tr></thead><tbody>${s.stress.map(r => `<tr><td>${r[0]}</td><td>${verdict(r[1])}</td><td class="mono small">${r[2]}</td></tr>`).join("")}</tbody></table></div></section>
+    </div><div class="stack">
+      <div class="card stack"><span class="eyebrow">Automatic verdict</span><div>${verdict(s.auto)}</div><p class="small">${esc(s.autoText)}</p><span class="small muted">Target: ${esc(i.target.label)} ${esc(i.target.goal)}</span></div>
+      <div class="card stack"><span class="eyebrow">Your verdict</span><div class="row"><button class="btn ${s.yours === "pass" ? "on" : ""}" data-act="verdict" data-id="${s.id}" data-v="pass">Pass</button><button class="btn ${s.yours === "fail" ? "on" : ""}" data-act="verdict" data-id="${s.id}" data-v="fail">Fail</button></div>
+        <label class="field">Note<textarea id="vnote-${s.id}" data-act="vnote" data-id="${s.id}">${esc(s.note)}</textarea></label></div>
+      <div class="note">Solutions never change the live map. To make this real, open the process in the Editor and build the new version yourself.</div>
+    </div></div>`;
+  },
+  history() {
+    const pid = S.p, vs = VERSIONS[pid] || VERSIONS.sales;
+    const pts = vs.slice().reverse();
+    return `<div class="head"><div class="t"><div class="crumbs"><button data-go="process:${pid}">${esc(pid === "company" ? "Company map" : nodeName(pid))}</button><span>›</span><span>History</span></div><h1>Process history</h1><p class="muted">Every published version, with its simulated results. Restore one, or duplicate it as a new process.</p></div>${horizonSeg()}</div>
+    <div class="grid2">
+      <div class="card chartcard"><h3>New clients won per month, by version</h3>${lineBand(pts.map(v => ({ mean: v.wins, lo: v.wins * .72, hi: v.wins * 1.4 })), v => v.toFixed(1), (p, i) => "v" + pts[i].v)}</div>
+      <div class="card chartcard"><h3>Lead to win, days, by version</h3>${lineBand(pts.map(v => ({ mean: v.cycle, lo: v.cycle * .8, hi: v.cycle * 1.3 })), v => v.toFixed(1), (p, i) => "v" + pts[i].v)}</div>
+    </div>
+    <div class="tblwrap"><table><thead><tr><th>Version</th><th>Published</th><th>By</th><th>What changed</th><th class="n">Wins / mo</th><th class="n">Lead to win</th><th></th></tr></thead><tbody>
+      ${vs.map(v => `<tr><td class="mono">v${v.v} ${v.live ? `<span class="viewing" style="margin-left:6px"><i></i>Live</span>` : ""}</td><td class="small">${v.date}</td><td class="small">${esc(v.by)}</td><td>${esc(v.note)}</td><td class="n">${v.wins}</td><td class="n">${v.cycle} d</td>
+      <td><div class="row">${v.live ? "" : `<button class="btn sm" data-act="viewver" data-p="${pid}" data-v="${v.v}">View</button><button class="btn sm" data-act="restore" data-v="${v.v}">Restore</button>`}<button class="btn sm" data-act="dup" data-v="${v.v}">Duplicate</button></div></td></tr>`).join("")}
+    </tbody></table></div>`;
+  },
+  library() {
+    return `<div class="head"><div class="t"><span class="eyebrow">Work</span><h1>Block library</h1><p class="muted">Saved bundles of steps. Drop one into a solution, or into a process in the Editor. AI solutions are blocks too.</p></div><button class="btn edit" data-act="newblock">✎ New block</button></div>
+    <div class="solgrid">${Object.entries(BLK).map(([id, b]) => { const t = { root: { id: "root", name: b.name, cols: b.cols }, ...clone(b.defs) }; for (const k in b.defs) t[k].id = k; linkParents(t); MAPS["blk-" + id] = { root: "root", tree: t }; S.fit["blk-" + id] = true;
+      return `<div class="card sol"><div class="spread"><span class="src ${b.type === "AI" ? "ai" : ""}">${b.type}</span><span class="small muted">Used in ${SOL.filter(s => Object.values(s.replace).includes(id)).length} solutions</span></div><h3>${esc(b.name)}</h3><p class="small muted">${esc(b.desc)}</p><div id="ms-blk-${id}" style="overflow-x:auto">${renderMap("blk-" + id)}</div></div>`; }).join("")}</div>`;
+  },
+  people() {
+    return `<div class="head"><div class="t"><span class="eyebrow">Company</span><h1>People</h1></div>${horizonSeg()}</div>
+    <div class="grid3">
+      <div class="card stack"><span class="eyebrow">Client health · company</span><span class="kpi" style="border:0;padding:0"><span class="v">72 <small>/ 100</small></span></span><div class="bar" style="height:12px;display:flex"><i style="width:64%;background:var(--good)"></i><i style="width:18%;background:var(--warn);border-radius:0"></i><i style="width:18%;background:var(--crit)"></i></div><span class="small muted">64% healthy · 18% watch · 18% at risk, across all client groups</span></div>
+      <div class="card stack"><span class="eyebrow">Benchmark</span><span class="kpi" style="border:0;padding:0"><span class="v">70–80</span></span><span class="small muted">Typical for small SEO and PPC agencies (your entered benchmark). Northbeam sits in range.</span></div>
+      <div class="card stack"><span class="eyebrow">Team</span><span class="kpi" style="border:0;padding:0"><span class="v">11 <small>people · 10.4 FTE</small></span></span><span class="small muted">1 person above 85% busy in a bad month</span></div>
+    </div>
+    <div class="tblwrap"><table><thead><tr><th>Name</th><th>Role</th><th class="n">FTE</th><th>How busy</th><th class="n">Average</th></tr></thead><tbody>
+      ${PEOPLE.filter(p => p.u != null).map(p => `<tr><td>${esc(p.name)}</td><td class="small">${ROLES[p.role]}</td><td class="n">${p.fte}</td><td style="min-width:160px"><div class="bar"><i style="width:${p.u * 100}%;background:${p.u >= .85 ? "var(--crit)" : p.u >= .75 ? "var(--warn)" : "var(--accent)"}"></i></div></td><td class="n">${Math.round(p.u * 100)}%${p.p90 ? ` <span class="muted">P90 ${Math.round(p.p90 * 100)}%</span>` : ""}</td></tr>`).join("")}
+    </tbody></table></div>`;
+  },
+  sources() {
+    const lab = ([k, v]) => k === "step" || k === "process" ? `${k === "step" ? "Step" : "Process"}: ${nodeName(v)}` : k === "issue" ? `Issue #${v}` : k === "insight" ? `Insight: ${trunc(INS.find(i => i.id === v).title, 34)}` : `Solution: ${SOL.find(s => s.id === v).name}`;
+    return `<div class="head"><div class="t"><span class="eyebrow">Work</span><h1>Sources</h1><p class="muted">Every source must be linked to a process, a step, an insight, an issue or a solution.</p></div><button class="btn primary" data-act="addsource">+ Add source</button></div>
+    <div class="stack">${SRC.map(s => `<div class="card stack"><div class="spread"><div class="row"><b>${esc(s.title)}</b><span class="src">${s.type}</span><span class="small muted">${s.date}</span></div><button class="btn sm" data-act="addsource" data-src="${s.id}">+ Link</button></div>
+      <p class="note">“${esc(s.quote)}”</p>
+      ${s.links.length ? `<div class="checks">${s.links.map(l => `<span class="chip">${esc(lab(l))}</span>`).join("")}</div>` : `<div class="warnbox">Not linked to anything yet. Link it, or it won't count as evidence.</div>`}</div>`).join("")}</div>`;
+  },
+  suggestions() {
+    return `<div class="head"><div class="t"><span class="eyebrow">Work</span><h1>Suggestions</h1><p class="muted">Everything AI proposes waits here. Nothing reaches the map, issues or settings until you accept it.</p></div></div>
+    ${SUG.length ? `<div class="stack">${SUG.map(g => `<div class="card spread"><div class="stack" style="gap:4px"><div class="row"><span class="chip">${g.kind}</span><span class="src ai">${esc(g.from)}</span></div><b>${esc(g.title)}</b><span class="small muted">${esc(g.detail)}</span></div><div class="row"><button class="btn" data-act="sugno" data-id="${g.id}">Reject</button><button class="btn primary" data-act="sugyes" data-id="${g.id}">Accept</button></div></div>`).join("")}</div>` : `<div class="card muted">Nothing waiting.</div>`}`;
+  },
+  settings() {
+    const tabs = [["company", "Company"], ["services", "Services and client groups"], ["churn", "Churn drivers"], ["market", "Market conditions"], ["rules", "Analysis rules"], ["ai", "AI analysis"], ["levers", "Levers"], ["roles", "Roles and access"]];
+    return `<div class="head"><div class="t"><span class="eyebrow">Company</span><h1>Settings</h1></div></div>
+    <div class="settings"><nav class="subnav">${tabs.map(([k, l]) => `<button class="nav ${S.settings === k ? "on" : ""}" data-act="stab" data-k="${k}">${l}</button>`).join("")}</nav>
+    <div class="stack">${(SETTINGS[S.settings] || SETTINGS.placeholder)()}</div></div>`;
+  },
+};
+
+const SETTINGS = {
+  churn() {
+    const tot = DRV.filter(d => d.on).reduce((a, d) => a + d.w * d.base, 0);
+    const churn = (0.82 * (tot / 1.33)).toFixed(2);
+    return `<div class="sechead"><h2>Churn drivers</h2><p>Base churn per service is multiplied by these drivers. Weights are your estimates; the simulation measures the drivers marked Measured. Contribution shows how much of the churn in the latest run each driver explains.</p></div>
+    <div class="row"><div class="kpi" style="min-width:220px"><span class="eyebrow">Projected churn</span><span class="v">${churn} <small>clients / month</small></span><span class="r">with these weights</span></div><button class="btn" data-act="adddrv">+ Add driver</button></div>
+    <div class="list">${DRV.map(d => { const c = d.on ? d.w * d.base / tot : 0; return `<div class="drv ${d.on ? "" : "off"}">
+      <input type="checkbox" ${d.on ? "checked" : ""} data-act="drvon" data-id="${d.id}" aria-label="Use ${esc(d.name)}">
+      <div class="stack" style="gap:2px">${d.custom ? `<input class="inp" value="${esc(d.name)}" data-act="drvname" data-id="${d.id}">` : `<b>${esc(d.name)}</b>`}<span class="small muted">${esc(d.src)} · ${esc(d.val)}</span></div>
+      <label class="field">Weight <span class="num" id="dw-${d.id}">${d.w.toFixed(1)}</span><input type="range" min="0" max="3" step="0.1" value="${d.w}" data-act="drvw" data-id="${d.id}"></label>
+      <div class="stack" style="gap:4px"><span class="small muted">Contribution</span><div class="bar"><i style="width:${(c * 100).toFixed(0)}%"></i></div></div>
+      <span class="num">${(c * 100).toFixed(0)}%</span></div>`; }).join("")}</div>`;
+  },
+  market() {
+    const m = MARKETS[S.mk];
+    return `<div class="sechead"><h2>Market conditions</h2><p>The climate the model lives in. Pick a preset or build your own, then schedule how it changes over the next 24 months.</p></div>
+    <div class="mk">${Object.entries(MARKETS).map(([k, x]) => `<button class="${S.mk === k ? "on" : ""}" data-act="mksel" data-k="${k}"><b>${esc(x.name)}</b><span class="muted">${x.preset ? "Preset" : "Custom"}</span></button>`).join("")}<button data-act="mknew"><b>+ Custom</b><span class="muted">Start from Stable</span></button></div>
+    <div class="card stack"><div class="spread">${m.preset ? `<h3>${esc(m.name)} <span class="small muted">preset, read only</span></h3><button class="btn sm" data-act="mkdup">Duplicate to customise</button>` : `<label class="field" style="max-width:320px">Name<input id="mkname" value="${esc(m.name)}" data-act="mkname"></label>`}</div>
+      ${MKF.map(([k, l]) => `<div class="factor"><span>${l}</span><input type="range" min="50" max="150" value="${m.v[k]}" ${m.preset ? "disabled" : ""} data-act="mkv" data-f="${k}" aria-label="${l}"><span class="num" id="mkv-${k}">${m.v[k]}%</span></div>`).join("")}
+      <span class="small muted">100% is today's normal. Lower lead volume or higher churn is a tougher market.</span></div>
+    <div class="card stack"><div class="spread"><h3>Schedule over 24 months</h3><button class="btn sm" data-act="mksched">+ Add change</button></div>
+      <div class="timeline">${Array.from({ length: 24 }, (_, i) => { const seg = SCHED.find(s => i + 1 >= s.from && i + 1 <= s.to); return `<div style="background:${MCOL[seg.m] || "var(--panel-2)"}">${i + 1 === seg.from ? esc(MARKETS[seg.m].name) : ""}</div>`; }).join("")}</div>
+      <div class="tlscale">${Array.from({ length: 24 }, (_, i) => `<span>${(i + 1) % 3 === 0 || i === 0 ? "M" + (i + 1) : ""}</span>`).join("")}</div>
+      <div class="checks">${SCHED.map(s => `<span class="chip">M${s.from}–M${s.to}: ${esc(MARKETS[s.m].name)}</span>`).join("")}</div></div>`;
+  },
+  rules() {
+    return `<div class="sechead"><h2>Analysis rules</h2><p>Fixed checks that run on every simulation and turn numbers into rated insights. These are today's defaults, to review together.</p></div>
+    <div class="tblwrap"><table><thead><tr><th>Rule</th><th>What it checks</th><th>Threshold</th><th>How it's rated</th></tr></thead><tbody>
+    ${RULES.map((r, i) => `<tr><td><b>${esc(r.name)}</b></td><td class="small">${esc(r.checks)}</td><td style="width:120px"><input class="inp mono" value="${esc(r.th)}" aria-label="Threshold for ${esc(r.name)}"></td><td class="small">${esc(r.map)}</td></tr>`).join("")}</tbody></table></div>`;
+  },
+  ai() {
+    return `<div class="sechead"><h2>AI analysis</h2><p>Runs alongside the rules. It reads the results, each process's first principles and your sources, and writes insights labelled AI. It never invents numbers: every figure it uses comes from the simulation.</p></div>
+    <div class="card stack">${[["Review after each published version", true], ["Review when market conditions change", true], ["Suggest issues (they land in Suggestions)", true], ["Suggest solutions using blocks from the library", true], ["Read linked sources and quotes", true]].map(([l, on], i) => `<label class="row"><input type="checkbox" ${on ? "checked" : ""} id="ai-${i}"> ${l}</label>`).join("")}</div>`;
+  },
+  levers() {
+    return `<div class="sechead"><h2>Levers</h2><p>Every input you can change when testing. Choose which appear on process pages.</p></div>
+    <div class="grid2">${LEVERS.map(([g, ls], gi) => `<div class="card stack"><h3>${g}</h3>${ls.map((l, i) => `<label class="row small"><input type="checkbox" checked id="lv-${gi}-${i}"> ${l}</label>`).join("")}</div>`).join("")}</div>`;
+  },
+  services() {
+    return `<div class="sechead"><h2>Services and client groups</h2><p>Clients are counted per service rather than named. The simulation creates unnamed clients from these numbers so late work still affects health and churn.</p></div>
+    <div class="tblwrap"><table><thead><tr><th>Service</th><th class="n">Clients</th><th class="n">Average fee / mo</th><th class="n">Base churn / mo</th><th class="n">Typical tenure</th><th class="n">Starting health</th></tr></thead><tbody>
+    ${[["SEO retainer", 15, "£3,600", "1.5%", "22 mo", 80], ["PPC management", 7, "£4,300", "2.0%", "16 mo", 76], ["SEO + PPC", 4, "£7,900", "1.2%", "26 mo", 70]].map(r => `<tr>${r.map((c, i) => `<td class="${i ? "n" : ""}">${i ? `<input class="inp mono" style="width:90px;text-align:right" value="${c}" aria-label="${r[0]}">` : `<b>${c}</b>`}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  },
+  placeholder() { return `<div class="card muted">Unchanged from today's app.</div>`; },
+};
+SETTINGS.company = SETTINGS.placeholder; SETTINGS.roles = SETTINGS.placeholder;
+
+/* ---------------- Editor (its own screen) ---------------- */
+function startEditor(o) {
+  const tree = clone(o.tree || BASE);
+  S.ed = { mode: o.mode, root: o.root, issue: o.issue || null, tree, sel: null, replaced: o.replaced || {}, sim: null, name: o.name || "", n: 0, back: [S.screen, S.p] };
+  S.open.ed = new Set(o.open || []); S.all.ed = false;
+  go("editor");
+}
+function editorScreen() {
+  const e = S.ed, iss = e.issue ? ISS.find(i => i.id === e.issue) : null;
+  const title = e.mode === "solution" ? `Solution for #${iss.id} · ${iss.title}` : e.mode === "block" ? "New block" : `Draft of ${e.root === "company" ? "Company map" : nodeName(e.root)}`;
+  const hint = e.mode === "solution" ? "The red outline is the area this issue touches. Select a step or group, then replace it with a block or edit it. Solutions are saved on their own and never change the live map."
+    : e.mode === "block" ? "Build a bundle of steps. Save it to the library and reuse it in any solution or process."
+    : "You're editing a draft. The live map doesn't change until you publish. Publishing keeps the old version in History.";
+  MAPS.ed = { root: e.root, tree: e.tree, region: iss ? iss.nodes : [], sel: e.sel, legend: false, deltas: e.sim ? e.sim.deltas : null, tall: true };
+  const sel = e.sel ? e.tree[e.sel] : null;
+  return `<div class="ed">
+  <div class="edbar"><div class="row"><span class="mode">✎ Editor</span><h1>${esc(title)}</h1></div>
+    <div class="row">${e.mode !== "draft" ? `<input id="ed-name" placeholder="${e.mode === "block" ? "Block name" : "Solution name"}" value="${esc(e.name)}" data-act="edname">` : ""}
+      <button class="btn" data-act="edsim">▶ Simulate</button>
+      ${e.mode === "solution" ? `<button class="btn solid" data-act="edsavesol">Save solution</button>` : e.mode === "block" ? `<button class="btn solid" data-act="edsaveblk">Save to library</button>` : `<button class="btn" data-act="edsavedraft">Save draft</button><button class="btn solid" data-act="edpublish">Publish…</button>`}
+      <button class="btn" data-act="edexit">Exit editor</button></div></div>
+  <div class="edhint">${hint}</div>
+  <div class="edbody">
+    <div class="edcol l">
+      <div class="stack" style="gap:8px"><span class="eyebrow">Add</span><div class="pal"><button data-act="edadd" data-k="Step">+ Step</button><button data-act="edadd" data-k="Decision">+ Decision</button><button data-act="edadd" data-k="Wait">+ Wait</button><button data-act="edadd" data-k="Group">+ Group</button></div><span class="small muted">Adds after the selected step.</span></div>
+      <div class="stack" style="gap:8px"><span class="eyebrow">Blocks</span>${Object.entries(BLK).map(([id, b]) => `<div class="blk"><div class="row"><b class="small">${esc(b.name)}</b><span class="src ${b.type === "AI" ? "ai" : ""}">${b.type}</span></div><span class="small muted">${leafCount({ r: { cols: b.cols }, ...b.defs }, "r")} steps</span><div class="row"><button class="btn sm" data-act="edreplace" data-b="${id}">Replace selected</button><button class="btn sm" data-act="edinsert" data-b="${id}">Insert</button></div></div>`).join("")}</div>
+      ${iss ? `<div class="stack" style="gap:6px"><span class="eyebrow">Issue area</span>${iss.nodes.map(x => `<button class="chip btnchip" data-act="edselect" data-id="${x}">${esc(nodeName(x))}</button>`).join("")}<span class="small muted">Target: ${esc(iss.target.label)} ${esc(iss.target.goal)}</span></div>` : ""}
+    </div>
+    <div class="edcanvas">${mapBlock("ed", MAPS.ed)}</div>
+    <div class="edcol r">${sel ? `<div class="stack"><span class="eyebrow">Selected ${sel.cols ? "group" : "step"}</span>
+      <label class="field">Name<input value="${esc(sel.name)}" data-act="edf" data-f="name"></label>
+      ${sel.cols ? `<span class="small muted">${leafCount(e.tree, e.sel)} steps inside. Use + on the map to open it.</span><button class="btn sm" data-act="edsaveselblk">Save this group as a block</button>` : `
+      <label class="field">Who does it<select data-act="edf" data-f="role">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}" ${sel.role === k ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+      <div class="grid2" style="gap:8px"><label class="field">Hands-on (h)<input type="number" step="0.1" value="${sel.h ?? 0}" data-act="edf" data-f="h"></label><label class="field">Wait (h)<input type="number" step="1" value="${sel.w ?? 0}" data-act="edf" data-f="w"></label></div>
+      <label class="field">Rework %<input type="number" value="0" data-act="edf" data-f="rework"></label>
+      <label class="field">Evidence<button class="btn sm" data-act="addsource" data-k="step" data-id="${e.sel}">+ Cite a source</button></label>`}
+      <div class="row"><button class="btn sm" data-act="eddelete">Delete</button></div></div>`
+      : `<div class="stack"><span class="eyebrow">Inspector</span><p class="small muted">Select a step or group on the canvas to edit it.</p></div>`}
+      ${e.mode !== "block" ? `<div class="stack"><span class="eyebrow">First principles</span><p class="small">${esc((PRIN[e.root] || PRIN.company).goal)}</p><span class="small muted">AI checks your design against these when you simulate.</span></div>` : ""}
+    </div></div>
+  <div class="edfoot">${e.sim ? `<span class="eyebrow">Compared with live</span>${e.sim.rows.map(r => `<div class="delta"><span class="small muted">${esc(r[0])}</span><b>${r[1]} → <span class="${r[3] ? "up" : "down"}">${r[2]}</span></b></div>`).join("")}${iss ? `<span>${verdict(e.sim.auto)} <span class="small muted">against the target</span></span>` : ""}`
+    : `<span class="small muted">Press Simulate to run this version 30 times and compare it with live.</span>`}</div>
+  </div>`;
+}
+function simFor(e) {
+  const v = Object.values(e.replaced);
+  const pick = v.includes("blk_aiqual") ? "s4" : v.includes("blk_aireport") ? (e.issue === 14 ? "s3" : "s2") : v.includes("blk_split") ? "s1" : null;
+  if (pick) { const s = SOL.find(x => x.id === pick); return { rows: s.rows, deltas: s.deltas, auto: s.auto, autoText: s.autoText, robust: s.robust, stress: s.stress }; }
+  return { rows: [["New clients won (6 mo)", "23", "23", 1], ["Lead to win", "9.6 d", "9.4 d", 1], ["Strategist busy (P90)", "97%", "96%", 1]], deltas: {}, auto: "fail", autoText: "Small change. The target is not met.", robust: 40, stress: [["Stable", "fail", "—"], ["Soft", "fail", "—"], ["Downturn", "fail", "—"], ["Boom", "fail", "—"]] };
+}
+function colOf(t, id) { const p = t[id].parent; const cols = t[p].cols; return { p, cols, ci: cols.findIndex(c => c.includes(id)) }; }
+function addBlockDefs(e, b) { const blk = BLK[b], sfx = "_" + (++e.n), map = {}; for (const [id, d] of Object.entries(blk.defs)) { map[id] = id + sfx; } return { cols: blk.cols.map(c => c.map(id => map[id])), defs: Object.fromEntries(Object.entries(blk.defs).map(([id, d]) => [map[id], { id: map[id], ...clone(d), added: true }])) }; }
+
+/* ---------------- Modals ---------------- */
+function modal(html, wide) { $("#modal").innerHTML = `<div class="scrim" data-act="closebg"><div class="modal ${wide ? "wide" : ""}" role="dialog" aria-modal="true">${html}</div></div>`; const f = $("#modal input, #modal button.btn"); if (f) f.focus(); }
+function closeModal() { $("#modal").innerHTML = ""; }
+function mhead(t, sub) { return `<div class="mhead"><div class="stack" style="gap:6px">${sub || ""}<h2>${t}</h2></div><button class="close" data-act="close" aria-label="Close">×</button></div>`; }
+function insightModal(id) {
+  const i = INS.find(x => x.id === id);
+  const srcs = SRC.filter(s => s.links.some(([k, v]) => k === "insight" && v === id));
+  modal(`${mhead(esc(i.title), `<div class="row">${pill(i.rating)}<span class="src ${i.kind === "ai" ? "ai" : ""}">${i.kind === "ai" ? "AI analysis" : "Rule: " + esc(i.rule)}</span></div>`)}
+  <div class="mbody">
+    <dl class="kv"><dt>The number</dt><dd class="mono">${esc(i.metric)}</dd><dt>What we found</dt><dd>${esc(i.found)}</dd><dt>Why it matters</dt><dd>${esc(i.why)}</dd><dt>Touches</dt><dd><div class="checks">${i.nodes.map(x => `<span class="chip">${esc(nodeName(x))}</span>`).join("")}</div></dd>
+    <dt>How it's worked out</dt><dd class="small muted">${i.kind === "ai" ? "AI read this run's results, the process's first principles and linked sources, and wrote this. The numbers come from the simulation." : `The ${esc(i.rule)} rule checked the results of 30 simulated runs against its threshold (Settings → Analysis rules).`}</dd></dl>
+    <div class="stack" style="gap:6px"><div class="spread"><span class="eyebrow">Sources</span><button class="btn ghost sm" data-act="addsource" data-k="insight" data-id="${id}">+ Link a source</button></div>${srcs.map(s => `<div class="small"><b>${esc(s.title)}</b> <span class="muted">“${esc(s.quote)}”</span></div>`).join("") || `<span class="small muted">None linked</span>`}</div>
+  </div>
+  <div class="mfoot">${i.ack ? `<button class="btn primary" data-go="issue:${i.ack}">Go to issue #${i.ack}</button>` : `<button class="btn" data-act="dismiss" data-id="${id}">Dismiss</button><button class="btn primary" data-act="ack" data-id="${id}">Acknowledge as issue…</button>`}</div>`);
+}
+function stepModal(id, t = BASE) {
+  const nd = t[id], iss = ISS.filter(i => i.nodes.includes(id)), ins = INS.filter(i => i.nodes.includes(id));
+  const srcs = SRC.filter(s => s.links.some(([k, v]) => (k === "step" || k === "process") && v === id));
+  modal(`${mhead(esc(nd.name), `<div class="row">${pill(nd.rating)}<span class="chip">${nd.cols ? `Group · ${leafCount(t, id)} steps` : "Step"}</span></div>`)}
+  <div class="mbody"><dl class="kv">${nd.role ? `<dt>Who does it</dt><dd>${ROLES[nd.role]}</dd>` : ""}${nd.h != null ? `<dt>Hands-on time</dt><dd class="mono">${fmtH(nd.h)}</dd>` : ""}${nd.w != null ? `<dt>Wait before it</dt><dd class="mono">${fmtH(nd.w)}</dd>` : ""}${nd.u != null ? `<dt>Role busy</dt><dd class="mono">${Math.round(nd.u * 100)}%</dd>` : ""}${nd.sub ? `<dt>Summary</dt><dd>${nd.sub.join(" · ")}</dd>` : ""}</dl>
+  <div class="stack" style="gap:6px"><span class="eyebrow">Insights</span>${ins.map(i => `<button class="chip btnchip" data-act="insight" data-id="${i.id}">${esc(trunc(i.title, 60))}</button>`).join("") || `<span class="small muted">None</span>`}</div>
+  <div class="stack" style="gap:6px"><span class="eyebrow">Confirmed issues</span>${iss.map(i => `<button class="chip btnchip" data-go="issue:${i.id}">#${i.id} ${esc(i.title)}</button>`).join("") || `<span class="small muted">None</span>`}</div>
+  <div class="stack" style="gap:6px"><span class="eyebrow">Sources</span>${srcs.map(s => `<div class="small"><b>${esc(s.title)}</b> <span class="muted">“${esc(s.quote)}”</span></div>`).join("") || `<span class="small muted">None linked</span>`}</div></div>
+  <div class="mfoot">${nd.cols ? `<button class="btn" data-go="process:${id}">Open as its own page</button>` : ""}<button class="btn edit" data-act="editdraft" data-p="${procOf(id) === id ? id : (nd.cols ? id : nd.parent)}">✎ Edit in Editor</button></div>`);
+}
+let ACK = null;
+function ackModal(o) {
+  ACK = o;
+  const pid = o.proc || "company"; const allSteps = [...desc(BASE, pid)].filter(x => x !== pid && x !== "company");
+  modal(`${mhead(o.edit ? `Edit issue #${o.edit}` : o.fromInsight ? "Acknowledge as an issue" : "New issue", o.fromInsight ? `<span class="small muted">From insight: ${esc(INS.find(i => i.id === o.fromInsight).title)}</span>` : "")}
+  <div class="mbody">
+    <label class="field">Title<input id="ack-title" value="${esc(o.title || "")}"></label>
+    <div class="stack" style="gap:6px"><span class="eyebrow">How bad is it?</span><div class="spectrum">${RORDER.slice().reverse().map(r => `<button type="button" class="${o.rating === r ? "on" : ""}" style="--pc:${RT[r].c};--ps:${RT[r].s}" data-act="ackr" data-r="${r}"><b><i></i>${RT[r].l}</b><span class="muted">${RT[r].d}</span></button>`).join("")}</div></div>
+    <div class="stack" style="gap:6px"><span class="eyebrow">What does it touch?</span>
+      <label class="row small"><input type="radio" name="scope" value="process" ${o.scope === "process" ? "checked" : ""} data-act="ackscope"> The whole process</label>
+      <label class="row small"><input type="radio" name="scope" value="steps" ${o.scope !== "process" ? "checked" : ""} data-act="ackscope"> Specific steps (pick one or more)</label>
+      ${o.scope !== "process" ? `<div class="checks">${allSteps.map(x => `<button type="button" class="chip btnchip ${o.nodes.includes(x) ? "on" : ""}" data-act="acknode" data-id="${x}">${esc(nodeName(x))}</button>`).join("")}</div>` : ""}</div>
+    <div class="stack" style="gap:6px"><span class="eyebrow">Owners</span><div class="checks">${PEOPLE.map(p => `<button type="button" class="chip btnchip ${o.owners.includes(p.id) ? "on" : ""}" data-act="ackowner" data-id="${p.id}">${esc(p.name)}</button>`).join("")}</div></div>
+    <div class="grid2" style="gap:10px"><label class="field">Target measure<input id="ack-tl" value="${esc(o.target?.label || "")}" placeholder="e.g. Wait at Check fit"></label><label class="field">Goal<input id="ack-tg" value="${esc(o.target?.goal || "")}" placeholder="e.g. under 4 hours"></label></div>
+    <div class="stack" style="gap:6px"><span class="eyebrow">Sources</span><div class="checks">${SRC.map(s => `<button type="button" class="chip btnchip ${o.sources.includes(s.id) ? "on" : ""}" data-act="acksrc" data-id="${s.id}">${esc(s.title)}</button>`).join("")}</div></div>
+    <div class="err" id="ack-err"></div>
+  </div>
+  <div class="mfoot"><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="acksave">${o.edit ? "Save" : "Add to issues"}</button></div>`, true);
+}
+function prinModal(pid) {
+  const p = PRIN[pid] || { goal: "", why: "", constraints: "", success: "" };
+  modal(`${mhead("First principles", `<span class="small muted">${esc(pid === "company" ? "Company map" : nodeName(pid))}</span>`)}<div class="mbody">
+    ${[["goal", "Goal"], ["why", "Why we do it this way"], ["constraints", "Constraints"], ["success", "Success looks like"]].map(([k, l]) => `<label class="field">${l}<textarea id="pr-${k}">${esc(p[k])}</textarea></label>`).join("")}
+    <span class="small muted">AI analysis judges the process against these.</span></div>
+    <div class="mfoot"><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="prinsave" data-p="${pid}">Save</button></div>`);
+}
+function sourceModal(pre) {
+  const kinds = [["process", "A process"], ["step", "A step"], ["insight", "An insight"], ["issue", "An issue"], ["solution", "A solution"]];
+  const k = pre.k || "step";
+  const opts = k === "process" ? Object.values(BASE).filter(x => x.cols).map(x => [x.id, x.id === "company" ? "Company map" : x.name])
+    : k === "step" ? Object.values(BASE).filter(x => !x.cols).map(x => [x.id, x.name])
+    : k === "insight" ? INS.map(i => [i.id, trunc(i.title, 60)]) : k === "issue" ? ISS.map(i => [i.id, `#${i.id} ${i.title}`]) : SOL.map(s => [s.id, s.name]);
+  const src = pre.src ? SRC.find(s => s.id === pre.src) : null;
+  modal(`${mhead(src ? "Link source" : "Add source")}<div class="mbody">
+    ${src ? `<b>${esc(src.title)}</b>` : `<label class="field">Title<input id="src-title" placeholder="e.g. Interview: Leah Brooks"></label><div class="grid2" style="gap:10px"><label class="field">Type<select id="src-type"><option>Transcript</option><option>Notes</option><option>Data</option><option>Screenshot</option></select></label><label class="field">Date<input id="src-date" value="1 Oct"></label></div><label class="field">Quote or excerpt<textarea id="src-quote"></textarea></label>`}
+    <div class="stack" style="gap:6px"><span class="eyebrow">Link it to (required)</span><div class="checks">${kinds.map(([kk, l]) => `<button type="button" class="chip btnchip ${k === kk ? "on" : ""}" data-act="srck" data-k="${kk}">${l}</button>`).join("")}</div>
+    <select class="inp" id="src-target">${opts.map(([v, l]) => `<option value="${v}" ${String(pre.id) === String(v) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></div>
+    <div class="err" id="src-err"></div></div>
+    <div class="mfoot"><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="srcsave" data-src="${pre.src || ""}" data-k="${k}">${src ? "Link" : "Add source"}</button></div>`);
+  sourceModal.pre = pre;
+}
+
+/* ---------------- Routing and events ---------------- */
+function go(screen, p) { S.screen = screen; S.p = p ?? null; closeModal(); render(); window.scrollTo(0, 0); }
+function render() {
+  const app = $("#app");
+  for (const k of Object.keys(MAPS)) if (k !== "ed") delete MAPS[k];
+  if (S.screen === "editor") { app.innerHTML = editorScreen(); return; }
+  app.innerHTML = `<div class="app">${sidebar()}<main class="main">${SCREENS[S.screen]()}</main></div>`;
+}
+function renderEditorKeepScroll() { const c = document.querySelector(".edcanvas"); const sx = c?.scrollLeft, sy = c?.scrollTop; render(); const c2 = document.querySelector(".edcanvas"); if (c2) { c2.scrollLeft = sx || 0; c2.scrollTop = sy || 0; } }
+
+document.addEventListener("click", e => {
+  const tg = e.target.closest("[data-toggle]");
+  if (tg) { const key = tg.dataset.map, ok = MAPS[key]?.openKey || key, id = tg.dataset.toggle; const set = S.open[ok]; S.all[ok] = false; set.has(id) ? set.delete(id) : set.add(id); if (key === "ed") renderEditorKeepScroll(); else refreshMap(key); return; }
+  const gl = e.target.closest("[data-go]");
+  if (gl) { const [s, p] = gl.dataset.go.split(":"); if (s === "settings" && p) { S.settings = p; go("settings"); } else go(s, s === "issue" ? +p : p); return; }
+  const a = e.target.closest("[data-act]");
+  const nodeEl = e.target.closest("[data-node]");
+  if (!a && nodeEl) {
+    const key = nodeEl.dataset.map, id = nodeEl.dataset.node;
+    if (key === "ed") { S.ed.sel = S.ed.sel === id ? null : id; renderEditorKeepScroll(); return; }
+    if (key.startsWith("blk-")) return;
+    stepModal(id, MAPS[key]?.tree || BASE); return;
+  }
+  if (!a) return;
+  const d = a.dataset, act = d.act;
+  const H = ACTIONS[act]; if (H) H(d, a, e);
+});
+const ACTIONS = {
+  close() { closeModal(); },
+  closebg(d, a, e) { if (e.target === a) closeModal(); },
+  horizon(d) { S.h = +d.h; render(); },
+  expandall(d) { const ok = MAPS[d.map]?.openKey || d.map; S.all[ok] = !S.all[ok]; if (!S.all[ok]) S.open[ok] = new Set(); if (d.map === "ed") renderEditorKeepScroll(); else { const btn = document.querySelectorAll(`[data-act=expandall]`); render(); } },
+  fit(d) { const ok = MAPS[d.map]?.openKey || d.map; S.fit[ok] = S.fit[ok] === false; if (d.map === "ed") renderEditorKeepScroll(); else render(); },
+  rfilter(d) { S.ratingFilter[d.p] = d.r || null; const y = window.scrollY; render(); window.scrollTo(0, y); },
+  insight(d, a, e) { if (e.target.closest("button") && e.target.closest("button") !== a) return; insightModal(d.id); },
+  ack(d) { const i = INS.find(x => x.id === d.id); const pid = procOf(i.nodes[0]); ackModal({ fromInsight: i.id, title: i.title, rating: i.rating, scope: "steps", nodes: [...i.nodes], owners: ["austin"], sources: SRC.filter(s => s.links.some(([k, v]) => k === "insight" && v === i.id)).map(s => s.id), target: { label: "", goal: "" }, proc: i.nodes.every(x => desc(BASE, pid).has(x)) ? pid : "company" }); },
+  newissue(d) { ackModal({ title: "", rating: "bad", scope: "steps", nodes: [], owners: ["austin"], sources: [], target: { label: "", goal: "" }, proc: d.p || "company" }); },
+  editissue(d) { const i = ISS.find(x => x.id === +d.id); ackModal({ edit: i.id, title: i.title, rating: i.rating, scope: i.scope || "steps", nodes: [...i.nodes], owners: [...i.owners], sources: [...i.sources], target: { ...i.target }, proc: i.proc }); },
+  ackr(d) { keepAck(); ACK.rating = d.r; ackModal(ACK); },
+  ackscope(d, a) { keepAck(); ACK.scope = a.value; ackModal(ACK); },
+  acknode(d) { keepAck(); const s = ACK.nodes; s.includes(d.id) ? s.splice(s.indexOf(d.id), 1) : s.push(d.id); ackModal(ACK); },
+  ackowner(d) { keepAck(); const s = ACK.owners; s.includes(d.id) ? s.splice(s.indexOf(d.id), 1) : s.push(d.id); ackModal(ACK); },
+  acksrc(d) { keepAck(); const s = ACK.sources; s.includes(d.id) ? s.splice(s.indexOf(d.id), 1) : s.push(d.id); ackModal(ACK); },
+  acksave() {
+    keepAck(); const o = ACK; const err = $("#ack-err");
+    if (!o.title.trim()) { err.textContent = "Give the issue a title."; return; }
+    if (o.scope !== "process" && !o.nodes.length) { err.textContent = "Pick at least one step, or choose the whole process."; return; }
+    if (!o.owners.length) { err.textContent = "Add at least one owner."; return; }
+    const nodes = o.scope === "process" ? [o.proc] : o.nodes;
+    if (o.edit) { Object.assign(ISS.find(i => i.id === o.edit), { title: o.title, rating: o.rating, nodes, owners: o.owners, sources: o.sources, target: { ...ISS.find(i => i.id === o.edit).target, label: o.target.label, goal: o.target.goal }, scope: o.scope }); closeModal(); render(); toast("Issue saved."); return; }
+    const id = S.nextIssue++;
+    ISS.push({ id, title: o.title, rating: o.rating, status: "Open", proc: o.proc, nodes, scope: o.scope, owners: o.owners, sources: o.sources, target: { label: o.target.label || "Set a target", now: "—", goal: o.target.goal || "—" }, from: o.fromInsight || null, desc: o.fromInsight ? INS.find(i => i.id === o.fromInsight).found : "Logged by hand.", created: "1 Oct" });
+    o.sources.forEach(sid => SRC.find(s => s.id === sid).links.push(["issue", id]));
+    if (o.fromInsight) INS.find(i => i.id === o.fromInsight).ack = id;
+    closeModal(); const y = window.scrollY; render(); window.scrollTo(0, y); toast(`Logged as issue #${id}. It now shows on the map.`);
+  },
+  dismiss(d) { INS = INS.filter(i => i.id !== d.id); closeModal(); render(); toast("Insight dismissed for this run."); },
+  editprin(d) { prinModal(d.p); },
+  prinsave(d) { PRIN[d.p] = { goal: $("#pr-goal").value, why: $("#pr-why").value, constraints: $("#pr-constraints").value, success: $("#pr-success").value }; closeModal(); render(); toast("First principles saved. AI will use them on its next review."); },
+  aireview(d) { toast("AI review running… it reads this run, the first principles and linked sources."); setTimeout(() => toast("AI review done. No new insights since the last run."), 1600); },
+  editdraft(d) { const pid = d.p || "sales"; startEditor({ mode: "draft", root: pid }); },
+  buildsol(d) { const i = ISS.find(x => x.id === +d.id); const root = i.proc; startEditor({ mode: "solution", root, issue: i.id, open: [...new Set(i.nodes.flatMap(x => ancestors(x)).filter(a => desc(BASE, root).has(a) && a !== root))], name: "" }); },
+  opensol(d) { const s = SOL.find(x => x.id === d.id); startEditor({ mode: "solution", root: s.proc, issue: s.issue, tree: treeWith(s.replace), replaced: { ...s.replace }, open: Object.keys(s.replace), name: s.name + " (copy)" }); },
+  newblock() { const t = { blkroot: { id: "blkroot", name: "New block", cols: [["nb1"]] }, nb1: { id: "nb1", name: "New step", role: "am", h: 1, w: 0, added: true, parent: "blkroot" } }; startEditor({ mode: "block", root: "blkroot", tree: t, name: "" }); },
+  edexit() { const [s, p] = S.ed.back; S.ed = null; delete MAPS.ed; go(s === "editor" ? "overview" : s, p); },
+  edname(d, a) { },
+  edselect(d) { S.ed.sel = d.id; renderEditorKeepScroll(); },
+  edadd(d) {
+    const e = S.ed, t = e.tree, nid = "new" + (++e.n);
+    const base = { Step: { name: "New step", role: "am", h: 1, w: 0 }, Decision: { name: "Decision", role: "am", h: .1, w: 0, sub: ["Decision", "2 routes"] }, Wait: { name: "Wait", sub: ["Waiting", "24h"], w: 24 }, Group: { name: "New group", cols: [] } }[d.k];
+    t[nid] = { id: nid, ...clone(base), added: true };
+    if (d.k === "Group") { const c = "new" + (++e.n); t[c] = { id: c, name: "New step", role: "am", h: 1, w: 0, added: true, parent: nid }; t[nid].cols = [[c]]; S.open.ed.add(nid); }
+    if (e.sel && t[e.sel].parent && t[t[e.sel].parent]) { const { p, cols, ci } = colOf(t, e.sel); t[nid].parent = p; cols.splice(ci + 1, 0, [nid]); } else { t[nid].parent = e.root; t[e.root].cols.push([nid]); }
+    e.sel = nid; e.sim = null; renderEditorKeepScroll();
+  },
+  eddelete() { const e = S.ed, t = e.tree; if (!e.sel || !t[e.sel].parent || !t[t[e.sel].parent]) return; const { cols, ci } = colOf(t, e.sel); cols[ci] = cols[ci].filter(x => x !== e.sel); if (!cols[ci].length) cols.splice(ci, 1); e.sel = null; e.sim = null; renderEditorKeepScroll(); },
+  edreplace(d) { const e = S.ed; if (!e.sel) { toast("Select a step or group on the canvas first."); return; } const { cols, defs } = addBlockDefs(e, d.b); Object.assign(e.tree, defs); Object.keys(defs).forEach(k => e.tree[k].parent = e.sel); const nd = e.tree[e.sel]; nd.cols = cols; nd.changed = true; delete nd.sub; S.open.ed.add(e.sel); e.replaced[e.sel] = d.b; e.sim = null; if (!e.name) e.name = BLK[d.b].name; renderEditorKeepScroll(); toast(`Replaced ${nd.name} with ${BLK[d.b].name}.`); },
+  edinsert(d) { const e = S.ed, t = e.tree, gid = "grp" + (++e.n); const { cols, defs } = addBlockDefs(e, d.b); Object.assign(t, defs); Object.keys(defs).forEach(k => t[k].parent = gid); t[gid] = { id: gid, name: BLK[d.b].name, cols, added: true }; if (e.sel && t[t[e.sel].parent]) { const c = colOf(t, e.sel); t[gid].parent = c.p; c.cols.splice(c.ci + 1, 0, [gid]); } else { t[gid].parent = e.root; t[e.root].cols.push([gid]); } S.open.ed.add(gid); e.replaced[gid] = d.b; e.sel = gid; e.sim = null; renderEditorKeepScroll(); },
+  edsim() { S.ed.sim = simFor(S.ed); renderEditorKeepScroll(); toast("Simulated 30 times against live."); },
+  edsavesol() {
+    const e = S.ed, name = ($("#ed-name")?.value || "").trim(); if (!name) { toast("Name the solution first (top bar)."); $("#ed-name")?.focus(); return; }
+    const sim = e.sim || simFor(e); const id = "s" + (S.nextSol++);
+    const replace = {}; for (const [g, b] of Object.entries(e.replaced)) if (BASE[g]) replace[g] = b;
+    SOL.push({ id, issue: e.issue, name, type: Object.values(e.replaced).some(b => BLK[b].type === "AI") ? "AI block" : "Redesign", date: "1 Oct", proc: e.root, replace, auto: sim.auto, autoText: sim.autoText, robust: sim.robust, yours: null, note: "", rows: sim.rows, deltas: sim.deltas, stress: sim.stress });
+    const iss = ISS.find(i => i.id === e.issue); iss.status = "Testing solutions";
+    S.ed = null; delete MAPS.ed; go("compare", id); toast("Solution saved. Here it is next to live.");
+  },
+  edsavedraft() { toast("Draft saved. Live is unchanged."); },
+  edpublish() { const pid = S.ed.root, v = (VERSIONS[pid] || VERSIONS.sales)[0].v + 1; modal(`${mhead(`Publish version ${v}?`)}<div class="mbody"><p>This replaces the live map of ${esc(pid === "company" ? "Company map" : nodeName(pid))}. Version ${v - 1} stays in History and can be restored.</p></div><div class="mfoot"><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="edpubok">Publish</button></div>`); },
+  edpubok() { const pid = S.ed.root; const vs = VERSIONS[pid] || (VERSIONS[pid] = clone(VERSIONS.sales)); vs.forEach(v => v.live = false); vs.unshift({ v: vs[0].v + 1, date: "1 Oct 2026", by: "Austin", note: "Published from the Editor", wins: vs[0].wins, cycle: vs[0].cycle, live: true }); S.ed = null; delete MAPS.ed; go("history", pid); toast("Published. The previous version is kept below."); },
+  edsaveblk() { const e = S.ed, name = ($("#ed-name")?.value || "").trim(); if (!name) { toast("Name the block first (top bar)."); return; } const id = "blk_" + Date.now(); const defs = {}; for (const k of desc(e.tree, e.root)) if (k !== e.root && !e.tree[k].cols) { const { id: _, parent, added, ...rest } = e.tree[k]; defs[k] = rest; } BLK[id] = { name, type: "Manual", desc: "Saved from the Editor.", cols: clone(e.tree[e.root].cols.filter(c => c.every(x => defs[x]))), defs }; S.ed = null; delete MAPS.ed; go("library"); toast("Block saved to the library."); },
+  edsaveselblk() { const e = S.ed, g = e.tree[e.sel]; const defs = {}; for (const k of desc(e.tree, e.sel)) if (k !== e.sel && !e.tree[k].cols) { const { id: _, parent, added, ...rest } = e.tree[k]; defs[k] = rest; } BLK["blk_" + Date.now()] = { name: g.name, type: "Manual", desc: "Saved from the Editor.", cols: clone(g.cols.map(c => c.filter(x => defs[x])).filter(c => c.length)), defs }; toast(`Saved “${g.name}” to the block library.`); renderEditorKeepScroll(); },
+  verdict(d) { const s = SOL.find(x => x.id === d.id); s.yours = s.yours === d.v ? null : d.v; if (s.yours === "pass") ISS.find(i => i.id === s.issue).status = "Solution passed"; const y = window.scrollY; render(); window.scrollTo(0, y); },
+  viewver(d) { S.viewVersion = { p: d.p, v: +d.v }; go("process", d.p); },
+  backlive() { S.viewVersion = null; render(); },
+  restore(d) { toast(`Version ${d.v} restored as a new draft. Open the Editor to review and publish it.`); },
+  dup(d) { toast(`Version ${d.v} duplicated as a new process: “Sales (copy)”.`); },
+  addsource(d) { sourceModal({ k: d.k, id: d.id, src: d.src }); },
+  srck(d) { const pre = { ...sourceModal.pre, k: d.k, id: null }; const keep = ["src-title", "src-quote", "src-date"].map(i => $("#" + i)?.value); sourceModal(pre); ["src-title", "src-quote", "src-date"].forEach((i, j) => { if ($("#" + i) && keep[j] != null) $("#" + i).value = keep[j]; }); },
+  srcsave(d) {
+    const target = $("#src-target").value; const k = d.k; const v = k === "issue" ? +target : target; const err = $("#src-err");
+    if (!target) { err.textContent = "Pick what this source is evidence for."; return; }
+    if (d.src) { SRC.find(s => s.id === d.src).links.push([k, v]); }
+    else { const t = $("#src-title").value.trim(); if (!t) { err.textContent = "Give the source a title."; return; } SRC.push({ id: "src" + (SRC.length + 1), title: t, type: $("#src-type").value, date: $("#src-date").value, quote: $("#src-quote").value || "(no excerpt)", links: [[k, v]] }); }
+    closeModal(); if (S.screen === "editor") renderEditorKeepScroll(); else render(); toast("Source linked.");
+  },
+  sugyes(d) { const g = SUG.find(x => x.id === d.id); SUG = SUG.filter(x => x.id !== d.id); if (g.kind === "Issue") { const id = S.nextIssue++; ISS.push({ id, title: g.title, rating: "good", status: "Open", proc: "acct", nodes: g.nodes, owners: ["austin"], sources: [], target: { label: "Wait at Ad-hoc requests", now: "20 h", goal: "under 8 h" }, from: null, desc: "Accepted from an AI suggestion.", created: "1 Oct" }); render(); toast(`Accepted. Now issue #${id}.`); } else { render(); toast("Accepted."); } },
+  sugno(d) { SUG = SUG.filter(x => x.id !== d.id); render(); toast("Rejected."); },
+  stab(d) { S.settings = d.k; render(); },
+  adddrv() { DRV.push({ id: "c" + Date.now(), name: "New driver", src: "You enter it", w: 1, on: true, val: "Set a value", base: .05, custom: true }); render(); },
+  mksel(d) { S.mk = d.k; render(); },
+  mknew() { const id = "c" + Date.now(); MARKETS[id] = { name: "New market", preset: false, v: { ...MARKETS.stable.v } }; MCOL[id] = "var(--accent-soft)"; S.mk = id; render(); },
+  mkdup() { const id = "c" + Date.now(); MARKETS[id] = { name: MARKETS[S.mk].name + " (custom)", preset: false, v: { ...MARKETS[S.mk].v } }; MCOL[id] = "var(--accent-soft)"; S.mk = id; render(); },
+  mksched() { toast("Prototype: you'd pick a month range and a market here."); },
+};
+function keepAck() { if (!ACK) return; const t = $("#ack-title"); if (t) ACK.title = t.value; const l = $("#ack-tl"), g = $("#ack-tg"); if (l) ACK.target = { ...ACK.target, label: l.value, goal: g.value }; }
+
+document.addEventListener("input", e => {
+  const a = e.target.closest("[data-act]"); if (!a) return; const d = a.dataset;
+  if (d.act === "drvw") { const dr = DRV.find(x => x.id === d.id); dr.w = +a.value; $("#dw-" + d.id).textContent = dr.w.toFixed(1); clearTimeout(window._dt); window._dt = setTimeout(() => { const y = window.scrollY; render(); window.scrollTo(0, y); }, 250); }
+  if (d.act === "drvname") DRV.find(x => x.id === d.id).name = a.value;
+  if (d.act === "mkv") { MARKETS[S.mk].v[d.f] = +a.value; $("#mkv-" + d.f).textContent = a.value + "%"; }
+  if (d.act === "mkname") MARKETS[S.mk].name = a.value;
+  if (d.act === "vnote") SOL.find(x => x.id === d.id).note = a.value;
+  if (d.act === "edname") S.ed.name = a.value;
+  if (d.act === "edf") { const nd = S.ed.tree[S.ed.sel]; const f = d.f; nd[f] = f === "h" || f === "w" ? +a.value : a.value; if (!nd.added) nd.changed = true; delete nd.sub; S.ed.sim = null; MAPS.ed.sel = S.ed.sel; refreshMap("ed"); }
+});
+document.addEventListener("change", e => {
+  const a = e.target.closest("[data-act]"); if (!a) return; const d = a.dataset;
+  if (d.act === "drvon") { DRV.find(x => x.id === d.id).on = a.checked; const y = window.scrollY; render(); window.scrollTo(0, y); }
+  if (d.act === "ackscope") { keepAck(); ACK.scope = a.value; ackModal(ACK); }
+  if (d.act === "mkname" || d.act === "drvname") { const y = window.scrollY; render(); window.scrollTo(0, y); }
+});
+let hoverRow = null;
+document.addEventListener("mouseover", e => {
+  const r = e.target.closest(".irow[data-hl]"); if (r === hoverRow) return; hoverRow = r;
+  if (r) hl(r.dataset.map, r.dataset.hl.split(","));
+});
+document.addEventListener("mouseout", e => {
+  const r = e.target.closest(".irow[data-hl]"); if (!r) return;
+  if (e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest(".irow[data-hl]")) return;
+  hoverRow = null; S.hl[r.dataset.map] = null; refreshMap(r.dataset.map);
+});
+document.addEventListener("focusin", e => { const r = e.target.closest?.(".irow[data-hl]"); if (r) hl(r.dataset.map, r.dataset.hl.split(",")); });
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") closeModal();
+  if (e.key === "Enter" && e.target.matches?.(".irow, [data-node]")) e.target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+});
+
+render();
+</script>

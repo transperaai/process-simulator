@@ -79,7 +79,7 @@ function groups(base: string, rest: string, counts: NavCounts, extra: { settings
       items: [
         item({ key: "issues", label: "Issues", path: "/issues", icon: "issues", count: counts.openIssues, tone: "plain", countNoun: "open" }),
         item({ key: "solutions", label: "Solutions", path: "/solutions", icon: "solutions", soon: "A49", count: counts.solutions, tone: "plain" }),
-        item({ key: "library", label: "Block library", path: "/library", icon: "library", soon: "A51" }),
+        item({ key: "library", label: "Block library", path: "/blocks", icon: "library" }),
         item({ key: "suggestions", label: "Suggestions", path: "/suggestions", icon: "suggestions", count: counts.pendingSuggestions, tone: "ai", countNoun: "pending" }),
       ],
     },

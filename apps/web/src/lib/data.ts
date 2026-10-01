@@ -4,6 +4,7 @@ import {
   DEMAND_SETTINGS_COLUMNS,
   LEAD_SOURCE_COLUMNS,
   listProcesses,
+  loadBlocks,
   loadClientGroups,
   loadMarket,
   type MarketConditionRow,
@@ -21,6 +22,7 @@ import {
   SERVICE_COLUMNS,
   SERVICE_SERVICING_COLUMNS,
   type ServiceServicingRow,
+  type BlockRow,
   type ClientGroupRow,
   type DemandSettingsRow,
   type IssueRow,
@@ -93,6 +95,11 @@ export async function loadProcessNames(workspaceId: string): Promise<{ id: strin
 /** The workspace's processes with their kind, in creation order, for the Processes page. */
 export async function loadProcessList(workspaceId: string): Promise<{ id: string; name: string; kind: string }[]> {
   return (await listProcesses(await createClient(), workspaceId)).map((p) => ({ id: p.id, name: p.name, kind: p.kind }));
+}
+
+/** The workspace's block library, oldest first (RLS: everyone in the workspace can read it). */
+export async function loadWorkspaceBlocks(workspaceId: string): Promise<BlockRow[]> {
+  return loadBlocks(await createClient(), workspaceId);
 }
 
 /** The workspace's saved scenarios, oldest first (RLS: everyone in the workspace can read them). */

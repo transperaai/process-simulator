@@ -104,8 +104,8 @@ afterAll(async () => {
 describe("block inserts and replacements against the database", () => {
   it("inserts a block after a step, inside a group, and inside a group in a group", async () => {
     const block = blockFromGroup(withDemoGroups(demoBundle()), DEMO_GROUP_IDS.conversation)!;
-    let b = await seedDraft(demoBundle());
-    b = await checks(b, (cur) => insertBlock(cur, ids.audit, block, "Sales conversation")!.edit);
+    const b = await seedDraft(demoBundle());
+    await checks(b, (cur) => insertBlock(cur, ids.audit, block, "Sales conversation")!.edit);
     const nested = await seedDraft(withDemoGroups(demoBundle()));
     const inGroup = await checks(nested, (cur) => insertBlock(cur, ids.seo, block, "Sales conversation")!.edit);
     // A block that holds a group, put inside a group inside a group.

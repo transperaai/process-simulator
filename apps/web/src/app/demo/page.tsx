@@ -4,16 +4,19 @@ import { Info } from "lucide-react";
 import { ProcessNav } from "@/components/process-nav";
 import { ProcessView } from "@/components/process-view";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { withDemoGroups } from "@/lib/demo/nested";
 import { demoBundle, demoSources } from "@/lib/sources/demo";
 
 /**
  * The Northbeam sample from the seed fixtures, no database needed. `?process=<id>`
  * opens one of its servicing processes (issue #19), which simulates beside the pipeline.
+ * `?nested=1` draws the same process with two groups of steps, to try opening and
+ * closing them (issue #102).
  */
 export default async function DemoPage(props: PageProps<"/demo">) {
-  const { process } = await props.searchParams;
+  const { process, nested } = await props.searchParams;
   // Sources disagree on audit time (a conflict) and kickoff time is an assumption, so the checklist and the publish check can be tried.
-  const pipeline = demoBundle();
+  const pipeline = nested === "1" ? withDemoGroups(demoBundle()) : demoBundle();
   const bundle = typeof process === "string" ? bundleForProcess(pipeline, process) : pipeline;
   if (!bundle) notFound();
   const processes = processesOf(pipeline).map((p) => ({ id: p.id, name: p.name, kind: p.kind, live: true, draft: false }));

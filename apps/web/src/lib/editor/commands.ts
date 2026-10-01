@@ -3,6 +3,9 @@
 // Step and edge ids are made here, once, and never change afterwards.
 
 import {
+  ancestorsOf,
+  groupHasExit,
+  groupsLetOut,
   triangularRange,
   type EdgeRow,
   type ProcessBundle,
@@ -21,6 +24,7 @@ export const KIND_LABELS: Record<StepKind, string> = {
   wait: "Wait",
   decision: "Decision",
   subprocess: "Sub-process",
+  group: "Group",
   start: "Start",
   end: "End",
 };
@@ -68,6 +72,9 @@ function newStepRow(bundle: ProcessBundle, kind: NewStepKind, outcome: StepOutco
     notes: null,
     sla_hours: null,
     current_wip: null,
+    parent_step_id: null,
+    entry_step_id: null,
+    child_process_id: null,
     x: Math.round(x),
     y: Math.round(y),
     assumption: false,
@@ -93,6 +100,9 @@ export function addStep(
 /** Delete steps with every edge into or out of them; rework targets pointing at them are cleared. */
 export function deleteSteps(bundle: ProcessBundle, ids: readonly string[]): Edit | null {
   const gone = new Set(ids);
+  // A group takes the steps inside it with it (as the database does), at any depth.
+  const byId = new Map(bundle.steps.map((s) => [s.id, s]));
+  for (const s of bundle.steps) if (ancestorsOf(s.id, byId).some((g) => gone.has(g))) gone.add(s.id);
   const steps = bundle.steps.filter((s) => gone.has(s.id));
   if (!steps.length) return null;
   const edges = bundle.edges.filter((e) => gone.has(e.from_step_id) || gone.has(e.to_step_id));
@@ -165,6 +175,9 @@ export function updateStep(bundle: ProcessBundle, id: string, patch: Patch): Edi
 
 /** Why a step can't become `kind`, or null if it can. */
 export function kindProblem(bundle: ProcessBundle, id: string, kind: StepKind): string | null {
+  const step = bundle.steps.find((s) => s.id === id);
+  if (step?.kind === "group" && kind !== "group" && bundle.steps.some((s) => s.parent_step_id === id)) return "A group holds steps; move or delete them first.";
+  if (step?.child_process_id && kind !== "subprocess") return "This step holds a child process.";
   if (kind === "start" && bundle.steps.some((s) => s.kind === "start" && s.id !== id)) {
     return "The process already has a start step.";
   }
@@ -315,6 +328,9 @@ export const PASTE_OFFSET = 40;
  */
 export function copySteps(bundle: ProcessBundle, ids: readonly string[]): StepClipboard | null {
   const wanted = new Set(ids);
+  // Copying a group copies the steps inside it.
+  const byId = new Map(bundle.steps.map((s) => [s.id, s]));
+  for (const s of bundle.steps) if (ancestorsOf(s.id, byId).some((g) => wanted.has(g))) wanted.add(s.id);
   const steps = bundle.steps.filter((s) => wanted.has(s.id) && s.kind !== "start");
   if (!steps.length) return null;
   const kept = new Set(steps.map((s) => s.id));
@@ -347,9 +363,16 @@ export function pasteSteps(
     const row: StepRow & { replaced_by?: unknown } = { ...s };
     delete row.replaced_by;
     const rework = s.rework_to_step_id;
+    // Steps copied with their group sit in the copy of it, where they were; one copied alone stays in its group, if that is still there.
+    const parent = s.parent_step_id;
+    const inCopy = parent !== null && newIds.has(parent);
     return {
       ...row,
       ...owner,
+      parent_step_id: parent === null ? null : (newIds.get(parent) ?? (existing.has(parent) ? parent : null)),
+      entry_step_id: s.entry_step_id === null ? null : (newIds.get(s.entry_step_id) ?? null),
+      // A child process sits in one step only: a copy of the holder is a plain sub-process step.
+      child_process_id: null,
       id: newIds.get(s.id)!,
       name: s.name.endsWith(COPY_SUFFIX) ? s.name : `${s.name.slice(0, 200 - COPY_SUFFIX.length)}${COPY_SUFFIX}`,
       work_params: { ...s.work_params },
@@ -357,8 +380,8 @@ export function pasteSteps(
       rework_to_step_id: rework === null ? null : (newIds.get(rework) ?? (existing.has(rework) ? rework : null)),
       // Nothing is sitting at a step that didn't exist a moment ago.
       current_wip: null,
-      x: Math.round(Number(s.x) + offset.x),
-      y: Math.round(Number(s.y) + offset.y),
+      x: Math.round(Number(s.x) + (inCopy ? 0 : offset.x)),
+      y: Math.round(Number(s.y) + (inCopy ? 0 : offset.y)),
     };
   });
   const edges = clip.edges
@@ -462,7 +485,16 @@ export function stepWarnings(bundle: ProcessBundle): Map<string, string> {
     if (step.kind === "end") continue;
     const outgoing = bundle.edges.filter((e) => e.from_step_id === step.id);
     if (!outgoing.length) {
-      out.set(step.id, "Nothing leaves this step yet. Drag from its right edge to connect it.");
+      // Inside a group, the step the group ends at leaves through the group's own connections: flag it if no group it is in has one.
+      if (step.parent_step_id) {
+        if (!groupsLetOut(bundle.steps, bundle.edges, step.id) && step.kind !== "group") {
+          out.set(step.id, "Nothing leaves this step, and no group it is in has a connection out. Connect the step, or connect its group.");
+        }
+        continue;
+      }
+      // A group can be left from a step inside it, so it needs no connection of its own then.
+      if (step.kind === "group" && groupHasExit(bundle.steps, bundle.edges, step.id)) continue;
+      out.set(step.id, step.kind === "group" ? "Nothing leaves this group yet. Drag from its right edge to connect it." : "Nothing leaves this step yet. Drag from its right edge to connect it.");
       continue;
     }
     if (step.kind === "start") continue;

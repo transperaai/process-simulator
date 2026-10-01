@@ -123,7 +123,7 @@ v1 scope is **not cut** (decision D3). It is delivered in three milestones (§11
 - Drag-and-drop node canvas: add step, connect steps (drag from port to port), branch with probabilities, delete, reroute, group into swimlanes by role.
 - **On-canvas node editing**: add steps from a palette or by double-clicking empty canvas; rename inline by double-clicking a node; edit key values (role/person, hands-on time, wait) inline on the node; node context menu (edit, duplicate, delete, change kind, pin to person, set rework target); click an edge to edit its probability or condition tag inline; multi-select move/duplicate/delete; copy/paste within a process; undo/redo for every edit.
 - Step inspector: name, role or named person, hands-on time (mean + distribution: constant, triangular, lognormal), wait time, rework rate and rework target, tool, notes, attachments, SLA target, **current WIP** (items sitting here now), **outcome** on end steps, evidence citations.
-- Sub-processes: a step can expand into another process (company map → individual processes).
+- Sub-processes: a step can hold its own steps, as a **group** (a box of steps inside one process) or a **child process** (a process with its own page, versions and first principles). The company map is the root: its steps are the top-level processes. The engine always simulates the detailed (leaf) steps, so the numbers are the same whether a group is open or closed on the map; a closed group shows a roll-up of its steps (A37).
 - **Draft mode for all changes** (§7.1b): every process has a live version and at most one draft. All edits (canvas, MCP, JSON import) go into the draft. The draft is shown as a diff against live (added steps dashed, removed struck through, changed values old → new, each with evidence). Draft vs live can be simulated and compared. Publish requires all assumptions and conflicts resolved or explicitly accepted as estimates.
 - Assumption checklist rail (conflicts listed first), template library, JSON import.
 - Concurrent editing: per-field saves with a version check. Edits to different fields merge; same-field conflicts prompt "keep mine / keep theirs". Presence ("Tom is viewing Lead to Cash") and live refresh via Supabase Realtime.
@@ -239,12 +239,15 @@ lead_sources        id, workspace_id, name, volume_week, conversion_to_qualified
 seasonality         workspace_id, month int, multiplier numeric
 demand_settings     workspace_id, growth_monthly, horizon_weeks default 13
 
-processes           id, workspace_id, name, kind (pipeline|servicing), entity_name, description, parent_step_id (nullable),
-                    live_revision_id, draft_revision_id (nullable), source (manual|template|mcp|import)   (changed)
+processes           id, workspace_id, name, kind (pipeline|servicing), entity_name, description, parent_process_id (nullable:
+                    the process it sits inside; null for the company map's own steps, A37), live_revision_id,
+                    draft_revision_id (nullable), source (manual|template|mcp|import)   (changed)
 process_revisions   id, process_id, number int, status (draft|published|superseded), layout jsonb, source_refs uuid[],
                     published_at, published_by                                                (new)
 process_templates   id, name, industry, kind, description, graph jsonb
-steps               id (stable across revisions), revision_id, process_id, name, kind (task|wait|decision|subprocess|start|end),
+steps               id (stable across revisions), revision_id, process_id, name, kind (task|wait|decision|subprocess|group|start|end),
+                    parent_step_id (the group it sits in), entry_step_id (a group's first step), child_process_id (a subprocess
+                    step's child process; A37, nesting to any depth and never in a loop),
                     outcome (won|lost|done, end steps only), role_id, person_id (nullable, pinned assignee),
                     work_hours, work_dist (constant|triangular|lognormal), work_params jsonb, wait_hours, wait_dist, wait_params jsonb,
                     rework_rate, rework_to_step_id, tool, notes, sla_hours, current_wip int, cost_override, x, y,

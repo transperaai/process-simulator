@@ -7,7 +7,7 @@ import type { IssueType, ScenarioPatch, StoredSeverity } from "@transpera-flow/e
 import type { Database } from "./database.types";
 
 export type MembershipRole = "agency_admin" | "owner" | "editor" | "member" | "viewer";
-export type StepKind = "task" | "wait" | "decision" | "subprocess" | "start" | "end";
+export type StepKind = "task" | "wait" | "decision" | "subprocess" | "group" | "start" | "end";
 export type StepOutcome = "won" | "lost" | "done";
 export type Distribution = "constant" | "triangular" | "lognormal";
 export type PricingModel = "retainer" | "one_off" | "hourly";
@@ -113,6 +113,12 @@ export interface ProcessRow {
   entity_name: string;
   description: string | null;
   live_revision_id: string | null;
+  /**
+   * The process this one sits inside (a child process, held by one of the
+   * parent's steps), or null for a top-level process: the company map's steps
+   * are the top-level processes (issue #102).
+   */
+  parent_process_id: string | null;
 }
 
 export interface ProcessRevisionRow {
@@ -150,6 +156,19 @@ export interface StepRow {
   current_wip: number | null;
   x: number;
   y: number;
+  /**
+   * The group this step sits in (a step of kind `group` in the same revision),
+   * or null at the top level of its process. `x`/`y` of a step in a group are
+   * relative to the group's box. Any depth, no loops (issue #102).
+   */
+  parent_step_id: string | null;
+  /** For a group: the step of it where entities enter (one of its own steps). */
+  entry_step_id: string | null;
+  /**
+   * For a `subprocess` step: the child process it holds (its `parent_process_id`
+   * is this step's process). The engine simulates the child's live steps in its place.
+   */
+  child_process_id: string | null;
   /**
    * The step's values are estimates nobody has confirmed yet (e.g. filled in
    * by the MCP server). Publishing a draft with any is refused unless they are

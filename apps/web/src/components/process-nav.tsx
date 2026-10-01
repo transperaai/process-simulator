@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useActionState, useState } from "react";
 import { Check, ChevronsUpDown, Plus } from "lucide-react";
-import type { ProcessListing } from "@transpera-flow/db";
+import { companyMap, flattenCompanyMap, type ProcessListing } from "@transpera-flow/db";
 import type { CreateProcessResult } from "@/app/w/[slug]/process-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,8 @@ export function ProcessNav({
   create?: (prev: CreateProcessResult, form: FormData) => Promise<CreateProcessResult>;
 }) {
   const [adding, setAdding] = useState(false);
+  // The company map's order: top-level processes, each followed by the child processes inside it (issue #102).
+  const ordered = flattenCompanyMap(companyMap(processes));
   const here = processes.find((p) => p.id === current);
   const name = here?.name ?? "Process";
   if (processes.length <= 1 && !create) return <h1 className="truncate px-1 font-display text-base font-bold">{name}</h1>;
@@ -47,10 +49,17 @@ export function ProcessNav({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-64">
             <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Processes</DropdownMenuLabel>
-            {processes.map((p) => (
+            {ordered.map(({ process: p, depth }) => (
               <DropdownMenuItem key={p.id} asChild>
                 <Link href={hrefs[p.id]!} aria-current={p.id === current ? "page" : undefined}>
-                  <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                  <span className="min-w-0 flex-1 truncate" style={depth > 1 ? { paddingLeft: (depth - 1) * 14 } : undefined}>
+                    {depth > 1 && (
+                      <span aria-hidden className="text-muted-foreground">
+                        ↳{" "}
+                      </span>
+                    )}
+                    {p.name}
+                  </span>
                   {p.kind === "servicing" && <Badge variant="secondary">servicing</Badge>}
                   {!p.live && (
                     <Badge variant="outline" className="border-warn bg-warn-soft text-fg">

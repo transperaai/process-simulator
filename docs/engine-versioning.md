@@ -173,3 +173,11 @@ rest.
   `larkspurModel()`; `database.test.ts` checks the seeded database round-trips to the same model.
 - App: `/demo/larkspur`, read-only from the fixtures, on any deployment.
 - Production: not loaded. It is a test and demo agency; add it by hand only if wanted.
+
+## Nested models (issue #102)
+
+A step can hold its own steps: a group, or a child process. The engine flattens a nested model to leaf steps before every run
+(`flattenModel` in `packages/engine/src/flatten.ts`, called by `simulate`, `runOnce` and `initialState`; a model with no groups comes back
+as the same object). A nested model therefore gives exactly the numbers of the same model drawn flat, which `test/nesting.test.ts` and
+`packages/db/test/nested-model.test.ts` check, and the golden models (all flat) did not move: introducing groups needed no `ENGINE_VERSION` bump.
+Draw a group open or closed, or move a step into one, and no number changes; adding or removing steps still does, as before.

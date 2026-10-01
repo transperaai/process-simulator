@@ -208,6 +208,35 @@ svg.map { display: block; }
 .badge text { font: 600 10.5px var(--f-mono); fill: var(--panel); }
 
 /* Lists */
+.status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; padding: 1px 8px; border-radius: 4px; background: var(--panel-2); white-space: nowrap; }
+.status.done { background: var(--good-soft); }
+.status.test { background: var(--accent-soft); }
+tr.isdone td { color: var(--fg-2); }
+tr.isdone .pill { opacity: .6; }
+.resolvedbar { background: var(--good-soft); border-radius: 10px; padding: 10px 16px; font-size: 14px; }
+.timeline2 { list-style: none; margin: 0; padding: 0 0 0 4px; display: flex; flex-direction: column; }
+.timeline2 li { display: grid; grid-template-columns: 64px 110px minmax(0, 1fr); gap: 12px; padding: 9px 0 9px 18px; border-left: 2px solid var(--line); position: relative; font-size: 13.5px; }
+.timeline2 li::before { content: ""; position: absolute; left: -6px; top: 14px; width: 10px; height: 10px; border-radius: 50%; background: var(--panel); border: 2px solid var(--fg-3); }
+.timeline2 li:last-child::before { border-color: var(--accent); background: var(--accent); }
+.timeline2 .when { font-family: var(--f-mono); font-size: 12px; color: var(--fg-2); padding-top: 1px; }
+.timeline2 .who { color: var(--fg-2); }
+@media (max-width: 600px) { .timeline2 li { grid-template-columns: 1fr; gap: 2px; } }
+.ideabar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; background: var(--edit-soft); border-radius: 10px; padding: 10px 14px; font-size: 13.5px; }
+.ideabar .ico { width: 18px; height: 18px; fill: none; stroke: var(--edit); stroke-width: 1.8; }
+.ideabar .btn { margin-left: auto; }
+.idea { border-style: dashed; border-color: color-mix(in srgb, var(--edit) 50%, var(--line)); }
+.ideamap { display: flex; flex-direction: column; gap: 6px; }
+.mapwrap.flat { border-style: dashed; }
+.mapwrap.flat .maptools { padding: 6px 8px; }
+.solves { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.solrow { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.card.click { cursor: pointer; transition: border-color var(--m, 120ms); }
+.card.click:hover { border-color: var(--fg-3); }
+.pcard { gap: 12px; display: flex; flex-direction: column; }
+.pcard h2 { font-size: 20px; }
+.radio { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line-2); border-radius: 8px; padding: 10px 12px; cursor: pointer; }
+.radio > span { display: flex; flex-direction: column; gap: 2px; }
+.radio.on { border-color: var(--accent); background: var(--accent-soft); }
 .src { font-family: var(--f-mono); font-size: 11px; color: var(--fg-2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
 .src.ai { color: var(--edit); border-color: color-mix(in srgb, var(--edit) 60%, transparent); }
 .empty { border: 1px dashed var(--line-2); border-radius: 10px; padding: 18px; color: var(--fg-2); font-size: 13.5px; text-align: center; }
@@ -445,32 +474,50 @@ let INS = [
 ];
 
 let ISS = [
-  { id: 12, title: "Strategist bottleneck holds up proposals and report reviews", rating: "risk", status: "Open", proc: "company", nodes: ["audit", "kickoff", "r_review"], owners: ["austin", "maya"], target: { label: "Strategist busy in a bad month (P90)", now: "97%", goal: "below 80%" }, from: "i1", sources: ["src1"], desc: "Maya is the only strategist. Every proposal, kickoff and monthly report review waits for her.", created: "26 Sep" },
-  { id: 14, title: "Monthly reports go out late", rating: "risk", status: "Testing solutions", proc: "acct", nodes: ["r_write", "r_review"], owners: ["leah", "maya"], target: { label: "Reports past the 5th working day", now: "14%", goal: "below 5%" }, from: "i2", sources: ["src1"], desc: "Reports are written by account managers, then wait for strategist sign-off.", created: "26 Sep" },
-  { id: 15, title: "Website leads wait too long for first contact", rating: "bad", status: "Solution passed", proc: "sales", nodes: ["q_check", "q_enrich"], owners: ["austin", "tom", "priya"], target: { label: "Time to first contact", now: "1.4 days", goal: "under 4 hours" }, from: "i4", sources: ["src2"], desc: "Sales checks fit and enriches each website enquiry by hand before replying.", created: "27 Sep" },
+  { id: 12, title: "Strategist bottleneck holds up proposals and report reviews", rating: "risk", status: "Testing solutions", proc: "company", nodes: ["audit", "kickoff", "r_review"], owners: ["austin", "maya"], target: { label: "Strategist busy in a bad month (P90)", now: "97%", goal: "below 80%" }, from: "i1", sources: ["src1"], desc: "Maya is the only strategist. Every proposal, kickoff and monthly report review waits for her.", created: "26 Sep",
+    log: [["26 Sep", "Austin", "Logged from insight “Busy role or person”, rated Operational risk."], ["26 Sep", "Austin", "Added Maya Collins as an owner."], ["27 Sep", "Austin", "Tested solution “AM drafts, strategist approves”. Automatic verdict: fail."], ["28 Sep", "Austin", "Marked “AM drafts, strategist approves” as fail: it moves the work, not removes it."], ["29 Sep", "Austin", "Tested solution “AI report drafting”. Automatic verdict: pass, holds in 86%."]] },
+  { id: 14, title: "Monthly reports go out late", rating: "risk", status: "Testing solutions", proc: "acct", nodes: ["r_write", "r_review"], owners: ["leah", "maya"], target: { label: "Reports past the 5th working day", now: "14%", goal: "below 5%" }, from: "i2", sources: ["src1"], desc: "Reports are written by account managers, then wait for strategist sign-off.", created: "26 Sep",
+    log: [["26 Sep", "Austin", "Logged from insight “SLA missed”, rated Operational risk."], ["29 Sep", "Austin", "Linked solution “AI report drafting”. Automatic verdict: pass, holds in 91%."]] },
+  { id: 15, title: "Website leads wait too long for first contact", rating: "bad", status: "Testing solutions", proc: "sales", nodes: ["q_check", "q_enrich"], owners: ["austin", "tom", "priya"], target: { label: "Time to first contact", now: "1.4 days", goal: "under 4 hours" }, from: "i4", sources: ["src2"], desc: "Sales checks fit and enriches each website enquiry by hand before replying.", created: "27 Sep",
+    log: [["27 Sep", "Austin", "Logged from an AI insight, rated Bad, not urgent."], ["28 Sep", "Austin", "Tested solution “AI lead qualifier”. Automatic verdict: pass, holds in 95%."], ["28 Sep", "Austin", "Marked “AI lead qualifier” as pass."], ["30 Sep", "AI analysis", "Suggested an idea: “Fast-track partner leads past Check fit”."]] },
+  { id: 9, title: "Invoices go out days after a client goes live", rating: "bad", status: "Resolved", proc: "fin", nodes: ["invoice"], owners: ["rosa", "austin"], target: { label: "Days from go-live to invoice", was: "4 days", now: "0.5 days", goal: "under 2 days" }, from: null, sources: [], desc: "Finance only heard about go-lives in the weekly meeting, so first invoices waited up to a week.", created: "2 Sep",
+    resolved: { date: "18 Sep", how: "solution", sol: "s5", note: "Built into Finance version 3." },
+    log: [["2 Sep", "Austin", "Logged by hand, rated Bad, not urgent."], ["8 Sep", "Austin", "Tested solution “Invoice on go-live”. Automatic verdict: pass, holds in 93%."], ["9 Sep", "Rosa Diaz", "Marked “Invoice on go-live” as pass."], ["18 Sep", "Austin", "Resolved by solution “Invoice on go-live”. Built into Finance version 3."]] },
+  { id: 7, title: "Proposals go out without a second check", rating: "risk", status: "Resolved", proc: "sales", nodes: ["audit"], owners: ["maya"], target: { label: "Proposals reworked after sending", was: "1 in 5", now: "1 in 20", goal: "under 1 in 10" }, from: null, sources: [], desc: "Proposals went straight from the strategist to the client, and pricing errors reached clients.", created: "5 Sep",
+    resolved: { date: "17 Sep", how: "process", note: "Added an Internal review step in Sales version 6." },
+    log: [["5 Sep", "Austin", "Logged by hand, rated Operational risk."], ["17 Sep", "Austin", "Resolved by changing the process directly: added Internal review in Sales version 6."]] },
 ];
 
 const BLK = {
   blk_aiqual: { name: "AI lead qualifier", type: "AI", desc: "AI scores each enquiry as it arrives and books hot leads straight into the calendar.", cols: [["b_score"], ["b_hot"], ["b_book"]], defs: { b_score: { name: "AI scores enquiry", role: "ai", h: 0, w: .1, rating: "great" }, b_hot: { name: "Sales checks hot leads", role: "sales", h: .15, w: 2, rating: "good" }, b_book: { name: "Auto-book call", role: "auto", h: 0, w: 0, rating: "great" } } },
   blk_aireport: { name: "AI report drafting", type: "AI", desc: "Data pulls itself, AI drafts the insights, the strategist approves in minutes.", cols: [["b_pull"], ["b_draft"], ["b_approve"], ["b_send"]], defs: { b_pull: { name: "Auto pull data", role: "auto", h: 0, w: 0, rating: "great" }, b_draft: { name: "AI drafts insights", role: "ai", h: 0, w: .5, rating: "great" }, b_approve: { name: "Strategist approves", role: "strat", h: .2, w: 8, rating: "good" }, b_send: { name: "Send & walk through", role: "am", h: 1, w: 8, rating: "good" } } },
   blk_split: { name: "AM drafts, strategist approves", type: "Redesign", desc: "Account managers write the full report; the strategist only signs off.", cols: [["c_pull"], ["c_draft"], ["c_approve"], ["c_send"]], defs: { c_pull: { name: "Pull data", role: "seo", h: 1.5, w: 0, rating: "good" }, c_draft: { name: "AM writes report", role: "am", h: 3, w: 10, rating: "good" }, c_approve: { name: "Strategist signs off", role: "strat", h: .3, w: 30, rating: "bad" }, c_send: { name: "Send & walk through", role: "am", h: 1, w: 8, rating: "good" } } },
+  blk_autoinv: { name: "Invoice on go-live", type: "Manual", desc: "Go-live triggers the first invoice; finance only checks it.", cols: [["e_trig"], ["e_check"]], defs: { e_trig: { name: "Invoice raised at go-live", role: "auto", h: 0, w: 0, rating: "great" }, e_check: { name: "Finance checks invoice", role: "fin", h: .1, w: 2, rating: "great" } } },
+  blk_fasttrack: { hidden: true, name: "Fast-track partner leads", type: "AI", desc: "Partner leads skip the fit check and enrichment and go straight to booking.", cols: [["f_tag"], ["f_route"], ["f_book"]], defs: { f_tag: { name: "Tag lead source", role: "auto", h: 0, w: 0, rating: "great" }, f_route: { name: "Partner? Skip fit check", role: "auto", h: 0, w: 0, rating: "great", sub: ["Decision", "Partner → book"] }, f_book: { name: "Book discovery call", role: "sales", h: .1, w: 6, rating: "good" } } },
   blk_onb: { name: "Self-serve onboarding pack", type: "Manual", desc: "One form collects access, logins and billing details before kickoff.", cols: [["d_form"], ["d_check"]], defs: { d_form: { name: "Client fills access form", role: "auto", h: 0, w: 24, rating: "good" }, d_check: { name: "AM checks access", role: "am", h: .3, w: 4, rating: "great" } } },
 };
 
 let SOL = [
-  { id: "s1", issue: 12, name: "AM drafts, strategist approves", type: "Redesign", date: "22 Sep", proc: "acct", replace: { report: "blk_split" }, auto: "fail", autoText: "Strategist P90 drops to 91%. The target is below 80%.", robust: null, yours: "fail", note: "Moves the work around, but Maya still signs off everything.",
+  { id: "s1", name: "AM drafts, strategist approves", type: "Redesign", by: "Austin", date: "27 Sep", proc: "acct", replace: { report: "blk_split" }, note: "Moves the work around, but Maya still signs off everything.",
     rows: [["Strategist busy (P90)", "97%", "91%", 1], ["Reports late", "14%", "9%", 1], ["Clients lost to churn (6 mo)", "4.9", "4.2", 1], ["Account manager busy", "64%", "79%", 0]], deltas: { c_draft: "+1 h AM work", c_approve: "−0.2 h strategist" },
-    stress: [["Stable", "fail", "P90 91%"], ["Soft", "fail", "P90 88%"], ["Downturn", "pass", "P90 79%"], ["Boom", "fail", "P90 98%"]] },
-  { id: "s2", issue: 12, name: "AI report drafting", type: "AI block", date: "29 Sep", proc: "acct", replace: { report: "blk_aireport" }, auto: "pass", autoText: "Strategist P90 falls to 74% (target below 80%). Holds in 86% of perturbed runs.", robust: 86, yours: null, note: "",
-    rows: [["Strategist busy (P90)", "97%", "74%", 1], ["Reports late", "14%", "3%", 1], ["Clients lost to churn (6 mo)", "4.9", "3.1", 1], ["Account manager busy", "64%", "58%", 1]], deltas: { b_draft: "AI, ~0 h", b_approve: "−0.3 h, −38 h wait" },
-    stress: [["Stable", "pass", "P90 74%"], ["Soft", "pass", "P90 70%"], ["Downturn", "pass", "P90 63%"], ["Boom", "fail", "P90 84%"]] },
-  { id: "s3", issue: 14, name: "AI report drafting", type: "AI block", date: "29 Sep", proc: "acct", replace: { report: "blk_aireport" }, auto: "pass", autoText: "Reports late falls to 3% (target below 5%). Holds in 91% of perturbed runs.", robust: 91, yours: null, note: "",
-    rows: [["Reports late", "14%", "3%", 1], ["Strategist busy (P90)", "97%", "74%", 1], ["Average client health", "72", "81", 1], ["Clients lost to churn (6 mo)", "4.9", "3.1", 1]], deltas: { b_draft: "AI, ~0 h", b_approve: "−0.3 h, −38 h wait" },
-    stress: [["Stable", "pass", "3% late"], ["Soft", "pass", "2% late"], ["Downturn", "pass", "1% late"], ["Boom", "pass", "4% late"]] },
-  { id: "s4", issue: 15, name: "AI lead qualifier", type: "AI block", date: "28 Sep", proc: "sales", replace: { qualify: "blk_aiqual" }, auto: "pass", autoText: "First contact falls to 0.6 h (target under 4 h). Holds in 95% of perturbed runs.", robust: 95, yours: "pass", note: "Tom confirmed the CRM can trigger this.",
+    stress: [["Stable", "fail", "P90 91%"], ["Soft", "fail", "P90 88%"], ["Downturn", "pass", "P90 79%"], ["Boom", "fail", "P90 98%"]],
+    for: [{ issue: 12, auto: "fail", autoText: "Strategist P90 drops to 91%. The target is below 80%.", robust: null, yours: "fail" }] },
+  { id: "s2", name: "AI report drafting", type: "AI block", by: "Austin", date: "29 Sep", proc: "acct", replace: { report: "blk_aireport" }, note: "",
+    rows: [["Strategist busy (P90)", "97%", "74%", 1], ["Reports late", "14%", "3%", 1], ["Average client health", "72", "81", 1], ["Clients lost to churn (6 mo)", "4.9", "3.1", 1], ["Account manager busy", "64%", "58%", 1]], deltas: { b_draft: "AI, ~0 h", b_approve: "−0.3 h, −38 h wait" },
+    stress: [["Stable", "pass", "P90 74% · 3% late"], ["Soft", "pass", "P90 70% · 2% late"], ["Downturn", "pass", "P90 63% · 1% late"], ["Boom", "fail", "P90 84% · 4% late"]],
+    for: [{ issue: 12, auto: "pass", autoText: "Strategist P90 falls to 74% (target below 80%).", robust: 86, yours: null }, { issue: 14, auto: "pass", autoText: "Reports late falls to 3% (target below 5%).", robust: 91, yours: null }] },
+  { id: "s4", name: "AI lead qualifier", type: "AI block", by: "Austin", date: "28 Sep", proc: "sales", replace: { qualify: "blk_aiqual" }, note: "Tom confirmed the CRM can trigger this.",
     rows: [["Time to first contact", "1.4 d", "0.6 h", 1], ["Discovery calls booked", "55%", "63%", 1], ["New clients won (6 mo)", "23", "26", 1], ["Strategist busy (P90)", "97%", "99%", 0]], deltas: { b_score: "AI, instant", b_hot: "−18 h wait", b_book: "automated" },
-    stress: [["Stable", "pass", "0.6 h"], ["Soft", "pass", "0.5 h"], ["Downturn", "pass", "0.4 h"], ["Boom", "pass", "1.1 h"]] },
+    stress: [["Stable", "pass", "0.6 h"], ["Soft", "pass", "0.5 h"], ["Downturn", "pass", "0.4 h"], ["Boom", "pass", "1.1 h"]],
+    for: [{ issue: 15, auto: "pass", autoText: "First contact falls to 0.6 h (target under 4 h).", robust: 95, yours: "pass" }] },
+  { id: "s5", name: "Invoice on go-live", type: "Redesign", by: "Austin", date: "8 Sep", proc: "fin", replace: { invoice: "blk_autoinv" }, note: "Built into Finance version 3 on 18 Sep.",
+    rows: [["Days from go-live to invoice", "4 d", "0.5 d", 1], ["Finance hours a week", "6.0", "5.2", 1], ["Cash collected in 30 days", "71%", "83%", 1]], deltas: { e_trig: "automated", e_check: "6m check" },
+    stress: [["Stable", "pass", "0.5 d"], ["Soft", "pass", "0.5 d"], ["Downturn", "pass", "0.4 d"], ["Boom", "pass", "0.7 d"]],
+    for: [{ issue: 9, auto: "pass", autoText: "Invoices raised 0.5 days after go-live (target under 2 days).", robust: 93, yours: "pass" }] },
 ];
+const solsOf = id => SOL.filter(s => s.for.some(f => f.issue === id));
+const forOf = (s, id) => s.for.find(f => f.issue === id);
+const isOpenIssue = i => i.status !== "Resolved" && i.status !== "Won't fix";
 
 let SRC = [
   { id: "src1", title: "Interview: Maya Collins (Strategist)", type: "Transcript", date: "12 Sep", quote: "I review every single report before it goes out. Most weeks that's my Sunday.", links: [["step", "r_review"], ["issue", 12], ["insight", "i2"]] },
@@ -481,7 +528,7 @@ let SRC = [
 
 let SUG = [
   { id: "g1", kind: "Issue", title: "Ad-hoc requests wait 20 h for an SEO specialist", from: "AI analysis", detail: "Proposed rating: Good, could improve. Touches Ad-hoc requests.", nodes: ["adhoc"] },
-  { id: "g2", kind: "Solution", title: "Fast-track partner leads past Check fit", from: "AI analysis", detail: "For issue #15. Partner leads skip enrichment and go straight to booking." },
+  { id: "g2", kind: "Solution idea", title: "Fast-track partner leads past Check fit", from: "AI analysis", detail: "Partner leads convert twice as well as website leads. Let them skip the fit check and enrichment and go straight to booking.", issue: 15, block: "blk_fasttrack", target: "qualify", expect: "AI expects first contact for partner leads under 2 h. Not simulated yet." },
   { id: "g3", kind: "Model change", title: "Arjun Mehta: FTE 0.8 → 1.0 from 1 Nov", from: "Claude (MCP)", detail: "From the 30 Sep call notes." },
 ];
 
@@ -570,8 +617,10 @@ function ancestors(id, t = BASE) { const a = []; let k = t[id]?.parent; while (k
 const nodeName = id => (BASE[id] || {}).name || id;
 const procOf = id => { const a = ancestors(id); return a.length > 1 ? a[1] : id; };
 function insFor(pid) { const d = desc(BASE, pid); return INS.filter(i => i.nodes.some(x => d.has(x))); }
-function issuesFor(pid) { const d = desc(BASE, pid); return ISS.filter(i => i.nodes.some(x => d.has(x))); }
-function solsFor(pid) { const ids = new Set(issuesFor(pid).map(i => i.id)); return SOL.filter(s => ids.has(s.issue)); }
+function issuesFor(pid, all) { const d = desc(BASE, pid); return ISS.filter(i => (all || isOpenIssue(i)) && i.nodes.some(x => d.has(x))); }
+function solsFor(pid) { const d = desc(BASE, pid), ids = new Set(issuesFor(pid, true).map(i => i.id)); return SOL.filter(s => d.has(s.proc) || s.for.some(f => ids.has(f.issue))); }
+const ideasFor = id => SUG.filter(g => g.kind === "Solution idea" && g.issue === id);
+function logIssue(id, text, who = "Austin") { const i = ISS.find(x => x.id === id); if (i) (i.log = i.log || []).push(["1 Oct", who, text]); }
 function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 3200); }
 function hl(key, nodes) { S.hl[key] = nodes; refreshMap(key); }
 function treeWith(replace) {
@@ -606,7 +655,7 @@ function place(c, cols, x0, y0, H) {
 function trunc(s, n) { s = String(s ?? ""); return s.length > n ? s.slice(0, n - 1) + "…" : s; }
 function issueCount(t, id, open) {
   const set = open ? new Set([id]) : desc(t, id);
-  return ISS.filter(i => i.status !== "Closed" && i.nodes.some(x => set.has(x))).length;
+  return ISS.filter(i => isOpenIssue(i) && i.nodes.some(x => set.has(x))).length;
 }
 const utilColor = u => u >= .85 ? "var(--crit)" : u >= .75 ? "var(--warn)" : "var(--fg-2)";
 function renderMap(key) {
@@ -780,7 +829,7 @@ function sidebar() {
       ${navBtn("overview", "overview", "Overview", "", sc === "overview")}
       ${navBtn("processes", "processes", "Processes", `<span class="cnt">${Object.values(BASE).filter(x => x.cols && x.id !== "company").length}</span>`, sc === "processes" || sc === "process" || sc === "history")}
       <div class="navlabel eyebrow">Improve</div>
-      ${navBtn("issues", "issues", "Issues", `<span class="cnt">${ISS.length}</span>`, sc === "issues" || sc === "issue")}
+      ${navBtn("issues", "issues", "Issues", `<span class="cnt">${ISS.filter(isOpenIssue).length}</span>`, sc === "issues" || sc === "issue")}
       ${navBtn("solutions", "solutions", "Solutions", `<span class="cnt">${SOL.length}</span>`, sc === "solutions" || sc === "compare")}
       ${navBtn("library", "library", "Block library", "", sc === "library")}
       ${navBtn("suggestions", "suggestions", "Suggestions", SUG.length ? `<span class="cnt ai">${SUG.length}</span>` : "", sc === "suggestions")}
@@ -822,18 +871,19 @@ function insightSection(pid, mapKey) {
     ${ratingFilters(pid, list)}
     ${insightRows(shown, mapKey)}</section>`;
 }
+const statusChip = st => `<span class="status ${st === "Resolved" ? "done" : st === "Open" ? "open" : "test"}">${esc(st)}</span>`;
 function issueTable(list) {
-  if (!list.length) return `<div class="empty">No confirmed issues yet. Acknowledge an insight, or add one by hand.</div>`;
+  if (!list.length) return `<div class="empty">No issues here. Acknowledge an insight, or add one by hand.</div>`;
   return `<div class="tblwrap"><table><thead><tr><th>Issue</th><th>Rating</th><th>Touches</th><th>Owners</th><th>Status</th><th>Solutions</th></tr></thead><tbody>
-  ${list.map(i => { const ss = SOL.filter(s => s.issue === i.id); const best = ss.find(s => (s.yours || s.auto) === "pass"); return `<tr class="click" data-go="issue:${i.id}"><td><span class="mono muted">#${i.id}</span> <b>${esc(i.title)}</b></td><td>${pill(i.rating)}</td><td class="small">${i.nodes.map(nodeName).join(", ")}</td><td>${avatars(i.owners)}</td><td class="small nowrap">${esc(i.status)}</td><td class="small nowrap">${ss.length ? `${ss.length} tried ${best ? verdict("pass") : ""}` : `<span class="muted">None yet</span>`}</td></tr>`; }).join("")}
+  ${list.map(i => { const ss = solsOf(i.id); const best = ss.some(s => { const f = forOf(s, i.id); return (f.yours || f.auto) === "pass"; }); return `<tr class="click ${isOpenIssue(i) ? "" : "isdone"}" data-go="issue:${i.id}"><td><span class="mono muted">#${i.id}</span> <b>${esc(i.title)}</b></td><td>${pill(i.rating)}</td><td class="small">${i.nodes.map(nodeName).join(", ")}</td><td>${avatars(i.owners)}</td><td class="nowrap">${statusChip(i.status)}${i.resolved ? `<div class="small muted">${i.resolved.date}</div>` : ""}</td><td class="small nowrap">${ss.length ? `${ss.length} tested ${best ? verdict("pass") : ""}` : `<span class="muted">None yet</span>`}${ideasFor(i.id).length ? `<div class="small" style="color:var(--edit)">${ideasFor(i.id).length} AI idea</div>` : ""}</td></tr>`; }).join("")}
   </tbody></table></div>`;
 }
 function solCards(list) {
-  if (!list.length) return `<div class="empty">No solutions yet. Open an issue and choose Build solution.</div>`;
-  return `<div class="solgrid">${list.map(s => `<div class="card sol"><div class="spread"><span class="kind ${s.type === "AI block" ? "ai" : ""}">${s.type === "AI block" ? ico("suggestions") : ico("library")}${esc(s.type)}</span><span class="small muted">${s.date}</span></div>
-    <h3>${esc(s.name)}</h3><button class="link small" data-go="issue:${s.issue}">#${s.issue} · ${esc(ISS.find(i => i.id === s.issue).title)}</button>
-    <div class="verdicts"><div><span class="eyebrow">Automatic</span>${verdict(s.auto)}</div><div><span class="eyebrow">Yours</span>${verdict(s.yours)}</div>${s.robust ? `<div><span class="eyebrow">Holds in</span><span class="num">${s.robust}%</span></div>` : ""}</div>
-    <div class="row"><button class="btn sm primary" data-go="compare:${s.id}">Compare</button><button class="btn sm" data-act="opensol" data-id="${s.id}">Open in Editor</button></div></div>`).join("")}</div>`;
+  if (!list.length) return `<div class="empty">No solutions yet. Build one from an issue, or start one here.</div>`;
+  return `<div class="solgrid">${list.map(s => `<div class="card sol click" data-go="compare:${s.id}"><div class="spread"><span class="kind ${s.type === "AI block" ? "ai" : ""}">${s.type === "AI block" ? ico("suggestions") : ico("library")}${esc(s.type)}</span><span class="small muted">${esc(s.by)} · ${s.date}</span></div>
+    <h3>${esc(s.name)}</h3><span class="small muted">Changes ${esc(pname(s.proc))} · ${Object.keys(s.replace).map(nodeName).join(", ") || "steps"}</span>
+    <div class="solves"><span class="eyebrow">Solves</span>${s.for.length ? s.for.map(f => { const i = ISS.find(x => x.id === f.issue); return `<div class="solrow"><button class="link small" data-go="issue:${i.id}">#${i.id} ${esc(trunc(i.title, 44))}</button>${verdict(f.yours || f.auto)}</div>`; }).join("") : `<span class="small muted">Not linked to an issue yet</span>`}</div>
+    <div class="row"><button class="btn sm primary" data-go="compare:${s.id}">Open</button><button class="btn sm" data-act="opensol" data-id="${s.id}">Open in Editor</button></div></div>`).join("")}</div>`;
 }
 const pname = id => id === "company" ? "Company map" : nodeName(id);
 function procList(id = "company", depth = 0, out = []) { const nd = BASE[id]; if (!nd.cols) return out; out.push([id, depth]); nd.cols.flat().forEach(k => procList(k, depth + 1, out)); return out; }
@@ -843,6 +893,14 @@ function switcher(pid) {
     <button class="menufoot" data-go="processes">All processes →</button></div></details>`;
 }
 
+function ideaCard(g) {
+  const b = BLK[g.block], i = ISS.find(x => x.id === g.issue), key = "idea-" + g.id;
+  const t = { root: { id: "root", name: b.name, cols: b.cols }, ...clone(b.defs) }; for (const k in b.defs) { t[k].id = k; t[k].added = true; } linkParents(t);
+  return `<div class="card idea stack"><div class="spread"><div class="row"><span class="kind ai">${ico("suggestions")}AI idea</span><span class="small muted">for</span><button class="link small" data-go="issue:${i.id}">#${i.id} ${esc(i.title)}</button></div><div class="row"><button class="btn sm" data-act="sugno" data-id="${g.id}">Dismiss</button><button class="btn sm edit" data-act="buildidea" data-id="${g.id}">✎ Build it</button></div></div>
+    <h3>${esc(g.title)}</h3><p class="small">${esc(g.detail)}</p>
+    <div class="ideamap"><span class="eyebrow">Proposed steps · would replace ${esc(nodeName(g.target))}</span>${mapBlock(key, { root: "root", tree: t, legend: false, flat: true })}</div>
+    <span class="small muted">${esc(g.expect)}</span></div>`;
+}
 const SCREENS = {
   overview() {
     const top = INS.slice().sort((a, b) => RORDER.indexOf(a.rating) - RORDER.indexOf(b.rating)).slice(0, 5);
@@ -861,12 +919,18 @@ const SCREENS = {
     </div></section>`;
   },
   processes() {
-    const rows = procList().filter(([id]) => id !== "company");
-    return `<header class="head"><div class="t"><span class="eyebrow">Processes</span><h1>Processes</h1><p class="muted">The company map and everything inside it. A process can hold smaller processes, which expand on the map.</p></div>
-      <div class="row"><button class="btn" data-go="process:company">Open company map</button><button class="btn edit" data-act="editdraft" data-p="company">✎ New process</button></div></header>
-    <div class="tblwrap"><table class="proc"><thead><tr><th>Process</th><th>Type</th><th>Rating</th><th class="n">Steps</th><th class="n">Open issues</th><th>Live version</th></tr></thead><tbody>
+    const rows = procList().filter(([id]) => id !== "company"), view = S.procView || "map";
+    const tops = BASE.company.cols.flat();
+    const card = id => { const nd = BASE[id], iss = issuesFor(id).length, v = (VERSIONS[id] || VERSIONS.sales)[0]; return `<section class="card pcard">
+      <div class="spread"><div class="row"><h2><button class="link" data-go="process:${id}">${esc(nd.name)}</button></h2>${pill(nd.rating)}<span class="chip">${esc(nd.kind || "Process")}</span></div>
+        <div class="row small muted"><span>${leafCount(BASE, id)} steps</span><span>·</span><span>${iss ? `<span class="iss">${iss}</span> open issue${iss > 1 ? "s" : ""}` : "no open issues"}</span><span>·</span><span>live v${v.v}</span><button class="btn sm" data-go="process:${id}">Open →</button></div></div>
+      ${PRIN[id] ? `<p class="small muted">Goal: ${esc(PRIN[id].goal)}</p>` : ""}
+      ${mapBlock("pv-" + id, { root: id, issues: true, legend: false, flat: true })}</section>`; };
+    return `<header class="head"><div class="t"><span class="eyebrow">Processes</span><h1>Processes</h1><p class="muted">Every process on its own map. Sub-processes sit inside them: use Expand to open one in place.</p></div>
+      <div class="row"><div class="seg" role="group" aria-label="View"><button class="${view === "map" ? "on" : ""}" data-act="procview" data-v="map">Maps</button><button class="${view === "list" ? "on" : ""}" data-act="procview" data-v="list">List</button></div><button class="btn" data-go="process:company">Company map</button><button class="btn edit" data-act="editdraft" data-p="company">✎ New process</button></div></header>
+    ${view === "map" ? tops.map(card).join("") : `<div class="tblwrap"><table class="proc"><thead><tr><th>Process</th><th>Type</th><th>Rating</th><th class="n">Steps</th><th class="n">Open issues</th><th>Live version</th></tr></thead><tbody>
       ${rows.map(([id, d]) => { const nd = BASE[id], iss = issuesFor(id).length, v = (VERSIONS[id] || VERSIONS.sales)[0]; return `<tr class="click" data-go="process:${id}"><td><span style="padding-left:${(d - 1) * 22}px" class="pname">${d > 1 ? `<span class="muted">↳</span>` : ""}<b>${esc(nd.name)}</b></span></td><td class="small">${esc(nd.kind || "Process")}</td><td>${pill(nd.rating)}</td><td class="n">${leafCount(BASE, id)}</td><td class="n">${iss ? `<span class="iss">${iss}</span>` : `<span class="muted">0</span>`}</td><td class="small nowrap">v${v.v} · ${v.date.replace(" 2026", "")}</td></tr>`; }).join("")}
-    </tbody></table></div>`;
+    </tbody></table></div>`}`;
   },
   process() {
     const pid = S.p, nd = BASE[pid], key = "pr-" + pid, pr = PRIN[pid], vers = VERSIONS[pid] || VERSIONS.sales;
@@ -886,7 +950,7 @@ const SCREENS = {
     <section><div class="sechead"><div><h2>Map</h2><p>Coloured by rating. Red badges are confirmed issues. Click a step for detail.</p></div></div>
       ${mapBlock(key, { root: pid, issues: true })}</section>
     ${insightSection(pid, key)}
-    <section><div class="sechead"><div><h2>Issues</h2><p>Confirmed by you, linked to this process or its steps.</p></div><button class="btn" data-act="newissue" data-p="${pid}">+ New issue</button></div>${issueTable(iss)}</section>
+    <section><div class="sechead"><div><h2>Issues</h2><p>Open issues linked to this process or its steps.${issuesFor(pid, true).length - iss.length ? ` <button class="link" data-act="seeresolved">${issuesFor(pid, true).length - iss.length} resolved →</button>` : ""}</p></div><button class="btn" data-act="newissue" data-p="${pid}">+ New issue</button></div>${issueTable(iss)}</section>
     <section><div class="sechead"><div><h2>Solutions</h2><p>Bundles of steps tested against an issue. They never change the live map.</p></div></div>${solCards(sols)}</section>
     <section><div class="sechead"><div><h2>Supporting data</h2><p>From the latest run.</p></div></div>
     <div class="grid2">
@@ -895,53 +959,69 @@ const SCREENS = {
     </div></section>`;
   },
   solutions() {
-    return `<header class="head"><div class="t"><span class="eyebrow">Improve</span><h1>Solutions</h1><p class="muted">Every solution tried, grouped by the issue it was built for.</p></div></header>
-    ${ISS.filter(i => SOL.some(s => s.issue === i.id)).map(i => `<section><div class="sechead"><div class="row">${pill(i.rating)}<h2><button class="link" data-go="issue:${i.id}">#${i.id} ${esc(i.title)}</button></h2></div><button class="btn sm edit" data-act="buildsol" data-id="${i.id}">✎ Build another</button></div>${solCards(SOL.filter(s => s.issue === i.id))}</section>`).join("")}`;
+    const ideas = SUG.filter(g => g.kind === "Solution idea");
+    return `<header class="head"><div class="t"><span class="eyebrow">Improve</span><h1>Solutions</h1><p class="muted">Every solution that has been built and simulated. Each one says which issues it solves, and how it did against each issue's target.</p></div><button class="btn edit" data-act="newsol">✎ New solution</button></header>
+    ${ideas.length ? `<div class="ideabar">${ico("suggestions")}<span><b>${ideas.length} AI idea${ideas.length > 1 ? "s" : ""}</b> not built yet. Ideas live in Suggestions until someone builds them; then they become solutions here.</span><button class="btn sm" data-go="suggestions">See ideas →</button></div>` : ""}
+    ${solCards(SOL)}`;
   },
   issues() {
-    const f = S.ratingFilter.issues; const list = ISS.filter(i => !f || i.rating === f).sort((a, b) => RORDER.indexOf(a.rating) - RORDER.indexOf(b.rating));
-    return `<header class="head"><div class="t"><span class="eyebrow">Improve</span><h1>Issues</h1><p class="muted">Problems you've confirmed. Each one is linked to a whole process or to one or more steps.</p></div><button class="btn primary" data-act="newissue" data-p="company">+ New issue</button></header>
-      ${ratingFilters("issues", ISS)}
+    const f = S.ratingFilter.issues, v = S.issueView || "open";
+    const base = ISS.filter(i => v === "all" || (v === "open" ? isOpenIssue(i) : !isOpenIssue(i)));
+    const list = base.filter(i => !f || i.rating === f).sort((a, b) => RORDER.indexOf(a.rating) - RORDER.indexOf(b.rating));
+    const n = k => ISS.filter(i => k === "all" || (k === "open" ? isOpenIssue(i) : !isOpenIssue(i))).length;
+    return `<header class="head"><div class="t"><span class="eyebrow">Improve</span><h1>Issues</h1><p class="muted">Problems you've confirmed, linked to a whole process or to specific steps. Resolved issues stay here with their full history.</p></div><button class="btn primary" data-act="newissue" data-p="company">+ New issue</button></header>
+      <div class="spread"><div class="seg" role="group" aria-label="Show">${[["open", "Open"], ["resolved", "Resolved"], ["all", "All"]].map(([k, l]) => `<button class="${v === k ? "on" : ""}" data-act="issueview" data-v="${k}">${l} ${n(k)}</button>`).join("")}</div>${ratingFilters("issues", base)}</div>
       ${issueTable(list)}`;
   },
   issue() {
-    const i = ISS.find(x => x.id === +S.p); const ss = SOL.filter(s => s.issue === i.id); const ins = INS.find(x => x.id === i.from);
+    const i = ISS.find(x => x.id === +S.p); const ss = solsOf(i.id); const ins = INS.find(x => x.id === i.from); const ideas = ideasFor(i.id);
     const openGroups = [...new Set(i.nodes.flatMap(x => ancestors(x)).filter(a => a !== i.proc && a !== "company" && desc(BASE, i.proc).has(a)))];
-    return `<div class="head"><div class="t"><div class="crumbs"><button data-go="issues">Issues</button><span>›</span><span>#${i.id}</span></div><h1>${esc(i.title)}</h1><div class="row">${pill(i.rating)}<span class="chip">${esc(i.status)}</span><span class="small muted">Logged ${i.created}${ins ? ` from insight “${esc(ins.rule)}”` : ""}</span></div></div>
-      <div class="row"><button class="btn" data-act="editissue" data-id="${i.id}">Edit</button><button class="btn edit" data-act="buildsol" data-id="${i.id}">✎ Build solution</button></div></div>
+    const done = !isOpenIssue(i), rs = i.resolved;
+    return `<header class="head"><div class="t"><nav class="crumbs"><button data-go="issues">Issues</button><span>/</span><span>#${i.id}</span></nav><h1>${esc(i.title)}</h1><div class="row">${pill(i.rating)}${statusChip(i.status)}<span class="small muted">Logged ${i.created}${ins ? ` from insight “${esc(ins.rule)}”` : ""}</span></div></div>
+      <div class="row"><button class="btn" data-act="editissue" data-id="${i.id}">Edit</button>${done ? `<button class="btn" data-act="reopen" data-id="${i.id}">Reopen</button>` : `<button class="btn" data-act="resolve" data-id="${i.id}">Mark resolved</button><button class="btn edit" data-act="buildsol" data-id="${i.id}">✎ Build solution</button>`}</div></header>
+    ${done && rs ? `<div class="resolvedbar">✓ <b>Resolved ${rs.date}</b> · ${rs.how === "solution" ? `by solution <button class="link" data-go="compare:${rs.sol}">${esc(SOL.find(x => x.id === rs.sol).name)}</button>` : rs.how === "process" ? "by changing the process directly" : "no longer a problem"}${rs.note ? ` · ${esc(rs.note)}` : ""}</div>` : ""}
     <div class="side2"><div class="stack">
       ${mapBlock("is-" + i.id, { root: i.proc, hl: i.nodes, defaultOpen: openGroups, title: "Where this issue sits", legend: false })}
       <div class="card stack"><h3>What's wrong</h3><p>${esc(i.desc)}</p>${ins ? `<div class="note">${esc(ins.why)}</div>` : ""}</div>
-      <section><div class="sechead"><h2>Solutions tried</h2><p>Every attempt is kept, with the automatic verdict against the target and your own call.</p></div>
-        ${ss.length ? `<div class="tblwrap"><table><thead><tr><th>Solution</th><th>Type</th><th>Date</th><th>Automatic</th><th>Holds in</th><th>Yours</th><th></th></tr></thead><tbody>${ss.map(s => `<tr><td><b>${esc(s.name)}</b>${s.note ? `<div class="small muted">${esc(s.note)}</div>` : ""}</td><td><span class="src ${s.type === "AI block" ? "ai" : ""}">${esc(s.type)}</span></td><td class="small nowrap">${s.date}</td><td>${verdict(s.auto)}</td><td class="n">${s.robust ? s.robust + "%" : "—"}</td><td>${verdict(s.yours)}</td><td><button class="btn sm" data-go="compare:${s.id}">Compare</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="card muted">Nothing tried yet. Build solution opens the Editor with this issue's steps outlined.</div>`}
-      </section></div>
+      <section><div class="sechead"><div><h2>Solutions tested</h2><p>Each solution lives on its own. Here is how each one did against this issue's target.</p></div></div>
+        ${ss.length ? `<div class="tblwrap"><table><thead><tr><th>Solution</th><th>Type</th><th>Built</th><th>Automatic</th><th class="n">Holds in</th><th>Yours</th></tr></thead><tbody>${ss.map(s => { const f = forOf(s, i.id); return `<tr class="click" data-go="compare:${s.id}"><td><b>${esc(s.name)}</b>${s.for.length > 1 ? `<div class="small muted">Also solves ${s.for.filter(x => x.issue !== i.id).map(x => "#" + x.issue).join(", ")}</div>` : ""}</td><td><span class="kind ${s.type === "AI block" ? "ai" : ""}">${esc(s.type)}</span></td><td class="small nowrap">${s.date}</td><td>${verdict(f.auto)}</td><td class="n">${f.robust ? f.robust + "%" : "—"}</td><td>${verdict(f.yours)}</td></tr>`; }).join("")}</tbody></table></div>` : `<div class="empty">Nothing tested yet. Build solution opens the Editor with this issue's steps outlined.</div>`}
+      </section>
+      ${ideas.length ? `<section><div class="sechead"><div><h2>AI ideas</h2><p>Proposed by AI, not built or simulated yet.</p></div></div>${ideas.map(ideaCard).join("")}</section>` : ""}
+      <section><div class="sechead"><div><h2>History</h2><p>Everything that happened to this issue, oldest first. Kept after it's resolved.</p></div></div>
+        <ol class="timeline2">${(i.log || []).map(([d, who, t]) => `<li><span class="when">${d}</span><span class="who">${esc(who)}</span><span>${esc(t)}</span></li>`).join("")}</ol></section>
+    </div>
       <div class="stack">
-        <div class="card stack"><span class="eyebrow">Target</span><b>${esc(i.target.label)}</b><div class="row"><span class="small muted">Now</span><span class="num">${esc(i.target.now)}</span><span class="small muted">Goal</span><span class="num">${esc(i.target.goal)}</span></div><span class="small muted">Solutions get an automatic pass or fail against this. You make the final call.</span></div>
+        <div class="card stack"><span class="eyebrow">Target</span><b>${esc(i.target.label)}</b><div class="row">${i.target.was ? `<span class="small muted">Was</span><span class="num">${esc(i.target.was)}</span>` : ""}<span class="small muted">Now</span><span class="num">${esc(i.target.now)}</span><span class="small muted">Goal</span><span class="num">${esc(i.target.goal)}</span></div><span class="small muted">Solutions get an automatic pass or fail against this. You make the final call.</span></div>
         <div class="card stack"><span class="eyebrow">Owners</span><div class="checks">${i.owners.map(o => `<span class="chip"><span class="avatar" style="width:20px;height:20px">${initials(o)}</span>${esc(person(o).name)}</span>`).join("")}</div></div>
-        <div class="card stack"><span class="eyebrow">Linked to</span><div class="checks"><span class="chip">Process: ${esc(i.proc === "company" ? "Company map" : nodeName(i.proc))}</span>${i.nodes.map(x => `<span class="chip">Step: ${esc(nodeName(x))}</span>`).join("")}</div></div>
+        <div class="card stack"><span class="eyebrow">Linked to</span><div class="checks"><span class="chip">Process: ${esc(pname(i.proc))}</span>${i.nodes.map(x => `<span class="chip">Step: ${esc(nodeName(x))}</span>`).join("")}</div></div>
         <div class="card stack"><div class="spread"><span class="eyebrow">Sources</span><button class="btn ghost sm" data-act="addsource" data-k="issue" data-id="${i.id}">+ Link</button></div>${SRC.filter(s => s.links.some(([k, v]) => k === "issue" && v === i.id)).map(s => `<div class="small"><b>${esc(s.title)}</b><div class="muted">“${esc(s.quote)}”</div></div>`).join("") || `<span class="small muted">None yet</span>`}</div>
       </div></div>`;
   },
   compare() {
-    const s = SOL.find(x => x.id === S.p), i = ISS.find(x => x.id === s.issue), groups = [...new Set(Object.keys(s.replace).flatMap(g => [...ancestors(g), g]).filter(g => g !== s.proc && desc(BASE, s.proc).has(g)))];
+    const s = SOL.find(x => x.id === S.p), groups = [...new Set(Object.keys(s.replace).flatMap(g => [...ancestors(g), g]).filter(g => g !== s.proc && desc(BASE, s.proc).has(g)))];
     const okey = "cmp-" + s.id;
-    return `<div class="head"><div class="t"><div class="crumbs"><button data-go="issues">Issues</button><span>›</span><button data-go="issue:${i.id}">#${i.id}</button><span>›</span><span>Compare</span></div>
-      <h1>${esc(s.name)}</h1><div class="row"><span class="src ${s.type === "AI block" ? "ai" : ""}">${esc(s.type)}</span><span class="small muted">For #${i.id} · ${esc(i.title)}</span></div></div>
-      <div class="row"><button class="btn edit" data-act="opensol" data-id="${s.id}">✎ Open in Editor</button></div></div>
+    return `<header class="head"><div class="t"><nav class="crumbs"><button data-go="solutions">Solutions</button><span>/</span><span>${esc(s.name)}</span></nav>
+      <h1>${esc(s.name)}</h1><div class="row"><span class="kind ${s.type === "AI block" ? "ai" : ""}">${s.type === "AI block" ? ico("suggestions") : ico("library")}${esc(s.type)}</span><span class="small muted">Built by ${esc(s.by)} · ${s.date} · changes ${esc(pname(s.proc))}</span></div></div>
+      <div class="row"><button class="btn edit" data-act="opensol" data-id="${s.id}">✎ Open in Editor</button></div></header>
+    <section><div class="sechead"><div><h2>Solves</h2><p>A solution can solve more than one issue. Each is judged against its own target.</p></div><button class="btn sm" data-act="linkissue" data-id="${s.id}">+ Link an issue</button></div>
+      ${s.for.length ? `<div class="solgrid">${s.for.map(f => { const i = ISS.find(x => x.id === f.issue); return `<div class="card stack">
+        <div class="spread"><button class="link" data-go="issue:${i.id}"><b>#${i.id} ${esc(i.title)}</b></button>${statusChip(i.status)}</div>
+        <span class="small muted">Target: ${esc(i.target.label)} ${esc(i.target.goal)}</span>
+        <div class="verdicts"><div><span class="eyebrow">Automatic</span>${verdict(f.auto)}</div>${f.robust ? `<div><span class="eyebrow">Holds in</span><span class="num">${f.robust}%</span></div>` : ""}<div><span class="eyebrow">Yours</span><div class="row"><button class="btn sm ${f.yours === "pass" ? "on" : ""}" data-act="verdict" data-id="${s.id}" data-i="${i.id}" data-v="pass">Pass</button><button class="btn sm ${f.yours === "fail" ? "on" : ""}" data-act="verdict" data-id="${s.id}" data-i="${i.id}" data-v="fail">Fail</button></div></div></div>
+        <p class="small">${esc(f.autoText)}</p></div>`; }).join("")}</div>` : `<div class="empty">Not linked to an issue yet.</div>`}</section>
+    <section><div class="sechead"><div><h2>Live vs this solution</h2><p>The two maps open and close together. Purple steps are new or changed.</p></div></div>
     <div class="grid2">
       ${mapBlock("cmpL-" + s.id, { root: s.proc, openKey: okey, defaultOpen: groups, title: "Live today", legend: false })}
       ${mapBlock("cmpR-" + s.id, { root: s.proc, tree: treeWith(s.replace), openKey: okey, defaultOpen: groups, title: "With this solution", deltas: s.deltas, legend: false })}
-    </div>
+    </div></section>
     <div class="side2"><div class="stack">
-      <div class="tblwrap"><table><thead><tr><th>Measure</th><th class="n">Live</th><th class="n">Solution</th><th>Better?</th></tr></thead><tbody>${s.rows.map(r => `<tr><td>${esc(r[0])}</td><td class="n">${r[1]}</td><td class="n">${r[2]}</td><td class="${r[3] ? "up" : "down"}">${r[3] ? "Better" : "Worse"}</td></tr>`).join("")}</tbody></table></div>
-      <div class="card chartcard"><div class="spread"><h3>MRR over ${S.h} months</h3><div class="legend"><span style="--pc:var(--accent)"><i></i>Live</span><span style="--pc:var(--edit)"><i></i>With solution</span></div></div>${lineBand(mrrSeries(S.h), v => "£" + Math.round(v / 1000) + "k", xlab(S.h), mrrSeries(S.h, s.auto === "pass" ? 1 : .2))}</div>
-      <section><div class="sechead"><h2>Market stress test</h2><p>Does it still meet the target under different market conditions?</p></div>
+      <div class="tblwrap"><table><thead><tr><th>Measure</th><th class="n">Live</th><th class="n">Solution</th><th>Change</th></tr></thead><tbody>${s.rows.map(r => `<tr><td>${esc(r[0])}</td><td class="n">${r[1]}</td><td class="n">${r[2]}</td><td class="${r[3] ? "up" : "down"}">${r[3] ? "Better" : "Worse"}</td></tr>`).join("")}</tbody></table></div>
+      <div class="card chartcard"><div class="spread"><h3>MRR over ${S.h} months</h3><div class="legend"><span style="--pc:var(--accent)"><i></i>Live</span><span style="--pc:var(--edit)"><i></i>With solution</span></div></div>${lineBand(mrrSeries(S.h), v => "£" + Math.round(v / 1000) + "k", xlab(S.h), mrrSeries(S.h, s.for.some(f => f.auto === "pass") ? 1 : .2))}</div>
+      <section><div class="sechead"><div><h2>Market stress test</h2><p>Does it still work under different market conditions?</p></div></div>
         <div class="tblwrap"><table><thead><tr><th>Market</th><th>Result</th><th>Key number</th></tr></thead><tbody>${s.stress.map(r => `<tr><td>${r[0]}</td><td>${verdict(r[1])}</td><td class="mono small">${r[2]}</td></tr>`).join("")}</tbody></table></div></section>
     </div><div class="stack">
-      <div class="card stack"><span class="eyebrow">Automatic verdict</span><div>${verdict(s.auto)}</div><p class="small">${esc(s.autoText)}</p><span class="small muted">Target: ${esc(i.target.label)} ${esc(i.target.goal)}</span></div>
-      <div class="card stack"><span class="eyebrow">Your verdict</span><div class="row"><button class="btn ${s.yours === "pass" ? "on" : ""}" data-act="verdict" data-id="${s.id}" data-v="pass">Pass</button><button class="btn ${s.yours === "fail" ? "on" : ""}" data-act="verdict" data-id="${s.id}" data-v="fail">Fail</button></div>
-        <label class="field">Note<textarea id="vnote-${s.id}" data-act="vnote" data-id="${s.id}">${esc(s.note)}</textarea></label></div>
-      <div class="note">Solutions never change the live map. To make this real, open the process in the Editor and build the new version yourself.</div>
+      <div class="card stack"><span class="eyebrow">Notes</span><label class="field">Anything worth knowing<textarea id="vnote-${s.id}" data-act="vnote" data-id="${s.id}">${esc(s.note)}</textarea></label></div>
+      <div class="note">Solutions never change the live map. To make one real, open the process in the Editor, build the new version and publish it.</div>
     </div></div>`;
   },
   history() {
@@ -959,7 +1039,7 @@ const SCREENS = {
   },
   library() {
     return `<div class="head"><div class="t"><span class="eyebrow">Work</span><h1>Block library</h1><p class="muted">Saved bundles of steps. Drop one into a solution, or into a process in the Editor. AI solutions are blocks too.</p></div><button class="btn edit" data-act="newblock">✎ New block</button></div>
-    <div class="solgrid">${Object.entries(BLK).map(([id, b]) => { const t = { root: { id: "root", name: b.name, cols: b.cols }, ...clone(b.defs) }; for (const k in b.defs) t[k].id = k; linkParents(t); MAPS["blk-" + id] = { root: "root", tree: t }; 
+    <div class="solgrid">${Object.entries(BLK).filter(([, b]) => !b.hidden).map(([id, b]) => { const t = { root: { id: "root", name: b.name, cols: b.cols }, ...clone(b.defs) }; for (const k in b.defs) t[k].id = k; linkParents(t); MAPS["blk-" + id] = { root: "root", tree: t }; 
       return `<div class="card sol"><div class="spread"><span class="src ${b.type === "AI" ? "ai" : ""}">${b.type}</span><span class="small muted">Used in ${SOL.filter(s => Object.values(s.replace).includes(id)).length} solutions</span></div><h3>${esc(b.name)}</h3><p class="small muted">${esc(b.desc)}</p><div id="ms-blk-${id}" style="overflow-x:auto">${renderMap("blk-" + id)}</div></div>`; }).join("")}</div>`;
   },
   people() {
@@ -981,8 +1061,12 @@ const SCREENS = {
       ${s.links.length ? `<div class="checks">${s.links.map(l => `<span class="chip">${esc(lab(l))}</span>`).join("")}</div>` : `<div class="warnbox">Not linked to anything yet. Link it, or it won't count as evidence.</div>`}</div>`).join("")}</div>`;
   },
   suggestions() {
-    return `<div class="head"><div class="t"><span class="eyebrow">Work</span><h1>Suggestions</h1><p class="muted">Everything AI proposes waits here. Nothing reaches the map, issues or settings until you accept it.</p></div></div>
-    ${SUG.length ? `<div class="stack">${SUG.map(g => `<div class="card spread"><div class="stack" style="gap:4px"><div class="row"><span class="chip">${g.kind}</span><span class="src ai">${esc(g.from)}</span></div><b>${esc(g.title)}</b><span class="small muted">${esc(g.detail)}</span></div><div class="row"><button class="btn" data-act="sugno" data-id="${g.id}">Reject</button><button class="btn primary" data-act="sugyes" data-id="${g.id}">Accept</button></div></div>`).join("")}</div>` : `<div class="card muted">Nothing waiting.</div>`}`;
+    const ideas = SUG.filter(g => g.kind === "Solution idea"), rest = SUG.filter(g => g.kind !== "Solution idea");
+    return `<header class="head"><div class="t"><span class="eyebrow">Improve</span><h1>Suggestions</h1><p class="muted">Everything AI proposes waits here. Nothing reaches the map, issues, solutions or settings until you act on it.</p></div></header>
+    <section><div class="sechead"><div><h2>Solution ideas</h2><p>Not built and not simulated. Build one to open the Editor with the AI's steps already placed; saving it turns it into a real solution.</p></div></div>
+      ${ideas.length ? ideas.map(ideaCard).join("") : `<div class="empty">No ideas waiting.</div>`}</section>
+    <section><div class="sechead"><div><h2>Other suggestions</h2><p>Proposed issues and changes to the company model.</p></div></div>
+    ${rest.length ? `<div class="stack">${rest.map(g => `<div class="card spread"><div class="stack" style="gap:4px"><div class="row"><span class="chip">${g.kind}</span><span class="kind ai">${ico("suggestions")}${esc(g.from)}</span></div><b>${esc(g.title)}</b><span class="small muted">${esc(g.detail)}</span></div><div class="row"><button class="btn" data-act="sugno" data-id="${g.id}">Reject</button><button class="btn primary" data-act="sugyes" data-id="${g.id}">Accept</button></div></div>`).join("")}</div>` : `<div class="empty">Nothing waiting.</div>`}</section>`;
   },
   settings() {
     const tabs = [["company", "Company"], ["services", "Services and client groups"], ["churn", "Churn drivers"], ["market", "Market conditions"], ["rules", "Analysis rules"], ["ai", "AI analysis"], ["levers", "Levers"], ["roles", "Roles and access"]];
@@ -1042,14 +1126,14 @@ SETTINGS.company = SETTINGS.placeholder; SETTINGS.roles = SETTINGS.placeholder;
 /* ---------------- Editor (its own screen) ---------------- */
 function startEditor(o) {
   const tree = clone(o.tree || BASE);
-  S.ed = { mode: o.mode, root: o.root, issue: o.issue || null, tree, sel: null, replaced: o.replaced || {}, sim: null, name: o.name || "", n: 0, back: [S.screen, S.p] };
+  S.ed = { mode: o.mode, root: o.root, issue: o.issue || null, tree, sel: null, replaced: o.replaced || {}, sim: null, name: o.name || "", idea: o.idea || null, n: 0, back: [S.screen, S.p] };
   S.open.ed = new Set(o.open || []); S.all.ed = false; S.zoom.ed = 1;
   go("editor");
 }
 function editorScreen() {
   const e = S.ed, iss = e.issue ? ISS.find(i => i.id === e.issue) : null;
-  const title = e.mode === "solution" ? `Solution for #${iss.id} · ${iss.title}` : e.mode === "block" ? "New block" : `Draft of ${e.root === "company" ? "Company map" : nodeName(e.root)}`;
-  const hint = e.mode === "solution" ? "The red outline is the area this issue touches. Select a step or group, then replace it with a block or edit it. Solutions are saved on their own and never change the live map."
+  const title = e.mode === "solution" ? (iss ? `Solution for #${iss.id} · ${iss.title}` : `New solution · ${pname(e.root)}`) : e.mode === "block" ? "New block" : `Draft of ${e.root === "company" ? "Company map" : nodeName(e.root)}`;
+  const hint = e.mode === "solution" && !iss ? "Change the steps, simulate, then save. You can link the solution to issues afterwards. Solutions never change the live map." : e.mode === "solution" ? "The red outline is the area this issue touches. Select a step or group, then replace it with a block or edit it. Solutions are saved on their own and never change the live map."
     : e.mode === "block" ? "Build a bundle of steps. Save it to the library and reuse it in any solution or process."
     : "You're editing a draft. The live map doesn't change until you publish. Publishing keeps the old version in History.";
   MAPS.ed = { root: e.root, tree: e.tree, region: iss ? iss.nodes : [], sel: e.sel, legend: false, deltas: e.sim ? e.sim.deltas : null, tall: true };
@@ -1064,7 +1148,7 @@ function editorScreen() {
   <div class="edbody">
     <div class="edcol l">
       <div class="stack" style="gap:8px"><span class="eyebrow">Add</span><div class="pal"><button data-act="edadd" data-k="Step">+ Step</button><button data-act="edadd" data-k="Decision">+ Decision</button><button data-act="edadd" data-k="Wait">+ Wait</button><button data-act="edadd" data-k="Group">+ Group</button></div><span class="small muted">Adds after the selected step.</span></div>
-      <div class="stack" style="gap:8px"><span class="eyebrow">Blocks</span>${Object.entries(BLK).map(([id, b]) => `<div class="blk"><div class="row"><b class="small">${esc(b.name)}</b><span class="src ${b.type === "AI" ? "ai" : ""}">${b.type}</span></div><span class="small muted">${leafCount({ r: { cols: b.cols }, ...b.defs }, "r")} steps</span><div class="btns"><button class="btn sm" data-act="edreplace" data-b="${id}">Replace selected</button><button class="btn sm" data-act="edinsert" data-b="${id}">Insert</button></div></div>`).join("")}</div>
+      <div class="stack" style="gap:8px"><span class="eyebrow">Blocks</span>${Object.entries(BLK).filter(([id, b]) => !b.hidden || Object.values(S.ed.replaced).includes(id)).map(([id, b]) => `<div class="blk"><div class="row"><b class="small">${esc(b.name)}</b><span class="src ${b.type === "AI" ? "ai" : ""}">${b.type}</span></div><span class="small muted">${leafCount({ r: { cols: b.cols }, ...b.defs }, "r")} steps</span><div class="btns"><button class="btn sm" data-act="edreplace" data-b="${id}">Replace selected</button><button class="btn sm" data-act="edinsert" data-b="${id}">Insert</button></div></div>`).join("")}</div>
       ${iss ? `<div class="stack" style="gap:6px"><span class="eyebrow">Issue area</span>${iss.nodes.map(x => `<button class="chip btnchip" data-act="edselect" data-id="${x}">${esc(nodeName(x))}</button>`).join("")}<span class="small muted">Target: ${esc(iss.target.label)} ${esc(iss.target.goal)}</span></div>` : ""}
     </div>
     <div class="edcanvas">${mapBlock("ed", MAPS.ed)}</div>
@@ -1085,8 +1169,9 @@ function editorScreen() {
 }
 function simFor(e) {
   const v = Object.values(e.replaced);
-  const pick = v.includes("blk_aiqual") ? "s4" : v.includes("blk_aireport") ? (e.issue === 14 ? "s3" : "s2") : v.includes("blk_split") ? "s1" : null;
-  if (pick) { const s = SOL.find(x => x.id === pick); return { rows: s.rows, deltas: s.deltas, auto: s.auto, autoText: s.autoText, robust: s.robust, stress: s.stress }; }
+  const pick = v.includes("blk_aiqual") ? "s4" : v.includes("blk_aireport") ? "s2" : v.includes("blk_split") ? "s1" : v.includes("blk_autoinv") ? "s5" : null;
+  if (v.includes("blk_fasttrack")) return { rows: [["Partner lead first contact", "1.4 d", "1.2 h", 1], ["Discovery calls booked", "55%", "60%", 1], ["New clients won (6 mo)", "23", "25", 1]], deltas: { f_route: "partner → skip", f_book: "−20 h wait" }, auto: "pass", autoText: "First contact for partner leads falls to 1.2 h; website leads unchanged.", robust: 78, stress: [["Stable", "pass", "1.2 h"], ["Soft", "pass", "1.1 h"], ["Downturn", "pass", "0.9 h"], ["Boom", "fail", "4.6 h"]] };
+  if (pick) { const s = SOL.find(x => x.id === pick); const f = s.for.find(x => x.issue === e.issue) || s.for[0]; return { rows: s.rows, deltas: s.deltas, auto: f.auto, autoText: f.autoText, robust: f.robust, stress: s.stress }; }
   return { rows: [["New clients won (6 mo)", "23", "23", 1], ["Lead to win", "9.6 d", "9.4 d", 1], ["Strategist busy (P90)", "97%", "96%", 1]], deltas: {}, auto: "fail", autoText: "Small change. The target is not met.", robust: 40, stress: [["Stable", "fail", "—"], ["Soft", "fail", "—"], ["Downturn", "fail", "—"], ["Boom", "fail", "—"]] };
 }
 function colOf(t, id) { const p = t[id].parent; const cols = t[p].cols; return { p, cols, ci: cols.findIndex(c => c.includes(id)) }; }
@@ -1116,6 +1201,16 @@ function stepModal(id, t = BASE) {
   <div class="stack" style="gap:6px"><span class="eyebrow">Confirmed issues</span>${iss.map(i => `<button class="chip btnchip" data-go="issue:${i.id}">#${i.id} ${esc(i.title)}</button>`).join("") || `<span class="small muted">None</span>`}</div>
   <div class="stack" style="gap:6px"><span class="eyebrow">Sources</span>${srcs.map(s => `<div class="small"><b>${esc(s.title)}</b> <span class="muted">“${esc(s.quote)}”</span></div>`).join("") || `<span class="small muted">None linked</span>`}</div></div>
   <div class="mfoot">${nd.cols ? `<button class="btn" data-go="process:${id}">Open as its own page</button>` : ""}<button class="btn edit" data-act="editdraft" data-p="${procOf(id) === id ? id : (nd.cols ? id : nd.parent)}">✎ Edit in Editor</button></div>`);
+}
+function resolveModal(id, how) {
+  const i = ISS.find(x => x.id === id), ss = solsOf(id);
+  const opt = (h, l, dsc) => `<label class="radio ${how === h ? "on" : ""}"><input type="radio" name="rshow" ${how === h ? "checked" : ""} data-act="resolvehow" data-id="${id}" data-h="${h}"><span><b>${l}</b><span class="small muted">${dsc}</span></span></label>`;
+  modal(`${mhead(`Resolve #${id}`, `<span class="small muted">${esc(i.title)}</span>`)}<div class="mbody">
+    <div class="stack" style="gap:8px">${opt("solution", "A solution fixed it", "Pick the solution you built into the live process.")}${opt("process", "We changed the process directly", "Fixed in the Editor without a separate solution.")}${opt("gone", "No longer a problem", "Something else changed, or it was a one-off.")}</div>
+    ${how === "solution" ? (ss.length ? `<label class="field">Solution<select id="rs-sol" class="inp">${ss.map(s => `<option value="${s.id}">${esc(s.name)} · ${(forOf(s, id).yours || forOf(s, id).auto).toUpperCase()}</option>`).join("")}</select></label>` : `<p class="small muted">No solutions tested for this issue yet.</p>`) : ""}
+    <label class="field">Note<textarea id="rs-note" placeholder="e.g. Built into Sales version 8"></textarea></label>
+    <span class="small muted">The issue leaves the map and the open list, but keeps its history and solutions.</span><div class="err" id="rs-err"></div></div>
+    <div class="mfoot"><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="resolvesave" data-id="${id}" data-h="${how}">Mark resolved</button></div>`);
 }
 let ACK = null;
 function ackModal(o) {
@@ -1179,8 +1274,8 @@ function renderEditorKeepScroll() { const c = document.getElementById("ms-ed"); 
 document.addEventListener("click", e => {
   const tg = e.target.closest("[data-toggle]");
   if (tg) { const key = tg.dataset.map, ok = MAPS[key]?.openKey || key, id = tg.dataset.toggle; const set = S.open[ok]; S.all[ok] = false; set.has(id) ? set.delete(id) : set.add(id); if (key === "ed") renderEditorKeepScroll(); else refreshMap(key); return; }
-  const gl = e.target.closest("[data-go]");
-  if (gl) { const [s, p] = gl.dataset.go.split(":"); if (s === "settings" && p) { S.settings = p; go("settings"); } else go(s, s === "issue" ? +p : p); return; }
+  const gl = e.target.closest("[data-go]"), ac = e.target.closest("[data-act]");
+  if (gl && !(ac && gl.contains(ac) && ac !== gl)) { const [s, p] = gl.dataset.go.split(":"); if (s === "settings" && p) { S.settings = p; go("settings"); } else go(s, s === "issue" ? +p : p); return; }
   const a = e.target.closest("[data-act]");
   const nodeEl = e.target.closest("[data-node]");
   if (!a && nodeEl) {
@@ -1223,7 +1318,7 @@ const ACTIONS = {
     const nodes = o.scope === "process" ? [o.proc] : o.nodes;
     if (o.edit) { Object.assign(ISS.find(i => i.id === o.edit), { title: o.title, rating: o.rating, nodes, owners: o.owners, sources: o.sources, target: { ...ISS.find(i => i.id === o.edit).target, label: o.target.label, goal: o.target.goal }, scope: o.scope }); closeModal(); render(); toast("Issue saved."); return; }
     const id = S.nextIssue++;
-    ISS.push({ id, title: o.title, rating: o.rating, status: "Open", proc: o.proc, nodes, scope: o.scope, owners: o.owners, sources: o.sources, target: { label: o.target.label || "Set a target", now: "—", goal: o.target.goal || "—" }, from: o.fromInsight || null, desc: o.fromInsight ? INS.find(i => i.id === o.fromInsight).found : "Logged by hand.", created: "1 Oct" });
+    ISS.push({ id, title: o.title, rating: o.rating, status: "Open", proc: o.proc, nodes, scope: o.scope, owners: o.owners, sources: o.sources, target: { label: o.target.label || "Set a target", now: "—", goal: o.target.goal || "—" }, from: o.fromInsight || null, desc: o.fromInsight ? INS.find(i => i.id === o.fromInsight).found : "Logged by hand.", created: "1 Oct", log: [["1 Oct", "Austin", o.fromInsight ? `Logged from insight, rated ${RT[o.rating].l}.` : `Logged by hand, rated ${RT[o.rating].l}.`]] });
     o.sources.forEach(sid => SRC.find(s => s.id === sid).links.push(["issue", id]));
     if (o.fromInsight) INS.find(i => i.id === o.fromInsight).ack = id;
     closeModal(); const y = window.scrollY; render(); window.scrollTo(0, y); toast(`Logged as issue #${id}. It now shows on the map.`);
@@ -1234,7 +1329,7 @@ const ACTIONS = {
   aireview(d) { toast("AI review running… it reads this run, the first principles and linked sources."); setTimeout(() => toast("AI review done. No new insights since the last run."), 1600); },
   editdraft(d) { const pid = d.p || "sales"; startEditor({ mode: "draft", root: pid }); },
   buildsol(d) { const i = ISS.find(x => x.id === +d.id); const root = i.proc; startEditor({ mode: "solution", root, issue: i.id, open: [...new Set(i.nodes.flatMap(x => ancestors(x)).filter(a => desc(BASE, root).has(a) && a !== root))], name: "" }); },
-  opensol(d) { const s = SOL.find(x => x.id === d.id); startEditor({ mode: "solution", root: s.proc, issue: s.issue, tree: treeWith(s.replace), replaced: { ...s.replace }, open: Object.keys(s.replace), name: s.name + " (copy)" }); },
+  opensol(d) { const s = SOL.find(x => x.id === d.id); startEditor({ mode: "solution", root: s.proc, issue: s.for[0]?.issue, tree: treeWith(s.replace), replaced: { ...s.replace }, open: Object.keys(s.replace), name: s.name + " (copy)" }); },
   newblock() { const t = { blkroot: { id: "blkroot", name: "New block", cols: [["nb1"]] }, nb1: { id: "nb1", name: "New step", role: "am", h: 1, w: 0, added: true, parent: "blkroot" } }; startEditor({ mode: "block", root: "blkroot", tree: t, name: "" }); },
   edexit() { const [s, p] = S.ed.back; S.ed = null; delete MAPS.ed; go(s === "editor" ? "overview" : s, p); },
   edname(d, a) { },
@@ -1255,8 +1350,10 @@ const ACTIONS = {
     const e = S.ed, name = ($("#ed-name")?.value || "").trim(); if (!name) { toast("Name the solution first (top bar)."); $("#ed-name")?.focus(); return; }
     const sim = e.sim || simFor(e); const id = "s" + (S.nextSol++);
     const replace = {}; for (const [g, b] of Object.entries(e.replaced)) if (BASE[g]) replace[g] = b;
-    SOL.push({ id, issue: e.issue, name, type: Object.values(e.replaced).some(b => BLK[b].type === "AI") ? "AI block" : "Redesign", date: "1 Oct", proc: Object.keys(replace).length ? procOf(Object.keys(replace)[0]) : e.root, replace, auto: sim.auto, autoText: sim.autoText, robust: sim.robust, yours: null, note: "", rows: sim.rows, deltas: sim.deltas, stress: sim.stress });
-    const iss = ISS.find(i => i.id === e.issue); iss.status = "Testing solutions";
+    SOL.push({ id, name, by: "Austin", type: Object.values(e.replaced).some(b => BLK[b].type === "AI") ? "AI block" : "Redesign", date: "1 Oct", proc: Object.keys(replace).length ? procOf(Object.keys(replace)[0]) : e.root, replace, note: "", rows: sim.rows, deltas: sim.deltas, stress: sim.stress,
+      for: e.issue ? [{ issue: e.issue, auto: sim.auto, autoText: sim.autoText, robust: sim.robust, yours: null }] : [] });
+    if (e.issue) { const iss = ISS.find(i => i.id === e.issue); iss.status = "Testing solutions"; logIssue(e.issue, `${e.idea ? "Built AI idea" : "Tested solution"} “${name}”. Automatic verdict: ${sim.auto}${sim.robust ? `, holds in ${sim.robust}%` : ""}.`); }
+    if (e.idea) SUG = SUG.filter(g => g.id !== e.idea);
     S.ed = null; delete MAPS.ed; go("compare", id); toast("Solution saved. Here it is next to live.");
   },
   edsavedraft() { toast("Draft saved. Live is unchanged."); },
@@ -1264,7 +1361,25 @@ const ACTIONS = {
   edpubok() { const pid = S.ed.root; const vs = VERSIONS[pid] || (VERSIONS[pid] = clone(VERSIONS.sales)); vs.forEach(v => v.live = false); vs.unshift({ v: vs[0].v + 1, date: "1 Oct 2026", by: "Austin", note: "Published from the Editor", wins: vs[0].wins, cycle: vs[0].cycle, live: true }); S.ed = null; delete MAPS.ed; go("history", pid); toast("Published. The previous version is kept below."); },
   edsaveblk() { const e = S.ed, name = ($("#ed-name")?.value || "").trim(); if (!name) { toast("Name the block first (top bar)."); return; } const id = "blk_" + Date.now(); const defs = {}; for (const k of desc(e.tree, e.root)) if (k !== e.root && !e.tree[k].cols) { const { id: _, parent, added, ...rest } = e.tree[k]; defs[k] = rest; } BLK[id] = { name, type: "Manual", desc: "Saved from the Editor.", cols: clone(e.tree[e.root].cols.filter(c => c.every(x => defs[x]))), defs }; S.ed = null; delete MAPS.ed; go("library"); toast("Block saved to the library."); },
   edsaveselblk() { const e = S.ed, g = e.tree[e.sel]; const defs = {}; for (const k of desc(e.tree, e.sel)) if (k !== e.sel && !e.tree[k].cols) { const { id: _, parent, added, ...rest } = e.tree[k]; defs[k] = rest; } BLK["blk_" + Date.now()] = { name: g.name, type: "Manual", desc: "Saved from the Editor.", cols: clone(g.cols.map(c => c.filter(x => defs[x])).filter(c => c.length)), defs }; toast(`Saved “${g.name}” to the block library.`); renderEditorKeepScroll(); },
-  verdict(d) { const s = SOL.find(x => x.id === d.id); s.yours = s.yours === d.v ? null : d.v; if (s.yours === "pass") ISS.find(i => i.id === s.issue).status = "Solution passed"; const y = window.scrollY; render(); window.scrollTo(0, y); },
+  verdict(d) { const s = SOL.find(x => x.id === d.id), f = forOf(s, +d.i); f.yours = f.yours === d.v ? null : d.v; if (f.yours) logIssue(+d.i, `Marked “${s.name}” as ${f.yours}.`); const y = window.scrollY; render(); window.scrollTo(0, y); toast(f.yours ? `Marked ${f.yours} for #${d.i}. Logged in the issue's history.` : "Verdict cleared."); },
+  seeresolved() { S.issueView = "resolved"; go("issues"); },
+  procview(d) { S.procView = d.v; render(); },
+  issueview(d) { S.issueView = d.v; render(); },
+  buildidea(d) { const g = SUG.find(x => x.id === d.id); const i = ISS.find(x => x.id === g.issue); const t = treeWith({ [g.target]: g.block }); startEditor({ mode: "solution", root: procOf(g.target), issue: i.id, tree: t, replaced: { [g.target]: g.block }, open: [...ancestors(g.target).filter(a => a !== "company" && a !== procOf(g.target)), g.target], name: g.title, idea: g.id }); toast("The AI's steps are placed. Adjust them, simulate, then save."); },
+  newsol() { modal(`${mhead("New solution", `<span class="small muted">Pick the process it changes. You can link issues after.</span>`)}<div class="mbody"><div class="stack" style="gap:4px">${procList().filter(([id]) => id !== "company").map(([id, dd]) => `<button class="nav" style="padding-left:${dd * 14}px" data-act="newsolgo" data-p="${id}"><span class="cdot" style="background:${RT[BASE[id].rating].c}"></span>${esc(BASE[id].name)}</button>`).join("")}</div></div>`); },
+  newsolgo(d) { startEditor({ mode: "solution", root: d.p, name: "" }); },
+  linkissue(d) { const s = SOL.find(x => x.id === d.id); const opts = ISS.filter(i => isOpenIssue(i) && !forOf(s, i.id)); modal(`${mhead("Link an issue", `<span class="small muted">${esc(s.name)} will be judged against that issue's target.</span>`)}<div class="mbody">${opts.length ? `<div class="stack" style="gap:6px">${opts.map(i => `<button class="nav" data-act="linkissuego" data-id="${s.id}" data-i="${i.id}">${pill(i.rating)}<span>#${i.id} ${esc(i.title)}</span></button>`).join("")}</div>` : `<p class="muted">Every open issue is already linked.</p>`}</div>`); },
+  linkissuego(d) { const s = SOL.find(x => x.id === d.id), i = ISS.find(x => x.id === +d.i); s.for.push({ issue: i.id, auto: "pass", autoText: `Checked against “${i.target.label} ${i.target.goal}” (sample result).`, robust: 72, yours: null }); logIssue(i.id, `Linked solution “${s.name}”. Automatic verdict: pass, holds in 72%.`); if (i.status === "Open") i.status = "Testing solutions"; closeModal(); render(); toast(`Linked to #${i.id}.`); },
+  resolve(d) { resolveModal(+d.id, "solution"); },
+  resolvehow(d) { const n = $("#rs-note")?.value; resolveModal(+d.id, d.h); if (n) $("#rs-note").value = n; },
+  resolvesave(d) {
+    const i = ISS.find(x => x.id === +d.id), how = d.h, note = $("#rs-note").value.trim(), sol = $("#rs-sol")?.value;
+    if (how === "solution" && !sol) { $("#rs-err").textContent = "Pick the solution that fixed it, or choose another option."; return; }
+    i.status = "Resolved"; i.resolved = { date: "1 Oct", how, sol, note };
+    logIssue(i.id, how === "solution" ? `Resolved by solution “${SOL.find(x => x.id === sol).name}”.${note ? " " + note : ""}` : how === "process" ? `Resolved by changing the process directly.${note ? " " + note : ""}` : `Resolved: no longer a problem.${note ? " " + note : ""}`);
+    closeModal(); render(); toast(`Issue #${i.id} resolved. It's off the map but keeps its history.`);
+  },
+  reopen(d) { const i = ISS.find(x => x.id === +d.id); i.status = "Open"; delete i.resolved; logIssue(i.id, "Reopened."); render(); toast(`Issue #${i.id} reopened.`); },
   viewver(d) { S.viewVersion = { p: d.p, v: +d.v }; go("process", d.p); },
   backlive() { S.viewVersion = null; render(); },
   restore(d) { toast(`Version ${d.v} restored as a new draft. Open the Editor to review and publish it.`); },
@@ -1278,7 +1393,7 @@ const ACTIONS = {
     else { const t = $("#src-title").value.trim(); if (!t) { err.textContent = "Give the source a title."; return; } SRC.push({ id: "src" + (SRC.length + 1), title: t, type: $("#src-type").value, date: $("#src-date").value, quote: $("#src-quote").value || "(no excerpt)", links: [[k, v]] }); }
     closeModal(); if (S.screen === "editor") renderEditorKeepScroll(); else render(); toast("Source linked.");
   },
-  sugyes(d) { const g = SUG.find(x => x.id === d.id); SUG = SUG.filter(x => x.id !== d.id); if (g.kind === "Issue") { const id = S.nextIssue++; ISS.push({ id, title: g.title, rating: "good", status: "Open", proc: "acct", nodes: g.nodes, owners: ["austin"], sources: [], target: { label: "Wait at Ad-hoc requests", now: "20 h", goal: "under 8 h" }, from: null, desc: "Accepted from an AI suggestion.", created: "1 Oct" }); render(); toast(`Accepted. Now issue #${id}.`); } else { render(); toast("Accepted."); } },
+  sugyes(d) { const g = SUG.find(x => x.id === d.id); SUG = SUG.filter(x => x.id !== d.id); if (g.kind === "Issue") { const id = S.nextIssue++; ISS.push({ id, title: g.title, rating: "good", status: "Open", proc: "acct", nodes: g.nodes, owners: ["austin"], sources: [], target: { label: "Wait at Ad-hoc requests", now: "20 h", goal: "under 8 h" }, from: null, desc: "Accepted from an AI suggestion.", created: "1 Oct", log: [["1 Oct", "Austin", "Accepted from an AI suggestion."]] }); render(); toast(`Accepted. Now issue #${id}.`); } else { render(); toast("Accepted."); } },
   sugno(d) { SUG = SUG.filter(x => x.id !== d.id); render(); toast("Rejected."); },
   stab(d) { S.settings = d.k; render(); },
   adddrv() { DRV.push({ id: "c" + Date.now(), name: "New driver", src: "You enter it", w: 1, on: true, val: "Set a value", base: .05, custom: true }); render(); },

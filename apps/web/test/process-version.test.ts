@@ -7,6 +7,6 @@ describe("parseVersion", () => {
     expect(parseVersion(["2", "5"])).toBe(2);
   });
   it("shows live for anything else", () => {
-    for (const v of [undefined, "", "0", "-1", "1.5", "abc"]) expect(parseVersion(v)).toBeNull();
+    for (const v of [undefined, "", "0", "-1", "1.5", "abc", "1e3", "0x10", "99999999999"]) expect(parseVersion(v)).toBeNull();
   });
 });

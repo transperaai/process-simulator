@@ -9,12 +9,12 @@ import { formatHours } from "@/lib/format";
 
 const SHOWN = 7;
 
-export function WaitByStep({ model, result }: { model: EngineModel; result: SimulationResult | null }) {
+export function WaitByStep({ model, result, stepIds }: { model: EngineModel; result: SimulationResult | null; /** The steps of this process (and those inside it): the model may hold more, such as a pipeline run beside a servicing process. */ stepIds: ReadonlySet<string> }) {
   const rows = result
     ? model.steps
         .flatMap((s) => {
           const r = result.steps[s.id];
-          return r && r.arrivals > 0 ? [{ id: s.id, label: s.name, hours: r.avgWait }] : [];
+          return r && r.arrivals > 0 && stepIds.has(s.id) ? [{ id: s.id, label: s.name, hours: r.avgWait }] : [];
         })
         .sort((a, b) => b.hours - a.hours)
         .slice(0, SHOWN)

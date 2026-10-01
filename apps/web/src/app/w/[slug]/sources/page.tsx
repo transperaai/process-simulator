@@ -21,7 +21,7 @@ export default async function WorkspaceSourcesPage(props: PageProps<"/w/[slug]/s
         sources={data.sources}
         citations={data.citations}
         mode={canEdit ? "live" : "readonly"}
-        processHref={`/w/${slug}`}
+        processBase={`/w/${slug}/p`}
       />
     </Page>
   );

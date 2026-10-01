@@ -50,7 +50,7 @@ export function SourcesPage({
   sources: initial,
   citations,
   mode,
-  processHref,
+  processBase,
 }: {
   workspaceId: string;
   sources: SourceRow[];
@@ -58,7 +58,7 @@ export function SourcesPage({
   citations: Record<string, SourceCitation[]>;
   mode: "live" | "demo" | "readonly";
   /** Link to the process page, so a citing step can be opened. */
-  processHref?: string;
+  processBase?: string;
 }) {
   const canEdit = mode !== "readonly";
   const [store] = useState<SourceStore>(() => (mode === "live" ? liveSourceStore(workspaceId) : new MemorySourceStore(workspaceId, initial)));
@@ -114,7 +114,7 @@ export function SourcesPage({
                 citations={citations[s.id] ?? []}
                 canEdit={canEdit}
                 saver={saver}
-                processHref={processHref}
+                processBase={processBase}
                 onRemove={async () => {
                   const r = await store.remove(s.id);
                   if (r.status === "error") setError(r.message);
@@ -129,7 +129,7 @@ export function SourcesPage({
       {orphans.length > 0 && (
         <section aria-label="Citations of deleted sources" className="rounded-lg border border-warn bg-warn-soft p-3 text-xs">
           <h2 className="mb-1 text-sm font-bold">Citing a deleted source</h2>
-          <Citations citations={orphans.flatMap(([, list]) => list)} processHref={processHref} />
+          <Citations citations={orphans.flatMap(([, list]) => list)} processBase={processBase} />
         </section>
       )}
     </div>
@@ -142,7 +142,7 @@ function SourceItem({
   canEdit,
   saver,
   onRemove,
-  processHref,
+  processBase,
   cited,
 }: {
   source: SourceRow;
@@ -150,7 +150,7 @@ function SourceItem({
   canEdit: boolean;
   saver: (id: string, field: SourceField) => Saver<string | null>;
   onRemove: () => Promise<void>;
-  processHref?: string;
+  processBase?: string;
   cited: boolean;
 }) {
   const [confirming, setConfirming] = useState(false);
@@ -166,7 +166,7 @@ function SourceItem({
           {citations.length ? `Cited by ${citations.length} value${citations.length === 1 ? "" : "s"}` : "Not cited yet"}
         </span>
       </header>
-      <Citations citations={citations} processHref={processHref} />
+      <Citations citations={citations} processBase={processBase} />
       <details className="mt-2">
         <summary className="cursor-pointer text-fg-2 hover:underline">{canEdit ? "Details and edit" : "Details"}</summary>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
@@ -225,7 +225,7 @@ function SourceItem({
   );
 }
 
-function Citations({ citations, processHref }: { citations: SourceCitation[]; processHref?: string }) {
+function Citations({ citations, processBase }: { citations: SourceCitation[]; processBase?: string }) {
   if (!citations.length) return null;
   return (
     <ul aria-label="Values citing this source" className="mt-2 flex flex-col gap-1.5">
@@ -235,8 +235,8 @@ function Citations({ citations, processHref }: { citations: SourceCitation[]; pr
         return (
           <li key={`${c.table}:${c.rowId}:${c.column}:${i}`} className="rounded-lg bg-panel-2 px-2 py-1.5 text-xs">
             <p className="flex flex-wrap items-baseline gap-x-2">
-              {c.processId && processHref ? (
-                <a href={processHref} className="font-semibold hover:underline">
+              {c.processId && processBase ? (
+                <a href={`${processBase}/${c.processId}`} className="font-semibold hover:underline">
                   {what}
                 </a>
               ) : (

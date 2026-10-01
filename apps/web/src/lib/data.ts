@@ -115,26 +115,21 @@ export async function loadProcessForEditing(
 }
 
 /**
- * An earlier version of a process, for "Viewing version N · read only" (issue #103): the published revision numbered
+ * An earlier version of the process `live` is, for "Viewing version N · read only" (issue #103): the published revision numbered
  * `number` if it is not the live one, else null (the caller shows live). A draft is never an old version.
  */
-export async function loadProcessVersion(slug: string, processId: string, number: number): Promise<ProcessBundle | null> {
+export async function loadProcessVersion(live: ProcessBundle, number: number): Promise<ProcessBundle | null> {
   const supabase = await createClient();
-  const { data: workspace, error } = await supabase.from("workspaces").select("id, name, slug, settings").eq("slug", slug).maybeSingle();
-  if (error) throw error;
-  if (!workspace) return null;
-  const process = (await listProcesses(supabase, workspace.id)).find((p) => p.id === processId);
-  if (!process) return null;
-  const { data: revision, error: revError } = await supabase
+  const { data: revision, error } = await supabase
     .from("process_revisions")
-    .select("id, status")
-    .eq("process_id", processId)
+    .select("id")
+    .eq("process_id", live.process.id)
     .eq("number", number)
     .in("status", ["published", "superseded"])
     .maybeSingle();
-  if (revError) throw revError;
-  if (!revision || revision.id === process.live_revision_id) return null;
-  return loadProcessBundle(supabase, workspace, process, revision.id);
+  if (error) throw error;
+  if (!revision || revision.id === live.revision.id) return null;
+  return loadProcessBundle(supabase, live.workspace, live.process, revision.id);
 }
 
 /**

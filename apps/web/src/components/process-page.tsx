@@ -4,21 +4,28 @@
 // drawers. First principles, Projection, Map, Insights, Issues, Solutions, then Supporting data. Editing happens in the
 // Editor (A39), which "✎ Open in Editor" opens; History (A40) lists the earlier versions this page can show.
 
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { IssueRow, ProcessBundle, ScenarioRow, SourceRow } from "@transpera-flow/db";
-import { RATING_LABELS, type AnalysisSettings, type Rating } from "@transpera-flow/engine";
+import { RATING_LABELS, type AnalysisSettings, type EngineModel, type Rating } from "@transpera-flow/engine";
 import { Help } from "@/components/help";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { withHorizon } from "@/lib/editor/modes";
-import { horizonWeeks, isHorizonMonths } from "@/lib/horizon";
+import { horizonWeeks, isHorizonMonths, monthsForWeeks } from "@/lib/horizon";
+import { useHiddenLevers } from "@/lib/levers/use-hidden-levers";
+import { headlineCards } from "@/lib/overview/headline";
+import { mrrAfter, startingMrr, summarise } from "@/lib/overview/projection";
+import { resolveRun } from "@/lib/scenarios/broken";
+import { leverKind, visibleLevers } from "@/lib/scenarios/lever-catalogue";
+import { buildLevers, leverPatches, type LeverValues } from "@/lib/scenarios/levers";
 import { useSimulation } from "@/lib/sim/use-simulation";
 import { HorizonPicker } from "./horizon-picker";
-import { KpiStrip } from "./kpi-strip";
+import { LeverPanel } from "./lever-panel";
+import { HeadlineCards } from "./overview/headline-cards";
 import { ProcessCanvas } from "./process-canvas";
 import { useProcessIssues } from "./process-issues";
 import { useEngineModel, type EditMode } from "./process-view";
@@ -51,6 +58,8 @@ export function ProcessPage({
   issues = [],
   sources = [],
   analysisRules,
+  hiddenLevers,
+  rating,
   registerHref,
   settingsHref,
   editHref,
@@ -71,6 +80,10 @@ export function ProcessPage({
   issues?: IssueRow[];
   sources?: SourceRow[];
   analysisRules?: AnalysisSettings;
+  /** The lever kinds the workspace has switched off in Settings -> Levers (the demo keeps its own in the tab). */
+  hiddenLevers?: string[];
+  /** The process's rating: the worst of its open issues and of those of the processes inside it, as the switcher shows it. */
+  rating?: Rating | null;
   registerHref?: string;
   settingsHref?: string;
   /** The Editor for this process, if the viewer may edit. */
@@ -96,6 +109,29 @@ export function ProcessPage({
   const { model, error } = useEngineModel(bundle, pickedMonths === null ? null : horizonWeeks(pickedMonths));
   const sim = useSimulation(model);
   const result = sim.run?.result ?? null;
+
+  // The levers (A58): slider values live in memory. They change the projection only; the map, insights and issues
+  // keep reading the process as it is.
+  const hidden = useHiddenLevers(mode === "demo", hiddenLevers);
+  const leversHref = settingsHref ? `${settingsHref}/levers` : mode === "demo" ? "/demo/settings/levers" : undefined;
+  const [values, setValues] = useState<LeverValues>({});
+  const levers = useMemo(() => visibleLevers(model ? buildLevers(model) : [], hidden), [model, hidden]);
+  const hiddenCount = hidden.filter((id) => leverKind(id)?.control === "slider").length;
+  const moved = useMemo(() => leverPatches(levers, values), [levers, values]);
+  const resolved = useMemo(() => (model && moved.length ? resolveRun(model, moved, {}) : null), [model, moved]);
+  const projKey = resolved?.ok ? JSON.stringify(resolved.model) : null;
+  const projModel = useMemo(() => (projKey ? (JSON.parse(projKey) as EngineModel) : null), [projKey]);
+  const projSim = useSimulation(projModel);
+  const projected = projModel ? projModel : model;
+  const projectedResult = projModel ? (projSim.status === "done" ? projSim.run.result : null) : sim.status === "done" ? result : null;
+  const months = projected ? (monthsForWeeks(projected.horizonWeeks) ?? Math.max(1, Math.round(projected.horizonWeeks / (52 / 12)))) : 0;
+  const cards = useMemo(() => {
+    if (!projected || !projectedResult) return null;
+    const start = startingMrr(projected);
+    const mrr = mrrAfter(projected, summarise(projected, projectedResult), start);
+    return headlineCards({ model: projected, result: projectedResult, mrr, start, months, currency: bundle.workspace.settings.currency });
+  }, [projected, projectedResult, months, bundle.workspace.settings.currency]);
+  const levStatus = !projModel ? "Every change re-runs the simulation." : projSim.status === "running" ? "Simulating…" : projSim.status === "error" ? "Simulation failed" : "Projection updated";
   const sourceTitles = Object.fromEntries(sources.map((s) => [s.id, s.title]));
 
   // Back to live: the same address without ?version=.
@@ -120,8 +156,22 @@ export function ProcessPage({
     onShowIssues: () => document.getElementById("issues")?.scrollIntoView({ behavior: "smooth", block: "start" }),
   });
 
-  const rating = issuesUi.processRating;
   const old = viewingVersion !== null;
+  // The steps of this process and of the processes inside it, which the wait chart is about (the model may hold more).
+  const stepIds = useMemo(() => {
+    const inside = new Set([bundle.process.id]);
+    const others = bundle.otherProcesses ?? [];
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const o of others) {
+        if (!inside.has(o.process.id) && o.process.parent_process_id && inside.has(o.process.parent_process_id)) {
+          inside.add(o.process.id);
+          grew = true;
+        }
+      }
+    }
+    return new Set([...bundle.steps, ...others.filter((o) => inside.has(o.process.id)).flatMap((o) => o.steps)].map((x) => x.id));
+  }, [bundle]);
   const unpublished = liveVersion === 0;
 
   return (
@@ -164,8 +214,8 @@ export function ProcessPage({
                 {RATING_LABELS[rating]}
                 <Help
                   label="Process rating"
-                  description="The worst rating among this process's confirmed open issues. Great, Good, Bad, or Operational risk. Insights nobody has confirmed yet don't count."
-                  example="Bad: one confirmed issue is rated Bad and none is worse."
+                  description="The worst rating among the confirmed open issues on this process and the processes inside it: Great, Good, Bad or Operational risk. Insights nobody has confirmed yet don't count."
+                  example="Bad, not urgent: one confirmed issue is rated Bad and none is worse."
                 />
               </span>
             )}
@@ -218,7 +268,26 @@ export function ProcessPage({
           {model ? (
             <div className="flex flex-col gap-3">
               <HorizonPicker weeks={model.horizonWeeks} onChange={pickHorizon} />
-              <KpiStrip model={model} currency={bundle.workspace.settings.currency} result={result} status={sim.status} durationMs={sim.run?.durationMs} />
+              <HeadlineCards cards={cards} />
+              {levers.length > 0 && (
+                <LeverPanel
+                  levers={levers}
+                  hiddenCount={hiddenCount}
+                  settingsHref={leversHref}
+                  values={values}
+                  currency={bundle.workspace.settings.currency}
+                  status={levStatus}
+                  onChange={(path, v) =>
+                    setValues((prev) => {
+                      const next = { ...prev };
+                      if (v === undefined) delete next[path];
+                      else next[path] = v;
+                      return next;
+                    })
+                  }
+                  onReset={() => setValues({})}
+                />
+              )}
             </div>
           ) : (
             <p className="text-sm text-fg-2">Nothing to project until the process can be simulated.</p>
@@ -291,7 +360,7 @@ export function ProcessPage({
         <Section id="supporting-data" title="Supporting data" hint="From the latest run.">
           {model ? (
             <div className="grid gap-3 md:grid-cols-2">
-              <WaitByStep model={model} result={result} />
+              <WaitByStep model={model} result={result} stepIds={stepIds} />
               <UtilisationBars model={model} result={result} />
             </div>
           ) : (

@@ -99,6 +99,7 @@ export function UtilisationBars({ model, result }: { model: EngineModel; result:
             example="Designer at 92% means designers are booked almost every hour, so new work waits for them."
           />
         </h2>
+        <div className="flex items-center">
         <div role="group" aria-label="Show utilisation by" className="flex rounded-token border border-line-2 p-0.5 text-xs">
           {(["roles", "people"] as const).map((v) => (
             <button
@@ -111,6 +112,12 @@ export function UtilisationBars({ model, result }: { model: EngineModel; result:
               {v}
             </button>
           ))}
+        </div>
+        <Help
+          label="Roles or people"
+          description="Roles adds up everyone who does the same kind of work. People shows each person on their own, so you can see who carries the load."
+          example="Roles: Designer × 3 at 70%. People: Priya at 95%, Tom at 60%, Rosa at 55%."
+        />
         </div>
       </div>
       <ul className="flex flex-col gap-2">

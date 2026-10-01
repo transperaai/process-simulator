@@ -115,7 +115,7 @@ to draft) waits until A37 and A54, so the extraction skill can write nested proc
 | **B4** #33 Play links and Proposals | **Rewrite** | A visitor's proposal arrives in Suggestions (A52), not a separate queue. |
 | **B5** #34 Client branding | **Keep** | Unchanged. |
 | **B6** #35 Forecast: forward run and alerts | **Rewrite** | The horizon picker and market schedule cover the forward run. What's left is "will someone become too busy, and when?" alerts as insights, and a monthly timeline chart. |
-| **B7** #36 Forecast planning | **Rewrite, smaller** | Schedule a hire, leave or solution for a month on the timeline, and compare two plans. Keep the drag-and-drop if wanted (see question 3). |
+| **B7** #36 Forecast planning | **Keep, rewrite the spec** | Drag hire, leave and solution markers along the timeline, and compare two plans. Uses client groups and the market schedule. |
 | **B8** #37 Company map and sub-processes | **Close: moved to A37** | Done in the redesign. |
 | **B9** #38 Issues kanban, filters, CSV | **Close the kanban; move CSV to B10** | Filters are in A48, and you haven't asked for a kanban. |
 | **B10** #39 Map image export and JSON bundle | **Keep, add CSV export of issues** | Unchanged otherwise. |
@@ -130,10 +130,11 @@ to draft) waits until A37 and A54, so the extraction skill can write nested proc
 | **C4** #43 Storybook and visual regression | Keep. Best done once Austin's UI kit exists. |
 | **C5** #44 Polish | Keep: dark mode, mobile view, onboarding, empty states, Sentry. |
 
-## Questions for Austin
+## Decided (1 Oct)
 
-1. Is it right to put the redesign in **Milestone A** (A31–A58), rather than a separate milestone?
-2. Named clients: is it right to **hide** them (data kept, nothing shown), not delete them?
-3. **B7** forecast planning: keep the drag-and-drop timeline, or just a simple "schedule this for month N" form?
-4. **B9** kanban: is it right to drop it?
-5. Your UI kit: start the redesign on today's styles and switch to the kit later, or wait for it?
+1. The redesign lives in **Milestone A** as A31–A58.
+2. Named clients are **hidden, with the data kept**.
+3. **B7 keeps the drag-and-drop timeline**: drag hire, leave and solution markers along it.
+4. **UI style:** Austin wants a more modern look now, from a shadcn theme or preset he'll supply. It's applied in A33
+   (app shell v2), and the prototype is re-skinned to match before the tickets are written.
+5. B9's kanban is dropped (not objected to).

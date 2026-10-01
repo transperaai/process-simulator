@@ -2,10 +2,11 @@
 // write to the database as the signed-in user; `MemoryIssueStore` keeps them
 // in memory for the public demo (lost on reload) and for tests.
 
-import { isVisibleIssue, type IssueRow } from "@transpera-flow/db";
+import { isVisibleIssue, type IssueEventKind, type IssueEventRow, type IssueRow, type ResolveHow } from "@transpera-flow/db";
 import type { SaveOutcome } from "@/lib/fields/field-controller";
 import {
   cleanFieldValue,
+  parseResolveInput,
   isIssueField,
   parseIssueInput,
   parsePromoteInput,
@@ -34,10 +35,16 @@ export interface IssueStore {
   /** Save one field if its stored value is still `base` (per-field saves). */
   saveField(id: string, field: IssueField, base: Scalar, value: Scalar): Promise<SaveOutcome<Scalar>>;
   remove(id: string): Promise<RemoveIssueResult>;
+  /** Mark an issue resolved, saying how and leaving a note. One history entry carries both. */
+  resolve(id: string, how: ResolveHow, note: string | null): Promise<SaveIssueResult>;
+  /** Set a resolved issue back to Open. Its history, resolved entry included, stays. */
+  reopen(id: string): Promise<SaveIssueResult>;
+  /** An issue's history, oldest first. */
+  events(id: string): Promise<IssueEventRow[]>;
 }
 
-type NewRow = Omit<IssueRow, "id" | "workspace_id" | "created_at" | "updated_at" | "resolved_at" | "client_id" | "dismissed_revision_id" | "number" | "links" | "owner_ids" | "source_ids" | "target_measure" | "target_now" | "target_goal"> &
-  Partial<Pick<IssueRow, "client_id" | "dismissed_revision_id" | "target_measure" | "target_now" | "target_goal" | "links" | "owner_ids" | "source_ids">>;
+type NewRow = Omit<IssueRow, "id" | "workspace_id" | "created_at" | "updated_at" | "resolved_at" | "client_id" | "dismissed_revision_id" | "number" | "links" | "owner_ids" | "source_ids" | "target_measure" | "target_now" | "target_goal" | "resolved_how" | "resolution_note"> &
+  Partial<Pick<IssueRow, "client_id" | "dismissed_revision_id" | "resolved_how" | "resolution_note" | "target_measure" | "target_now" | "target_goal" | "links" | "owner_ids" | "source_ids">>;
 
 const closed = (s: string) => s === "resolved" || s === "wont_fix" || s === "dismissed";
 
@@ -45,6 +52,8 @@ export class MemoryIssueStore implements IssueStore {
   private rows: Map<string, IssueRow>;
   /** Numbers are never reused, as in the database. */
   private last: number;
+  /** The history log, as the database's triggers write it. */
+  private log = new Map<string, IssueEventRow[]>();
 
   constructor(
     private readonly workspaceId: string,
@@ -53,6 +62,26 @@ export class MemoryIssueStore implements IssueStore {
   ) {
     this.rows = new Map(initial.map((r) => [r.id, r]));
     this.last = Math.max(0, ...initial.map((r) => r.number ?? 0));
+    for (const r of initial) if (isVisibleIssue(r)) this.record(r.id, "created", { status: r.status }, r.created_at);
+  }
+
+  private record(issueId: string, kind: IssueEventKind, detail: Record<string, unknown>, at = this.now()) {
+    const list = this.log.get(issueId) ?? [];
+    list.push({ id: crypto.randomUUID(), issue_id: issueId, workspace_id: this.workspaceId, seq: list.length + 1, kind, at, actor: null, detail, tx: null });
+    this.log.set(issueId, list);
+  }
+
+  /** What a change of status is in the history: the same kinds the database's trigger writes. */
+  private recordStatus(row: IssueRow, next: IssueRow) {
+    if (row.status === next.status) return;
+    const closedNow = next.status === "resolved" || next.status === "wont_fix";
+    const closedBefore = row.status === "resolved" || row.status === "wont_fix";
+    const kind: IssueEventKind = next.status === "testing" && row.status === "open" ? "solution_tested" : closedNow && !closedBefore ? "resolved" : closedBefore && !closedNow ? "reopened" : "edited";
+    this.record(row.id, kind, {
+      from: row.status,
+      to: next.status,
+      ...(kind === "resolved" ? { ...(next.resolved_how ? { how: next.resolved_how } : {}), ...(next.resolution_note ? { note: next.resolution_note } : {}) } : {}),
+    });
   }
 
   private insert(fields: NewRow): IssueRow {
@@ -63,6 +92,8 @@ export class MemoryIssueStore implements IssueStore {
       target_measure: null,
       target_now: null,
       target_goal: null,
+      resolved_how: null,
+      resolution_note: null,
       // What it touches and who owns it, as the link tables would hold them.
       links: fields.step_id ? [{ process_id: fields.process_id, step_id: fields.step_id }] : fields.process_id ? [{ process_id: fields.process_id, step_id: null }] : [],
       owner_ids: fields.owner_person_id ? [fields.owner_person_id] : [],
@@ -77,6 +108,7 @@ export class MemoryIssueStore implements IssueStore {
       updated_at: at,
     };
     this.rows.set(row.id, row);
+    if (row.status !== "dismissed") this.record(row.id, "created", { status: row.status });
     return row;
   }
 
@@ -135,6 +167,14 @@ export class MemoryIssueStore implements IssueStore {
         resolved_at: closed(status) ? (closed(row.status) ? row.resolved_at : at) : null,
         updated_at: at,
       };
+      if (row.number == null) {
+        // An insight being acknowledged: the issue is born now.
+        if (next.number != null) this.record(v.id, "created", { status: next.status, acknowledged: true });
+      } else {
+        const changed = (["title", "severity", "evidence", "target_measure", "target_now", "target_goal"] as const).filter((f) => row[f] !== next[f]);
+        this.recordStatus(row, next);
+        if (changed.length) this.record(v.id, "edited", { fields: changed });
+      }
       this.rows.set(v.id, next);
       return { status: "ok", issue: next };
     }
@@ -165,7 +205,12 @@ export class MemoryIssueStore implements IssueStore {
     if (stored !== base && stored !== clean.value) return { status: "conflict", theirs: stored };
     const at = this.now();
     const next = { ...row, [field]: clean.value, updated_at: at } as IssueRow;
-    if (field === "status") next.resolved_at = closed(next.status) ? (closed(row.status) ? row.resolved_at : at) : null;
+    if (field === "status") {
+      next.resolved_at = closed(next.status) ? (closed(row.status) ? row.resolved_at : at) : null;
+      // As the database's trigger: what was recorded about a resolution goes when the issue is not resolved any more.
+      if (next.status !== "resolved" && next.status !== "wont_fix") Object.assign(next, { resolved_how: null, resolution_note: null });
+      this.recordStatus(row, next);
+    }
     this.rows.set(id, next);
     return { status: "saved", value: clean.value };
   }
@@ -173,6 +218,39 @@ export class MemoryIssueStore implements IssueStore {
   async remove(id: string): Promise<RemoveIssueResult> {
     this.rows.delete(id);
     return { status: "ok" };
+  }
+
+  async resolve(id: string, how: ResolveHow, note: string | null): Promise<SaveIssueResult> {
+    const parsed = parseResolveInput({ how, note });
+    if (!parsed.ok) return { status: "error", message: parsed.error };
+    const row = this.rows.get(id);
+    if (!row || row.status === "dismissed") return { status: "error", message: "That issue no longer exists." };
+    const at = this.now();
+    const next: IssueRow = {
+      ...row,
+      status: "resolved",
+      resolved_how: parsed.value.how,
+      resolution_note: parsed.value.note,
+      resolved_at: closed(row.status) ? row.resolved_at : at,
+      updated_at: at,
+    };
+    this.rows.set(id, next);
+    this.recordStatus(row, next);
+    return { status: "ok", issue: next };
+  }
+
+  async reopen(id: string): Promise<SaveIssueResult> {
+    const row = this.rows.get(id);
+    if (!row || row.status === "dismissed") return { status: "error", message: "That issue no longer exists." };
+    const at = this.now();
+    const next: IssueRow = { ...row, status: "open", resolved_how: null, resolution_note: null, resolved_at: null, updated_at: at };
+    this.rows.set(id, next);
+    this.recordStatus(row, next);
+    return { status: "ok", issue: next };
+  }
+
+  async events(id: string): Promise<IssueEventRow[]> {
+    return [...(this.log.get(id) ?? [])];
   }
 
   /** Every stored row that is an issue a person sees (not a dismissed insight), for tests. */

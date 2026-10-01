@@ -263,6 +263,12 @@ tr.opened td { background: var(--panel-2); }
 tr.mapcard > td { background: var(--bg); padding: 12px 16px 16px; }
 tr.mapcard .pcard { width: 0; min-width: 100%; }
 tr.mapcard .mapwrap { background: var(--panel); }
+table.rules td { vertical-align: middle; }
+table.rules .inp.band { font-family: var(--f-mono); font-size: 11.5px; padding: 4px 6px; min-width: 0; width: 100%; border-left: 3px solid var(--pc); }
+table.rules td:first-child { min-width: 130px; }
+table.rules td:nth-child(n+3):not(:last-child) { width: 13%; }
+table.rules th { white-space: normal; }
+.cost { font-family: var(--f-mono); font-size: 12px; font-weight: 500; color: var(--fg); background: var(--panel-2); border-radius: 4px; padding: 0 6px; }
 /* Lists */
 .status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; padding: 1px 8px; border-radius: 4px; background: var(--panel-2); white-space: nowrap; }
 .status.done { background: var(--good-soft); }
@@ -516,17 +522,17 @@ const PRIN = {
 };
 
 let INS = [
-  { id: "i1", rating: "risk", kind: "rule", rule: "Busy role or person", title: "The strategist is the bottleneck: 82% busy on average, 97% in a bad month", metric: "Strategist: 82% busy, P90 97%. One person.", nodes: ["audit", "kickoff", "r_review"], found: "Maya Collins is the only strategist. She sits on the path of proposals, kickoffs and every monthly report review.", why: "When she is busy or away, proposals stall and reports go out late. Adding leads makes this worse, not better.", ack: 12 },
-  { id: "i2", rating: "risk", kind: "rule", rule: "SLA missed", title: "Monthly reports go out late for 1 in 7 clients", metric: "14% of reports past the 5th working day (range 9–21%)", nodes: ["r_write", "r_review"], found: "Reports wait an average of 5.8 days for strategist review.", why: "Late reports lower client health. In the simulation they cause most of the churn.", ack: 14 },
-  { id: "i3", rating: "bad", kind: "rule", rule: "Long wait before a step", title: "Proposals wait 3.1 days for the strategist", metric: "Average wait 25 h before Audit & proposal (P90 41 h)", nodes: ["audit", "a_write"], found: "Leads that pass discovery queue for the strategist before the audit starts.", why: "Your principle says proposals go out within 3 working days. Today 58% do.", ack: null },
-  { id: "i4", rating: "bad", kind: "ai", rule: "AI analysis", title: "Website leads wait over a day for first contact", metric: "Check fit: 20 h average wait. Partner leads convert 2× better but share the queue.", nodes: ["q_check", "q_enrich"], found: "Enquiries sit in the inbox until a salesperson checks fit and enriches the record by hand.", why: "Your principle for Qualify lead is first contact within 4 hours. The simulation puts it at 1.4 days.", ack: 15 },
-  { id: "i5", rating: "good", kind: "rule", rule: "Long wait before a step", title: "Discovery calls convert well but take 3 days to book", metric: "70% of discovery calls lead to an audit. 24 h wait to book.", nodes: ["discovery", "q_book"], found: "The step works; the delay is calendar availability.", why: "Booking faster would shorten the sales cycle by around 2 days.", ack: null },
+  { id: "i1", cost: 18400, rating: "risk", kind: "rule", rule: "Busy role or person", title: "The strategist is the bottleneck: 82% busy on average, 97% in a bad month", metric: "Strategist: 82% busy, P90 97%. One person.", nodes: ["audit", "kickoff", "r_review"], found: "Maya Collins is the only strategist. She sits on the path of proposals, kickoffs and every monthly report review.", why: "When she is busy or away, proposals stall and reports go out late. Adding leads makes this worse, not better.", ack: 12 },
+  { id: "i2", cost: 9600, rating: "risk", kind: "rule", rule: "SLA missed", title: "Monthly reports go out late for 1 in 7 clients", metric: "14% of reports past the 5th working day (range 9–21%)", nodes: ["r_write", "r_review"], found: "Reports wait an average of 5.8 days for strategist review.", why: "Late reports lower client health. In the simulation they cause most of the churn.", ack: 14 },
+  { id: "i3", cost: 6200, rating: "bad", kind: "rule", rule: "Long wait before a step", title: "Proposals wait 3.1 days for the strategist", metric: "Average wait 25 h before Audit & proposal (P90 41 h)", nodes: ["audit", "a_write"], found: "Leads that pass discovery queue for the strategist before the audit starts.", why: "Your principle says proposals go out within 3 working days. Today 58% do.", ack: null },
+  { id: "i4", cost: 4100, rating: "bad", kind: "ai", rule: "AI analysis", title: "Website leads wait over a day for first contact", metric: "Check fit: 20 h average wait. Partner leads convert 2× better but share the queue.", nodes: ["q_check", "q_enrich"], found: "Enquiries sit in the inbox until a salesperson checks fit and enriches the record by hand.", why: "Your principle for Qualify lead is first contact within 4 hours. The simulation puts it at 1.4 days.", ack: 15 },
+  { id: "i5", cost: 2300, rating: "good", kind: "rule", rule: "Long wait before a step", title: "Discovery calls convert well but take 3 days to book", metric: "70% of discovery calls lead to an audit. 24 h wait to book.", nodes: ["discovery", "q_book"], found: "The step works; the delay is calendar availability.", why: "Booking faster would shorten the sales cycle by around 2 days.", ack: null },
   { id: "i6", rating: "great", kind: "rule", rule: "Working well", title: "Campaign setup has headroom and low rework", metric: "SEO 63% busy, PPC 75% busy, rework 10%", nodes: ["seo", "ppc"], found: "Both setup teams finish on time with capacity to spare.", why: "This can absorb about 30% more new clients without a hire.", ack: null },
   { id: "i7", rating: "great", kind: "rule", rule: "Working well", title: "Contracts and billing go out on time", metric: "98% within SLA", nodes: ["contract"], found: "No queue and no rework.", why: "Protect this when you change onboarding.", ack: null },
-  { id: "i8", rating: "bad", kind: "ai", rule: "AI analysis", title: "Chasing late payments is manual and slow", metric: "3 h a week; invoices paid 40 h after due date on average", nodes: ["chase"], found: "Finance chases each late invoice by email.", why: "Not urgent, but it ties up cash and is easy to automate.", ack: null },
-  { id: "i9", rating: "good", kind: "rule", rule: "Busy role or person", title: "Account managers have room for about 3 more clients each", metric: "Account managers 64% busy (P90 69%)", nodes: ["checkin", "r_send", "contract"], found: "Their load is mostly servicing and steady.", why: "They could take on report drafting to relieve the strategist.", ack: null },
-  { id: "i10", rating: "risk", kind: "ai", rule: "AI analysis", title: "Late reports are the biggest churn driver (41%)", metric: "4.9 clients lost in 6 months; 2.0 traced to late reports", nodes: ["r_review", "report"], found: "Churn driver weights from Settings applied to this run's results.", why: "Fixing report timeliness is worth more than any sales change right now.", ack: null },
-  { id: "i11", rating: "bad", kind: "rule", rule: "Single point of failure", title: "Only one person can do the strategist steps", metric: "1 of 11 people can do Audit, Kickoff and Review", nodes: ["audit", "kickoff", "r_review"], found: "No one else has the strategist skill.", why: "A two-week absence stops proposals and report sign-off.", ack: null },
+  { id: "i8", cost: 900, rating: "bad", kind: "ai", rule: "AI analysis", title: "Chasing late payments is manual and slow", metric: "3 h a week; invoices paid 40 h after due date on average", nodes: ["chase"], found: "Finance chases each late invoice by email.", why: "Not urgent, but it ties up cash and is easy to automate.", ack: null },
+  { id: "i9", cost: 3800, rating: "good", kind: "rule", rule: "Busy role or person", title: "Account managers have room for about 3 more clients each", metric: "Account managers 64% busy (P90 69%)", nodes: ["checkin", "r_send", "contract"], found: "Their load is mostly servicing and steady.", why: "They could take on report drafting to relieve the strategist.", ack: null },
+  { id: "i10", cost: 12000, rating: "risk", kind: "ai", rule: "AI analysis", title: "Late reports are the biggest churn driver (41%)", metric: "4.9 clients lost in 6 months; 2.0 traced to late reports", nodes: ["r_review", "report"], found: "Churn driver weights from Settings applied to this run's results.", why: "Fixing report timeliness is worth more than any sales change right now.", ack: null },
+  { id: "i11", cost: 5200, rating: "bad", kind: "rule", rule: "Single point of failure", title: "Only one person can do the strategist steps", metric: "1 of 11 people can do Audit, Kickoff and Review", nodes: ["audit", "kickoff", "r_review"], found: "No one else has the strategist skill.", why: "A two-week absence stops proposals and report sign-off.", ack: null },
 ];
 
 let ISS = [
@@ -630,16 +636,21 @@ const MCOL = { boom: "var(--good-soft)", stable: "var(--panel-2)", soft: "var(--
 let SCHED = [{ from: 1, to: 6, m: "stable" }, { from: 7, to: 14, m: "soft" }, { from: 15, to: 24, m: "c1" }];
 
 let RULES = [
-  { name: "Busy role or person", checks: "Average and bad-month (P90) utilisation", th: "85%", map: "under 75% great · 75–85% good · over 85% bad · P90 over 95% risk" },
-  { name: "Long wait before a step", checks: "Average wait in the queue", th: "16 h", map: "16–40 h bad · over 40 h risk" },
-  { name: "Queue keeps growing", checks: "Items waiting at the end vs the start", th: "+0.5 / week", map: "any growth → risk" },
-  { name: "Rework", checks: "Share of items sent back", th: "20%", map: "10–20% good · over 20% bad" },
-  { name: "SLA missed", checks: "Share of visits over the step's SLA", th: "10%", map: "5–10% bad · over 10% risk" },
-  { name: "Single point of failure", checks: "People able to do a step", th: "1 person", map: "1 person on a busy step → bad" },
-  { name: "Overtime", checks: "Overtime hours in the run", th: "0 h", map: "any → bad · at the cap → risk" },
-  { name: "Client health", checks: "Simulated client-group health at the end", th: "50 / 100", map: "under 65 bad · under 50 risk" },
-  { name: "Sources disagree", checks: "Two sources differ on a number", th: "2×", map: "→ bad (perception gap)" },
-  { name: "Working well", checks: "Under 75% busy, waits under 8 h, SLA met 95%+", th: "all three", map: "→ great" },
+  { name: "Busy role or person", num: "Simulated utilisation", b: ["under 70%", "70–85%", "85–95%", "over 95%"], cost: "Throughput lost at the bottleneck, or overtime cost" },
+  { name: "Spare capacity", num: "Simulated utilisation", b: ["", "under 40% (opportunity)", "", ""], cost: "Idle hours at cost rates" },
+  { name: "Overtime", num: "Overtime hours", b: ["none", "", "any regular overtime", "cap used up"], cost: "Overtime hours × cost rate" },
+  { name: "Queue keeps growing", num: "Queue growth per week", b: ["", "", "", "0.5+ items a week"], cost: "Value of work stuck" },
+  { name: "Long wait", num: "Wait ÷ the step's expected wait", b: ["within 1×", "up to 1.5×", "up to 3×", "over 3×"], cost: "Revenue delayed or lost" },
+  { name: "Rework", num: "Simulated share done twice", b: ["under 5%", "5–10%", "10–20%", "over 20%"], cost: "Repeated hours × cost rate" },
+  { name: "SLA missed", num: "Share of visits over SLA", b: ["under 5%", "5–10%", "10–25%", "over 25%"], cost: "Through the churn drivers" },
+  { name: "Single point of failure", num: "Absence test: person off 2 weeks", b: ["little effect", "", "noticeable delays", "work stops or clients hit"], cost: "Damage of the absence, per year" },
+  { name: "Client health", num: "Health of each client group", b: ["75+", "65–75", "50–65", "under 50"], cost: "Churned MRR × tenure" },
+  { name: "Churn driver", num: "Driver's share of churn", b: ["", "", "30%+", "30%+ and group under 50"], cost: "Driver's share of churned MRR" },
+  { name: "Success measure", num: "Share of runs meeting target", b: ["80%+", "50–80%", "20–50%", "under 20%"], cost: "Depends on the measure" },
+  { name: "Drop-off between steps", num: "Share lost vs the step's benchmark", b: ["at or better", "up to 1.25×", "up to 1.5×", "over 1.5×"], cost: "Lost items × expected value" },
+  { name: "Cycle time vs target", num: "End-to-end time vs target", b: ["within target", "up to 1.25×", "up to 1.5×", "over 1.5×"], cost: "Revenue delayed" },
+  { name: "Sources disagree", num: "Ratio between two sources", b: ["", "", "2× or more", ""], cost: "—" },
+  { name: "Broken solution", num: "Solution points at a missing step", b: ["", "", "always", ""], cost: "—" },
 ];
 
 const LEVERS = [
@@ -664,7 +675,7 @@ const pill = r => r ? `<span class="pill" style="--pc:${RT[r].c};--ps:${RT[r].s}
 const verdict = v => v === "pass" ? `<span class="verdict pass">PASS</span>` : v === "fail" ? `<span class="verdict fail">FAIL</span>` : `<span class="verdict wait">NOT DECIDED</span>`;
 const avatars = ids => `<span class="avatars">${ids.map(i => `<span class="avatar" title="${esc(person(i).name)}">${initials(i)}</span>`).join("")}</span>`;
 const fmtH = h => h == null ? "" : h === 0 ? "0" : h < 1 ? `${Math.round(h * 60)}m` : h < 16 ? `${+h.toFixed(1)}h` : `${+(h / 8).toFixed(1)}d`;
-const gbp = v => v >= 1e6 ? `£${(v / 1e6).toFixed(2)}m` : `£${(v / 1000).toFixed(1)}k`;
+const gbp = v => v >= 1e6 ? `A$${(v / 1e6).toFixed(2)}m` : `A$${(v / 1000).toFixed(1)}k`;
 function clone(o) { return JSON.parse(JSON.stringify(o)); }
 function linkParents(t) { for (const id in t) (t[id].cols || []).flat().forEach(k => { if (t[k]) t[k].parent = id; }); }
 function leafCount(t, id) { const c = t[id].cols; return c ? c.flat().reduce((a, k) => a + leafCount(t, k), 0) : 1; }
@@ -834,7 +845,7 @@ const ROLEU = [{ label: "Strategist", v: .82, lo: .73, hi: .97 }, { label: "PPC 
 const HZ = [1, 3, 6, 12, 24];
 function horizonSeg() { return `<div class="row"><span class="small muted">Projection</span><div class="seg" role="group" aria-label="Time horizon">${HZ.map(h => `<button class="${S.h === h ? "on" : ""}" data-act="horizon" data-h="${h}">${h}m</button>`).join("")}</div>
   <button class="chip btnchip" data-go="settings:market" title="Market conditions">Market: ${esc(MARKETS[SCHED[0].m].name)}, then ${esc(MARKETS[SCHED[1].m].name)} from M${SCHED[1].from}</button></div>`; }
-function kpi(label, v, r, extra = "", focus = false) { return `<div class="kpi ${focus ? "focus" : ""}"><span class="eyebrow">${label}</span><span class="v ${/^[£\d.]/.test(String(v)) ? "" : "txt"}">${v}</span><span class="r">${r}</span>${extra ? `<span class="small muted">${extra}</span>` : ""}</div>`; }
+function kpi(label, v, r, extra = "", focus = false) { return `<div class="kpi ${focus ? "focus" : ""}"><span class="eyebrow">${label}</span><span class="v ${/^(A\$|[\d.])/.test(String(v)) ? "" : "txt"}">${v}</span><span class="r">${r}</span>${extra ? `<span class="small muted">${extra}</span>` : ""}</div>`; }
 function mrrSeries(h, alt = 0) {
   const steps = h <= 3 ? Math.round(h * 4.33) : h, pts = [];
   for (let i = 0; i <= steps; i++) { const m = h <= 3 ? i / 4.33 : i; const soft = m > 6 ? (m - 6) * 900 : 0; const mean = 78400 + 2150 * m - soft + alt * m * 1100; const sp = 1300 * Math.sqrt(m) + 260 * m; pts.push({ m, mean, lo: mean - sp, hi: mean + sp * .9 }); }
@@ -846,7 +857,7 @@ function kpisFor(pid) {
   const mrr = mrrSeries(h).at(-1);
   if (pid === "company" || pid === "leads" || pid === "deliv" || pid === "onb") return [
     kpi("New clients won", Math.round(3.9 * h), `range ${Math.round(2.6 * h)}–${Math.round(5.7 * h)} ${hl}`),
-    kpi(`MRR at month ${h}`, gbp(mrr.mean), `range ${gbp(mrr.lo)}–${gbp(mrr.hi)}`, "Now £78.4k"),
+    kpi(`MRR at month ${h}`, gbp(mrr.mean), `range ${gbp(mrr.lo)}–${gbp(mrr.hi)}`, "Now A$78.4k"),
     kpi("Clients lost to churn", (0.82 * h).toFixed(1), `range ${(0.5 * h).toFixed(1)}–${(1.5 * h).toFixed(1)} ${hl}`, "41% traced to late reports"),
     kpi("Bottleneck", "Strategist", "82% busy · 97% in a bad month", "Audit, Kickoff, Report review", true)].join("");
   if (pid === "sales" || pid === "qualify" || pid === "audit") return [
@@ -998,7 +1009,7 @@ function insightRows(list, mapKey, opts = {}) {
   return `<div class="list">${list.map(i => `
     <div class="irow" style="--pc:${RT[i.rating].c}" data-hl="${i.nodes.join(",")}" data-map="${mapKey}" data-act="insight" data-id="${i.id}" tabindex="0">
       <div class="txt"><b>${esc(i.title)}</b>
-        <span class="meta">${pill(i.rating)}<span>${esc(i.metric)}</span></span>
+        <span class="meta">${pill(i.rating)}${i.cost ? `<span class="cost" title="Estimated cost per month">≈ A$${i.cost.toLocaleString("en-AU")}/mo</span>` : ""}<span>${esc(i.metric)}</span></span>
         <span class="touch">${ico("processes")}${i.nodes.map(nodeName).join(", ")}${opts.showProc ? ` · ${esc(nodeName(procOf(i.nodes[0])))}` : ""}</span></div>
       <span class="how ${i.kind === "ai" ? "ai" : ""}">${i.kind === "ai" ? `${ico("suggestions")}AI` : esc(i.rule)}</span>
       <div class="act">${i.ack ? `<button class="btn ghost sm" data-go="issue:${i.ack}">Issue #${i.ack} →</button>` : `<button class="btn sm" data-act="ack" data-id="${i.id}">Acknowledge</button>`}</div>
@@ -1015,7 +1026,7 @@ function aiSummary(pid) {
 }
 function insightSection(pid, mapKey) {
   const list = insFor(pid); const f = S.ratingFilter[pid];
-  const shown = list.filter(i => !f || i.rating === f).sort((a, b) => RORDER.indexOf(a.rating) - RORDER.indexOf(b.rating));
+  const shown = list.filter(i => !f || i.rating === f).sort((a, b) => RORDER.indexOf(a.rating) - RORDER.indexOf(b.rating) || (b.cost || 0) - (a.cost || 0));
   return `<section id="insights"><div class="sechead"><div><h2>Insights</h2><p>The raw analysis from the latest run, worst first. Hover one to see where it sits on the map. It only becomes an issue when you acknowledge it.</p></div></div>
     ${aiSummary(pid)}
     ${ratingFilters(pid, list)}
@@ -1062,7 +1073,7 @@ function ideaCard(g) {
 }
 const SCREENS = {
   overview() {
-    const top = INS.slice().sort((a, b) => RORDER.indexOf(a.rating) - RORDER.indexOf(b.rating)).slice(0, 5);
+    const top = INS.slice().sort((a, b) => RORDER.indexOf(a.rating) - RORDER.indexOf(b.rating) || (b.cost || 0) - (a.cost || 0)).slice(0, 5);
     const cnt = r => INS.filter(i => i.rating === r).length;
     return `<header class="head"><div class="t"><span class="eyebrow">Overview</span><h1>Northbeam Digital</h1><span class="viewing"><i></i>Live model · 30 simulated runs · updated 1 Oct</span></div>${horizonSeg()}</header>
     <div class="kpis">${kpisFor("company")}</div>
@@ -1073,7 +1084,7 @@ const SCREENS = {
       ${insightRows(top, "ov", { showProc: true })}</section>
     <section><div class="sechead"><div><h2>Trends</h2><p>Projected over the next ${S.h} month${S.h > 1 ? "s" : ""}, with the 10–90% range from 30 runs.</p></div></div>
     <div class="grid2">
-      <div class="card chartcard"><div class="spread"><h3>Monthly recurring revenue</h3><div class="legend"><span style="--pc:var(--accent)"><i></i>Average</span><span style="--pc:color-mix(in srgb,var(--accent) 30%,transparent)"><i></i>10–90% range</span></div></div>${lineBand(mrrSeries(S.h), v => "£" + Math.round(v / 1000) + "k", xlab(S.h))}${S.h > 6 ? `<span class="small muted">Growth slows after month 6 because of the Soft market in your market schedule.</span>` : ""}</div>
+      <div class="card chartcard"><div class="spread"><h3>Monthly recurring revenue</h3><div class="legend"><span style="--pc:var(--accent)"><i></i>Average</span><span style="--pc:color-mix(in srgb,var(--accent) 30%,transparent)"><i></i>10–90% range</span></div></div>${lineBand(mrrSeries(S.h), v => "A$" + Math.round(v / 1000) + "k", xlab(S.h))}${S.h > 6 ? `<span class="small muted">Growth slows after month 6 because of the Soft market in your market schedule.</span>` : ""}</div>
       <div class="card chartcard"><div class="spread"><h3>How busy each role is</h3><div class="legend"><span style="--pc:var(--accent)"><i></i>Average</span><span><svg width="14" height="8" aria-hidden="true"><line x1="0" x2="14" y1="4" y2="4" stroke="var(--fg-2)" stroke-width="1.5"/></svg>10–90% range</span></div></div>${hbars(ROLEU)}</div>
     </div></section>`;
   },
@@ -1136,7 +1147,7 @@ const SCREENS = {
   issues() {
     const f = S.ratingFilter.issues, v = S.issueView || "open";
     const base = ISS.filter(i => v === "all" || (v === "open" ? isOpenIssue(i) : !isOpenIssue(i)));
-    const list = base.filter(i => !f || i.rating === f).sort((a, b) => RORDER.indexOf(a.rating) - RORDER.indexOf(b.rating));
+    const list = base.filter(i => !f || i.rating === f).sort((a, b) => RORDER.indexOf(a.rating) - RORDER.indexOf(b.rating) || (b.cost || 0) - (a.cost || 0));
     const n = k => ISS.filter(i => k === "all" || (k === "open" ? isOpenIssue(i) : !isOpenIssue(i))).length;
     return `<header class="head"><div class="t"><span class="eyebrow">Improve</span><h1>Issues</h1><p class="muted">Problems you've confirmed, linked to a whole process or to specific steps. Resolved issues stay here with their full history.</p></div><button class="btn primary" data-act="newissue" data-p="company">+ New issue</button></header>
       <div class="spread"><div class="seg" role="group" aria-label="Show">${[["open", "Open"], ["resolved", "Resolved"], ["all", "All"]].map(([k, l]) => `<button class="${v === k ? "on" : ""}" data-act="issueview" data-v="${k}">${l} ${n(k)}</button>`).join("")}</div>${ratingFilters("issues", base)}</div>
@@ -1185,7 +1196,7 @@ const SCREENS = {
     </div></section>
     <div class="side2"><div class="stack">
       <div class="tblwrap"><table><thead><tr><th>Measure</th><th class="n">Live</th><th class="n">Solution</th><th>Change</th></tr></thead><tbody>${s.rows.map(r => `<tr><td>${esc(r[0])}</td><td class="n">${r[1]}</td><td class="n">${r[2]}</td><td class="${r[3] ? "up" : "down"}">${r[3] ? "Better" : "Worse"}</td></tr>`).join("")}</tbody></table></div>
-      <div class="card chartcard"><div class="spread"><h3>MRR over ${S.h} months</h3><div class="legend"><span style="--pc:var(--accent)"><i></i>Live</span><span style="--pc:var(--edit)"><i></i>With solution</span></div></div>${lineBand(mrrSeries(S.h), v => "£" + Math.round(v / 1000) + "k", xlab(S.h), mrrSeries(S.h, s.for.some(f => f.auto === "pass") ? 1 : .2))}</div>
+      <div class="card chartcard"><div class="spread"><h3>MRR over ${S.h} months</h3><div class="legend"><span style="--pc:var(--accent)"><i></i>Live</span><span style="--pc:var(--edit)"><i></i>With solution</span></div></div>${lineBand(mrrSeries(S.h), v => "A$" + Math.round(v / 1000) + "k", xlab(S.h), mrrSeries(S.h, s.for.some(f => f.auto === "pass") ? 1 : .2))}</div>
       <section><div class="sechead"><div><h2>Market stress test</h2><p>Does it still work under different market conditions?</p></div></div>
         <div class="tblwrap"><table><thead><tr><th>Market</th><th>Result</th><th>Key number</th></tr></thead><tbody>${s.stress.map(r => `<tr><td>${r[0]}</td><td>${verdict(r[1])}</td><td class="mono small">${r[2]}</td></tr>`).join("")}</tbody></table></div></section>
     </div><div class="stack">
@@ -1271,9 +1282,13 @@ const SETTINGS = {
       <div class="checks">${SCHED.map(s => `<span class="chip">M${s.from}–M${s.to}: ${esc(MARKETS[s.m].name)}</span>`).join("")}</div></div>`;
   },
   rules() {
-    return `<div class="sechead"><h2>Analysis rules</h2><p>Fixed checks that run on every simulation and turn numbers into rated insights. These are today's defaults, to review together.</p></div>
-    <div class="tblwrap"><table><thead><tr><th>Rule</th><th>What it checks</th><th>Threshold</th><th>How it's rated</th></tr></thead><tbody>
-    ${RULES.map((r, i) => `<tr><td><b>${esc(r.name)}</b></td><td class="small">${esc(r.checks)}</td><td style="width:120px"><input class="inp mono" value="${esc(r.th)}" aria-label="Threshold for ${esc(r.name)}"></td><td class="small">${esc(r.map)}</td></tr>`).join("")}</tbody></table></div>`;
+    const order = ["great", "good", "bad", "risk"];
+    return `<div class="sechead"><div><h2>Analysis rules</h2><p>Fixed checks that run on every simulation. Each one turns a number into a rating using three cut-offs. Agreed 1 Oct; edit the defaults here, or override them on a role, person or step.</p></div></div>
+    <div class="card stack"><b>How a rating is set</b>
+      <ol class="small" style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px"><li>The <b>average</b> across 30 runs picks the band.</li><li>If a <b>bad month</b> (P90) crosses the next cut-off, it goes up one level.</li><li>If it's <b>on the bottleneck</b>, it goes up one more. Never higher than Operational risk.</li><li>Within a level, insights are sorted by <b>estimated cost per month</b> (A$).</li></ol>
+      <span class="small muted">Example: the strategist averages 82% (Good) → bad month 97% (Bad) → on the bottleneck (Operational risk).</span></div>
+    <div class="tblwrap"><table class="rules"><thead><tr><th>Rule</th><th>Number it rates</th>${order.map(r => `<th><span class="cdot" style="background:${RT[r].c}"></span> ${RT[r].l}</th>`).join("")}<th>Cost per month</th></tr></thead><tbody>
+    ${RULES.map((r, i) => `<tr><td><b>${esc(r.name)}</b></td><td class="small">${esc(r.num)}</td>${r.b.map((v, j) => `<td>${v ? `<input class="inp band" style="--pc:${RT[order[j]].c}" value="${esc(v)}" aria-label="${esc(r.name)}: ${RT[order[j]].l}">` : `<span class="muted small">—</span>`}</td>`).join("")}<td class="small muted">${esc(r.cost)}</td></tr>`).join("")}</tbody></table></div>`;
   },
   ai() {
     return `<div class="sechead"><h2>AI analysis</h2><p>Runs alongside the rules. It reads the results, each process's first principles and your sources, and writes insights labelled AI. It never invents numbers: every figure it uses comes from the simulation.</p></div>
@@ -1286,7 +1301,7 @@ const SETTINGS = {
   services() {
     return `<div class="sechead"><h2>Services and client groups</h2><p>Clients are counted per service rather than named. The simulation creates unnamed clients from these numbers so late work still affects health and churn.</p></div>
     <div class="tblwrap"><table><thead><tr><th>Service</th><th class="n">Clients</th><th class="n">Average fee / mo</th><th class="n">Base churn / mo</th><th class="n">Typical tenure</th><th class="n">Starting health</th></tr></thead><tbody>
-    ${[["SEO retainer", 15, "£3,600", "1.5%", "22 mo", 80], ["PPC management", 7, "£4,300", "2.0%", "16 mo", 76], ["SEO + PPC", 4, "£7,900", "1.2%", "26 mo", 70]].map(r => `<tr>${r.map((c, i) => `<td class="${i ? "n" : ""}">${i ? `<input class="inp mono" style="width:90px;text-align:right" value="${c}" aria-label="${r[0]}">` : `<b>${c}</b>`}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+    ${[["SEO retainer", 15, "A$3,600", "1.5%", "22 mo", 80], ["PPC management", 7, "A$4,300", "2.0%", "16 mo", 76], ["SEO + PPC", 4, "A$7,900", "1.2%", "26 mo", 70]].map(r => `<tr>${r.map((c, i) => `<td class="${i ? "n" : ""}">${i ? `<input class="inp mono" style="width:90px;text-align:right" value="${c}" aria-label="${r[0]}">` : `<b>${c}</b>`}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
   },
   placeholder() { return `<div class="card muted">Unchanged from today's app.</div>`; },
 };

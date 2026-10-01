@@ -10,6 +10,7 @@ import {
   type MarketScheduleRow,
   loadIssues,
   loadLiveProcessBySlug,
+  loadProcessBundle,
   loadProcessBySlug,
   loadScenarios,
   loadSources,
@@ -111,6 +112,24 @@ export async function loadProcessForEditing(
   processId?: string,
 ): Promise<{ live: ProcessBundle; draft: ProcessBundle | null; processes: ProcessListing[] } | null> {
   return loadProcessBySlug(await createClient(), slug, processId ? { processId } : {});
+}
+
+/**
+ * An earlier version of the process `live` is, for "Viewing version N · read only" (issue #103): the published revision numbered
+ * `number` if it is not the live one, else null (the caller shows live). A draft is never an old version.
+ */
+export async function loadProcessVersion(live: ProcessBundle, number: number): Promise<ProcessBundle | null> {
+  const supabase = await createClient();
+  const { data: revision, error } = await supabase
+    .from("process_revisions")
+    .select("id")
+    .eq("process_id", live.process.id)
+    .eq("number", number)
+    .in("status", ["published", "superseded"])
+    .maybeSingle();
+  if (error) throw error;
+  if (!revision || revision.id === live.revision.id) return null;
+  return loadProcessBundle(supabase, live.workspace, live.process, revision.id);
 }
 
 /**

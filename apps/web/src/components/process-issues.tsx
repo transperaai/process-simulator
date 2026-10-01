@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { IssueRow, ProcessBundle, ScenarioRow } from "@transpera-flow/db";
 import { detectBrokenScenarios, resolveMoney, type AnalysisSettings, type EngineModel, type RetiredSteps, type SimulationResult } from "@transpera-flow/engine";
+import { processStepIds, processSteps } from "@/lib/process-steps";
 import { perceptionGapDetections } from "@/lib/issues/perception";
 import { visibleFindings } from "@/lib/rules/edit";
 import { useDetectedIssues } from "@/lib/issues/use-detected";
@@ -22,6 +23,10 @@ export interface ProcessIssues {
   badges: ReactNode;
   /** The Insights panel: `utilisation` in one tab, the issues in another. */
   rail: (utilisation: ReactNode) => ReactNode;
+  /** The process page's Insights section: what the run found that nobody has confirmed yet. */
+  insightsList: ReactNode;
+  /** The process page's Issues section: confirmed issues linked to this process or its steps, with "+ New issue". */
+  issuesList: ReactNode;
   /** Switch the rail to its Issues tab (the sidebar's Issues item, on the demo). */
   showIssues: () => void;
   /** Open issues per step, which a closed group on the map adds up. */
@@ -135,8 +140,35 @@ export function useProcessIssues({
   const highlight = useMemo(() => (lit ? [lit] : null), [lit]);
   const openCount = here.filter((e) => entryView(e).open).length;
 
-  const steps = bundle.steps.filter((s) => s.kind !== "start" && s.kind !== "end").map((s) => ({ id: s.id, name: s.name }));
+  // Steps of this process and of those inside it, named for the register; the page's sections keep to them.
+  const stepIds = useMemo(() => processStepIds(bundle), [bundle]);
+  const steps = useMemo(
+    () => processSteps(bundle).filter((s) => s.kind !== "start" && s.kind !== "end").map((s) => ({ id: s.id, name: s.name })),
+    [bundle],
+  );
   const people = bundle.people.filter((p) => p.active).map((p) => ({ id: p.id, name: p.name }));
+
+  const section = (view: "insights" | "issues") => (
+    <IssuesRegister
+      layout="page"
+      view={view}
+      stepIds={stepIds}
+      state={state}
+      detected={detected}
+      running={running}
+      processId={bundle.process.id}
+      processes={[{ id: bundle.process.id, name: bundle.process.name }]}
+      steps={steps}
+      people={people}
+      scenarios={scenarios}
+      brokenScenarios={brokenScenarios}
+      canEdit={mode !== "readonly"}
+      currency={bundle.workspace.settings.currency}
+      stepFilter={view === "issues" ? stepFilter : ""}
+      onStepFilterChange={setStepFilter}
+      onHighlight={setLit}
+    />
+  );
 
   const rail = (utilisation: ReactNode) => (
     <div className="flex min-w-0 flex-col gap-2">
@@ -210,6 +242,8 @@ export function useProcessIssues({
     stepExtras: (id) => extras.get(id) ?? null,
     highlight,
     rail,
+    insightsList: section("insights"),
+    issuesList: section("issues"),
     showIssues: () => setTab("issues"),
     onScenariosChange: setScenarios,
     scenarios,

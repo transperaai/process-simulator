@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { bundleForProcess, northbeamIssues, northbeamScenarios, processesOf } from "@transpera-flow/db";
 import { Info } from "lucide-react";
 import { ProcessNav } from "@/components/process-nav";
-import { ProcessView } from "@/components/process-view";
+import { ProcessPage } from "@/components/process-page";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { processRatings } from "@/lib/processes/rows";
 import { withDemoGroups } from "@/lib/demo/nested";
@@ -20,27 +20,31 @@ export default async function DemoProcessPage(props: PageProps<"/demo/p/[process
   const pipeline = nested === "1" ? withDemoGroups(demoBundle()) : demoBundle();
   const bundle = bundleForProcess(pipeline, processId);
   if (!bundle) notFound();
-  const processes = processesOf(pipeline).map((p) => ({ id: p.id, name: p.name, kind: p.kind, live: true, draft: false }));
+  const processes = processesOf(pipeline).map((p) => ({ id: p.id, name: p.name, kind: p.kind, live: true, draft: false, parentId: p.parent_process_id }));
   const hrefs = Object.fromEntries(processes.map((p) => [p.id, `/demo/p/${p.id}`]));
+  const ratings = processRatings(processes, northbeamIssues(), [...pipeline.steps, ...(pipeline.otherProcesses ?? []).flatMap((p) => p.steps)]);
   return (
-    <ProcessView
+    <ProcessPage
       key={bundle.process.id}
-      live={bundle}
-      draft={null}
+      bundle={bundle}
+      liveVersion={bundle.revision.number}
       mode="demo"
       scenarios={northbeamScenarios()}
       issues={northbeamIssues()}
       sources={demoSources()}
+      rating={ratings[bundle.process.id] ?? null}
       editHref={`/demo/edit?process=${bundle.process.id}${nested === "1" ? "&nested=1" : ""}`}
-      processPicker={<ProcessNav processes={processes} current={bundle.process.id} hrefs={hrefs} ratings={processRatings(processes, northbeamIssues(), [...pipeline.steps, ...(pipeline.otherProcesses ?? []).flatMap((p) => p.steps)])} processesHref="/demo/processes" companyMapHref="/demo" />}
+      historyHref={`/demo/p/${bundle.process.id}/history`}
+      inside={processes.filter((p) => p.parentId === bundle.process.id).map((p) => ({ id: p.id, name: p.name, href: hrefs[p.id]! }))}
+      processPicker={<ProcessNav processes={processes} current={bundle.process.id} hrefs={hrefs} ratings={ratings} processesHref="/demo/processes" companyMapHref="/demo" />}
       notice={
         <Alert role="note">
           <Info />
           <AlertDescription className="text-xs leading-relaxed">
             <p>
-              Demo mode: sample data from the seed fixtures, not a database. This map is for reading: press Edit process to open the
-              Editor, where edits go into a draft you can simulate against live, publish or discard. Move levers, save scenarios and log
-              issues here too. Everything stays in this tab and is gone when you reload.
+              Demo mode: sample data from the seed fixtures, not a database. This page is for reading: press Open in Editor to change the
+              process in a draft you can simulate against live, publish or discard. Move the levers and log issues here to try them out.
+              Everything stays in this tab and is gone when you reload.
             </p>
           </AlertDescription>
         </Alert>

@@ -3,6 +3,10 @@
 import { useActionState, useState, useTransition } from "react";
 import type { PricingModel, ServiceRow } from "@transpera-flow/db";
 import { NumberField, SelectField, TextField, ToggleField } from "@/components/fields";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
+import { SettingsSection } from "./section";
 import type { WorkspaceSettingsData } from "@/lib/data";
 import { mapOutcome, type SaveOutcome, type Saver } from "@/lib/fields/field-controller";
 import { formatCurrency, formatPercent } from "@/lib/format";
@@ -26,7 +30,6 @@ const tagsSaver =
       tags.length ? formatTags(tags) : null,
     );
 
-const sectionClass = "mb-8 rounded-token border border-line bg-panel p-4 shadow-token";
 const pricingOptions = PRICING_MODELS.map((m) => ({ value: m, label: PRICING_LABELS[m] }));
 
 /** "per month", "one-off" or "per hour", for a price. */
@@ -37,30 +40,22 @@ export function ServicesSettings({ data }: { data: WorkspaceSettingsData }) {
   const mix = mixPercentages(services);
   const currency = data.workspace.settings.currency;
   return (
-    <section className={sectionClass} aria-labelledby="services-heading">
-      <div className="mb-3 flex flex-wrap items-baseline gap-x-3">
-        <h2 id="services-heading" className="text-base font-bold">
-          Services
-        </h2>
-        <p className="text-fg-3">
-          What you sell. Each new lead is given a service from the mix, follows its path tags, and is priced by it
-          when won.
-        </p>
-      </div>
+    <SettingsSection id="services" title="Services" description={<>What you sell. Each new lead is given a service from the mix, follows its path tags, and is priced by it
+          when won.</>}>
       {canEdit ? (
         <AddService workspaceId={data.workspace.id} />
       ) : (
         <p className="mb-3 text-fg-2">You can view services here; owners and editors can change them.</p>
       )}
       {services.length === 0 ? (
-        <p className="rounded-token border border-dashed border-line p-4 text-fg-2">
+        <p className="rounded-lg border border-dashed border-line p-4 text-fg-2">
           No services yet. Until you add one, every win is priced at the workspace&apos;s retainer of{" "}
           {formatCurrency(data.workspace.settings.retainer, currency)} a month.
         </p>
       ) : (
         <>
           {!mix && (
-            <p role="alert" className="mb-3 rounded-token border border-warn bg-warn-soft p-2">
+            <p role="alert" className="mb-3 rounded-lg border border-warn bg-warn-soft p-2">
               Every active service has a mix share of 0, so the process can&apos;t be simulated. Give at least one a
               share.
             </p>
@@ -74,7 +69,7 @@ export function ServicesSettings({ data }: { data: WorkspaceSettingsData }) {
           </ul>
         </>
       )}
-    </section>
+    </SettingsSection>
   );
 }
 
@@ -84,36 +79,34 @@ function AddService({ workspaceId }: { workspaceId: string }) {
     <form action={action} className="mb-4 flex flex-wrap items-end gap-2">
       <label className="flex min-w-0 flex-col gap-1">
         <span className="text-xs font-medium text-fg-2">Name</span>
-        <input name="name" required maxLength={200} className="rounded-token border border-line bg-panel px-2 py-1.5" />
+        <Input name="name" required maxLength={200} />
       </label>
       <label className="flex flex-col gap-1">
         <span className="text-xs font-medium text-fg-2">Pricing</span>
-        <select name="pricing_model" className="rounded-token border border-line bg-panel px-2 py-1.5">
+        <NativeSelect name="pricing_model">
           {pricingOptions.map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </label>
       <label className="flex w-28 flex-col gap-1">
         <span className="text-xs font-medium text-fg-2">Price</span>
-        <input
+        <Input
           name="price"
           type="number"
           inputMode="decimal"
           min={0}
-          step={50}
-          className="rounded-token border border-line bg-panel px-2 py-1.5 tabular-nums"
+          step={50} className="tabular-nums"
         />
       </label>
-      <button
+      <Button
         type="submit"
         disabled={pending}
-        className="rounded-token bg-accent px-3 py-1.5 font-semibold text-accent-fg disabled:opacity-60"
       >
         {pending ? "Adding…" : "Add service"}
-      </button>
+      </Button>
       {state.error && (
         <p role="alert" className="w-full text-crit">
           {state.error}
@@ -134,7 +127,7 @@ function ServiceItem({ service: sv, share, data }: { service: ServiceRow; share:
 
   return (
     <details className="group py-2">
-      <summary className="flex cursor-pointer list-none flex-wrap items-baseline gap-x-3 gap-y-1 rounded-token px-1 py-1 hover:bg-panel-2">
+      <summary className="flex cursor-pointer list-none flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg px-1 py-1 hover:bg-panel-2">
         <span aria-hidden className="text-fg-3 transition-transform group-open:rotate-90">
           ›
         </span>
@@ -147,19 +140,18 @@ function ServiceItem({ service: sv, share, data }: { service: ServiceRow; share:
           {share !== undefined ? `${formatPercent(share)} of leads` : "not in the mix"}
           {sv.path_tags.length ? ` · follows ${formatTags(sv.path_tags)}` : ""}
         </span>
-        {!sv.active && <span className="rounded-token bg-panel-2 px-1.5 text-xs text-fg-2">Inactive</span>}
+        {!sv.active && <span className="rounded-lg bg-panel-2 px-1.5 text-xs text-fg-2">Inactive</span>}
       </summary>
 
       <div className="grid gap-4 px-1 pt-3 pb-2 sm:grid-cols-2 lg:grid-cols-3">
-        <TextField label="Name" value={sv.name} save={serviceSaver(sv.id, "name")} disabled={disabled} />
+        <TextField label="Name" value={sv.name} save={serviceSaver(sv.id, "name")} disabled={disabled} help={{ description: "The service as you'd say it to a client.", example: "SEO retainer" }} />
         <SelectField
           label="Pricing model"
           value={sv.pricing_model}
           save={serviceSaver(sv.id, "pricing_model")}
           options={pricingOptions}
           disabled={disabled}
-          hint="Only retainers add new MRR. Hourly services add no revenue until servicing work is simulated."
-        />
+          hint="Only retainers add new MRR. Hourly services add no revenue until servicing work is simulated." help={{ description: "How the service is charged. Only retainers add new monthly revenue; hourly work adds none until servicing work is simulated.", example: "A retainer of 2,500 a month brings 2,500 each month the client stays." }} />
         <NumberField
           label="Price"
           value={Number(sv.price)}
@@ -167,8 +159,7 @@ function ServiceItem({ service: sv, share, data }: { service: ServiceRow; share:
           unit={`${currency}${priceUnit(sv.pricing_model)}`}
           min={0}
           step={50}
-          disabled={disabled}
-        />
+          disabled={disabled} help={{ description: "What a client pays: per month for a retainer, per hour for hourly work.", example: "2,500 a month." }} />
         <NumberField
           label="Margin"
           value={Number(sv.margin)}
@@ -179,8 +170,7 @@ function ServiceItem({ service: sv, share, data }: { service: ServiceRow; share:
           max={100}
           step={1}
           disabled={disabled}
-          hint="Gross margin as a share of price. Recorded for reporting; not in the revenue figures yet."
-        />
+          hint="Gross margin as a share of price. Recorded for reporting; not in the revenue figures yet." help={{ description: "Profit as a share of the price, before overhead. It is recorded, but not yet used in the revenue figures.", example: "At 40%, a 2,500 retainer leaves 1,000 after the cost of delivering it." }} />
         <NumberField
           label="Expected tenure"
           value={Number(sv.tenure_months)}
@@ -190,8 +180,7 @@ function ServiceItem({ service: sv, share, data }: { service: ServiceRow; share:
           max={600}
           step={1}
           disabled={disabled}
-          hint={retainer ? "How long a client stays: LTV and lost revenue use price × tenure." : "Used for retainers only."}
-        />
+          hint={retainer ? "How long a client stays: LTV and lost revenue use price × tenure." : "Used for retainers only."} help={{ description: "How many months a client typically stays. Lifetime value and lost revenue use price times tenure. Retainers only.", example: "At 2,500 a month and 18 months, a client is worth 45,000." }} />
         <NumberField
           label="Base churn"
           value={Number(sv.churn_monthly_base)}
@@ -202,8 +191,7 @@ function ServiceItem({ service: sv, share, data }: { service: ServiceRow; share:
           max={100}
           step={0.5}
           disabled={disabled}
-          hint="Monthly churn of a client in full health; revenue billed in the horizon stops when a client leaves."
-        />
+          hint="Monthly churn of a client in full health; revenue billed in the horizon stops when a client leaves." help={{ description: "The chance each month that a perfectly healthy client leaves. Revenue stops when a client leaves.", example: "At 2% a month, about 1 in 50 healthy clients leaves each month." }} />
         <NumberField
           label="Churn sensitivity to health"
           value={sv.churn_health_sensitivity === undefined ? null : Number(sv.churn_health_sensitivity)}
@@ -212,8 +200,7 @@ function ServiceItem({ service: sv, share, data }: { service: ServiceRow; share:
           max={100}
           step={0.5}
           disabled={disabled}
-          hint="Monthly churn = base × (1 + this × (100 − health) / 100). The default 3 is an estimate: a client at health 50 churns 2.5× the base."
-        />
+          hint="Monthly churn = base × (1 + this × (100 − health) / 100). The default 3 is an estimate: a client at health 50 churns 2.5× the base." help={{ description: "How much worse health makes churn. Monthly churn is base churn times (1 + this number times the missing health out of 100). The default of 3 is an estimate.", example: "With a base of 2% and 3, a client at health 50 leaves at 5% a month." }} />
         <NumberField
           label="Mix share"
           value={Number(sv.mix_share)}
@@ -225,8 +212,7 @@ function ServiceItem({ service: sv, share, data }: { service: ServiceRow; share:
             share !== undefined
               ? `Relative weight; ${formatPercent(share)} of new leads across the active services.`
               : "Relative weight among the active services."
-          }
-        />
+          } help={{ description: "How many of your new leads want this service, compared with your other active services. Only the proportions matter.", example: "Weights 2 and 1 mean two thirds of leads want the first service." }} />
         <SelectField
           label="Entry"
           value={sv.entry_process_id}
@@ -234,8 +220,7 @@ function ServiceItem({ service: sv, share, data }: { service: ServiceRow; share:
           options={pipelines.map((p) => ({ value: p.id, label: p.name }))}
           noneLabel="The pipeline (default)"
           disabled={disabled}
-          hint="The process its leads arrive at; they start at its first step."
-        />
+          hint="The process its leads arrive at; they start at its first step." help={{ description: "The process a new lead for this service starts in. They begin at its first step.", example: "Leave as the pipeline unless this service has its own sales process." }} />
         <ToggleField
           label="Status"
           value={sv.active}
@@ -251,8 +236,7 @@ function ServiceItem({ service: sv, share, data }: { service: ServiceRow; share:
             save={tagsSaver(sv.id)}
             optional
             disabled={disabled}
-            hint={`${tagHint} A lead on this service takes the connections tagged with one of these.`}
-          />
+            hint={`${tagHint} A lead on this service takes the connections tagged with one of these.`} help={{ description: "Labels that send a lead down particular branches of the sales process. A lead takes the connections tagged with one of these.", example: "Tag a branch 'seo' and add 'seo' here, so SEO leads follow that branch." }} />
         </div>
         <ServicingLinks service={sv} data={data} />
         <FallbackLoad service={sv} data={data} />
@@ -309,15 +293,15 @@ function RemoveService({ serviceId, name }: { serviceId: string; name: string })
   const [error, setError] = useState<string>();
   if (!confirming) {
     return (
-      <button type="button" onClick={() => setConfirming(true)} className="text-fg-3 underline hover:text-crit">
+      <Button variant="link" size="xs" className="h-auto p-0 text-muted-foreground underline hover:text-destructive" type="button" onClick={() => setConfirming(true)}>
         Remove service
-      </button>
+      </Button>
     );
   }
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span>Remove {name}? This can&apos;t be undone; to keep it but leave it out of simulations, make it inactive.</span>
-      <button
+      <Button variant="destructive" size="sm"
         type="button"
         disabled={pending}
         onClick={() =>
@@ -326,13 +310,12 @@ function RemoveService({ serviceId, name }: { serviceId: string; name: string })
             setError(r.error);
           })
         }
-        className="rounded-token border border-crit px-2 py-0.5 font-medium text-crit disabled:opacity-60"
       >
         {pending ? "Removing…" : "Remove"}
-      </button>
-      <button type="button" onClick={() => setConfirming(false)} className="rounded-token border border-line px-2 py-0.5">
+      </Button>
+      <Button variant="outline" size="sm" type="button" onClick={() => setConfirming(false)}>
         Cancel
-      </button>
+      </Button>
       {error && (
         <p role="alert" className="w-full text-crit">
           {error}

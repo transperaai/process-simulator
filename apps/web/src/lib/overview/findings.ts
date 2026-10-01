@@ -1,13 +1,10 @@
 // "What the analysis found" on the Overview (issue #100, A35): the rule-based findings counted by rating and
 // sorted worst first, the most costly first within a rating (decision D31). Pure.
 
-import { RATINGS, ratingRank, type DetectedIssue, type Rating } from "@transpera-flow/engine";
+import { RATINGS, compareCostsDesc, ratingRank, type DetectedIssue, type Rating } from "@transpera-flow/engine";
 
-/** What a finding costs a month, when the engine priced it (A43); null when it has no price. */
-export function costPerMonth(finding: DetectedIssue): number | null {
-  const cost = (finding as { cost?: { perMonth?: number | null } }).cost?.perMonth;
-  return typeof cost === "number" && Number.isFinite(cost) ? cost : null;
-}
+/** What a finding costs a month, when the engine priced it in money; null when it has no money price. */
+export const costPerMonth = (finding: DetectedIssue): number | null => finding.cost.perMonth;
 
 /** Findings in the register's order: worst rating first, then dearest first (priced before unpriced), then as found. */
 export function sortFindings(findings: readonly DetectedIssue[]): DetectedIssue[] {
@@ -16,9 +13,8 @@ export function sortFindings(findings: readonly DetectedIssue[]): DetectedIssue[
     .sort((a, b) => {
       const byRating = ratingRank(b.f.rating) - ratingRank(a.f.rating);
       if (byRating) return byRating;
-      const ca = costPerMonth(a.f);
-      const cb = costPerMonth(b.f);
-      if (ca !== cb) return (cb ?? -1) - (ca ?? -1);
+      const byCost = compareCostsDesc(a.f.cost, b.f.cost);
+      if (byCost) return byCost;
       return a.i - b.i;
     })
     .map(({ f }) => f);

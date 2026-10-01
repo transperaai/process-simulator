@@ -75,11 +75,11 @@ export function headlineCards(input: {
       label: months <= 1 ? "MRR in 1 month" : `MRR at month ${months}`,
       value: money(mrr.mean),
       range: `range ${money(mrr.lo)}–${money(mrr.hi)}`,
-      note: `Now ${money(start.mrr)}`,
+      note: `Now ${money(start.mrr)} · an estimate`,
       help: {
         description:
-          "Monthly recurring revenue: what your clients pay you every month. It starts from today's clients, adds the clients you win and takes away the ones who leave. The range is the 10th to 90th percentile of 30 runs.",
-        example: "Now 80k and 91k at month 6 means the average run grows by about 11k; one run in ten ends below the bottom of the range.",
+          "An estimate of monthly recurring revenue: what your clients pay you every month. It starts from today's clients, adds the revenue of the clients you win, and takes away the clients who leave, assuming each one who leaves pays today's average fee. The range covers how much new-client revenue varies across 30 runs; it does not include uncertainty in who leaves.",
+        example: "Now 80k and 91k at month 6 means the average run grows by about 11k; one run in ten adds less than the bottom of the range says.",
       },
     },
     {
@@ -87,11 +87,11 @@ export function headlineCards(input: {
       label: "Clients lost to churn",
       value: formatNumber(lost.mean),
       range: lost.stat ? `${rangeOf(lost.stat, (v) => formatNumber(v))} ${span}` : `about ${formatPercent(start.clients ? lost.mean / start.clients : 0)} of clients ${span}`,
-      note: lost.stat ? undefined : "An estimate: clients aren't counted one by one yet",
+      note: lost.stat ? "Including new clients who leave" : "An estimate: clients aren't counted one by one yet",
       help: {
         description:
-          "Clients who leave over the time you picked. Each client's chance of leaving goes up when their work is late or missed, so this moves when you fix delivery.",
-        example: "1.6 over 6 months means about one client in 20 leaves in half a year, more if servicing slips.",
+          "Clients who leave over the time you picked, including clients you win during it and then lose. Each client's chance of leaving goes up when their work is late or missed, so this moves when you fix delivery.",
+        example: "With 30 clients today, 6 over 3 months means about one in five leaves in a quarter (more once new clients are counted), and more if servicing slips.",
       },
     },
     {

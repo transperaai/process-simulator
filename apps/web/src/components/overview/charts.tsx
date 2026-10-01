@@ -7,18 +7,8 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { formatCurrency, formatPercent } from "@/lib/format";
+import { labelIndexes, monthLabel, niceTicks } from "@/lib/overview/axis";
 import type { MrrPoint, RoleBusy } from "@/lib/overview/projection";
-
-/** A "nice" set of axis values spanning `min` to `max`. */
-export function niceTicks(min: number, max: number, count = 4): number[] {
-  const span = max - min || Math.max(1, Math.abs(max));
-  const rough = span / count;
-  const magnitude = 10 ** Math.floor(Math.log10(rough));
-  const step = [1, 2, 2.5, 5, 10].map((m) => m * magnitude).find((s) => s >= rough) ?? 10 * magnitude;
-  const ticks: number[] = [];
-  for (let v = Math.floor(min / step) * step; v <= Math.ceil(max / step) * step + step * 1e-9; v += step) ticks.push(Number(v.toFixed(6)));
-  return ticks;
-}
 
 /** The width of an element, following it as it resizes (0 until it is measured). */
 function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] {
@@ -33,13 +23,6 @@ function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] 
     return () => observer.disconnect();
   }, []);
   return [ref, width];
-}
-
-/** "Now", then the weeks of a short horizon, or the months of a longer one. */
-export function monthLabel(month: number, horizonMonths: number): string {
-  if (month === 0) return "Now";
-  if (horizonMonths <= 1) return `Week ${Math.round(month * (52 / 12))}`;
-  return `Month ${Number.isInteger(month) ? month : Math.round(month * 10) / 10}`;
 }
 
 const MRR_HEIGHT = 244;
@@ -65,7 +48,7 @@ export function MrrChart({ points, horizonMonths, currency }: { points: MrrPoint
     .reverse()
     .join(" ")} Z`;
   const last = points[points.length - 1]!;
-  const every = Math.max(1, Math.ceil(points.length / (compact ? 4 : 7)));
+  const labelled = new Set(labelIndexes(points.length, Math.max(2, Math.floor((width - m.l - m.r) / 72) + 1)));
   const shown = hover !== null ? points[hover] : null;
   const pointerMove = (clientX: number, left: number) => {
     const px = clientX - left;
@@ -93,7 +76,7 @@ export function MrrChart({ points, horizonMonths, currency }: { points: MrrPoint
           </g>
         ))}
         {points.map((p, i) =>
-          i % every === 0 || i === points.length - 1 ? (
+          labelled.has(i) ? (
             <text key={p.month} x={x(i)} y={MRR_HEIGHT - 8} textAnchor={i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"} className="fill-fg-3 text-[11px]">
               {monthLabel(p.month, horizonMonths)}
             </text>
@@ -162,7 +145,7 @@ export function RoleBusyChart({ roles, busyLine }: { roles: RoleBusy[]; busyLine
     <div>
       <ul className="flex flex-col" aria-label="How busy each role is">
         {roles.map((r) => (
-          <li key={r.id} className="grid grid-cols-[minmax(6.5rem,9.5rem)_minmax(0,1fr)_auto] items-center gap-x-3 py-1.5 text-sm">
+          <li key={r.id} className="grid grid-cols-[minmax(6.5rem,9.5rem)_minmax(0,1fr)_4.5rem] sm:grid-cols-[minmax(6.5rem,9.5rem)_minmax(0,1fr)_9.5rem] items-center gap-x-3 py-1.5 text-sm">
             <span className="truncate" title={r.name}>
               {r.name}
             </span>
@@ -174,23 +157,23 @@ export function RoleBusyChart({ roles, busyLine }: { roles: RoleBusy[]; busyLine
               <span className="absolute top-1/2 h-2.5 w-px -translate-y-1/2 bg-fg-2" style={{ left: at(r.hi) }} />
               <span aria-hidden className="absolute inset-y-0 w-0 border-l border-dashed border-fg-3" style={{ left: at(busyLine) }} />
             </span>
-            <span className="min-w-[4.5rem] text-right tabular-nums">
+            <span className="text-right tabular-nums">
               <b className="font-semibold">{formatPercent(r.mean)}</b>
-              <span className="ml-1 hidden text-xs text-muted-foreground sm:inline">
+              <span className="sr-only ml-1 text-xs text-muted-foreground sm:not-sr-only sm:inline">
                 {formatPercent(r.lo)}–{formatPercent(r.hi)}
               </span>
             </span>
           </li>
         ))}
       </ul>
-      <div className="grid grid-cols-[minmax(6.5rem,9.5rem)_minmax(0,1fr)_auto] gap-x-3 text-[11px] text-muted-foreground">
+      <div className="grid grid-cols-[minmax(6.5rem,9.5rem)_minmax(0,1fr)_4.5rem] sm:grid-cols-[minmax(6.5rem,9.5rem)_minmax(0,1fr)_9.5rem] gap-x-3 text-[11px] text-muted-foreground">
         <span />
         <span className="relative h-4">
           <span className="absolute -translate-x-1/2 whitespace-nowrap" style={{ left: at(busyLine) }}>
             {formatPercent(busyLine)} line
           </span>
         </span>
-        <span className="min-w-[4.5rem]" />
+        <span />
       </div>
     </div>
   );

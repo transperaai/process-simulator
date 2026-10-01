@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { NORTHBEAM_PROCESS_ID } from "@transpera-flow/db";
 import { DemoOverview } from "@/components/overview/demo-overview";
+import { demoLandingRedirect } from "@/lib/demo/landing";
 
 /**
  * The Northbeam sample from the seed fixtures, no database needed. It opens on the Overview (issue #100).
@@ -9,7 +9,7 @@ import { DemoOverview } from "@/components/overview/demo-overview";
  */
 export default async function DemoPage(props: PageProps<"/demo">) {
   const { process, nested } = await props.searchParams;
-  if (typeof process === "string") redirect(`/demo/p/${encodeURIComponent(process)}${nested === "1" ? "?nested=1" : ""}`);
-  if (nested === "1") redirect(`/demo/p/${NORTHBEAM_PROCESS_ID}?nested=1`);
+  const to = demoLandingRedirect(process, nested);
+  if (to) redirect(to);
   return <DemoOverview />;
 }

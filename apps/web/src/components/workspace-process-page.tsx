@@ -1,27 +1,19 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createServicingProcess } from "@/app/w/[slug]/process-actions";
 import { ProcessNav } from "@/components/process-nav";
 import { ProcessView } from "@/components/process-view";
-import { ShellHeader } from "@/components/shell/shell-header";
 import { canEditWorkspace, currentViewer } from "@/lib/access-data";
 import { loadWorkspaceLeverSettings } from "@/lib/levers/data";
 import { loadWorkspaceAnalysisRules } from "@/lib/rules/data";
-import { loadProcessForEditing, loadWorkspaceIssues, loadWorkspaceOverview, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
+import { loadProcessForEditing, loadWorkspaceIssues, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
 
 /**
- * A process of the workspace on the canvas: `/w/[slug]` (the first published
- * process) and `/w/[slug]/p/[processId]` (any process, never-published ones
- * included; issue #76).
+ * A process of the workspace on the canvas, at `/w/[slug]/p/[processId]` (any process, never-published ones
+ * included; issue #76). The workspace root is the Overview.
  */
-export async function WorkspaceProcessPage({ slug, processId }: { slug: string; processId?: string }) {
+export async function WorkspaceProcessPage({ slug, processId }: { slug: string; processId: string }) {
   const process = await loadProcessForEditing(slug, processId);
-  if (!process) {
-    // A workspace nothing is published in (a new one) still opens: its links and how to get started.
-    const overview = processId ? null : await loadWorkspaceOverview(slug);
-    if (!overview) notFound();
-    return <EmptyWorkspace slug={slug} overview={overview} />;
-  }
+  if (!process) notFound();
   const { live, draft, processes } = process;
   const [canEdit, scenarios, issues, viewer, sources, rules, levers] = await Promise.all([
     canEditWorkspace(live.workspace.id),
@@ -59,45 +51,5 @@ export async function WorkspaceProcessPage({ slug, processId }: { slug: string; 
         />
       }
     />
-  );
-}
-
-/** A workspace with no published process: what to do next (issue #88). The sidebar has the links. */
-function EmptyWorkspace({ slug, overview }: { slug: string; overview: NonNullable<Awaited<ReturnType<typeof loadWorkspaceOverview>>> }) {
-  const { processes } = overview;
-  const base = `/w/${slug}`;
-  return (
-    <div>
-      <ShellHeader title={overview.workspace.name} />
-      <section className="mx-auto mt-6 w-full max-w-3xl rounded-token border border-dashed border-line p-6">
-        <h1 className="text-base font-bold">No published process yet</h1>
-        {processes.length > 0 && (
-          <>
-            <p className="mt-2 text-fg-2">These haven&apos;t been published yet:</p>
-            <ul className="mt-1 list-disc pl-5">
-              {processes.map((p) => (
-                <li key={p.id}>
-                  <Link href={`${base}/p/${p.id}`} className="font-semibold hover:underline">
-                    {p.name}
-                  </Link>
-                  {p.draft && <span className="ml-2 text-fg-3">has a draft</span>}
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-        <p className="mt-3 text-fg-2">
-          To get started, add roles under{" "}
-          <Link href={`${base}/settings`} className="underline">
-            People &amp; settings
-          </Link>
-          , then import a process with Claude (<code>set_active_workspace</code>, then <code>import_process</code>). Create a token under{" "}
-          <Link href="/settings/tokens" className="underline">
-            API tokens
-          </Link>{" "}
-          to connect it.
-        </p>
-      </section>
-    </div>
   );
 }

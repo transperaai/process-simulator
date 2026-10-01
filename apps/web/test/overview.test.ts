@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { partOf, toEngineModel } from "@transpera-flow/db";
 import { simulate, type DetectedIssue } from "@transpera-flow/engine";
+import { demoLandingRedirect } from "@/lib/demo/landing";
+import { litIds } from "@/lib/map/highlight";
 import { companyMap } from "@/lib/overview/company-map";
+import { labelIndexes, monthLabel, niceTicks } from "@/lib/overview/axis";
 import { sortFindings, ratingCounts } from "@/lib/overview/findings";
 import { headlineCards } from "@/lib/overview/headline";
-import { checkpointMonths, checkpointWeeks, mrrAfter, percentile, startingMrr, summarise } from "@/lib/overview/projection";
+import { checkpointMonths, checkpointWeeks, mrrAfter, mrrSeries, percentile, startingMrr, summarise } from "@/lib/overview/projection";
 import { demoBundle } from "@/lib/sources/demo";
 
 const finding = (key: string, rating: DetectedIssue["rating"], cost?: number) =>
-  ({ key, rating, ...(cost === undefined ? {} : { cost: { perMonth: cost } }) }) as unknown as DetectedIssue;
+  ({ key, rating, cost: { perMonth: cost ?? null, hoursPerMonth: null, method: "" } }) as unknown as DetectedIssue;
 
 describe("findings", () => {
   it("sorts worst rating first, then dearest, then as found", () => {
@@ -67,5 +70,88 @@ describe("company map", () => {
     const x = (list: typeof closed, id: string) => Number(list.find((s) => s.id === id)!.x);
     const others = parts.slice(1).map((p) => p.process.id);
     expect(others.some((id) => x(open, id) > x(closed, id))).toBe(true);
+  });
+});
+
+describe("lighting a finding on the map", () => {
+  const live = demoBundle();
+  const parts = [partOf(live), ...(live.otherProcesses ?? [])];
+  it("lights the closed card that holds the step, and opens nothing", () => {
+    const map = companyMap(live, parts);
+    const step = parts[0]!.steps.find((s) => s.kind !== "start" && s.kind !== "end")!;
+    expect([...litIds(map.bundle.steps, new Set(), [step.id])]).toEqual([step.process_id]);
+    // With the card open it is the step itself.
+    expect([...litIds(map.bundle.steps, new Set([step.process_id]), [step.id])]).toEqual([step.id]);
+  });
+});
+
+describe("axis", () => {
+  it("labels weeks for one month and months after that", () => {
+    expect(monthLabel(0, 3)).toBe("Now");
+    expect(monthLabel(0.5, 1)).toBe("Week 2");
+    expect(monthLabel(4, 24)).toBe("Month 4");
+  });
+  it("picks nice ticks around the data", () => {
+    const t = niceTicks(104_000, 131_000);
+    expect(t[0]).toBeLessThanOrEqual(104_000);
+    expect(t.at(-1)).toBeGreaterThanOrEqual(131_000);
+    expect(t.length).toBeLessThanOrEqual(8);
+  });
+  it("always labels the first and last point and never prints one over the last", () => {
+    // 24 months: Now, 4, 8, 12, 16, 20, 24 with room for 4 labels.
+    expect(labelIndexes(7, 4)).toEqual([0, 2, 4, 6]);
+    for (const [n, max] of [[7, 7], [7, 4], [5, 3], [13, 5], [2, 4], [1, 4]] as const) {
+      const idx = labelIndexes(n, max);
+      expect(idx[0]).toBe(0);
+      expect(idx.at(-1)).toBe(n - 1);
+      expect(idx.length).toBeLessThanOrEqual(Math.max(max, 2));
+    }
+  });
+});
+
+describe("the MRR series", () => {
+  const model = toEngineModel(demoBundle());
+  const months = [1, 2];
+  const runs = months.map((m) => {
+    const shorter = { ...model, horizonWeeks: Math.round(m * (52 / 12)) };
+    return summarise(shorter, simulate(shorter, 6, 1));
+  });
+  it("starts at today's MRR and is deterministic", () => {
+    const a = mrrSeries(model, months, runs);
+    const b = mrrSeries(model, months, runs);
+    expect(a).toEqual(b);
+    expect(a[0]).toMatchObject({ month: 0, mean: startingMrr(model).mrr });
+    expect(a.map((p) => p.month)).toEqual([0, 1, 2]);
+    for (const p of a) expect(p.lo).toBeLessThanOrEqual(p.hi);
+  });
+  it("gives the same point whichever horizon it was asked for", () => {
+    const shorter = mrrSeries({ ...model, horizonWeeks: 4 }, [1], [runs[0]!]);
+    const longer = mrrSeries({ ...model, horizonWeeks: 9 }, months, runs);
+    expect(shorter[1]).toEqual(longer[1]);
+  });
+});
+
+describe("the old demo links", () => {
+  it("send ?process= and ?nested=1 to the process page", () => {
+    expect(demoLandingRedirect("abc", undefined)).toBe("/demo/p/abc");
+    expect(demoLandingRedirect("abc", "1")).toBe("/demo/p/abc?nested=1");
+    expect(demoLandingRedirect(undefined, "1")).toMatch(/^\/demo\/p\/[0-9a-f-]+\?nested=1$/);
+    expect(demoLandingRedirect(undefined, undefined)).toBeNull();
+  });
+});
+
+describe("a company with no client records", () => {
+  it("says its churn is an estimate and uses the interim client count", () => {
+    const base = toEngineModel(demoBundle());
+    const model = { ...base, clients: undefined, clientGroups: undefined, activeClients: 20, churnMonthly: 0.05 };
+    const start = startingMrr(model);
+    expect(start.clients).toBe(20);
+    const result = simulate(model, 6, 1);
+    const band = mrrAfter(model, summarise(model, result), start);
+    const cards = headlineCards({ model, result, mrr: band, start, months: 3, currency: "GBP" });
+    const churn = cards.find((c) => c.key === "churn")!;
+    expect(churn.note).toMatch(/estimate/);
+    expect(churn.range).toMatch(/^about \d+% of clients over 3 months$/);
+    expect(cards.find((c) => c.key === "mrr")!.note).toMatch(/estimate/);
   });
 });

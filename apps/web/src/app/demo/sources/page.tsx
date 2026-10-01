@@ -11,7 +11,7 @@ export default function DemoSourcesPage() {
       eyebrow="Company"
       description="What the audit recorded, and every number that cites it. Demo mode: changes stay in this tab and are gone when you reload."
     >
-      <SourcesPage workspaceId={bundle.workspace.id} sources={demoSources()} citations={demoCitations(bundle)} mode="demo" processHref="/demo" />
+      <SourcesPage workspaceId={bundle.workspace.id} sources={demoSources()} citations={demoCitations(bundle)} mode="demo" processBase="/demo/p" />
     </Page>
   );
 }

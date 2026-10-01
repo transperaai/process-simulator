@@ -25,6 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { horizonLabel, horizonWeeks, isHorizonMonths, monthsForWeeks } from "@/lib/horizon";
 import { perceptionGapDetections } from "@/lib/issues/perception";
 import { confirmedBadges, confirmedRatings, registerEntries, stepRatingOf } from "@/lib/issues/register";
+import { litIds } from "@/lib/map/highlight";
 import { companyMap } from "@/lib/overview/company-map";
 import { sortFindings } from "@/lib/overview/findings";
 import { headlineCards } from "@/lib/overview/headline";
@@ -155,7 +156,7 @@ export function Overview({ workspaceName, live, parts, issues, mode, analysisRul
   const start = useMemo(() => (base ? startingMrr(base) : null), [base]);
   const finalMonths = useMemo(() => checkpointMonths(months), [months]);
   const earlier = useMemo(() => checkpointWeeks(finalMonths.slice(0, -1)), [finalMonths]);
-  const projection = useProjection(horizonResult ? horizonModel : null, earlier);
+  const projection = useProjection(horizonModel, earlier);
   const finalRun = useMemo(() => (horizonModel && horizonResult ? summarise(horizonModel, horizonResult) : null), [horizonModel, horizonResult]);
   const mrr = useMemo(() => (horizonModel && finalRun && start ? mrrAfter(horizonModel, finalRun, start) : null), [horizonModel, finalRun, start]);
   const cards = useMemo(
@@ -223,7 +224,7 @@ export function Overview({ workspaceName, live, parts, issues, mode, analysisRul
                 rating={rating}
                 expanded={expanded}
                 onExpandedChange={setExpanded}
-                highlight={lit}
+                highlight={lit ? [...litIds(map.bundle.steps, expanded, lit)] : null}
                 showPlayback={false}
                 showLanes={false}
                 height="auto"
@@ -247,7 +248,7 @@ export function Overview({ workspaceName, live, parts, issues, mode, analysisRul
           }
         >
           <AiReadPlaceholder />
-          <FindingRows findings={findings ? findings.slice(0, 5) : null} total={findings?.length ?? 0} places={placeOf} currency={currency} onLight={setLit} />
+          <FindingRows findings={findings ? findings.slice(0, 5) : null} total={findings?.length ?? 0} places={placeOf} currency={currency} fallbackHref={issuesHref} onLight={setLit} />
         </Section>
 
         <Section

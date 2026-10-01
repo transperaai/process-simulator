@@ -79,6 +79,7 @@ export function FindingRows({
   places,
   total,
   currency,
+  fallbackHref,
   onLight,
 }: {
   /** The five to show, worst first; null while the run is not in. */
@@ -87,6 +88,8 @@ export function FindingRows({
   /** How many findings there are in all. */
   total: number;
   currency: string;
+  /** Where a finding with no step on the map goes. */
+  fallbackHref: string;
   /** The pointer or keyboard focus is on a finding: its steps light up on the map. */
   onLight: (stepIds: string[] | null) => void;
 }) {
@@ -104,6 +107,7 @@ export function FindingRows({
   }
   return (
     <ul className="flex flex-col gap-2">
+      <li className="px-1 text-sm text-muted-foreground">Insights from the latest run. Acknowledge one to make it an issue.</li>
       {findings.map((f) => {
         const place = places(f);
         const rule = ruleOfIssue(f);
@@ -112,7 +116,7 @@ export function FindingRows({
         return (
           <li key={f.key}>
             <Link
-              href={place?.href ?? "#"}
+              href={place?.href ?? fallbackHref}
               onPointerEnter={() => onLight(lit)}
               onPointerLeave={() => onLight(null)}
               onFocus={() => onLight(lit)}

@@ -22,7 +22,7 @@ export function ZoomControls({ zoom, onOut, onFit, onIn }: { zoom: number; onOut
       <button type="button" onClick={onIn} aria-label="Zoom in" title="Zoom in" className={button}>
         +
       </button>
-      <span className="px-2 py-1 font-mono text-[11px] text-fg-3 tabular-nums" aria-live="polite" aria-label={`Zoom ${zoomLabel(zoom)}`}>
+      <span className="px-2 py-1 font-mono text-[11px] text-fg-3 tabular-nums" aria-live="polite" title="Current zoom">
         {zoomLabel(zoom)}
       </span>
     </div>

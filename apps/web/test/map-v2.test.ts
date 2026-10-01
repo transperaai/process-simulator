@@ -28,11 +28,12 @@ describe("fitting the map to its panel", () => {
     expect(fitZoom({ width: 800, height: 600 }, { width: 0, height: 0 })).toBe(1);
   });
 
-  it("centres a map that fits and pins one that does not to the top left", () => {
+  it("centres a map that fits across the panel and pins one that does not to the left", () => {
     const small = fitViewport({ x: 0, y: 0, width: 400, height: 200 }, { width: 1000, height: 600 });
     expect(small.zoom).toBeCloseTo(1.15);
     expect(small.x).toBeCloseTo((1000 - 400 * small.zoom) / 2);
-    expect(small.y).toBeCloseTo((600 - 200 * small.zoom) / 2);
+    // Down the panel it hangs from the top.
+    expect(small.y).toBe(0);
     const big = fitViewport({ x: 100, y: 50, width: 3000, height: 800 }, { width: 800, height: 600 }, { top: 56, right: 24, bottom: 24, left: 24 });
     expect(big.zoom).toBe(0.7);
     // The top left of the content sits just inside the panel's padding.
@@ -51,7 +52,7 @@ describe("fitting the map to its panel", () => {
 /** What the latest run detects: the single points of failure, two of them (Audit is tracked already; Kickoff is not). */
 function northbeamDetections() {
   const b = northbeamBundle();
-  const model = toEngineModel({ ...b, clients: [], clientServices: [], clientAssignments: [] }, "2026-10-05");
+  const model = toEngineModel({ ...b, clients: [], clientServices: [], clientAssignments: [] }, { startDate: "2026-10-05" });
   return detectIssues(model, simulate(model, 30, 1)).filter((d) => d.key.startsWith("spof:"));
 }
 

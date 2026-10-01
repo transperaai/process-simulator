@@ -707,7 +707,7 @@ const nodeTypes = { step: StepNode, terminal: TerminalNode, group: GroupNode };
 const edgeTypes = { branch: BranchEdge };
 
 /** Room around the steps when framing them: the toolbar sits top left, playback along the foot, lane names on the left. */
-const fitPadding = (lanes: boolean): Padding => ({ top: 56, right: 24, bottom: 64, left: lanes ? 150 : 24 });
+const fitPadding = (lanes: boolean): Padding => ({ top: 64, right: 24, bottom: 64, left: lanes ? 150 : 24 });
 
 const READ_ARIA: Partial<AriaLabelConfig> = {
   "node.a11yDescription.default": "Enter opens the step's detail: who does it, its times, rating, insights, issues and sources. Escape closes it.",
@@ -1290,6 +1290,7 @@ function Canvas({
   const zoom = useStore((st) => st.transform[2]);
   const initialized = useNodesInitialized();
   const handZoomed = useRef(false);
+  const framed = useRef(false);
   const sizeRef = useRef({ width: 0, height: 0 });
   useEffect(() => {
     sizeRef.current = { width, height };
@@ -1306,9 +1307,12 @@ function Canvas({
   // A read-only map also re-fits when its panel or its steps change size; an editor's view stays where the author put it.
   const refitKey = editable ? "" : `${width}x${height}:${bundle.steps.length}`;
   useEffect(() => {
-    if (!initialized || handZoomed.current) return;
-    const id = requestAnimationFrame(() => fit(false));
-    return () => cancelAnimationFrame(id);
+    // Once the first nodes are measured, later changes (groups opening) are framed without waiting on new ones to be.
+    if (initialized) framed.current = true;
+    if (!framed.current || handZoomed.current) return;
+    // Let React Flow take the new nodes and measure them first.
+    const timer = setTimeout(() => fit(false), 60);
+    return () => clearTimeout(timer);
   }, [initialized, drawn, fit, refitKey]);
   const zoomBy = (direction: "in" | "out") => {
     handZoomed.current = true;

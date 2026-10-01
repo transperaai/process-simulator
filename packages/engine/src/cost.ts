@@ -29,14 +29,23 @@ export interface CostConfig {
   capMonths: number;
   /** How often one person is away in a year, for the single-point-of-failure cost. */
   absencesPerYear: number;
+  /** The workspace currency (an ISO code such as "AUD"), for the amounts in the cost descriptions. Omitted: plain numbers. */
+  currency?: string;
 }
 
 export const DEFAULT_COST_CONFIG: CostConfig = { capMonths: 12, absencesPerYear: 2 };
 
 export type CostConfigInput = Partial<CostConfig>;
 
+/** A whole amount of money in the currency ("A$45,600"); plain digits when there is none. Never compacted, so it reads the same everywhere. */
+export function formatMoney(value: number, currency?: string): string {
+  if (!currency) return value.toLocaleString("en-GB", { maximumFractionDigits: 0 });
+  return value.toLocaleString("en-GB", { style: "currency", currency, maximumFractionDigits: 0 });
+}
+
 export function resolveCostConfig(input: CostConfigInput = {}): CostConfig {
   return {
+    ...(input.currency ? { currency: input.currency } : {}),
     capMonths: input.capMonths !== undefined && input.capMonths >= 0 ? input.capMonths : DEFAULT_COST_CONFIG.capMonths,
     absencesPerYear: input.absencesPerYear !== undefined && input.absencesPerYear >= 0 ? input.absencesPerYear : DEFAULT_COST_CONFIG.absencesPerYear,
   };
@@ -170,14 +179,18 @@ export function lossValueAtStep(model: EngineModel, step: Pick<EngineStep, "id">
 }
 
 /**
- * Extra wins a quarter that one more person in each of these roles would bring
- * (the shadow price's mean), for `detectIssues`' "too busy" cost. Each is an
+ * Extra wins a quarter (wins only, not other completions) that one more person
+ * in each of these roles would bring (the shadow price's mean), for `detectIssues`' "too busy" cost. Each is an
  * extra replication set (shadow-price.ts), so name only the roles worth it.
  */
 export function shadowPricesFor(model: EngineModel, roleIds: readonly string[], options: ShadowPriceOptions = {}): Record<string, number> {
   const out: Record<string, number> = {};
+  const now = options.now ?? (() => performance.now());
+  const deadline = options.timeBudgetMs === undefined ? Infinity : now() + options.timeBudgetMs;
   for (const id of [...new Set(roleIds)].sort()) {
-    const sp = shadowPrice(model, id, options);
+    // One time budget for all the roles together: each run gets what is left (at least one pair always runs).
+    const left = deadline === Infinity ? undefined : Math.max(0, deadline - now());
+    const sp = shadowPrice(model, id, { ...options, count: "wins", ...(left === undefined ? {} : { timeBudgetMs: left }), now });
     if (sp) out[id] = sp.perQuarter.mean;
   }
   return out;

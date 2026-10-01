@@ -23,6 +23,7 @@ import {
   WEEKS_PER_MONTH,
   averageDealValue,
   clientLossValue,
+  formatMoney,
   compareCostsDesc,
   lossValueAtStep,
   noCost,
@@ -148,6 +149,7 @@ export function detectIssues(
   const config = resolveRatingConfig(ratingConfig);
   const money = resolveCostConfig(options.cost);
   const shadow = options.shadowPrices ?? {};
+  const fmt = (v: number) => formatMoney(v, money.currency);
   const hoursPerDay = model.hoursPerWeek / 5;
   const people = result.resolvedPeople;
   const named = Boolean(model.people && Object.keys(model.people).length);
@@ -198,13 +200,19 @@ export function detectIssues(
         ? { perMonth: overtime, hoursPerMonth: null, method: "Overtime at cost rates. The work lost needs the what-if of one more person, which hasn't run." }
         : noCost("Needs the what-if of one more person, which hasn't run.");
     }
+    if (!(extraWins > 0)) {
+      // More capacity there wouldn't add wins: say so rather than "About A$0 … 0 more wins".
+      return overtime > 0
+        ? { perMonth: overtime, hoursPerMonth: null, method: `More capacity here wouldn't add wins, so the cost is the ${fmt(overtime)} a month of overtime at cost rates.` }
+        : noCost("More capacity here wouldn't add wins, so there's no work lost to cost.");
+    }
     const lost = extraWins * dealValue;
     return {
       perMonth: lost + overtime,
       hoursPerMonth: null,
       method:
-        `Work lost: one more person would bring about ${num(extraWins)} more win${extraWins === 1 ? "" : "s"} a month, each worth ${num(dealValue, 0)} (deal value, capped at ${num(money.capMonths, 0)} months)` +
-        (overtime > 0 ? `, plus ${num(overtime, 0)} of overtime at cost rates.` : "."),
+        `Work lost: one more person would bring about ${num(extraWins)} more win${extraWins === 1 ? "" : "s"} a month, each worth ${fmt(dealValue)} (deal value, capped at ${num(money.capMonths, 0)} months)` +
+        (overtime > 0 ? `, plus ${fmt(overtime)} of overtime at cost rates.` : "."),
     };
   };
   const roleCost = (roleId: string | null) => (roleId ? (model.roles[roleId]?.cost ?? 0) : 0);
@@ -229,7 +237,7 @@ export function detectIssues(
     return {
       perMonth: itemsMonth * lostShare * value,
       hoursPerMonth: null,
-      method: `Through drop-off: ${pct(lostShare)} of about ${num(itemsMonth)} items a month go cold while waiting, each worth ${num(value, 0)} at this step.`,
+      method: `Through drop-off: ${pct(lostShare)} of about ${num(itemsMonth)} items a month go cold while waiting, each worth ${fmt(value)} at this step.`,
     };
   };
   /** Rule 7: client work through the churn it drives; nothing for work that isn't for a client. */
@@ -247,7 +255,7 @@ export function detectIssues(
     return {
       perMonth: excess * share,
       hoursPerMonth: null,
-      method: `Through churn: late and missed work raises clients' monthly churn above its base, worth ${num(excess, 0)} a month in lost clients, and this step is ${pct(share)} of the missed deadlines.`,
+      method: `Through churn: late and missed work raises clients' monthly churn above its base, worth ${fmt(excess)} a month in lost clients, and this step is ${pct(share)} of the missed deadlines.`,
     };
   };
 
@@ -347,7 +355,7 @@ export function detectIssues(
   }
 
   // --- Overtime worked to keep up with client work (rule 3; docs/PRD.md §4.1, decision D7).
-  for (const issue of overtimeIssues(model, result, config)) out.push({ detector: "overtime", ...issue });
+  for (const issue of overtimeIssues(model, result, config, money)) out.push({ detector: "overtime", ...issue });
 
   // --- Per step: work piling up (4), waiting too long (5), single point of failure, rework (6), missed deadlines (7).
   for (const s of [...model.steps].sort((a, b) => cmp(a.id, b.id))) {
@@ -379,7 +387,7 @@ export function detectIssues(
           return {
             perMonth: added * value,
             hoursPerMonth: null,
-            method: `Value of the work stuck: about ${num(added)} more items pile up each month, each worth ${num(value, 0)} at this step.`,
+            method: `Value of the work stuck: about ${num(added)} more items pile up each month, each worth ${fmt(value)} at this step.`,
           };
         })(),
         title: `The queue at ${s.name} keeps growing`,
@@ -477,7 +485,7 @@ export function detectIssues(
             return {
               perMonth: hours * rate,
               hoursPerMonth: hours,
-              method: `Repeated hours at cost rates: about ${num(hours)} h a month done twice at ${num(rate, 0)} an hour.`,
+              method: `Repeated hours at cost rates: about ${num(hours)} h a month done twice at ${fmt(rate)} an hour.`,
             };
           })(),
           title: `${pct(observed)} of ${s.name} is done twice`,

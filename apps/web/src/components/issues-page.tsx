@@ -43,7 +43,7 @@ export function IssuesPage({
   const broken = useMemo(() => (model ? detectBrokenScenarios(model, scenarios, retiredSteps(bundle)) : []), [model, scenarios, bundle]);
   // Perception gaps come from the steps' evidence, not the run (issue #21).
   const gaps = useMemo(() => perceptionGapDetections(bundle.steps), [bundle.steps]);
-  const found = useDetectedIssues(model, result);
+  const found = useDetectedIssues(model, result, bundle.workspace.settings.currency);
   const detected = useMemo(() => (found ? [...broken, ...found, ...gaps] : model ? null : gaps), [found, model, broken, gaps]);
   const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);
 

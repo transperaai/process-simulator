@@ -83,7 +83,7 @@ export function keyOutputs(model: EngineModel, r: SimulationResult) {
       ]),
     ),
     // The rating of every detected issue and how it was reached (ratings.ts), so a moved cut-off or escalator shows here.
-    // The cost per month of each (cost.ts), without the shadow-price run the busy rule's money cost needs; the list's order too.
+    // The cost per month of each (cost.ts), without the shadow-price run the busy rule's money cost needs.
     ratings: Object.fromEntries(
       detectIssues(model, r).map((i) => [
         i.key,

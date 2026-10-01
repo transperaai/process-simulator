@@ -122,6 +122,7 @@ export {
   clientLossValue,
   compareCostsDesc,
   dealValue,
+  formatMoney,
   lossValueAtStep,
   noCost,
   remainingTenure,

@@ -14,12 +14,14 @@ import {
   northbeamWithServices,
   northbeamWithServicing,
   remainingTenure,
+  shadowPrice,
   shadowPricesFor,
   simulate,
   type DetectedIssue,
   type EngineModel,
   type EngineStep,
 } from "../src";
+import { servicingStepIds } from "../src/servicing";
 
 // Cost per month (issue #108; docs/analysis-rules.md "Cost per month"): what a
 // loss is worth, the cost method of each rule, and the order issues come in.
@@ -149,6 +151,34 @@ describe("the cost of each insight", () => {
     expect(capped.cost.perMonth).toBeCloseTo(((3 * WEEKS_PER_MONTH) / 13) * 6000, 6);
   });
 
+  it("too busy: amounts in the descriptions carry the workspace currency", () => {
+    const m = line(9, [{ id: "a", work: 4 }]);
+    const r = simulate(m, 12, 1);
+    const issue = find(detectIssues(m, r, NO_ESC, { cost: { currency: "AUD" }, shadowPrices: { r: 3 } }), "capacity:role:r")!;
+    expect(issue.cost.method).toContain("A$12,000");
+    const rework = line(3, [{ id: "a", work: 4, rework: 0.3 }]);
+    const rr = find(detectIssues(rework, simulate(rework, 12, 1), NO_ESC, { cost: { currency: "AUD" } }), "rework:step:a")!;
+    expect(rr.cost.method).toContain("A$50 an hour");
+  });
+
+  it("too busy: when more capacity wouldn't add wins, it says so instead of '0 more wins'", () => {
+    const m = line(9, [{ id: "a", work: 4 }]);
+    const r = simulate(m, 12, 1);
+    const issue = find(detectIssues(m, r, NO_ESC, { shadowPrices: { r: 0 } }), "capacity:role:r")!;
+    expect(issue.cost.perMonth).toBeNull();
+    expect(issue.cost.method).toMatch(/wouldn't add wins/);
+    expect(issue.cost.method).not.toMatch(/0 more wins/);
+  });
+
+  it("too busy: the shadow price counts wins only, in one time budget for every role", () => {
+    const m = line(9, [{ id: "a", work: 4 }]);
+    expect(shadowPricesFor(m, ["r"], { reps: 6, seed: 1 }).r).toBe(shadowPrice(m, "r", { reps: 6, seed: 1, count: "wins" })!.perQuarter.mean);
+    // A budget already spent still runs one pair per role, and no more.
+    let t = 0;
+    const spent = shadowPricesFor(m, ["r"], { reps: 30, seed: 1, timeBudgetMs: 5, now: () => (t += 10) });
+    expect(Object.keys(spent)).toEqual(["r"]);
+  });
+
   it("too busy: the shadow price is the engine's extra run", () => {
     const m = line(9, [{ id: "a", work: 4 }]);
     const prices = shadowPricesFor(m, ["r", "r"], { reps: 6, seed: 1 });
@@ -187,6 +217,32 @@ describe("the cost of each insight", () => {
     const issue = find(detectIssues(m, simulate(m, 6, 1), NO_ESC), "spof:step:a")!;
     expect(issue.cost.perMonth).toBeNull();
     expect(issue.cost.hoursPerMonth).toBeNull();
+  });
+
+  it("missed deadlines: client work costs the churn it drives; a step that isn't client work has no money method", () => {
+    const base = northbeamWithServicing();
+    const servicing = servicingStepIds(base);
+    // A tight SLA on every step, so servicing steps breach it and so does the pipeline.
+    const m: EngineModel = { ...base, steps: base.steps.map((s) => ({ ...s, sla: 2 })) };
+    const r = simulate(m, 12, 1);
+    const issues = detectIssues(m, r, NO_ESC).filter((i) => i.key.startsWith("sla:"));
+    const client = issues.filter((i) => servicing.has(i.stepId!));
+    const other = issues.filter((i) => !servicing.has(i.stepId!));
+    expect(client.length).toBeGreaterThan(0);
+    expect(other.length).toBeGreaterThan(0);
+    for (const i of other) expect(i.cost.perMonth).toBeNull();
+    // Excess churn (the simulated monthly churn above each client's base) x what losing it is worth, shared by each step's breaches.
+    let excess = 0;
+    for (const [cid, c] of Object.entries(m.clients!)) {
+      const base = m.services![c.services[0]!]!.churnMonthly;
+      const mean = c.services.reduce((s, id) => s + m.services![id]!.churnMonthly, 0) / c.services.length;
+      excess += Math.max(0, r.clients![cid]!.churnMonthly.mean - (c.services.length ? mean : base)) * clientLossValue(m, c, 12);
+    }
+    const total = [...servicing].reduce((s, id) => s + (r.steps[id]?.slaBreaches ?? 0), 0);
+    for (const i of client) {
+      expect(i.cost.perMonth).toBeCloseTo(excess * (r.steps[i.stepId!]!.slaBreaches / total), 6);
+    }
+    expect(client.reduce((s, i) => s + i.cost.perMonth!, 0)).toBeGreaterThan(0);
   });
 
   it("churn risk: the chance it leaves in a month × what losing it is worth", () => {

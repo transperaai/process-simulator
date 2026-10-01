@@ -26,8 +26,8 @@ export function costedRoleIds(issues: readonly DetectedIssue[]): string[] {
 const DEBOUNCE_MS = 250;
 
 /** `detectIssues` for a run, then again with the shadow prices of the roles it flags. Null until there is a run. */
-export function useDetectedIssues(model: EngineModel | null, result: SimulationResult | null): DetectedIssue[] | null {
-  const first = useMemo(() => (model && result ? detectIssues(model, result) : null), [model, result]);
+export function useDetectedIssues(model: EngineModel | null, result: SimulationResult | null, currency: string): DetectedIssue[] | null {
+  const first = useMemo(() => (model && result ? detectIssues(model, result, {}, { cost: { currency } }) : null), [model, result, currency]);
   const roleIds = useMemo(() => (first ? costedRoleIds(first) : []), [first]);
   const [prices, setPrices] = useState<{ model: EngineModel; result: SimulationResult; value: Record<string, number> } | null>(null);
 
@@ -52,6 +52,6 @@ export function useDetectedIssues(model: EngineModel | null, result: SimulationR
 
   return useMemo(() => {
     if (!model || !result || !first) return first;
-    return prices && prices.model === model && prices.result === result ? detectIssues(model, result, {}, { shadowPrices: prices.value }) : first;
-  }, [model, result, first, prices]);
+    return prices && prices.model === model && prices.result === result ? detectIssues(model, result, {}, { cost: { currency }, shadowPrices: prices.value }) : first;
+  }, [model, result, first, prices, currency]);
 }

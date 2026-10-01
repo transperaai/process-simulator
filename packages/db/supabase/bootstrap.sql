@@ -10095,7 +10095,7 @@ revoke all on function public.create_workspace(text, text, jsonb) from public, a
 grant execute on function public.create_workspace(text, text, jsonb) to authenticated;
 ']);
 
--- 20261103000000_cost_per_month.sql
+-- 20261109000000_cost_per_month.sql
 -- Cost per month (docs/analysis-rules.md "Cost per month"; issue #108).
 --
 -- Two small changes:
@@ -10121,8 +10121,8 @@ grant execute on function public.create_workspace(text, text, jsonb) to authenti
 --   2. The function is the 20261021000000 one (it has the 'GBP' default). Expect 1 row:
 --        select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
 --        where n.nspname='public' and p.proname='create_workspace' and pg_get_functiondef(p.oid) like '%"currency":"GBP"%';
---   3. Nothing of ours is applied past roles_and_workspaces. Expect only `20261021000000`:
---        select version from supabase_migrations.schema_migrations where version >= '20261021000000';
+--   3. This migration is not applied yet. Expect 0 rows:
+--        select version from supabase_migrations.schema_migrations where version >= '20261109000000';
 --
 -- Rollback (run as one transaction):
 --
@@ -10185,7 +10185,7 @@ grant execute on function public.create_workspace(text, text, jsonb) to authenti
 --     return ws;
 --   end;
 --   $$;
---   delete from supabase_migrations.schema_migrations where version = '20261103000000';
+--   delete from supabase_migrations.schema_migrations where version = '20261109000000';
 --   commit;
 --
 -- Production data: none needed. Workspaces already created keep their currency.
@@ -10264,7 +10264,7 @@ $$;
 revoke all on function public.create_workspace(text, text, jsonb) from public, anon;
 grant execute on function public.create_workspace(text, text, jsonb) to authenticated;
 
-insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261103000000', 'cost_per_month', array['-- Cost per month (docs/analysis-rules.md "Cost per month"; issue #108).
+insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261109000000', 'cost_per_month', array['-- Cost per month (docs/analysis-rules.md "Cost per month"; issue #108).
 --
 -- Two small changes:
 --   * New workspaces default to AUD. `public.create_workspace` is redefined as
@@ -10289,8 +10289,8 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --   2. The function is the 20261021000000 one (it has the ''GBP'' default). Expect 1 row:
 --        select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
 --        where n.nspname=''public'' and p.proname=''create_workspace'' and pg_get_functiondef(p.oid) like ''%"currency":"GBP"%'';
---   3. Nothing of ours is applied past roles_and_workspaces. Expect only `20261021000000`:
---        select version from supabase_migrations.schema_migrations where version >= ''20261021000000'';
+--   3. This migration is not applied yet. Expect 0 rows:
+--        select version from supabase_migrations.schema_migrations where version >= ''20261109000000'';
 --
 -- Rollback (run as one transaction):
 --
@@ -10353,7 +10353,7 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --     return ws;
 --   end;
 --   $$;
---   delete from supabase_migrations.schema_migrations where version = ''20261103000000'';
+--   delete from supabase_migrations.schema_migrations where version = ''20261109000000'';
 --   commit;
 --
 -- Production data: none needed. Workspaces already created keep their currency.
@@ -10499,7 +10499,7 @@ insert into public.process_revisions (id, workspace_id, process_id, number, stat
 insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, current_wip, lost_per_day, x, y, assumption, conflict, provenance) values
   ('e0000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Qualify lead', 'task', null, 'b0000000-0000-4000-8000-000000000001', null, 0.5, 'lognormal', '{}', 4, 'lognormal', '{}', 0, null, 'HubSpot', null, null, null, null, 60, 50, false, false, '{}'),
   ('e0000000-0000-4000-8000-000000000002', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Discovery call', 'task', null, 'b0000000-0000-4000-8000-000000000001', null, 1.5, 'lognormal', '{}', 24, 'lognormal', '{}', 0, null, 'Zoom + HubSpot', null, null, null, null, 290, 50, false, false, '{"wait_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Priya Shah","quote":"Discovery calls get booked within three working days of qualifying.","timestamp":null,"value":24}]}}'),
-  ('e0000000-0000-4000-8000-000000000003', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Audit & proposal', 'task', null, 'b0000000-0000-4000-8000-000000000002', null, 6, 'lognormal', '{}', 0, 'lognormal', '{}', 0.15, null, 'SEMrush, Google Docs', null, null, null, null, 520, 50, false, false, '{"work_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000001","speaker":"Maya Collins","quote":"A proper audit and proposal is a day''s work, call it six hours.","timestamp":"00:14:05","value":6}]},"rework_rate":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Priya Shah","quote":"About one proposal in seven comes back from sales review for changes.","timestamp":null,"value":0.15}]}}'),
+  ('e0000000-0000-4000-8000-000000000003', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Audit & proposal', 'task', null, 'b0000000-0000-4000-8000-000000000002', null, 6, 'lognormal', '{}', 0, 'lognormal', '{}', 0.15, null, 'SEMrush, Google Docs', null, null, null, 0.05, 520, 50, false, false, '{"work_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000001","speaker":"Maya Collins","quote":"A proper audit and proposal is a day''s work, call it six hours.","timestamp":"00:14:05","value":6}]},"rework_rate":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Priya Shah","quote":"About one proposal in seven comes back from sales review for changes.","timestamp":null,"value":0.15}]}}'),
   ('e0000000-0000-4000-8000-000000000004', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Client decision', 'decision', null, null, null, 0, 'lognormal', '{}', 40, 'lognormal', '{}', 0, null, 'Email', null, null, null, null, 750, 50, false, false, '{"wait_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Tom Reed","quote":"Clients take a week to decide, sometimes longer.","timestamp":null,"value":40}]}}'),
   ('e0000000-0000-4000-8000-000000000005', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Contract & onboarding', 'task', null, 'b0000000-0000-4000-8000-000000000003', null, 3, 'lognormal', '{}', 16, 'lognormal', '{}', 0.1, null, 'PandaDoc, Notion', null, null, null, null, 60, 290, false, false, '{}'),
   ('e0000000-0000-4000-8000-000000000006', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Kickoff & strategy', 'task', null, 'b0000000-0000-4000-8000-000000000002', null, 4, 'lognormal', '{}', 8, 'lognormal', '{}', 0, null, 'Notion', null, null, null, null, 290, 290, false, false, '{}'),

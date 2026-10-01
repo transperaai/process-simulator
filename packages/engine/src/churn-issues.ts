@@ -7,7 +7,7 @@
 import type { DetectedIssue } from "./issues";
 import type { EngineModel, EngineStep, SimulationResult } from "./model";
 import { fixedRating } from "./ratings";
-import { DEFAULT_COST_CONFIG, clientLossValue, type CostConfig } from "./cost";
+import { DEFAULT_COST_CONFIG, clientLossValue, formatMoney, type CostConfig } from "./cost";
 import { AT_RISK_HEALTH, clientChurnSensitivity, servicingLinks } from "./servicing";
 import { clientChurnMonthly } from "./clients";
 
@@ -63,7 +63,7 @@ export function churnRiskIssues(model: EngineModel, result: SimulationResult, mo
         return {
           perMonth: c.churnMonthly.mean * value,
           hoursPerMonth: null,
-          method: `Through churn: a ${pct(c.churnMonthly.mean)} chance it leaves in a month × ${num(value, 0)}, its monthly fee × the tenure it has left (capped at ${num(money.capMonths, 0)} months).`,
+          method: `Through churn: a ${pct(c.churnMonthly.mean)} chance it leaves in a month × ${formatMoney(value, money.currency)}, its monthly fee × the tenure it has left (capped at ${num(money.capMonths, 0)} months).`,
         };
       })(),
       title: `${client.name}: health ${trend}, at risk of churning`,

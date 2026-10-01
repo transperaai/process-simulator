@@ -23,8 +23,8 @@
 --   2. The function is the 20261021000000 one (it has the 'GBP' default). Expect 1 row:
 --        select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
 --        where n.nspname='public' and p.proname='create_workspace' and pg_get_functiondef(p.oid) like '%"currency":"GBP"%';
---   3. Nothing of ours is applied past roles_and_workspaces. Expect only `20261021000000`:
---        select version from supabase_migrations.schema_migrations where version >= '20261021000000';
+--   3. This migration is not applied yet. Expect 0 rows:
+--        select version from supabase_migrations.schema_migrations where version >= '20261109000000';
 --
 -- Rollback (run as one transaction):
 --
@@ -87,7 +87,7 @@
 --     return ws;
 --   end;
 --   $$;
---   delete from supabase_migrations.schema_migrations where version = '20261103000000';
+--   delete from supabase_migrations.schema_migrations where version = '20261109000000';
 --   commit;
 --
 -- Production data: none needed. Workspaces already created keep their currency.

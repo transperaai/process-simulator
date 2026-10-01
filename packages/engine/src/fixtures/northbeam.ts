@@ -35,7 +35,7 @@ export function northbeamModel(): EngineModel {
     steps: [
       { id: "qualify", name: "Qualify lead", role: "sales", work: 0.5, wait: 4, rework: 0, next: [{ to: "discovery", p: 0.55 }, { to: "lost", p: 0.45 }] },
       { id: "discovery", name: "Discovery call", role: "sales", work: 1.5, wait: 24, rework: 0, next: [{ to: "audit", p: 0.7 }, { to: "lost", p: 0.3 }] },
-      { id: "audit", name: "Audit & proposal", role: "strat", work: 6, wait: 0, rework: 0.15, next: [{ to: "decision", p: 1 }] },
+      { id: "audit", name: "Audit & proposal", role: "strat", work: 6, wait: 0, rework: 0.15, lostPerDay: 0.05, next: [{ to: "decision", p: 1 }] },
       { id: "decision", name: "Client decision", role: null, work: 0, wait: 40, rework: 0, next: [{ to: "onboard", p: 0.32 }, { to: "lost", p: 0.68 }] },
       { id: "onboard", name: "Contract & onboarding", role: "am", work: 3, wait: 16, rework: 0.1, next: [{ to: "kickoff", p: 1 }] },
       { id: "kickoff", name: "Kickoff & strategy", role: "strat", work: 4, wait: 8, rework: 0, next: [{ to: "seo", p: 0.55 }, { to: "ppc", p: 0.45 }] },

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { NORTHBEAM_WORKSPACE_ID } from "../src";
@@ -53,13 +54,26 @@ describe("create_workspace", () => {
     });
   });
 
-  it("a new workspace is in AUD unless it says otherwise, and existing workspaces keep their currency (issue #108)", async () => {
-    await db.client.query("insert into workspaces (name, slug, settings) values ('Old', 'old-gbp', '{\"currency\":\"GBP\"}')");
+  it("a new workspace is in AUD unless it says otherwise (issue #108)", async () => {
     await db.as(users.agency!.claims, async (c) => {
       const id = (await create(c, "Fresh", "fresh-aud")).rows[0].id as string;
       expect((await c.query("select settings ->> 'currency' as currency from workspaces where id = $1", [id])).rows[0].currency).toBe("AUD");
-      expect((await c.query("select settings ->> 'currency' as currency from workspaces where slug = 'old-gbp'")).rows[0].currency).toBe("GBP");
+      const usd = (await create(c, "Dollars", "dollars-usd", { currency: "USD" })).rows[0].id as string;
+      expect((await c.query("select settings ->> 'currency' as currency from workspaces where id = $1", [usd])).rows[0].currency).toBe("USD");
     });
+  });
+
+  it("existing workspaces keep their currency: the migration never writes workspace rows", async () => {
+    // The seeded Northbeam workspace predates the AUD default and is still in pounds...
+    expect((await db.client.query("select settings ->> 'currency' as currency from workspaces where id = $1", [ws])).rows[0].currency).toBe("GBP");
+    // ...and nothing in the migration could have changed it: it only adds a column to steps and redefines create_workspace.
+    const sql = readFileSync(new URL("../supabase/migrations/20261109000000_cost_per_month.sql", import.meta.url), "utf8")
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("--"))
+      .join("\n");
+    expect(sql).not.toMatch(/\bupdate\s+(only\s+)?(public\.)?workspaces\b/i);
+    expect(sql).not.toMatch(/\bdelete\s+from\b/i);
+    expect(sql).toMatch(/alter table public\.steps/);
   });
 
   it("an agency admin reads every workspace; a stranger reads none of them", async () => {

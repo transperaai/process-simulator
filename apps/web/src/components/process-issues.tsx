@@ -63,7 +63,7 @@ export function useProcessIssues({
   const broken = useMemo(() => (model ? detectBrokenScenarios(model, scenarios, retired) : []), [model, scenarios, retired]);
   // Perception gaps from the steps' evidence (issue #21).
   const gaps = useMemo(() => perceptionGapDetections(bundle.steps), [bundle.steps]);
-  const found = useDetectedIssues(model, result);
+  const found = useDetectedIssues(model, result, bundle.workspace.settings.currency);
   const detected = useMemo(() => (found ? [...broken, ...found, ...gaps] : null), [found, broken, gaps]);
   const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);
 

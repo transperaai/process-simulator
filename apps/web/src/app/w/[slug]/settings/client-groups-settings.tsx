@@ -137,7 +137,7 @@ export function ClientGroupsSettings({ data }: { data: WorkspaceSettingsData }) 
       <p className="text-xs text-muted-foreground">
         {total === 0
           ? "No clients counted yet: until you do, the simulation uses the interim client count in Simulation."
-          : `${total} ${total === 1 ? "client" : "clients"} in all. A service with no numbers yet starts from its own price, base churn and expected tenure.`}
+          : `${total} ${total === 1 ? "client" : "clients"} in all. Once any service has clients counted, only counted clients are simulated. A service with no numbers yet starts from its own price, base churn and expected tenure.`}
       </p>
 
       <fieldset className="flex flex-col gap-2">

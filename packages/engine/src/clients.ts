@@ -157,7 +157,8 @@ const memo = new WeakMap<EngineModel, EngineModel>();
  * client per counted client (named `<service> <n>`, billing the group's fee,
  * starting at its health, assigned to nobody), and each grouped service takes
  * the group's normal churn and typical stay. Groups for services the model
- * doesn't know are ignored. A model with no groups is returned as it is.
+ * doesn't know are ignored. A model with no groups, or whose groups count no
+ * clients at all, is returned as it is (its interim count or named roster applies).
  * Pure, deterministic and memoised, so the same model always gives the same
  * clients in the same order (service id order, then number).
  */
@@ -166,6 +167,12 @@ export function withClientGroups(model: EngineModel): EngineModel {
   if (!groups || expanded.has(model) || !Object.keys(groups).length) return model;
   const cached = memo.get(model);
   if (cached) return cached;
+  const counted = (sid: string) => (model.services?.[sid] ? Math.min(MAX_GROUP_CLIENTS, Math.max(0, Math.round(groups[sid]!.count))) : 0);
+  // Groups with no clients counted at all don't switch the model over: the interim client count (or named roster) stays.
+  if (!Object.keys(groups).some((sid) => counted(sid) > 0)) {
+    memo.set(model, model);
+    return model;
+  }
   const services = { ...model.services };
   const clients: Record<string, EngineClient> = {};
   let total = 0;
@@ -174,7 +181,7 @@ export function withClientGroups(model: EngineModel): EngineModel {
     const service = model.services?.[sid];
     if (!service) continue;
     services[sid] = { ...service, churnMonthly: g.churnMonthly, tenureMonths: g.stayMonths };
-    const n = Math.min(MAX_GROUP_CLIENTS, Math.max(0, Math.round(g.count)));
+    const n = counted(sid);
     for (let i = 1; i <= n; i++) {
       clients[groupClientKey(sid, i)] = { name: `${service.name} ${i}`, services: [sid], mrr: g.fee, health: g.health, assignments: {} };
     }

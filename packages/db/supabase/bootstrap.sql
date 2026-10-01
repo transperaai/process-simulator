@@ -10095,7 +10095,503 @@ revoke all on function public.create_workspace(text, text, jsonb) from public, a
 grant execute on function public.create_workspace(text, text, jsonb) to authenticated;
 ']);
 
--- 20261107000000_client_groups.sql
+-- 20261104000000_analysis_rules.sql
+-- Settings -> Analysis rules (docs/analysis-rules.md "Editing the rules"; issue #109).
+--
+-- One row per workspace holds its analysis rules: which rules are on, their
+-- cut-offs, overrides, the two escalator switches and the money settings and
+-- defaults. The document is one generic jsonb column (`settings`), sparse: it
+-- holds only what differs from the agreed defaults, and its shape is checked
+-- by the app (packages/engine/src/analysis-settings.ts), so adding a money
+-- setting later needs no migration. No row means all defaults.
+--
+-- Owners and editors change it; every member reads it (the issues pages rate
+-- the latest run with it). Same policies as `demand_settings`.
+--
+-- Strictly additive: table `public.analysis_rules`, its `set_updated_at`
+-- trigger, row-level security and four policies. `save_fields`, `save_links`
+-- and every existing table are unchanged.
+--
+-- Preflight (run with `bash packages/db/scripts/prod-sql.sh -c "..."`):
+--
+--   1. The table must not exist yet. Expect 0 rows:
+--        select table_name from information_schema.tables
+--        where table_schema = 'public' and table_name = 'analysis_rules';
+--   2. Nothing of ours is applied past this one. Expect 0 rows:
+--        select version from supabase_migrations.schema_migrations where version >= '20261104000000';
+--
+-- Rollback (run as one transaction):
+--
+--   begin;
+--   drop table if exists public.analysis_rules;   -- drops its trigger and policies with it
+--   delete from supabase_migrations.schema_migrations where version = '20261104000000';
+--   commit;
+--
+-- Production data: none needed (no row means the defaults).
+
+create table public.analysis_rules (
+  workspace_id uuid primary key references public.workspaces (id) on delete cascade,
+  -- The rules document. {} is all defaults.
+  settings jsonb not null default '{}'
+    check (jsonb_typeof(settings) = 'object' and pg_catalog.octet_length(settings::text) <= 200000),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  created_by uuid references auth.users (id) on delete set null default auth.uid()
+);
+
+create trigger set_updated_at before update on public.analysis_rules
+  for each row execute function public.set_updated_at();
+
+alter table public.analysis_rules enable row level security;
+
+create policy "read analysis rules" on public.analysis_rules for select to authenticated
+  using (public.can_read_workspace(workspace_id));
+create policy "insert analysis rules" on public.analysis_rules for insert to authenticated
+  with check (public.can_edit_workspace(workspace_id));
+create policy "update analysis rules" on public.analysis_rules for update to authenticated
+  using (public.can_edit_workspace(workspace_id)) with check (public.can_edit_workspace(workspace_id));
+create policy "delete analysis rules" on public.analysis_rules for delete to authenticated
+  using (public.can_edit_workspace(workspace_id));
+
+grant select, insert, update, delete on public.analysis_rules to authenticated;
+revoke all on public.analysis_rules from anon;
+
+insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261104000000', 'analysis_rules', array['-- Settings -> Analysis rules (docs/analysis-rules.md "Editing the rules"; issue #109).
+--
+-- One row per workspace holds its analysis rules: which rules are on, their
+-- cut-offs, overrides, the two escalator switches and the money settings and
+-- defaults. The document is one generic jsonb column (`settings`), sparse: it
+-- holds only what differs from the agreed defaults, and its shape is checked
+-- by the app (packages/engine/src/analysis-settings.ts), so adding a money
+-- setting later needs no migration. No row means all defaults.
+--
+-- Owners and editors change it; every member reads it (the issues pages rate
+-- the latest run with it). Same policies as `demand_settings`.
+--
+-- Strictly additive: table `public.analysis_rules`, its `set_updated_at`
+-- trigger, row-level security and four policies. `save_fields`, `save_links`
+-- and every existing table are unchanged.
+--
+-- Preflight (run with `bash packages/db/scripts/prod-sql.sh -c "..."`):
+--
+--   1. The table must not exist yet. Expect 0 rows:
+--        select table_name from information_schema.tables
+--        where table_schema = ''public'' and table_name = ''analysis_rules'';
+--   2. Nothing of ours is applied past this one. Expect 0 rows:
+--        select version from supabase_migrations.schema_migrations where version >= ''20261104000000'';
+--
+-- Rollback (run as one transaction):
+--
+--   begin;
+--   drop table if exists public.analysis_rules;   -- drops its trigger and policies with it
+--   delete from supabase_migrations.schema_migrations where version = ''20261104000000'';
+--   commit;
+--
+-- Production data: none needed (no row means the defaults).
+
+create table public.analysis_rules (
+  workspace_id uuid primary key references public.workspaces (id) on delete cascade,
+  -- The rules document. {} is all defaults.
+  settings jsonb not null default ''{}''
+    check (jsonb_typeof(settings) = ''object'' and pg_catalog.octet_length(settings::text) <= 200000),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  created_by uuid references auth.users (id) on delete set null default auth.uid()
+);
+
+create trigger set_updated_at before update on public.analysis_rules
+  for each row execute function public.set_updated_at();
+
+alter table public.analysis_rules enable row level security;
+
+create policy "read analysis rules" on public.analysis_rules for select to authenticated
+  using (public.can_read_workspace(workspace_id));
+create policy "insert analysis rules" on public.analysis_rules for insert to authenticated
+  with check (public.can_edit_workspace(workspace_id));
+create policy "update analysis rules" on public.analysis_rules for update to authenticated
+  using (public.can_edit_workspace(workspace_id)) with check (public.can_edit_workspace(workspace_id));
+create policy "delete analysis rules" on public.analysis_rules for delete to authenticated
+  using (public.can_edit_workspace(workspace_id));
+
+grant select, insert, update, delete on public.analysis_rules to authenticated;
+revoke all on public.analysis_rules from anon;
+']);
+
+-- 20261105000000_market_conditions.sql
+-- Market conditions (docs/PRD.md decision D29, ticket A57 / #122): the outside
+-- climate for demand. A condition is seven factors, each a whole percent of
+-- today (100 = the same as today); a workspace has four read-only presets
+-- (Boom, Stable, Soft, Downturn) and any number of its own. A 24-month
+-- schedule says which condition applies in which months, and the engine
+-- applies it month by month (`EngineModel.market`).
+--
+-- Strictly additive: two new tables, three functions in `private`, one
+-- trigger on `workspaces`, and a backfill that gives every existing workspace
+-- its four presets. `save_fields` is not touched: conditions and schedule
+-- entries are saved as whole rows.
+--
+-- Rollback (run as one transaction):
+--
+--   begin;
+--   drop trigger if exists seed_market_presets on public.workspaces;
+--   drop table public.market_schedule;
+--   drop table public.market_conditions;
+--   drop function if exists private.seed_market_presets();
+--   drop function if exists private.market_presets();
+--   drop function if exists private.check_market_schedule();
+--   delete from supabase_migrations.schema_migrations where version = '20261105000000';
+--   commit;
+--
+-- Rolling back deletes every custom condition and the schedule.
+
+-- ---------------------------------------------------------------------------
+-- Conditions
+-- ---------------------------------------------------------------------------
+
+create table public.market_conditions (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  name text not null constraint market_conditions_name_length check (char_length(btrim(name)) between 1 and 80),
+  -- boom, stable, soft or downturn for the four read-only presets; null for your own.
+  preset text constraint market_conditions_preset check (preset in ('boom', 'stable', 'soft', 'downturn')),
+  -- The seven factors, as a whole percent of today (100 = same as today).
+  -- Enquiries.
+  leads int not null default 100 constraint market_conditions_leads check (leads between 0 and 500),
+  -- Enquiries that sign.
+  conv int not null default 100 constraint market_conditions_conv check (conv between 0 and 500),
+  -- Time to decide.
+  cycle int not null default 100 constraint market_conditions_cycle check (cycle between 0 and 500),
+  -- Prices you can charge.
+  price int not null default 100 constraint market_conditions_price check (price between 0 and 500),
+  -- Clients leaving.
+  churn int not null default 100 constraint market_conditions_churn check (churn between 0 and 500),
+  -- Time to hire.
+  hire int not null default 100 constraint market_conditions_hire check (hire between 0 and 500),
+  -- Late payments.
+  pay int not null default 100 constraint market_conditions_pay check (pay between 0 and 500),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  created_by uuid references auth.users (id) on delete set null default auth.uid(),
+  unique (id, workspace_id)
+);
+
+create index on public.market_conditions (workspace_id);
+-- One of each preset per workspace.
+create unique index market_conditions_preset_key on public.market_conditions (workspace_id, preset) where preset is not null;
+
+create trigger set_updated_at before update on public.market_conditions for each row execute function public.set_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- Schedule
+-- ---------------------------------------------------------------------------
+
+-- Which condition applies from which month to which, counted from the start of
+-- a run (month 1 is the first month). Months no entry covers are Stable.
+create table public.market_schedule (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  from_month int not null constraint market_schedule_from check (from_month between 1 and 24),
+  to_month int not null constraint market_schedule_to check (to_month between 1 and 24),
+  condition_id uuid not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  created_by uuid references auth.users (id) on delete set null default auth.uid(),
+  constraint market_schedule_order check (to_month >= from_month),
+  -- A condition in use can't be deleted until it is taken off the schedule.
+  foreign key (condition_id, workspace_id) references public.market_conditions (id, workspace_id)
+);
+
+create index on public.market_schedule (workspace_id);
+
+create trigger set_updated_at before update on public.market_schedule for each row execute function public.set_updated_at();
+
+-- Entries don't overlap: one condition applies in any month.
+create function private.check_market_schedule() returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  -- Serialise changes to one workspace's schedule, so two overlapping inserts can't both pass the check below.
+  perform pg_advisory_xact_lock(hashtextextended(new.workspace_id::text, 0));
+  if exists (
+    select 1 from public.market_schedule s
+    where s.workspace_id = new.workspace_id and s.id <> new.id
+      and s.from_month <= new.to_month and s.to_month >= new.from_month
+  ) then
+    raise exception 'market_schedule: months % to % overlap another change', new.from_month, new.to_month
+      using errcode = '23P01';
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function private.check_market_schedule() from public, anon;
+
+create trigger check_market_schedule before insert or update on public.market_schedule
+  for each row execute function private.check_market_schedule();
+
+-- ---------------------------------------------------------------------------
+-- Row-level security
+-- ---------------------------------------------------------------------------
+
+-- Everyone in the workspace can read; editors, owners and agency admins write.
+-- The four presets are read-only: they can't be inserted, changed or deleted
+-- through the API (the trigger below creates them as the function owner).
+alter table public.market_conditions enable row level security;
+alter table public.market_schedule enable row level security;
+
+create policy "read market conditions" on public.market_conditions for select to authenticated
+  using (public.can_read_workspace(workspace_id));
+create policy "insert market conditions" on public.market_conditions for insert to authenticated
+  with check (public.can_edit_workspace(workspace_id) and preset is null);
+create policy "update market conditions" on public.market_conditions for update to authenticated
+  using (public.can_edit_workspace(workspace_id) and preset is null)
+  with check (public.can_edit_workspace(workspace_id) and preset is null);
+create policy "delete market conditions" on public.market_conditions for delete to authenticated
+  using (public.can_edit_workspace(workspace_id) and preset is null);
+
+create policy "read market schedule" on public.market_schedule for select to authenticated
+  using (public.can_read_workspace(workspace_id));
+create policy "insert market schedule" on public.market_schedule for insert to authenticated
+  with check (public.can_edit_workspace(workspace_id));
+create policy "update market schedule" on public.market_schedule for update to authenticated
+  using (public.can_edit_workspace(workspace_id)) with check (public.can_edit_workspace(workspace_id));
+create policy "delete market schedule" on public.market_schedule for delete to authenticated
+  using (public.can_edit_workspace(workspace_id));
+
+grant select, insert, update, delete on public.market_conditions, public.market_schedule to authenticated;
+revoke all on public.market_conditions, public.market_schedule from anon;
+
+-- ---------------------------------------------------------------------------
+-- Presets for every workspace
+-- ---------------------------------------------------------------------------
+
+-- The four presets (the prototype's values; `MARKET_PRESETS` in the engine
+-- holds the same numbers, and a test checks they agree).
+create function private.market_presets() returns table (preset text, name text, leads int, conv int, cycle int, price int, churn int, hire int, pay int)
+language sql immutable
+set search_path = ''
+as $$
+  values
+    ('boom',     'Boom',     125, 110,  90, 100,  85, 130,  90),
+    ('stable',   'Stable',   100, 100, 100, 100, 100, 100, 100),
+    ('soft',     'Soft',      85,  90, 120,  95, 115,  90, 115),
+    ('downturn', 'Downturn',  65,  75, 140,  88, 135,  80, 135)
+$$;
+
+-- Security definer so the presets exist however the workspace is created; it
+-- writes only rows for the new workspace.
+create function private.seed_market_presets() returns trigger
+language plpgsql security definer
+set search_path = ''
+as $$
+begin
+  insert into public.market_conditions (workspace_id, name, preset, leads, conv, cycle, price, churn, hire, pay)
+  select new.id, p.name, p.preset, p.leads, p.conv, p.cycle, p.price, p.churn, p.hire, p.pay from private.market_presets() as p;
+  return null;
+end;
+$$;
+
+revoke all on function private.market_presets() from public, anon;
+revoke all on function private.seed_market_presets() from public, anon, authenticated;
+
+create trigger seed_market_presets after insert on public.workspaces
+  for each row execute function private.seed_market_presets();
+
+-- Workspaces that already exist get their presets now.
+insert into public.market_conditions (workspace_id, name, preset, leads, conv, cycle, price, churn, hire, pay)
+select w.id, p.name, p.preset, p.leads, p.conv, p.cycle, p.price, p.churn, p.hire, p.pay
+from public.workspaces w cross join private.market_presets() as p
+on conflict (workspace_id, preset) where preset is not null do nothing;
+
+insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261105000000', 'market_conditions', array['-- Market conditions (docs/PRD.md decision D29, ticket A57 / #122): the outside
+-- climate for demand. A condition is seven factors, each a whole percent of
+-- today (100 = the same as today); a workspace has four read-only presets
+-- (Boom, Stable, Soft, Downturn) and any number of its own. A 24-month
+-- schedule says which condition applies in which months, and the engine
+-- applies it month by month (`EngineModel.market`).
+--
+-- Strictly additive: two new tables, three functions in `private`, one
+-- trigger on `workspaces`, and a backfill that gives every existing workspace
+-- its four presets. `save_fields` is not touched: conditions and schedule
+-- entries are saved as whole rows.
+--
+-- Rollback (run as one transaction):
+--
+--   begin;
+--   drop trigger if exists seed_market_presets on public.workspaces;
+--   drop table public.market_schedule;
+--   drop table public.market_conditions;
+--   drop function if exists private.seed_market_presets();
+--   drop function if exists private.market_presets();
+--   drop function if exists private.check_market_schedule();
+--   delete from supabase_migrations.schema_migrations where version = ''20261105000000'';
+--   commit;
+--
+-- Rolling back deletes every custom condition and the schedule.
+
+-- ---------------------------------------------------------------------------
+-- Conditions
+-- ---------------------------------------------------------------------------
+
+create table public.market_conditions (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  name text not null constraint market_conditions_name_length check (char_length(btrim(name)) between 1 and 80),
+  -- boom, stable, soft or downturn for the four read-only presets; null for your own.
+  preset text constraint market_conditions_preset check (preset in (''boom'', ''stable'', ''soft'', ''downturn'')),
+  -- The seven factors, as a whole percent of today (100 = same as today).
+  -- Enquiries.
+  leads int not null default 100 constraint market_conditions_leads check (leads between 0 and 500),
+  -- Enquiries that sign.
+  conv int not null default 100 constraint market_conditions_conv check (conv between 0 and 500),
+  -- Time to decide.
+  cycle int not null default 100 constraint market_conditions_cycle check (cycle between 0 and 500),
+  -- Prices you can charge.
+  price int not null default 100 constraint market_conditions_price check (price between 0 and 500),
+  -- Clients leaving.
+  churn int not null default 100 constraint market_conditions_churn check (churn between 0 and 500),
+  -- Time to hire.
+  hire int not null default 100 constraint market_conditions_hire check (hire between 0 and 500),
+  -- Late payments.
+  pay int not null default 100 constraint market_conditions_pay check (pay between 0 and 500),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  created_by uuid references auth.users (id) on delete set null default auth.uid(),
+  unique (id, workspace_id)
+);
+
+create index on public.market_conditions (workspace_id);
+-- One of each preset per workspace.
+create unique index market_conditions_preset_key on public.market_conditions (workspace_id, preset) where preset is not null;
+
+create trigger set_updated_at before update on public.market_conditions for each row execute function public.set_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- Schedule
+-- ---------------------------------------------------------------------------
+
+-- Which condition applies from which month to which, counted from the start of
+-- a run (month 1 is the first month). Months no entry covers are Stable.
+create table public.market_schedule (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  from_month int not null constraint market_schedule_from check (from_month between 1 and 24),
+  to_month int not null constraint market_schedule_to check (to_month between 1 and 24),
+  condition_id uuid not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  created_by uuid references auth.users (id) on delete set null default auth.uid(),
+  constraint market_schedule_order check (to_month >= from_month),
+  -- A condition in use can''t be deleted until it is taken off the schedule.
+  foreign key (condition_id, workspace_id) references public.market_conditions (id, workspace_id)
+);
+
+create index on public.market_schedule (workspace_id);
+
+create trigger set_updated_at before update on public.market_schedule for each row execute function public.set_updated_at();
+
+-- Entries don''t overlap: one condition applies in any month.
+create function private.check_market_schedule() returns trigger
+language plpgsql
+set search_path = ''''
+as $$
+begin
+  -- Serialise changes to one workspace''s schedule, so two overlapping inserts can''t both pass the check below.
+  perform pg_advisory_xact_lock(hashtextextended(new.workspace_id::text, 0));
+  if exists (
+    select 1 from public.market_schedule s
+    where s.workspace_id = new.workspace_id and s.id <> new.id
+      and s.from_month <= new.to_month and s.to_month >= new.from_month
+  ) then
+    raise exception ''market_schedule: months % to % overlap another change'', new.from_month, new.to_month
+      using errcode = ''23P01'';
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function private.check_market_schedule() from public, anon;
+
+create trigger check_market_schedule before insert or update on public.market_schedule
+  for each row execute function private.check_market_schedule();
+
+-- ---------------------------------------------------------------------------
+-- Row-level security
+-- ---------------------------------------------------------------------------
+
+-- Everyone in the workspace can read; editors, owners and agency admins write.
+-- The four presets are read-only: they can''t be inserted, changed or deleted
+-- through the API (the trigger below creates them as the function owner).
+alter table public.market_conditions enable row level security;
+alter table public.market_schedule enable row level security;
+
+create policy "read market conditions" on public.market_conditions for select to authenticated
+  using (public.can_read_workspace(workspace_id));
+create policy "insert market conditions" on public.market_conditions for insert to authenticated
+  with check (public.can_edit_workspace(workspace_id) and preset is null);
+create policy "update market conditions" on public.market_conditions for update to authenticated
+  using (public.can_edit_workspace(workspace_id) and preset is null)
+  with check (public.can_edit_workspace(workspace_id) and preset is null);
+create policy "delete market conditions" on public.market_conditions for delete to authenticated
+  using (public.can_edit_workspace(workspace_id) and preset is null);
+
+create policy "read market schedule" on public.market_schedule for select to authenticated
+  using (public.can_read_workspace(workspace_id));
+create policy "insert market schedule" on public.market_schedule for insert to authenticated
+  with check (public.can_edit_workspace(workspace_id));
+create policy "update market schedule" on public.market_schedule for update to authenticated
+  using (public.can_edit_workspace(workspace_id)) with check (public.can_edit_workspace(workspace_id));
+create policy "delete market schedule" on public.market_schedule for delete to authenticated
+  using (public.can_edit_workspace(workspace_id));
+
+grant select, insert, update, delete on public.market_conditions, public.market_schedule to authenticated;
+revoke all on public.market_conditions, public.market_schedule from anon;
+
+-- ---------------------------------------------------------------------------
+-- Presets for every workspace
+-- ---------------------------------------------------------------------------
+
+-- The four presets (the prototype''s values; `MARKET_PRESETS` in the engine
+-- holds the same numbers, and a test checks they agree).
+create function private.market_presets() returns table (preset text, name text, leads int, conv int, cycle int, price int, churn int, hire int, pay int)
+language sql immutable
+set search_path = ''''
+as $$
+  values
+    (''boom'',     ''Boom'',     125, 110,  90, 100,  85, 130,  90),
+    (''stable'',   ''Stable'',   100, 100, 100, 100, 100, 100, 100),
+    (''soft'',     ''Soft'',      85,  90, 120,  95, 115,  90, 115),
+    (''downturn'', ''Downturn'',  65,  75, 140,  88, 135,  80, 135)
+$$;
+
+-- Security definer so the presets exist however the workspace is created; it
+-- writes only rows for the new workspace.
+create function private.seed_market_presets() returns trigger
+language plpgsql security definer
+set search_path = ''''
+as $$
+begin
+  insert into public.market_conditions (workspace_id, name, preset, leads, conv, cycle, price, churn, hire, pay)
+  select new.id, p.name, p.preset, p.leads, p.conv, p.cycle, p.price, p.churn, p.hire, p.pay from private.market_presets() as p;
+  return null;
+end;
+$$;
+
+revoke all on function private.market_presets() from public, anon;
+revoke all on function private.seed_market_presets() from public, anon, authenticated;
+
+create trigger seed_market_presets after insert on public.workspaces
+  for each row execute function private.seed_market_presets();
+
+-- Workspaces that already exist get their presets now.
+insert into public.market_conditions (workspace_id, name, preset, leads, conv, cycle, price, churn, hire, pay)
+select w.id, p.name, p.preset, p.leads, p.conv, p.cycle, p.price, p.churn, p.hire, p.pay
+from public.workspaces w cross join private.market_presets() as p
+on conflict (workspace_id, preset) where preset is not null do nothing;
+']);
+
+-- 20261111000000_client_groups.sql
 -- Client groups (docs/PRD.md §3 "Client group", decisions D21 and D27; issue #120,
 -- ticket A55). Clients are counted per service instead of named: one row per
 -- service with the number of clients, their average fee a month, normal churn
@@ -10112,9 +10608,10 @@ grant execute on function public.create_workspace(text, text, jsonb) to authenti
 -- Backfill (additive insert only): every service that has active named clients
 -- gets one group, so existing workspaces keep their numbers when they switch
 -- to groups. Count: the active named clients taking the service. Fee: their
--- average MRR, a client's MRR split evenly across its services. Starting
--- health: their average health (80, the engine's default, when none is
--- entered). Normal churn and typical stay: the service's own base churn and
+-- average MRR, a client's MRR split evenly across its services. Clients with a
+-- start date in the future are left out. Starting health: their average health
+-- (the workspace's `health_initial` setting, else 80, when none is entered).
+-- A count above 2,000 is capped at 2,000. Normal churn and typical stay: the service's own base churn and
 -- expected tenure. Services with no named clients get no row (their group
 -- shows blank in Settings and is created on the first edit). Existing groups
 -- are never changed (`on conflict do nothing`).
@@ -10142,7 +10639,7 @@ grant execute on function public.create_workspace(text, text, jsonb) to authenti
 --   -- Restore save_fields' previous allow-list: re-run the `create or replace
 --   -- function public.save_fields ... $$;` block from 20261016000000_servicing.sql.
 --   -- (Or leave it: with the table gone, a save to it just errors.)
---   delete from supabase_migrations.schema_migrations where version = '20261107000000';
+--   delete from supabase_migrations.schema_migrations where version = '20261111000000';
 --   commit;
 --
 --   Optionally remove the benchmark keys:
@@ -10157,7 +10654,8 @@ create table public.client_groups (
   workspace_id uuid not null references public.workspaces (id) on delete cascade,
   service_id uuid not null,
   -- How many clients the service has today.
-  client_count integer not null default 0 check (client_count >= 0 and client_count <= 10000),
+  -- At most 2,000: what the engine expands a group to (MAX_GROUP_CLIENTS in packages/engine/src/clients.ts).
+  client_count integer not null default 0 check (client_count >= 0 and client_count <= 2000),
   -- What one client pays a month, in the workspace currency.
   fee numeric not null default 0 check (fee >= 0),
   -- Share of clients that leave each month when everything is going well (0 to 1).
@@ -10166,6 +10664,8 @@ create table public.client_groups (
   stay_months numeric not null default 12 check (stay_months >= 0 and stay_months <= 1200),
   -- How happy the clients are today, 0 to 100.
   starting_health numeric not null default 80 check (starting_health >= 0 and starting_health <= 100),
+  -- Provenance of the five numbers, {column: {source, at, by}}: stamped `entered` when a person changes one.
+  provenance jsonb not null default '{}' check (jsonb_typeof(provenance) = 'object'),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   created_by uuid references auth.users (id) on delete set null default auth.uid(),
@@ -10177,6 +10677,9 @@ create table public.client_groups (
 create index on public.client_groups (workspace_id);
 
 create trigger set_updated_at before update on public.client_groups for each row execute function public.set_updated_at();
+
+create trigger stamp_provenance before insert or update on public.client_groups
+  for each row execute function public.stamp_provenance('client_count', 'fee', 'churn_monthly', 'stay_months', 'starting_health');
 
 -- Row-level security: members read, owners and editors write (as for services).
 alter table public.client_groups enable row level security;
@@ -10203,18 +10706,28 @@ create trigger audit_company after insert or update or delete on public.client_g
 -- Backfill from the named clients (additive insert only)
 -- ---------------------------------------------------------------------------
 
-insert into public.client_groups (workspace_id, service_id, client_count, fee, churn_monthly, stay_months, starting_health)
+-- Provenance: these are estimates rolled up from the named clients, not values a person entered.
+insert into public.client_groups (workspace_id, service_id, client_count, fee, churn_monthly, stay_months, starting_health, provenance)
 select
   s.workspace_id,
   s.id,
-  count(*)::integer,
+  least(count(*), 2000)::integer,
   round(avg(c.mrr / n.services), 2),
   s.churn_monthly_base,
   s.tenure_months,
-  coalesce(round(avg(c.health), 1), 80)
+  coalesce(
+    round(avg(c.health), 1),
+    (select least(100, greatest(0, (w.settings ->> 'health_initial')::numeric)) from public.workspaces w where w.id = s.workspace_id),
+    80
+  ),
+  (
+    select jsonb_object_agg(col, jsonb_build_object('source', 'estimated', 'at', now(), 'note', 'Rolled up from named clients'))
+    from unnest(array['client_count', 'fee', 'churn_monthly', 'stay_months', 'starting_health']) as col
+  )
 from public.services s
 join public.client_services cs on cs.service_id = s.id and cs.workspace_id = s.workspace_id
 join public.clients c on c.id = cs.client_id and c.workspace_id = s.workspace_id and c.active
+  and (c.start_date is null or c.start_date <= current_date)
 cross join lateral (
   select count(*)::numeric as services from public.client_services x where x.client_id = c.id
 ) n
@@ -10336,7 +10849,7 @@ begin
 end;
 $$;
 
-insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261107000000', 'client_groups', array['-- Client groups (docs/PRD.md §3 "Client group", decisions D21 and D27; issue #120,
+insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261111000000', 'client_groups', array['-- Client groups (docs/PRD.md §3 "Client group", decisions D21 and D27; issue #120,
 -- ticket A55). Clients are counted per service instead of named: one row per
 -- service with the number of clients, their average fee a month, normal churn
 -- a month, typical stay in months and starting health (0 to 100). The engine
@@ -10352,9 +10865,10 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 -- Backfill (additive insert only): every service that has active named clients
 -- gets one group, so existing workspaces keep their numbers when they switch
 -- to groups. Count: the active named clients taking the service. Fee: their
--- average MRR, a client''s MRR split evenly across its services. Starting
--- health: their average health (80, the engine''s default, when none is
--- entered). Normal churn and typical stay: the service''s own base churn and
+-- average MRR, a client''s MRR split evenly across its services. Clients with a
+-- start date in the future are left out. Starting health: their average health
+-- (the workspace''s `health_initial` setting, else 80, when none is entered).
+-- A count above 2,000 is capped at 2,000. Normal churn and typical stay: the service''s own base churn and
 -- expected tenure. Services with no named clients get no row (their group
 -- shows blank in Settings and is created on the first edit). Existing groups
 -- are never changed (`on conflict do nothing`).
@@ -10382,7 +10896,7 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --   -- Restore save_fields'' previous allow-list: re-run the `create or replace
 --   -- function public.save_fields ... $$;` block from 20261016000000_servicing.sql.
 --   -- (Or leave it: with the table gone, a save to it just errors.)
---   delete from supabase_migrations.schema_migrations where version = ''20261107000000'';
+--   delete from supabase_migrations.schema_migrations where version = ''20261111000000'';
 --   commit;
 --
 --   Optionally remove the benchmark keys:
@@ -10397,7 +10911,8 @@ create table public.client_groups (
   workspace_id uuid not null references public.workspaces (id) on delete cascade,
   service_id uuid not null,
   -- How many clients the service has today.
-  client_count integer not null default 0 check (client_count >= 0 and client_count <= 10000),
+  -- At most 2,000: what the engine expands a group to (MAX_GROUP_CLIENTS in packages/engine/src/clients.ts).
+  client_count integer not null default 0 check (client_count >= 0 and client_count <= 2000),
   -- What one client pays a month, in the workspace currency.
   fee numeric not null default 0 check (fee >= 0),
   -- Share of clients that leave each month when everything is going well (0 to 1).
@@ -10406,6 +10921,8 @@ create table public.client_groups (
   stay_months numeric not null default 12 check (stay_months >= 0 and stay_months <= 1200),
   -- How happy the clients are today, 0 to 100.
   starting_health numeric not null default 80 check (starting_health >= 0 and starting_health <= 100),
+  -- Provenance of the five numbers, {column: {source, at, by}}: stamped `entered` when a person changes one.
+  provenance jsonb not null default ''{}'' check (jsonb_typeof(provenance) = ''object''),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   created_by uuid references auth.users (id) on delete set null default auth.uid(),
@@ -10417,6 +10934,9 @@ create table public.client_groups (
 create index on public.client_groups (workspace_id);
 
 create trigger set_updated_at before update on public.client_groups for each row execute function public.set_updated_at();
+
+create trigger stamp_provenance before insert or update on public.client_groups
+  for each row execute function public.stamp_provenance(''client_count'', ''fee'', ''churn_monthly'', ''stay_months'', ''starting_health'');
 
 -- Row-level security: members read, owners and editors write (as for services).
 alter table public.client_groups enable row level security;
@@ -10443,18 +10963,28 @@ create trigger audit_company after insert or update or delete on public.client_g
 -- Backfill from the named clients (additive insert only)
 -- ---------------------------------------------------------------------------
 
-insert into public.client_groups (workspace_id, service_id, client_count, fee, churn_monthly, stay_months, starting_health)
+-- Provenance: these are estimates rolled up from the named clients, not values a person entered.
+insert into public.client_groups (workspace_id, service_id, client_count, fee, churn_monthly, stay_months, starting_health, provenance)
 select
   s.workspace_id,
   s.id,
-  count(*)::integer,
+  least(count(*), 2000)::integer,
   round(avg(c.mrr / n.services), 2),
   s.churn_monthly_base,
   s.tenure_months,
-  coalesce(round(avg(c.health), 1), 80)
+  coalesce(
+    round(avg(c.health), 1),
+    (select least(100, greatest(0, (w.settings ->> ''health_initial'')::numeric)) from public.workspaces w where w.id = s.workspace_id),
+    80
+  ),
+  (
+    select jsonb_object_agg(col, jsonb_build_object(''source'', ''estimated'', ''at'', now(), ''note'', ''Rolled up from named clients''))
+    from unnest(array[''client_count'', ''fee'', ''churn_monthly'', ''stay_months'', ''starting_health'']) as col
+  )
 from public.services s
 join public.client_services cs on cs.service_id = s.id and cs.workspace_id = s.workspace_id
 join public.clients c on c.id = cs.client_id and c.workspace_id = s.workspace_id and c.active
+  and (c.start_date is null or c.start_date <= current_date)
 cross join lateral (
   select count(*)::numeric as services from public.client_services x where x.client_id = c.id
 ) n
@@ -10879,9 +11409,9 @@ insert into public.client_assignments (client_id, role_id, person_id, workspace_
   ('20000000-0000-4000-8000-00000000001a', 'b0000000-0000-4000-8000-000000000004', '90000000-0000-4000-8000-000000000008', 'a0000000-0000-4000-8000-000000000001'),
   ('20000000-0000-4000-8000-00000000001a', 'b0000000-0000-4000-8000-000000000006', '90000000-0000-4000-8000-00000000000b', 'a0000000-0000-4000-8000-000000000001');
 
-insert into public.client_groups (id, workspace_id, service_id, client_count, fee, churn_monthly, stay_months, starting_health) values
-  ('00000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', '80000000-0000-4000-8000-000000000001', 17, 3456, 0.03, 18, 83),
-  ('00000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', '80000000-0000-4000-8000-000000000002', 12, 4229, 0.04, 12, 71);
+insert into public.client_groups (id, workspace_id, service_id, client_count, fee, churn_monthly, stay_months, starting_health, provenance) values
+  ('00000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', '80000000-0000-4000-8000-000000000001', 17, 3456, 0.03, 18, 83, '{"client_count":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"},"fee":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"},"churn_monthly":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"},"stay_months":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"},"starting_health":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"}}'),
+  ('00000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', '80000000-0000-4000-8000-000000000002', 12, 4229, 0.04, 12, 52, '{"client_count":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"},"fee":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"},"churn_monthly":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"},"stay_months":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"},"starting_health":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"}}');
 
 update public.processes set live_revision_id = 'd0000000-0000-4000-8000-000000000001' where id = 'c0000000-0000-4000-8000-000000000001';
 

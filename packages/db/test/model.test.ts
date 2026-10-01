@@ -116,6 +116,21 @@ describe("toEngineModel", () => {
     expect(Object.keys(m.clients!)).toHaveLength(26);
   });
 
+  it("groups that count no clients don't switch off the named roster or the interim count", () => {
+    const b = northbeamBundle();
+    const empty = b.clientGroups!.map((g) => ({ ...g, client_count: 0 }));
+    const named = toEngineModel({ ...b, clientGroups: empty }, { startDate: START });
+    expect(named).not.toHaveProperty("clientGroups");
+    expect(Object.keys(named.clients!)).toHaveLength(26);
+    const interim = toEngineModel({ ...b, clients: [], clientGroups: empty }, { startDate: START });
+    expect(interim).not.toHaveProperty("clients");
+    expect(interim.activeClients).toBe(26);
+    // One counted group is enough to switch to counted clients only.
+    const one = toEngineModel({ ...b, clientGroups: [b.clientGroups![0]!, { ...b.clientGroups![1]!, client_count: 0 }] }, { startDate: START });
+    expect(one).not.toHaveProperty("clients");
+    expect(one.activeClients).toBe(b.clientGroups![0]!.client_count);
+  });
+
   it("without its servicing links, Northbeam resolves as before servicing: fallback load, no health-driven churn", () => {
     const b = { ...northbeamBundle(), clientGroups: [] };
     const model = withKeys(toEngineModel({ ...b, servicingLinks: [], services: b.services.map((sv) => ({ ...sv, churn_health_sensitivity: 0 })) }, { startDate: START }));

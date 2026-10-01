@@ -6,7 +6,9 @@ import {
   groupClientKey,
   groupServiceOf,
   northbeamWithClientGroups,
+  northbeamModel,
   northbeamWithClients,
+  northbeamWithServices,
   northbeamWithServicing,
   rateClientHealth,
   rosterLoads,
@@ -103,13 +105,44 @@ describe("simulating client groups", () => {
     expect(sim(long).kpi.ltvAdded.mean).toBeGreaterThan(sim(base).kpi.ltvAdded.mean);
   });
 
-  it("raises one churn-risk issue per group that ends below 50, not one per client", () => {
+  it("raises one churn-risk issue per group rated Bad or Operational risk, not one per client, rated by rule 9", () => {
     const base = northbeamWithClientGroups();
-    const bad: EngineModel = { ...base, clientGroups: Object.fromEntries(Object.entries(base.clientGroups!).map(([id, g]) => [id, { ...g, health: 30 }])) };
-    const issues = churnRiskIssues(bad, sim(bad));
-    expect(issues.map((i) => i.key)).toEqual(["churn_risk:group:ppc", "churn_risk:group:seo"].filter((k) => issues.some((i) => i.key === k)));
-    expect(issues.length).toBeGreaterThan(0);
+    const at = (seo: number, ppc: number): EngineModel => ({
+      ...base,
+      clientGroups: { seo: { ...base.clientGroups!.seo!, health: seo }, ppc: { ...base.clientGroups!.ppc!, health: ppc } },
+    });
+    // Starting at 30 and 45, SEO ends below 50 (Operational risk) and PPC in the Bad band.
+    const m = at(30, 45);
+    const result = sim(m);
+    const summary = clientHealthSummary(m, result);
+    const issues = churnRiskIssues(m, result);
+    const expected = summary.groups.filter((g) => g.rating === "bad" || g.rating === "risk");
+    expect(issues.map((i) => i.key)).toEqual(expected.map((g) => `churn_risk:group:${g.service}`));
+    expect(expected.length).toBe(2);
+    for (const g of expected) expect(issues.find((i) => i.key === `churn_risk:group:${g.service}`)!.rating).toBe(rateClientHealth(g.health));
+    expect(summary.groups.map((g) => [g.service, g.rating])).toEqual([["ppc", "bad"], ["seo", "risk"]]);
     expect(issues.every((i) => i.clientId === null)).toBe(true);
+    // A healthy group raises nothing.
+    expect(churnRiskIssues(at(95, 95), sim(at(95, 95)))).toEqual([]);
+  });
+});
+
+describe("groups that count no clients", () => {
+  it("leave the interim client count and named roster in place", () => {
+    const named = northbeamWithServicing();
+    const zero: EngineModel = { ...named, clientGroups: { seo: { count: 0, fee: 1, churnMonthly: 0.5, stayMonths: 1, health: 1 }, ppc: { count: 0.4, fee: 1, churnMonthly: 0.5, stayMonths: 1, health: 1 } } };
+    expect(withClientGroups(zero)).toBe(zero);
+    expect(withClientGroups(zero).clients).toBe(named.clients);
+    const pooled: EngineModel = { ...northbeamModel(), activeClients: 26, services: northbeamWithServices().services, clientGroups: { seo: { count: 0, fee: 1, churnMonthly: 0, stayMonths: 1, health: 1 } } };
+    const r = simulate(pooled, 3, 1);
+    expect(r.clients).toBeUndefined();
+    expect(withClientGroups(pooled).activeClients).toBe(26);
+  });
+
+  it("one counted group switches the model to counted clients only", () => {
+    const named = northbeamWithServicing();
+    const one: EngineModel = { ...named, clientGroups: { seo: { count: 2, fee: 1, churnMonthly: 0.01, stayMonths: 1, health: 70 }, ppc: { count: 0, fee: 1, churnMonthly: 0.01, stayMonths: 1, health: 70 } } };
+    expect(Object.keys(withClientGroups(one).clients!)).toEqual(["group:seo:1", "group:seo:2"]);
   });
 });
 

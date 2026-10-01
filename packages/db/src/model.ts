@@ -1,5 +1,9 @@
 import {
+  factorsFromPercents,
   isFlatDemand,
+  isNeutralMarket,
+  marketFromSchedule,
+  type EngineMarket,
   type EngineDemand,
   type Distribution as EngineDistribution,
   type EngineClient,
@@ -178,12 +182,14 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
   // Client groups replace the named roster, which stays stored but is not simulated.
   const clientGroups = engineClientGroups(bundle, services);
   const clients = clientGroups ? undefined : engineClients(bundle, services, startDate);
+  const market = engineMarket(bundle);
 
   return {
     horizonWeeks: s.horizon_weeks,
     hoursPerWeek: s.hours_per_week,
     leadsPerWeek: arrivalsPerWeek(bundle, services),
     ...(demand ? { demand } : {}),
+    ...(market ? { market } : {}),
     activeClients: clientGroups
       ? Object.values(clientGroups).reduce((a, g) => a + Math.round(g.count), 0)
       : clients
@@ -393,7 +399,9 @@ function engineClientGroups(bundle: ProcessBundle, services: Record<string, Engi
       health: Number(g.starting_health),
     };
   }
-  return Object.keys(groups).length ? groups : undefined;
+  // Switch to groups only once some clients are counted; all-zero groups leave the interim count or roster in place.
+  const counted = Object.values(groups).reduce((a, g) => a + Math.round(g.count), 0);
+  return counted > 0 ? groups : undefined;
 }
 
 /**
@@ -430,6 +438,26 @@ function arrivalsPerWeek(bundle: ProcessBundle, here: Record<string, EngineServi
   if (!(all > 0)) return total;
   const mine = here ? mix(Object.values(here).map((sv) => sv.mixShare)) : 0;
   return mine === all ? total : (total * mine) / all;
+}
+
+/**
+ * The market schedule for the engine (A57): the 24 months from the workspace's
+ * schedule and conditions. Undefined with no schedule, or when every month is
+ * Stable, so such a workspace simulates exactly as before market conditions
+ * existed.
+ */
+export function engineMarket(bundle: ProcessBundle): EngineMarket | undefined {
+  const schedule = bundle.marketSchedule ?? [];
+  if (!schedule.length) return undefined;
+  const byId = new Map((bundle.marketConditions ?? []).map((c) => [c.id, c]));
+  const market = marketFromSchedule(
+    schedule.map((e) => ({ from: e.from_month, to: e.to_month, condition: e.condition_id })),
+    (id) => {
+      const c = byId.get(id);
+      return c ? factorsFromPercents(c) : undefined;
+    },
+  );
+  return isNeutralMarket(market) ? undefined : market;
 }
 
 /**

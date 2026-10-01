@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   describeSuggestion,
-  northbeamClientIds,
+  northbeamServiceIds,
   northbeamLeadSourceIds,
   northbeamPersonIds,
   northbeamRoleIds,
@@ -38,7 +38,7 @@ describe("reviewing in memory", () => {
     const r = reviewInMemory(state(), ids, "accept", null, opts);
     expect(r.results.filter((x) => x.status === "accepted")).toHaveLength(pending.length);
     expect(r.results.filter((x) => x.status === "already_reviewed")).toHaveLength(1);
-    expect(r.model.clients.some((c) => c.name === "Fernbrook Vets")).toBe(true);
+    expect(r.model.people.find((p) => p.id === northbeamPersonIds["Leah Brooks"])!.fte).toBe(0.9);
     expect(r.model.people.find((p) => p.id === northbeamPersonIds["Arjun Mehta"])!.fte).toBe(0.8);
     expect(r.model.workspace.settings.overtime_cap).toBe(0.15);
     expect(r.model.demand!.growth_monthly).toBe(0.02);
@@ -52,8 +52,8 @@ describe("reviewing in memory", () => {
     expect(rejected.model).toBe(s.model);
     expect(rejected.suggestions[0]).toMatchObject({ status: "rejected", review_note: "Not this week" });
 
-    const gone = { ...s, model: { ...s.model, clients: s.model.clients.filter((c) => c.id !== northbeamClientIds.c01) } };
-    const harbour = pending.find((p) => p.target_id === northbeamClientIds.c01)!;
+    const gone = { ...s, model: { ...s.model, services: s.model.services.filter((sv) => sv.id !== northbeamServiceIds.seo) } };
+    const harbour = pending.find((p) => p.target_id === northbeamServiceIds.seo)!;
     const r = reviewInMemory(gone, [harbour.id, pending[0]!.id], "accept", null, opts);
     expect(r.results.map((x) => x.status)).toEqual(["failed", "accepted"]);
     expect(r.suggestions.find((x) => x.id === harbour.id)!.status).toBe("pending");
@@ -69,14 +69,14 @@ describe("reviewing in memory", () => {
 });
 
 describe("the demo's sample data", () => {
-  it("reads like the PRD, and flags the fee that overrides an entered MRR", () => {
+  it("reads like the PRD", () => {
     const m = demoCompany();
     const [ads] = pending;
     expect(describeSuggestion(ads!, m).headline).toBe(
       "Claude suggests lead volume 6/wk for Google Ads, was 4/wk, citing “Ads are nearer six a week since we raised the budget.” (Priya Shah)",
     );
-    const harbour = pending.find((p) => p.target_id === northbeamClientIds.c01)!;
-    expect(describeSuggestion(harbour, m).changes[0]).toMatchObject({ before: "£3,500", after: "£3,800", overridesFact: true });
+    const harbour = pending.find((p) => p.target_id === northbeamServiceIds.seo)!;
+    expect(describeSuggestion(harbour, m).changes[0]).toMatchObject({ before: "£3,500", after: "£3,700" });
   });
 
   it("has a baseline run whose model has changed since, and more once suggestions are accepted", () => {
@@ -84,13 +84,13 @@ describe("the demo's sample data", () => {
     const before = diffSnapshots(demoBaselineSnapshot(), now).map((c) => c.text);
     expect(before).toEqual([
       "Overtime cap: 0% → 10%",
+      "Service SEO retainer: price £3,300 → £3,500",
       "Person added: Chloe Evans",
-      "Client Harbour Lane Dental: MRR £3,200 → £3,500",
       "Lead source Google Ads: lead volume 3/wk → 4/wk",
     ]);
     const accepted = reviewInMemory(state(), ids, "accept", null, opts).model;
     const after = diffSnapshots(demoBaselineSnapshot(), snapshotModel(accepted, demoProcesses())).map((c) => c.text);
-    expect(after).toContain("Client added: Fernbrook Vets");
+    expect(after).toContain("Person Leah Brooks: FTE 1 → 0.9");
     expect(after).toContain("Person Arjun Mehta: FTE 1 → 0.8");
     expect(after).toContain("Demand growth: 0% a month → 2% a month");
   });

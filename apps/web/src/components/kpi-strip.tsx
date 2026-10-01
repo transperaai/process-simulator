@@ -71,7 +71,7 @@ export function KpiStrip({ model, currency, result, status, durationMs }: KpiStr
       detail: k ? formatRange(k.billed, money) : "",
       definition: hasClients
         ? "Revenue billed within the horizon: every client's monthly fee for the weeks it stays (existing clients at their fee, new wins at their service's price), stopping when it churns; one-off projects bill when won."
-        : "Revenue billed within the horizon by the clients won in it, net of churn; one-off projects bill when won. Add a client roster to include existing clients.",
+        : "Revenue billed within the horizon by the clients won in it, net of churn; one-off projects bill when won. Count your clients per service in Settings to include existing clients.",
     },
     {
       label: "LTV added",

@@ -4,7 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type React
 import { useSearchParams } from "next/navigation";
 import { PanelRight } from "lucide-react";
 import { isUnpublished, ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow, type SourceRow } from "@transpera-flow/db";
-import type { EngineModel } from "@transpera-flow/engine";
+import type { AnalysisSettings, EngineModel } from "@transpera-flow/engine";
 import { discardChange, revertField } from "@/lib/drafts/discard";
 import { EMPTY_DIFF, diffBundles, unresolvedSteps } from "@/lib/drafts/diff";
 import { useDraftSession } from "@/lib/drafts/use-draft-session";
@@ -77,6 +77,7 @@ export function ProcessView({
   userId = null,
   viewer = null,
   sources = [],
+  analysisRules,
   processPicker,
   notice,
 }: {
@@ -97,6 +98,8 @@ export function ProcessView({
   viewer?: Viewer | null;
   /** The workspace's sources, which values cite as evidence (issue #21). */
   sources?: SourceRow[];
+  /** The workspace's analysis rules, which rate the run (Settings → Analysis rules). Omitted: the defaults. */
+  analysisRules?: AnalysisSettings;
   /** The process picker (and page heading), shown at the left of the top bar. */
   processPicker?: ReactNode;
   /** A notice above the results, such as the demo's. */
@@ -313,6 +316,7 @@ export function ProcessView({
     initialScenarios: scenarios,
     registerHref,
     retired,
+    analysisRules,
     onShowIssues: () => {
       setPanelOpen(true);
       setPanelTab("insights");

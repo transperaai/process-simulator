@@ -89,9 +89,10 @@ export function churnRiskIssues(source: EngineModel, result: SimulationResult): 
     });
   }
 
-  // Client groups: one issue per group whose average health ends below the at-risk line, keyed by its service.
+  // Client groups: one issue per group rated Bad or Operational risk (rule 9), keyed by its service.
   for (const group of clientHealthSummary(model, result).groups) {
-    if (!(group.health < AT_RISK_HEALTH)) continue;
+    // Rule 9: a group rated Bad or Operational risk (health under 65) is a finding; Good and Great are not.
+    if (group.rating === "great" || group.rating === "good") continue;
     const members = Object.keys(clients).filter((k) => groupServiceOf(k) === group.service);
     const t = { onTime: 0, late: 0, missed: 0 };
     let churnMonthly = 0;
@@ -108,10 +109,10 @@ export function churnRiskIssues(source: EngineModel, result: SimulationResult): 
     out.push({
       key: `churn_risk:group:${group.service}`,
       type: "churn_risk",
-      ...fixedRating(group.health < 30 || group.churned >= group.clients * 0.5 ? "risk" : group.health < 40 ? "bad" : "good"),
-      title: `${group.name} clients: health ${trend}, at risk of churning`,
+      ...fixedRating(group.rating),
+      title: `${group.name} clients: health ${trend}, ${group.rating === "risk" ? "at risk of churning" : "slipping"}`,
       evidence:
-        `Simulated: the average health of the ${num(group.clients, 0)} ${group.name} clients ${trend} over the ${num(weeks, 0)}-week run (below ${AT_RISK_HEALTH} is at risk). ` +
+        `Simulated: the average health of the ${num(group.clients, 0)} ${group.name} clients ${trend} over the ${num(weeks, 0)}-week run (Bad below 65, Operational risk below ${AT_RISK_HEALTH}). ` +
         (serviced
           ? `Servicing touchpoints per run, all of them: ${num(t.onTime)} on time, ${num(t.late)} late, ${num(t.missed)} missed. `
           : "None of its services has a servicing process, so nothing moves their health. ") +

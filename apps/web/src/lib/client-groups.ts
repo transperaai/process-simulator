@@ -8,7 +8,7 @@ const between = (min: number, max: number): Check => (v) => number(v) && (v as n
 const whole = (min: number, max: number): Check => (v) => between(min, max)(v) && Number.isInteger(v);
 
 /** Upper bounds that catch typos, inside what the database stores. */
-export const MAX_GROUP_COUNT = 10_000;
+export const MAX_GROUP_COUNT = 2000;
 const MAX_FEE = 1e8;
 const MAX_STAY_MONTHS = 1200;
 

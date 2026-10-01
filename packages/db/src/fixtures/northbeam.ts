@@ -283,6 +283,7 @@ function clientGroups(): ClientGroupRow[] {
     churn_monthly: g.churnMonthly,
     stay_months: g.stayMonths,
     starting_health: g.health,
+    provenance: Object.fromEntries(["client_count", "fee", "churn_monthly", "stay_months", "starting_health"].map((c) => [c, ESTIMATE])),
   }));
 }
 

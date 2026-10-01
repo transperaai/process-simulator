@@ -12,6 +12,8 @@ import type {
   DemandSettingsRow,
   IssueRow,
   LeadSourceRow,
+  MarketConditionRow,
+  MarketScheduleRow,
   EdgeRow,
   PersonRow,
   ProcessBundle,
@@ -122,18 +124,36 @@ export async function loadClients(
 }
 
 /** The `ClientGroupRow` columns. */
-export const CLIENT_GROUP_COLUMNS = "id, workspace_id, service_id, client_count, fee, churn_monthly, stay_months, starting_health" as const;
+export const CLIENT_GROUP_COLUMNS = "id, workspace_id, service_id, client_count, fee, churn_monthly, stay_months, starting_health, provenance" as const;
 
 /** A workspace's client groups (clients counted per service), by creation order. */
 export async function loadClientGroups(db: Db, workspaceId: string): Promise<ClientGroupRow[]> {
   const r = await db.from("client_groups").select(CLIENT_GROUP_COLUMNS).eq("workspace_id", workspaceId).order("created_at").order("id");
-  return rows(r) ?? [];
+  // provenance is jsonb; ProvenanceMap is its app-side shape.
+  return (rows(r) ?? []) as ClientGroupRow[];
 }
 
 /** The `LeadSourceRow`, `SeasonalityRow` and `DemandSettingsRow` columns. */
 export const LEAD_SOURCE_COLUMNS = "id, workspace_id, name, volume_week, conversion_to_qualified, provenance" as const;
 export const SEASONALITY_COLUMNS = "id, workspace_id, month, multiplier, provenance" as const;
 export const DEMAND_SETTINGS_COLUMNS = "workspace_id, growth_monthly, provenance" as const;
+
+/** The `MarketConditionRow` and `MarketScheduleRow` columns. */
+export const MARKET_CONDITION_COLUMNS = "id, workspace_id, name, preset, leads, conv, cycle, price, churn, hire, pay" as const;
+export const MARKET_SCHEDULE_COLUMNS = "id, workspace_id, from_month, to_month, condition_id" as const;
+
+/** A workspace's market conditions (presets first, then its own by name) and its 24-month schedule in month order. */
+export async function loadMarket(db: Db, workspaceId: string): Promise<{ marketConditions: MarketConditionRow[]; marketSchedule: MarketScheduleRow[] }> {
+  const [conditions, schedule] = await Promise.all([
+    db.from("market_conditions").select(MARKET_CONDITION_COLUMNS).eq("workspace_id", workspaceId).order("created_at").order("id"),
+    db.from("market_schedule").select(MARKET_SCHEDULE_COLUMNS).eq("workspace_id", workspaceId).order("from_month").order("id"),
+  ]);
+  return {
+    // preset is check-constrained to MarketPreset.
+    marketConditions: (rows(conditions) ?? []) as MarketConditionRow[],
+    marketSchedule: rows(schedule) ?? [],
+  };
+}
 
 /** Load one process revision with everything needed to render and simulate it. */
 export async function loadProcessBundle(
@@ -143,7 +163,7 @@ export async function loadProcessBundle(
   revisionId: string,
 ): Promise<ProcessBundle> {
   const ws = workspace.id;
-  const [revision, roles, steps, edges, people, personRoles, personSkills, personLeave, services, leadSources, seasonality, demand, roster, clientGroups, servicing, settingsProvenance] =
+  const [revision, roles, steps, edges, people, personRoles, personSkills, personLeave, services, leadSources, seasonality, demand, roster, clientGroups, servicing, market, settingsProvenance] =
     await Promise.all([
       db.from("process_revisions").select("id, workspace_id, process_id, number, status").eq("id", revisionId).single(),
       db.from("roles").select("*").eq("workspace_id", ws),
@@ -161,6 +181,7 @@ export async function loadProcessBundle(
       loadClients(db, ws),
       loadClientGroups(db, ws),
       loadServicingContext(db, ws, process),
+      loadMarket(db, ws),
       db.from("workspaces").select("provenance").eq("id", ws).maybeSingle(),
     ]);
   const wsProvenance = rows(settingsProvenance)?.provenance;
@@ -196,6 +217,7 @@ export async function loadProcessBundle(
     ...roster,
     clientGroups,
     ...servicing,
+    ...market,
   };
 }
 

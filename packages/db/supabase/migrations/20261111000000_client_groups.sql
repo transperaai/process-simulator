@@ -14,9 +14,10 @@
 -- Backfill (additive insert only): every service that has active named clients
 -- gets one group, so existing workspaces keep their numbers when they switch
 -- to groups. Count: the active named clients taking the service. Fee: their
--- average MRR, a client's MRR split evenly across its services. Starting
--- health: their average health (80, the engine's default, when none is
--- entered). Normal churn and typical stay: the service's own base churn and
+-- average MRR, a client's MRR split evenly across its services. Clients with a
+-- start date in the future are left out. Starting health: their average health
+-- (the workspace's `health_initial` setting, else 80, when none is entered).
+-- A count above 2,000 is capped at 2,000. Normal churn and typical stay: the service's own base churn and
 -- expected tenure. Services with no named clients get no row (their group
 -- shows blank in Settings and is created on the first edit). Existing groups
 -- are never changed (`on conflict do nothing`).
@@ -44,7 +45,7 @@
 --   -- Restore save_fields' previous allow-list: re-run the `create or replace
 --   -- function public.save_fields ... $$;` block from 20261016000000_servicing.sql.
 --   -- (Or leave it: with the table gone, a save to it just errors.)
---   delete from supabase_migrations.schema_migrations where version = '20261107000000';
+--   delete from supabase_migrations.schema_migrations where version = '20261111000000';
 --   commit;
 --
 --   Optionally remove the benchmark keys:
@@ -59,7 +60,8 @@ create table public.client_groups (
   workspace_id uuid not null references public.workspaces (id) on delete cascade,
   service_id uuid not null,
   -- How many clients the service has today.
-  client_count integer not null default 0 check (client_count >= 0 and client_count <= 10000),
+  -- At most 2,000: what the engine expands a group to (MAX_GROUP_CLIENTS in packages/engine/src/clients.ts).
+  client_count integer not null default 0 check (client_count >= 0 and client_count <= 2000),
   -- What one client pays a month, in the workspace currency.
   fee numeric not null default 0 check (fee >= 0),
   -- Share of clients that leave each month when everything is going well (0 to 1).
@@ -68,6 +70,8 @@ create table public.client_groups (
   stay_months numeric not null default 12 check (stay_months >= 0 and stay_months <= 1200),
   -- How happy the clients are today, 0 to 100.
   starting_health numeric not null default 80 check (starting_health >= 0 and starting_health <= 100),
+  -- Provenance of the five numbers, {column: {source, at, by}}: stamped `entered` when a person changes one.
+  provenance jsonb not null default '{}' check (jsonb_typeof(provenance) = 'object'),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   created_by uuid references auth.users (id) on delete set null default auth.uid(),
@@ -79,6 +83,9 @@ create table public.client_groups (
 create index on public.client_groups (workspace_id);
 
 create trigger set_updated_at before update on public.client_groups for each row execute function public.set_updated_at();
+
+create trigger stamp_provenance before insert or update on public.client_groups
+  for each row execute function public.stamp_provenance('client_count', 'fee', 'churn_monthly', 'stay_months', 'starting_health');
 
 -- Row-level security: members read, owners and editors write (as for services).
 alter table public.client_groups enable row level security;
@@ -105,18 +112,28 @@ create trigger audit_company after insert or update or delete on public.client_g
 -- Backfill from the named clients (additive insert only)
 -- ---------------------------------------------------------------------------
 
-insert into public.client_groups (workspace_id, service_id, client_count, fee, churn_monthly, stay_months, starting_health)
+-- Provenance: these are estimates rolled up from the named clients, not values a person entered.
+insert into public.client_groups (workspace_id, service_id, client_count, fee, churn_monthly, stay_months, starting_health, provenance)
 select
   s.workspace_id,
   s.id,
-  count(*)::integer,
+  least(count(*), 2000)::integer,
   round(avg(c.mrr / n.services), 2),
   s.churn_monthly_base,
   s.tenure_months,
-  coalesce(round(avg(c.health), 1), 80)
+  coalesce(
+    round(avg(c.health), 1),
+    (select least(100, greatest(0, (w.settings ->> 'health_initial')::numeric)) from public.workspaces w where w.id = s.workspace_id),
+    80
+  ),
+  (
+    select jsonb_object_agg(col, jsonb_build_object('source', 'estimated', 'at', now(), 'note', 'Rolled up from named clients'))
+    from unnest(array['client_count', 'fee', 'churn_monthly', 'stay_months', 'starting_health']) as col
+  )
 from public.services s
 join public.client_services cs on cs.service_id = s.id and cs.workspace_id = s.workspace_id
 join public.clients c on c.id = cs.client_id and c.workspace_id = s.workspace_id and c.active
+  and (c.start_date is null or c.start_date <= current_date)
 cross join lateral (
   select count(*)::numeric as services from public.client_services x where x.client_id = c.id
 ) n

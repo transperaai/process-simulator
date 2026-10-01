@@ -14,7 +14,13 @@
   {
     "version": "1.2.0",
     "date": "2026-10-01",
-    "note": "Client groups (A55): clients can be counted per service and are simulated as unnamed clients; adds the northbeam-groups golden model. The existing golden models do not move.",
-    "digest": "sha256:068d8cee50a8cd8d3fa1ecb42ec50cc5f0cb8fed0eb6c27bf412b8c458f6c6f0"
+    "note": "Market conditions (A57): the engine applies a 24-month market schedule; adds the northbeam-downturn golden model (Northbeam as seeded under Downturn). No existing model's numbers moved: with no market, or Stable throughout, runs are exactly as before.",
+    "digest": "sha256:f21c60478c5b62173cbf0e07b0eb7079b163c21926f4f4224fea27cf5eeccd85"
+  },
+  {
+    "version": "1.3.0",
+    "date": "2026-10-01",
+    "note": "Client groups (A55): clients can be counted per service and are simulated as unnamed clients; groups that count no clients change nothing; adds the northbeam-groups golden model. The existing golden models do not move.",
+    "digest": "sha256:2cb77e4877fa864e32998b6c1427c93137ef6b0357052782c1461f9d7525ab36"
   }
 ]

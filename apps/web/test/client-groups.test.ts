@@ -21,8 +21,8 @@ describe("client group fields", () => {
 
   it("accepts whole client counts only", () => {
     const ok = CLIENT_GROUP_FIELDS.client_count;
-    expect([0, 15, 10_000].map(ok)).toEqual([true, true, true]);
-    expect([-1, 1.5, 10_001, NaN, "3", null].map(ok)).toEqual([false, false, false, false, false, false]);
+    expect([0, 15, 2000].map(ok)).toEqual([true, true, true]);
+    expect([-1, 1.5, 2001, NaN, "3", null].map(ok)).toEqual([false, false, false, false, false, false]);
   });
 
   it("keeps churn a share, health 0 to 100, and fee and stay non-negative", () => {

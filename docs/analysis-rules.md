@@ -3,7 +3,7 @@
 Agreed with Austin, 1 Oct 2026, in the analysis rules session. This replaces the detector thresholds in
 `packages/engine/src/issues.ts` (`DEFAULT_ISSUE_THRESHOLDS`) and the four engine severities. It is the spec for the tickets that follow.
 
-**Editing (A44, issue #109):** Settings → Analysis rules (`/w/<slug>/settings/rules`, `/demo/settings/rules`) edits all 15 rules, the escalators and the money settings, stored per workspace in `analysis_rules.settings` (sparse jsonb; `packages/engine/src/analysis-settings.ts`). Only the rules on the rating model below take effect in the engine yet; the others are saved and apply when their detectors land. Money settings (12-month cap, absence test) are stored but not read by the engine until the cost ticket.
+**Editing (A44, issue #109):** Settings → Analysis rules (`/w/<slug>/settings/rules`, `/demo/settings/rules`) edits all 15 rules, the escalators and the money settings, stored per workspace in `analysis_rules.settings` (sparse jsonb; `packages/engine/src/analysis-settings.ts`). Only the rules on the rating model below take effect in the engine yet; the others are saved and apply when their detectors land. The absence test's length and frequency are read by the engine (A42); the 12-month cap is read once the cost ticket (A43) lands.
 
 **Built so far (A41, issue #106):** the rating model and rules 1, 3, 4, 5, 6 and 7 are in
 `packages/engine/src/ratings.ts` and the detectors (`issues.ts`, `overtime-issues.ts`). The rules not listed there still

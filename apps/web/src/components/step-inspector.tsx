@@ -298,8 +298,9 @@ export function StepInspector({
         </>
       )}
 
-      {/* Only a pipeline has a time target: a servicing process runs to its tasks' SLAs. */}
-      {step.kind === "start" && bundle.process.kind === "pipeline" && (
+      {/* Only a top-level pipeline has a time target: a servicing process runs to its tasks' SLAs, and a child
+          process is timed as part of the pipeline that holds it. */}
+      {step.kind === "start" && bundle.process.kind === "pipeline" && !bundle.process.parent_process_id && (
         <div className={sectionClass}>
           <NumberField
             label="Time target"

@@ -65,6 +65,7 @@ _Avoid_: Proposal (a visitor's proposal arrives as a suggestion)
 **Client group**:
 The clients of one service, counted but not named: how many, the fee, normal churn, typical stay and starting health. Example: "34 SEO clients paying $2,000 a month". Named client records are hidden but kept.
 _Avoid_: Client roster, client list, account
+Not to be confused with a **group**, which is a box of steps inside a process (above): a group holds steps, a client group counts clients.
 
 **Churn driver**:
 A reason clients leave, with a weight and an on/off switch. Example: "Late work", responsible for 40% of the clients lost this year.

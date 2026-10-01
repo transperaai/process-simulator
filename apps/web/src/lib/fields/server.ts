@@ -24,6 +24,7 @@ export type EditableTable =
   | "sources"
   | "clients"
   | "client_assignments"
+  | "client_groups"
   | "service_servicing";
 
 /** Link tables `save_links` accepts, and their member column. */

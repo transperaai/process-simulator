@@ -73,7 +73,8 @@ export function UtilisationBars({ model, result }: { model: EngineModel; result:
           const r = result.people[id];
           // With a client roster: how many clients they look after, and any overtime (issue #18).
           const extra = [
-            r?.clients !== undefined ? `${formatNumber(r.clients, 0)} clients` : null,
+            // Clients counted per service aren't assigned to anyone, so only named assignments show.
+            r?.clients !== undefined && r.clients >= 0.5 ? `${formatNumber(r.clients, 0)} clients` : null,
             r && r.overtimeHours > 0.05 ? `+${formatNumber(r.overtimeHours)} h/wk overtime` : null,
           ].filter(Boolean);
           return {

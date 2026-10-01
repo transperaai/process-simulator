@@ -61,6 +61,7 @@ export function seedSql(
     out.push(insert("clients", (b.clients ?? []).map((r) => ({ ...r }))));
     out.push(insert("client_services", (b.clientServices ?? []).map((r) => ({ ...r }))));
     out.push(insert("client_assignments", (b.clientAssignments ?? []).map((r) => ({ ...r }))));
+    out.push(insert("client_groups", (b.clientGroups ?? []).map((r) => ({ ...r }))));
     out.push(`update public.processes set live_revision_id = ${literal(live_revision_id)} where id = ${literal(b.process.id)};\n`);
     for (const { process: p } of others) {
       if (p.live_revision_id) out.push(`update public.processes set live_revision_id = ${literal(p.live_revision_id)} where id = ${literal(p.id)};\n`);

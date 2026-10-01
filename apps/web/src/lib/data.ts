@@ -4,6 +4,7 @@ import {
   DEMAND_SETTINGS_COLUMNS,
   LEAD_SOURCE_COLUMNS,
   listProcesses,
+  loadClientGroups,
   loadMarket,
   type MarketConditionRow,
   type MarketScheduleRow,
@@ -20,6 +21,7 @@ import {
   SERVICE_COLUMNS,
   SERVICE_SERVICING_COLUMNS,
   type ServiceServicingRow,
+  type ClientGroupRow,
   type DemandSettingsRow,
   type IssueRow,
   type LeadSourceRow,
@@ -165,6 +167,8 @@ export interface WorkspaceSettingsData {
   demand: DemandSettingsRow | null;
   /** Which servicing processes each service's clients run (issue #19). */
   servicingLinks: ServiceServicingRow[];
+  /** Clients counted per service (issue #120); a service with no row has none set up yet. */
+  clientGroups: ClientGroupRow[];
   /** Market conditions (A57): presets and your own, and the 24-month schedule. */
   marketConditions: MarketConditionRow[];
   marketSchedule: MarketScheduleRow[];
@@ -196,6 +200,7 @@ export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSett
     supabase.from("demand_settings").select(DEMAND_SETTINGS_COLUMNS).eq("workspace_id", ws).maybeSingle(),
     supabase.from("service_servicing").select(SERVICE_SERVICING_COLUMNS).eq("workspace_id", ws).order("created_at").order("id"),
     loadMarket(supabase, ws),
+    loadClientGroups(supabase, ws),
   ]);
   const [canEdit, canManage, roles, steps, people, personRoles, personSkills, personLeave, services, tags, roleSteps, assignments] = await Promise.all([
     supabase.rpc("can_edit_workspace", { ws }),
@@ -227,7 +232,7 @@ export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSett
     supabase.from("steps").select("id, role_id").eq("workspace_id", ws).not("role_id", "is", null),
     supabase.from("client_assignments").select("client_id, role_id").eq("workspace_id", ws),
   ]);
-  const [leadSources, seasonality, demand, servicingLinks, market] = await demandQueries;
+  const [leadSources, seasonality, demand, servicingLinks, market, clientGroups] = await demandQueries;
   for (const r of [canEdit, canManage, roles, steps, people, personRoles, personSkills, personLeave, services, tags, roleSteps, assignments, leadSources, seasonality, demand, servicingLinks]) {
     if (r.error) throw r.error;
   }
@@ -253,6 +258,7 @@ export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSett
     demand: demand.data as DemandSettingsRow | null,
     // recurrence and provenance are jsonb; the table's check limits recurrence to RecurrenceJson.
     servicingLinks: (servicingLinks.data ?? []) as unknown as ServiceServicingRow[],
+    clientGroups,
     ...market,
   };
 }

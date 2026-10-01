@@ -3,7 +3,7 @@
 -- Northbeam Digital
 
 insert into public.workspaces (id, name, slug, settings) values
-  ('a0000000-0000-4000-8000-000000000001', 'Northbeam Digital', 'northbeam', '{"hours_per_week":40,"horizon_weeks":13,"currency":"GBP","leads_per_week":7,"active_clients":26,"churn_monthly":0.03,"retainer":3800,"overtime_cap":0.1}');
+  ('a0000000-0000-4000-8000-000000000001', 'Northbeam Digital', 'northbeam', '{"hours_per_week":40,"horizon_weeks":13,"currency":"GBP","leads_per_week":7,"active_clients":26,"churn_monthly":0.03,"retainer":3800,"overtime_cap":0.1,"client_health_benchmark_low":70,"client_health_benchmark_high":80}');
 
 insert into public.roles (id, workspace_id, name, color, default_cost_rate, headcount, ongoing_hours_per_client_week, active) values
   ('b0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'Sales', '#2a78d6', 45, 2, 0, true),
@@ -299,6 +299,10 @@ insert into public.client_assignments (client_id, role_id, person_id, workspace_
   ('20000000-0000-4000-8000-00000000001a', 'b0000000-0000-4000-8000-000000000004', '90000000-0000-4000-8000-000000000008', 'a0000000-0000-4000-8000-000000000001'),
   ('20000000-0000-4000-8000-00000000001a', 'b0000000-0000-4000-8000-000000000006', '90000000-0000-4000-8000-00000000000b', 'a0000000-0000-4000-8000-000000000001');
 
+insert into public.client_groups (id, workspace_id, service_id, client_count, fee, churn_monthly, stay_months, starting_health, provenance) values
+  ('00000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', '80000000-0000-4000-8000-000000000001', 17, 3456, 0.03, 18, 83, '{"client_count":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"},"fee":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"},"churn_monthly":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"},"stay_months":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"},"starting_health":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"}}'),
+  ('00000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', '80000000-0000-4000-8000-000000000002', 12, 4229, 0.04, 12, 52, '{"client_count":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"},"fee":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"},"churn_monthly":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"},"stay_months":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"},"starting_health":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data"}}');
+
 update public.processes set live_revision_id = 'd0000000-0000-4000-8000-000000000001' where id = 'c0000000-0000-4000-8000-000000000001';
 
 update public.processes set live_revision_id = 'd0000000-0000-4000-8000-000000000002' where id = 'c0000000-0000-4000-8000-000000000002';
@@ -566,6 +570,7 @@ insert into public.client_assignments (client_id, role_id, person_id, workspace_
   ('20000000-0000-4000-8001-000000000012', 'b0000000-0000-4000-8001-000000000005', '90000000-0000-4000-8001-000000000007', 'a0000000-0000-4000-8001-000000000001'),
   ('20000000-0000-4000-8001-000000000012', 'b0000000-0000-4000-8001-000000000003', '90000000-0000-4000-8001-000000000005', 'a0000000-0000-4000-8001-000000000001'),
   ('20000000-0000-4000-8001-000000000012', 'b0000000-0000-4000-8001-000000000007', '90000000-0000-4000-8001-00000000000a', 'a0000000-0000-4000-8001-000000000001');
+
 
 update public.processes set live_revision_id = 'd0000000-0000-4000-8001-000000000001' where id = 'c0000000-0000-4000-8001-000000000001';
 

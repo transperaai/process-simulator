@@ -34,6 +34,7 @@
 //
 // Framework-free and dependency-free, like the rest of the engine.
 
+import { withClientGroups } from "./clients";
 import type { EngineModel } from "./model";
 import { applyPatches, HEALTH_RULE_KEYS, PATCH_FIELDS, parsePatchPath, type PatchTarget, type ScenarioPatch } from "./scenario";
 import { hasServicing, healthRules } from "./servicing";
@@ -275,7 +276,7 @@ export function estimatedParameters(
   // with a client roster: the health rules (a rule the workspace hasn't set is
   // the PRD's estimated default) and each service's churn sensitivity. Tasks
   // done on time, late or missed come only from servicing processes.
-  if (model.clients !== undefined) {
+  if (withClientGroups(model).clients !== undefined) {
     const rules = healthRules(model);
     const servicing = services.some(([, s]) => hasServicing(model, s));
     for (const field of PATCH_FIELDS.health) {

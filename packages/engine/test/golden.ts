@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { MARKET_PRESETS, absenceTest, detectIssues, larkspurModel, northbeamModel, northbeamWithServicing, simulate, withMarketCondition, type EngineModel, type SimulationResult, type Stat } from "../src";
+import { MARKET_PRESETS, absenceTest, detectIssues, larkspurModel, northbeamModel, northbeamWithClientGroups, northbeamWithServicing, simulate, withMarketCondition, type EngineModel, type SimulationResult, type Stat } from "../src";
 
 export const GOLDEN_DIR = new URL("../golden/", import.meta.url);
 export const VERSION_FILE = new URL("../src/version.ts", import.meta.url);
@@ -34,7 +34,7 @@ export const GOLDEN_MODELS: GoldenModel[] = [
   },
   {
     name: "northbeam-seeded",
-    description: "Northbeam as seeded: SEO and PPC services, named people, its 26-client roster, 10% overtime cap and two servicing processes.",
+    description: "Northbeam with its 26 named clients: SEO and PPC services, named people, the roster with assignments, 10% overtime cap and two servicing processes. The seed now counts clients per service (northbeam-groups); this stays the reference for named rosters.",
     model: northbeamWithServicing,
     seed: 1,
     reps: 30,
@@ -43,6 +43,13 @@ export const GOLDEN_MODELS: GoldenModel[] = [
     name: "northbeam-downturn",
     description: "Northbeam as seeded under the Downturn market for the whole run: fewer enquiries that sign less, slower decisions, lower prices, more churn (market.ts).",
     model: () => withMarketCondition(northbeamWithServicing(), MARKET_PRESETS.downturn.factors),
+    seed: 1,
+    reps: 30,
+  },
+  {
+    name: "northbeam-groups",
+    description: "Northbeam as the seed loads it since client groups: its clients counted per service (17 SEO clients at health 83, 12 PPC clients at health 52) and simulated as unnamed clients, with the same servicing: a healthy group and one at risk.",
+    model: northbeamWithClientGroups,
     seed: 1,
     reps: 30,
   },

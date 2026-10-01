@@ -255,6 +255,12 @@ describe("what the team wrote isn't a fact (the probes)", () => {
     expect(refused(input, "The Strategist is busy avg 97% of the time (range 85%–101%).")).toBe(false);
   });
 
+  it("a team named in an owner field doesn't carry figures: the check prints it unquoted, so it is cut", () => {
+    const i = withFp((f) => f.requirements.push({ text: "Sign-off before any contract", owner_person_id: null, owner_text: "the 417 person sales team", why: "Legal", verdict: "keep", step_id: null }));
+    expect(JSON.stringify(i.payload)).toContain("the 417 person sales team");
+    expect(refused(i, "A team of 417 owns the sign-off.")).toBe(true);
+  });
+
   it("a success measure's name doesn't carry figures either, in the measures or in the rule's title", () => {
     const i = withFp((f) => f.measures.push({ id: "m9", text: "Revenue up 412% by spring", kpi: "newMrr", comparator: "atLeast", target: 50000, horizon: "" }));
     expect(JSON.stringify(i.payload)).toContain("Revenue up 412% by spring");
@@ -274,6 +280,16 @@ describe("words that state a ratio nobody computed are refused", () => {
     for (const text of ["About a third of leads are lost.", "Roughly three quarters of runs miss it.", "About 3/4 of the work waits.", "One in ten items is done twice.", "About 1 in 10 items is done twice.", "It is a seven figures problem.", "Two thirds of the time it is busy."]) {
       expect(ok(text), text).toBe(true);
     }
+  });
+  it("refuses 1 in N when the facts don't print it, and lets the engine's own phrase through when they do", () => {
+    expect(ok("1 in 3 leads is lost.")).toBe(true);
+    expect(JSON.stringify(input.payload)).toContain("add back about 1 in 10");
+    expect(ok("The rule of thumb is to add back about 1 in 10.")).toBe(false);
+  });
+  it("needs the \"of\" to call it a fraction, and lets idioms through (24/7, 50/50 are not ratios anyone computed)", () => {
+    expect(ok("Work piles up in a quarter.")).toBe(false);
+    expect(ok("A quarter of runs miss it.")).toBe(true);
+    expect(ok("The queue is open 24/7 and the work splits 50/50 between two roles.")).toBe(false);
   });
   it("leaves plain engine wording alone", () => {
     expect(ok("The Strategist is busy avg 97% of the time (range 85%–101%).")).toBe(false);

@@ -68,13 +68,17 @@ before the text is shown.
   append-only `ai_runs` log that authenticated users can read and cannot write. `reserve_ai_run` is the one
   `SECURITY DEFINER` function (empty `search_path`); it writes no AI content, only counts. It checks `can_edit_workspace`,
   takes a per-workspace advisory lock, refuses at 40 runs in 24 hours for the workspace or a second run of the same process
-  within 60 seconds, and otherwise logs the run (with the caller's id and display name, which an invoker can't read from
-  `auth.users`). "Run again" and runs that fail reserve too, so the cap can't be reset by deleting rows, re-running or
+  within 60 seconds, and otherwise logs the run (with the caller's id and the name of the person linked to their membership in
+  People, else null: never an email or user metadata, which any member could read or a user could edit). A run keeps counting
+  when its process is deleted (`process_id` is set null; the cap counts by workspace), so deleting processes can't reset it. "Run again" and runs that fail reserve too, so the cap can't be reset by deleting rows, re-running or
   editing. The cooldown also applies to publishes: two publishes of one process within a minute review only the first.
-- **Remaining forgery risk.** The server writes the analysis with the user's own credentials, so an editor with direct
-  database access can still write arbitrary text into an analysis against a run they reserved (it would be marked
-  "Reviewed by AI · run by <them>"). The proper fix is a server-side writer holding a service-role key, which needs a
-  production config change (a Vercel secret) and is a follow-up for Austin to approve. Two switches (suggest issues, suggest solution ideas) are stored now for Suggestions
+- **Remaining forgery risk.** The server writes the analysis with the user's own credentials, so any editor can write
+  arbitrary text into an analysis against a run they reserved, through PostgREST with their own session: the trigger
+  stamps `created_by`, and checks the run is theirs, for this process, backs one analysis and is under 15 minutes old, but
+  the database can't check the text. It would read "Reviewed by AI · run by <them>". The proper fix is a server-side writer
+  holding a service-role key, which needs a production config change (a Vercel secret) and is a follow-up for Austin to
+  approve; that writer needs its own branch in the stamp trigger, because `auth.uid()` is null under `service_role`.
+  Two switches (suggest issues, suggest solution ideas) are stored now for Suggestions
   (A52) and solution ideas (A49); their (i) says they do nothing yet.
 - **Demo.** `/demo` shows text written in advance for the Northbeam sample (`lib/ai/demo.ts`) and "Run again" waits a moment
   and says nothing was sent. A test runs that text through the real number check against the sample's run.
@@ -83,7 +87,7 @@ before the text is shown.
 
 - AI's judgement is only as true as the facts it was given. The number check proves its figures are the run's; it can't
   prove that "the strategist is the constraint" follows. That is why the insights are suggestions that someone acknowledges.
-- A stored analysis is trusted when read. An editor with direct database access could write one; they can already write
+- A stored analysis is trusted when read. Any editor could write one through PostgREST (see the forgery risk above); they can already write
   issues. Unlike narration's cache, it is not re-checked on each page view, because that would need the run (a simulation).
 - Reading sources sends interview quotes to Anthropic, so it is off by default (the other four default on).
 - Cost is bounded: at most two requests of roughly 5–10k input tokens a version, the second mostly cached, 40 a workspace a day.

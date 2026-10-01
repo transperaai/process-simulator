@@ -41,6 +41,12 @@ async function seedAnalysis(summary = "[]", status = "ok") {
   await db.client.query("commit");
 }
 
+/** Fresh runs the editor (or `user`) holds, as the administrator: ids to write analyses against without the cooldown in the way. */
+async function freshRuns(n: number, user = users.editor!.id, age = "1 minute") {
+  const rows = (await db.client.query("insert into ai_runs (workspace_id, process_id, trigger, user_id, started_at) select $1, $2, 'manual', $3, now() - $4::interval from generate_series(1, $5) returning id", [ws, proc, user, age, n])).rows;
+  return rows.map((r) => r.id as string);
+}
+
 /** `n` runs of the workspace, started `ago` ago, as the administrator. */
 async function seedRuns(n: number, ago = "1 hour", process = proc) {
   await db.client.query("insert into ai_runs (workspace_id, process_id, trigger, user_id, started_at) select $1, $2, 'manual', $3, now() - $4::interval from generate_series(1, $5)", [ws, process, users.editor!.id, ago, n]);
@@ -104,10 +110,14 @@ describe("ai_settings", () => {
         expect((await c.query("update ai_settings set review_on_market = true")).rowCount, role).toBe(1);
       });
     }
+    for (const role of ["owner", "editor", "member", "viewer"]) {
+      await db.as(users[role]!.claims, async (c) => {
+        await expect(c.query("delete from ai_settings"), `${role} can't delete`).rejects.toThrow(/permission denied/);
+      });
+    }
     for (const role of ["member", "viewer"]) {
       await db.as(users[role]!.claims, async (c) => {
         expect((await c.query("update ai_settings set review_on_market = true")).rowCount, role).toBe(0);
-        expect((await c.query("delete from ai_settings")).rowCount, role).toBe(0);
       });
     }
   });
@@ -145,6 +155,37 @@ describe("ai_settings", () => {
 });
 
 describe("reserve_ai_run: who may reserve", () => {
+  it("names the run after the person linked to the member (People), never an email or user metadata", async () => {
+    const person = (await db.client.query("insert into people (workspace_id, name, email) values ($1, 'Pat Linked', 'pat@secret.example') returning id", [ws])).rows[0].id;
+    await db.client.query("update memberships set person_id = $1 where workspace_id = $2 and user_id = $3", [person, ws, users.editor!.id]);
+    await db.client.query("update auth.users set raw_user_meta_data = jsonb_build_object('full_name', 'Spoofed Name'), email = 'editor@ai.example.com' where id = $1", [users.editor!.id]);
+    await db.as(users.editor!.claims, async (c) => {
+      const r = await reserve(c);
+      expect((await c.query("select user_name from ai_runs where id = $1", [r.id])).rows[0].user_name).toBe("Pat Linked");
+    });
+    // Unlinked: no name at all, not the email and not the metadata.
+    await db.client.query("update memberships set person_id = null where workspace_id = $1 and user_id = $2", [ws, users.owner!.id]);
+    await db.client.query("update auth.users set raw_user_meta_data = jsonb_build_object('full_name', 'Owner Spoof') where id = $1", [users.owner!.id]);
+    await db.as(users.owner!.claims, async (c) => {
+      const r = await reserve(c);
+      expect((await c.query("select user_name from ai_runs where id = $1", [r.id])).rows[0].user_name).toBeNull();
+    });
+    // A viewer reads the log and sees no email anywhere in it.
+    await db.client.query("delete from ai_runs");
+    await db.as(users.editor!.claims, async (c) => {
+      await reserve(c);
+    });
+    await db.client.query("update ai_runs set started_at = now() - interval '5 minutes'");
+    await db.as(users.owner!.claims, async (c) => {
+      await reserve(c);
+    });
+    await db.client.query("insert into ai_runs (workspace_id, process_id, trigger, user_id, user_name) values ($1, $2, 'manual', $3, 'x')", [ws, proc, users.owner!.id]);
+    const seen = await db.as(users.viewer!.claims, async (c) => (await c.query("select * from ai_runs")).rows);
+    expect(JSON.stringify(seen)).not.toMatch(/@/);
+    await db.client.query("delete from ai_runs");
+    await db.client.query("update people set name = name where id = $1", [person]);
+  });
+
   it("lets owners and editors reserve a run, which is logged with who and when", async () => {
     for (const role of ["owner", "editor"]) {
       await db.client.query("delete from ai_runs");
@@ -238,6 +279,23 @@ describe("reserve_ai_run: the daily cap and the cooldown", () => {
     expect((await db.client.query("select count(*)::int as n from ai_runs")).rows[0].n).toBe(40);
   });
 
+  it("can't be reset by deleting the process: the runs stay, and the workspace is still at its cap", async () => {
+    const other = (await db.client.query("insert into processes (workspace_id, name) values ($1, 'Doomed') returning id", [ws])).rows[0].id;
+    await seedRuns(40, "2 hours", other);
+    await db.as(users.editor!.claims, async (c) => expect((await reserve(c, other)).status).toBe("limit"));
+    // An editor deletes the process (editors can), then tries again on another one.
+    await db.as(users.editor!.claims, async (c) => {
+      expect((await c.query("delete from processes where id = $1", [other])).rowCount, "editors can delete a process").toBe(1);
+      await c.query("savepoint a");
+      expect((await c.query("select count(*)::int as n from ai_runs where workspace_id = $1", [ws])).rows[0].n).toBe(40);
+      expect((await c.query("select count(*)::int as n from ai_runs where process_id is null")).rows[0].n, "runs keep, without the process").toBe(40);
+      expect((await reserve(c)).status, "still at the cap").toBe("limit");
+    });
+    // The same, committed.
+    await db.client.query("delete from processes where id = $1", [other]);
+    await db.as(users.editor!.claims, async (c) => expect((await reserve(c)).status).toBe("limit"));
+  });
+
   it("holds under concurrency: two reservations at 39 runs make exactly one more", async () => {
     await seedRuns(39, "2 hours");
     const other = (await db.client.query("insert into processes (workspace_id, name) values ($1, 'Parallel') returning id", [ws])).rows[0].id;
@@ -285,10 +343,10 @@ describe("ai_analyses: shape", () => {
   });
 
   it("holds one analysis per version, which a re-run replaces (and re-stamps with whoever ran it)", async () => {
+    const [r1, r2] = await freshRuns(2);
     await db.as(users.editor!.claims, async (c) => {
-      const run = (await reserve(c)).id;
-      await analysis(c, live, "", run);
-      await expect(analysis(c, live, "", run)).rejects.toThrow(/ai_analyses_revision_id_key/);
+      await analysis(c, live, "", r1);
+      await expect(analysis(c, live, "", r2)).rejects.toThrow(/ai_analyses_revision_id_key/);
     });
     await seedAnalysis();
     await db.as(users.owner!.claims, async (c) => {
@@ -345,16 +403,40 @@ describe("ai_analyses: shape", () => {
   it("takes an analysis of an earlier version too (history keeps what AI said then)", async () => {
     const draft = (await db.client.query("select public.open_draft($1) as r", [proc])).rows[0].r as { revision_id: string };
     await db.client.query("select public.publish_process($1, true)", [proc]);
+    const [r1, r2] = await freshRuns(2);
     await db.as(users.editor!.claims, async (c) => {
-      const run = (await reserve(c)).id;
-      await analysis(c, live, "", run);
-      await analysis(c, draft.revision_id, "", run);
+      await analysis(c, live, "", r1);
+      await analysis(c, draft.revision_id, "", r2);
       expect((await c.query("select count(*)::int as n from ai_analyses")).rows[0].n).toBe(2);
     });
   });
 });
 
 describe("ai_analyses: who can write, and as whom", () => {
+  it("takes one analysis per run, and only a run reserved in the last 15 minutes", async () => {
+    const [run] = await freshRuns(1);
+    const [old] = await freshRuns(1, users.editor!.id, "16 minutes");
+    await db.as(users.editor!.claims, async (c) => {
+      await expect(analysis(c, live, "", old), "an old reservation can't be spent later").rejects.toThrow(/in the last 15 minutes/);
+    });
+    await db.as(users.editor!.claims, async (c) => {
+      await analysis(c, live, "", run);
+      await c.query("savepoint a");
+      const draft = (await c.query("select public.open_draft($1) as r", [proc])).rows[0].r as { revision_id: string };
+      await expect(analysis(c, draft.revision_id, "", run), "a run backs one analysis").rejects.toThrow(/ai_analyses_run_id_key/);
+    });
+  });
+
+  it("nobody can delete or truncate an analysis or the switches", async () => {
+    await seedAnalysis();
+    for (const role of ["owner", "editor"]) {
+      for (const table of ["ai_analyses", "ai_settings"]) {
+        await db.as(users[role]!.claims, async (c) => expect(c.query(`delete from ${table}`), `${role} ${table}`).rejects.toThrow(/permission denied/));
+        await db.as(users[role]!.claims, async (c) => expect(c.query(`truncate ${table}`), `${role} truncate ${table}`).rejects.toThrow(/permission denied/));
+      }
+    }
+  });
+
   it("lets owners and editors write as themselves", async () => {
     for (const role of ["owner", "editor"]) {
       await db.client.query("delete from ai_runs");
@@ -375,7 +457,7 @@ describe("ai_analyses: who can write, and as whom", () => {
   });
 
   it("refuses an analysis that doesn't name a run the writer reserved for that process", async () => {
-    await seedRuns(1, "1 hour");
+    await seedRuns(1, "1 minute");
     const theirs = (await db.client.query("select id from ai_runs limit 1")).rows[0].id as string;
     await db.as(users.editor!.claims, async (c) => {
       // Someone else's run (the seeded one belongs to the editor here, so use the owner's below).

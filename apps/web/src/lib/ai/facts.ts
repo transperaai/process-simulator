@@ -188,7 +188,7 @@ export function buildAiInput(args: AiInputArgs): AiInput {
     {
       ...factPayload,
       findings: findingsPayload.map((f, i) => (findings[i]!.key.startsWith("success:") ? { ...f, title: "Goal not reliably met" } : f)),
-      firstPrinciplesChecks: checks.map((c) => ({ ...c, text: stripQuoted(c.text) })),
+      firstPrinciplesChecks: checks.map((c) => ({ ...c, text: stripQuoted(c.text).replace(/ is owned by .*?, which is a team\./, " is owned by a team, which is a team.") })),
       successMeasures: measuresPayload.map(({ target, today }) => ({ target, today })),
     },
     (s) => applyAliases(s, aliases),
@@ -197,7 +197,7 @@ export function buildAiInput(args: AiInputArgs): AiInput {
   const names = [args.processName, ...steps.map((s) => s.name), ...args.roles.map((x) => x.name), ...aliases.map((a) => a.label)];
   return {
     payload,
-    check: context(checkPayload, raw, [], names, r.currency, r.hours_per_week),
+    check: { ...context(checkPayload, raw, [], names, r.currency, r.hours_per_week), phrases: wordsGiven(checkPayload) },
     aliases,
     steps: steps.map((s) => ({ id: s.id, name: s.name })),
     quotes: wordsGiven(payload),

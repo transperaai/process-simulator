@@ -60,6 +60,8 @@ export interface CheckContext {
   currency: string;
   /** Working hours in a day (hours per week / 5), to read hours as days. */
   hoursPerDay: number;
+  /** Lower-cased text the facts print: a ratio phrase that appears in it verbatim ("1 in 10") is not refused. */
+  phrases?: readonly string[];
 }
 
 export interface CheckedNumber {
@@ -97,10 +99,13 @@ const QUARTER = /\b(?:Q[1-4]|H[12]|FY\s?\d{2,4})\b/g;
 // Fractions and ratios in words or slashes ("a third", "three quarters of", "3/4", "one in ten", "1 in 10", "seven figures"):
 // like "half" and "twice", they state a ratio nobody computed, and the digits or number words in them would otherwise
 // pass for figures.
-const FRACTION_WORD = String.raw`(?:thirds?|fourths?|quarters?|fifths?|sixths?|sevenths?|eighths?|ninths?|tenths?)`;
+/** Slash phrases that are idioms, not fractions: "24/7" (always on) and "50/50" (an even split no run computed, and no figure is claimed). */
+const IDIOMS = /^(?:24\s?\/\s?7|50\s?\/\s?50)$/;
+const FRACTION_WORD =String.raw`(?:thirds?|fourths?|quarters?|fifths?|sixths?|sevenths?|eighths?|ninths?|tenths?)`;
 const RATIOS = new RegExp(
   [
-    String.raw`\b(?:a|an|one|two|three|four|five|six|seven|eight|nine)[-\s]${FRACTION_WORD}(?:\s+of)?\b`,
+    // "a quarter of", "three thirds of": the "of" is what makes it a share ("Wins in a quarter" is a period, not a fraction).
+    String.raw`\b(?:a|an|one|two|three|four|five|six|seven|eight|nine)[-\s]${FRACTION_WORD}\s+of\b`,
     String.raw`(?<![\d/.])\d{1,3}\s?/\s?\d{1,3}(?![\d/])`,
     String.raw`\b(?:one|two|three|four|five|1|2|3|4|5)\s+(?:in|out\s+of)\s+(?:\d[\d,]*|a\s+(?:hundred|thousand|million)|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|forty|fifty|hundred|thousand)\b`,
     String.raw`\b(?:two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)[-\s]figures?\b`,
@@ -242,7 +247,7 @@ export interface Scan {
 }
 
 /** Every number, date and number word in `input`. Names in `names` are removed first. */
-export function scanNumbers(input: string, names: readonly string[] = []): Scan {
+export function scanNumbers(input: string, names: readonly string[] = [], phrases: readonly string[] = []): Scan {
   let text = input.replace(/[   ]/g, " ");
   for (const name of [...names].filter((n) => /\d/.test(n)).sort((a, b) => b.length - a.length)) {
     text = text.split(name).join(BLANK.repeat(name.length));
@@ -270,7 +275,12 @@ export function scanNumbers(input: string, names: readonly string[] = []): Scan 
   text = blank(text, WEEK_NUMBER, (m) => void periods.push({ text: m[0], week: Number(m[1]) }));
   text = blank(text, QUARTER, (m) => void periods.push({ text: m[0], week: null }));
   const multiples: string[] = [];
-  text = blank(text, RATIOS, (m) => void multiples.push(m[0]));
+  text = blank(text, RATIOS, (m) => {
+    const said = m[0].toLowerCase().replace(/\s+/g, " ");
+    // Idioms that are not fractions, and a ratio the facts themselves print (the engine's "add back about 1 in 10"), are not refused.
+    if (IDIOMS.test(said) || phrases.some((p) => p.includes(said))) return;
+    multiples.push(m[0]);
+  });
   text = blank(text, MULTIPLES, (m) => void multiples.push(m[0]));
 
   const tokens: NumberToken[] = [];
@@ -378,7 +388,7 @@ const KIND_WORDS: Record<NumberKind, string> = {
 
 /** Check every number in `text` against the context's facts. */
 export function checkNumbers(text: string, ctx: CheckContext): CheckResult {
-  const scan = scanNumbers(text, ctx.names);
+  const scan = scanNumbers(text, ctx.names, ctx.phrases);
   const numbers: CheckedNumber[] = [];
   const problems: NumberProblem[] = [];
   const years = new Set(ctx.dates.map((d) => Number(d.slice(0, 4))));

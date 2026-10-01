@@ -418,7 +418,7 @@ export function DraftCompare({
  * attention, is left out of comparisons, and raises an issue until
  * its changes are re-pointed.
  */
-function BreaksWarning({ breaks }: { breaks: BreakingScenario[] }) {
+export function BreaksWarning({ breaks }: { breaks: BreakingScenario[] }) {
   return (
     <div role="note" data-publish-breaks className="flex flex-col gap-1 rounded-token border border-crit bg-crit-soft p-2">
       <p>

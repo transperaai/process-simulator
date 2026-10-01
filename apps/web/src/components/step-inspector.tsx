@@ -160,10 +160,19 @@ export function StepInspector({
           </button>
         </div>
       )}
-      <TextField label="Name" value={step.name} save={field<string | null>("name")} />
+      <TextField
+        label="Name"
+        value={step.name}
+        save={field<string | null>("name")}
+        help={{ description: "What this step is called on the map and in the analysis.", example: "“Discovery call” or “Send proposal”." }}
+      />
       <div className="grid grid-cols-2 gap-2">
         <SelectField
           label="Kind"
+          help={{
+            description: "What sort of step it is: work someone does, a wait, a decision with branches, or a box that groups other steps.",
+            example: "A “Client decision” is a Decision with two branches: signs, or walks away.",
+          }}
           value={step.kind}
           options={kindOptions}
           save={via<string | null>((b, v) => (v ? setStepKind(b, id, v as StepKind) : null))}
@@ -171,6 +180,7 @@ export function StepInspector({
         {step.kind === "end" && (
           <SelectField
             label="Outcome"
+            help={{ description: "How the process finishes here: Won, Lost or simply Done. Wins and losses are what the headline numbers count.", example: "The end step after “Contract signed” is Won." }}
             value={step.outcome}
             options={Object.entries(OUTCOME_LABELS).map(([value, label]) => ({ value, label }))}
             save={via<string | null>((b, v) => (v ? updateStep(b, id, { outcome: v }) : null))}
@@ -189,10 +199,17 @@ export function StepInspector({
       {working && (
         <>
           <div className={sectionClass}>
-            <SelectField label="Role" value={step.role_id} options={roleOptions} noneLabel="No role" save={field("role_id")} />
+            <SelectField
+              label="Who does it"
+              help={{
+                description: "The role that does this step. Its people are busy while they work on it, so a role with too few people becomes the bottleneck.",
+                example: "“Strategist” has 3 people. If every lead needs a strategist, they all queue for those 3.",
+              }}
+              value={step.role_id} options={roleOptions} noneLabel="No role" save={field("role_id")} />
             {personOptions.length > 0 && (
               <SelectField
                 label="Pinned person"
+                help={{ description: "Use this when only one named person can do the step. Leave it on “Anyone in the role” if any of them can.", example: "Only Maya can sign off audits, so pin “Audit & proposal” to Maya." }}
                 value={step.person_id}
                 options={personOptions}
                 noneLabel="Anyone in the role"
@@ -202,11 +219,12 @@ export function StepInspector({
             )}
           </div>
           <Duration phase="work" title="Hands-on time" step={step} via={via} field={field} />
-          <Duration phase="wait" title="Wait after" step={step} via={via} field={field} />
+          <Duration phase="wait" title="Wait" step={step} via={via} field={field} />
           <div className={sectionClass}>
             <div className="grid grid-cols-2 gap-2">
               <NumberField
-                label="Rework rate"
+                label="Rework %"
+                help={{ description: "How often work has to be done again.", example: "8 out of every 100 proposals have to be redone." }}
                 value={Number(step.rework_rate)}
                 scale={100}
                 unit="%"
@@ -217,6 +235,7 @@ export function StepInspector({
               />
               <SelectField
                 label="Rework goes back to"
+                help={{ description: "Which step the work returns to when it needs redoing. “This step” means it is simply repeated.", example: "A rejected proposal goes back to “Write proposal”, not to the start." }}
                 value={step.rework_to_step_id}
                 options={reworkOptions}
                 noneLabel="This step"
@@ -224,9 +243,18 @@ export function StepInspector({
               />
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <NumberField label="SLA" value={nullableNumber(step.sla_hours)} optional unit="h" min={0} save={field("sla_hours")} />
+              <NumberField
+                label="SLA"
+                help={{ description: "The time you promise to get this step done within. It is recorded here, not simulated yet.", example: "24 h to reply to a new enquiry." }}
+                value={nullableNumber(step.sla_hours)}
+                optional
+                unit="h"
+                min={0}
+                save={field("sla_hours")}
+              />
               <NumberField
                 label="Current WIP"
+                help={{ description: "How many items are sitting at this step right now. Entering it on any step starts the run from today's real queue instead of from empty.", example: "7 proposals are waiting for review today, so enter 7." }}
                 value={nullableNumber(step.current_wip)}
                 optional
                 min={0}
@@ -240,7 +268,13 @@ export function StepInspector({
               Current WIP is what sits at this step now; entering it on any step starts the run from it instead of a
               warm-up. Rework targets and SLAs are saved but not simulated yet.
             </p>
-            <TextField label="Tool" value={step.tool} optional save={field("tool")} />
+            <TextField
+              label="Tool"
+              help={{ description: "The software or channel used for this step, for your own reference.", example: "Xero, Google Docs or Zoom." }}
+              value={step.tool}
+              optional
+              save={field("tool")}
+            />
           </div>
         </>
       )}
@@ -250,7 +284,14 @@ export function StepInspector({
       )}
 
       <div className={sectionClass}>
-        <TextField label="Notes" value={step.notes} optional multiline save={field("notes")} />
+        <TextField
+          label="Notes"
+          help={{ description: "Anything worth remembering about this step. It does not change the numbers.", example: "“Only runs for clients on the Pro plan.”" }}
+          value={step.notes}
+          optional
+          multiline
+          save={field("notes")}
+        />
         <button
           type="button"
           onClick={onDelete}
@@ -365,7 +406,11 @@ function Duration({
       <legend className="sr-only">{title}</legend>
       <p className="text-xs font-semibold text-fg">{title}</p>
       <SelectField
-        label="Distribution"
+        label="Time pattern"
+        help={{
+          description: "How much the time varies from run to run. “Varies” suits most steps, “Range” lets you set a minimum, most likely and maximum, and “Always the same” never changes.",
+          example: "A discovery call usually takes an hour but sometimes three: pick Range, with 0.5, 1 and 3 hours.",
+        }}
         value={dist}
         options={DIST_OPTIONS}
         save={via<string | null>((b, v) => (v ? setDistribution(b, step.id, phase, v as Distribution) : null))}
@@ -373,9 +418,9 @@ function Duration({
       {dist === "triangular" ? (
         <>
           <div className="grid grid-cols-3 gap-2">
-            <NumberField label="Min" value={range.min} unit="h" min={0} save={point("min")} />
-            <NumberField label="Most likely" value={range.mode} unit="h" min={0} save={point("mode")} />
-            <NumberField label="Max" value={range.max} unit="h" min={0} save={point("max")} />
+            <NumberField label="Min" help={{ description: "The quickest this has ever gone.", example: "0.5 h for a very short call." }} value={range.min} unit="h" min={0} save={point("min")} />
+            <NumberField label="Most likely" help={{ description: "The time it usually takes.", example: "1 h for a typical call." }} value={range.mode} unit="h" min={0} save={point("mode")} />
+            <NumberField label="Max" help={{ description: "The longest it has taken, on a bad day.", example: "3 h when the client keeps asking questions." }} value={range.max} unit="h" min={0} save={point("max")} />
           </div>
           <p className="text-xs text-fg-3">
             Mean {formatHours(mean)}, from the range. The simulation samples between min and max.
@@ -383,16 +428,27 @@ function Duration({
         </>
       ) : (
         <div className="grid grid-cols-2 gap-2">
-          <NumberField label="Mean" value={mean} unit="h" min={0} save={field(`${phase}_hours`)} />
+          <NumberField
+            label="Mean"
+            help={{
+              description: phase === "work" ? "The average hands-on time: how long someone actually works on it each time." : "The average time the item waits after the work, with nobody working on it.",
+              example: phase === "work" ? "1.5 h to write a proposal." : "24 h waiting for the client to reply.",
+            }}
+            value={mean}
+            unit="h"
+            min={0}
+            save={field(`${phase}_hours`)}
+          />
           {dist === "lognormal" && (
             <NumberField
-              label="Variability (CV)"
+              label="How much it varies"
+              help={{ description: "How far the time moves around the average. 0 means it is always the same; 0.35 is a typical step; higher means some runs take much longer.", example: "A steady admin task is about 0.2. A client reply that is sometimes instant and sometimes a week is about 1." }}
               value={nullableNumber((params.cv as number | null | undefined) ?? null)}
               optional
               min={0}
               max={5}
               step={0.05}
-              placeholder={`${DEFAULT_CV[phase]} (default)`}
+              placeholder={`${DEFAULT_CV[phase]} (usual)`}
               save={field(`${phase}_params.cv`)}
             />
           )}

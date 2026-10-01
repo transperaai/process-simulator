@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { PanelRight } from "lucide-react";
 import { isUnpublished, ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow, type SourceRow } from "@transpera-flow/db";
@@ -52,7 +53,7 @@ export type EditMode = "live" | "demo" | "readonly";
 const DEMO_VIEWER: Viewer = { userId: "demo-you", name: "You", email: null };
 
 /** A bundle's engine model, the same object while the model is unchanged (moving a step doesn't change it). */
-function useEngineModel(bundle: ProcessBundle): { model: EngineModel | null; error: string | null } {
+export function useEngineModel(bundle: ProcessBundle): { model: EngineModel | null; error: string | null } {
   const resolved = useMemo(() => {
     try {
       return { model: toEngineModel(bundle), error: null };
@@ -80,6 +81,7 @@ export function ProcessView({
   analysisRules,
   processPicker,
   notice,
+  editHref,
 }: {
   live: ProcessBundle;
   draft: ProcessBundle | null;
@@ -104,6 +106,8 @@ export function ProcessView({
   processPicker?: ReactNode;
   /** A notice above the results, such as the demo's. */
   notice?: ReactNode;
+  /** Where the Editor for this process is, if the viewer may edit. Editing is its own screen (issue #104). */
+  editHref?: string;
 }) {
   const stamp = () => ({ at: new Date().toISOString(), by: userId });
   const sourcesHref = registerHref ? registerHref.replace(/\/issues$/, "/sources") : mode === "demo" ? "/demo/sources" : undefined;
@@ -125,7 +129,8 @@ export function ProcessView({
   const working = state.bundle;
   const live = drafts.live;
   const bundle = showingLive ? live : working;
-  const editable = canEdit && !showingLive;
+  // The map is for reading. Editing happens on the Editor's own screen (issue #104), so nothing here changes the draft.
+  const editable = false;
   const [selection, setSelection] = useState<Selection>(NO_SELECTION);
   const [compare, setCompare] = useState(false);
   const me = viewer ?? (mode === "demo" ? DEMO_VIEWER : null);
@@ -369,7 +374,7 @@ export function ProcessView({
         <DraftBar
           session={session}
           drafts={drafts}
-          canEdit={canEdit}
+          canEdit={false}
           view={showingLive ? "live" : "draft"}
           onView={(v) => {
             setView(v);
@@ -384,6 +389,14 @@ export function ProcessView({
           breaks={breaks}
         />
         <div className="ml-auto flex items-center gap-2">
+          {editHref && (
+            <>
+              <span className="hidden text-xs text-muted-foreground sm:inline">Viewing{hasDraft ? "" : " live"}. Changes are made in the Editor.</span>
+              <Button asChild size="sm" className="bg-edit text-edit-fg hover:bg-edit/90">
+                <Link href={editHref}>{hasDraft ? "✎ Open draft in Editor" : "✎ Edit process"}</Link>
+              </Button>
+            </>
+          )}
           <PresenceBar
             variant="compact"
             sync={sync}
@@ -536,7 +549,7 @@ export function ProcessView({
 }
 
 /** Same-field conflicts waiting for "keep mine / keep theirs", and the last failed save. */
-function SaveProblems({
+export function SaveProblems({
   editor,
   bundle,
   conflicts,

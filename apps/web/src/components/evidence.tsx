@@ -6,6 +6,7 @@
 // conflict and then every assumption for confirming or editing inline.
 
 import { useId, useState } from "react";
+import { Help } from "@/components/help";
 import {
   EVIDENCE_COLUMNS,
   EVIDENCE_LABELS,
@@ -186,7 +187,14 @@ export function EvidencePanel({
   const columns = EVIDENCE_COLUMNS.filter((c) => evidenceOf(step, c).length || openConflict(step, c) || isOpenAssumption(step, c));
   return (
     <section aria-label="Evidence" className="flex flex-col gap-2 border-t border-line pt-3 text-xs">
-      <p className="font-semibold text-fg">Evidence</p>
+      <p className="flex items-center font-semibold text-fg">
+        Evidence
+        <Help
+          label="Evidence"
+          description="Where a number on this step came from: a quote from a transcript, a note or a document. It is how someone else can check the number."
+          example="“A proper audit takes a day” from the strategy walkthrough backs the 9 h hands-on time."
+        />
+      </p>
       {columns.length === 0 && <p className="text-fg-3">No value cites a source yet.</p>}
       {columns.map((column) => {
         const conflict = openConflict(step, column);
@@ -293,7 +301,10 @@ function CiteForm({
     >
       <div className="grid grid-cols-2 gap-1.5">
         <label className="flex flex-col gap-0.5">
-          <span className="text-fg-2">Value</span>
+          <span className="flex items-center text-fg-2">
+            Value
+            <Help label="Value" description="Which number on this step the source backs up." example="Hands-on time, if the quote is about how long the work takes." />
+          </span>
           <select className={inputClass} value={column} onChange={(e) => setColumn(e.target.value as EvidenceColumn)}>
             {EVIDENCE_COLUMNS.map((c) => (
               <option key={c} value={c}>
@@ -303,7 +314,10 @@ function CiteForm({
           </select>
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-fg-2">Source</span>
+          <span className="flex items-center text-fg-2">
+            Source
+            <Help label="Source" description="The transcript, note or document the quote comes from. Add sources on the Sources page." example="“Strategy walkthrough, 12 Sep”." />
+          </span>
           <select className={inputClass} value={sourceId} onChange={(e) => setSourceId(e.target.value)}>
             {sources.map((s) => (
               <option key={s.id} value={s.id}>
@@ -313,7 +327,10 @@ function CiteForm({
           </select>
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-fg-2">Speaker</span>
+          <span className="flex items-center text-fg-2">
+            Speaker
+            <Help label="Speaker" description="Who said it, so you can weigh how close they are to the work." example="Maya Collins, the strategist who does the audits." />
+          </span>
           <input className={inputClass} list={listId} value={speaker} onChange={(e) => setSpeaker(e.target.value)} maxLength={200} />
           <datalist id={listId}>
             {source?.speakers.map((s) => (
@@ -322,17 +339,28 @@ function CiteForm({
           </datalist>
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-fg-2">Where (time or page)</span>
+          <span className="flex items-center text-fg-2">
+            Where (time or page)
+            <Help label="Where" description="The moment in a recording or the page in a document, so the quote can be found again." example="00:14:05 in a call, or page 3 of a report." />
+          </span>
           <input className={inputClass} value={timestamp} onChange={(e) => setTimestamp(e.target.value)} placeholder="00:14:05" maxLength={100} />
         </label>
       </div>
       <label className="flex flex-col gap-0.5">
-        <span className="text-fg-2">Quote</span>
+        <span className="flex items-center text-fg-2">
+          Quote
+          <Help label="Quote" description="The exact words from the source that support the number." example="“A proper audit and proposal is a day's work, call it six hours.”" />
+        </span>
         <textarea className={inputClass} rows={2} value={quote} onChange={(e) => setQuote(e.target.value)} maxLength={2000} required />
       </label>
       <label className="flex flex-col gap-0.5">
-        <span className="text-fg-2">
+        <span className="flex items-center text-fg-2">
           The value they stated ({unit}, optional; current {show(column, stepValue(step, column))})
+          <Help
+            label="The value they stated"
+            description="The number the speaker gave. If it differs from another source's number, the step is marked as a conflict and simulated as the range between them."
+            example="Maya says 6 hours and Rosa says 12: the step is simulated between 6 and 12."
+          />
         </span>
         <input className={inputClass} type="number" inputMode="decimal" min={0} step="any" value={value} onChange={(e) => setValue(e.target.value)} />
       </label>

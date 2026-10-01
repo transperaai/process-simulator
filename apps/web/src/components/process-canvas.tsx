@@ -729,6 +729,8 @@ interface CanvasProps {
   openIssues?: Record<string, number>;
   /** A step's rating (a rank, higher is worse, with its label), which a closed group takes the worst of. Absent until the workspace has ratings. */
   rating?: (stepId: string) => { rank: number; label: string } | null;
+  /** The Editor has its own palette (issue #104): leave "Add step" out of the toolbar. */
+  hideAdd?: boolean;
 }
 
 export function ProcessCanvas(props: CanvasProps) {
@@ -752,10 +754,18 @@ function Canvas({
   savedLabel = "Saved",
   openIssues,
   rating,
+  hideAdd = false,
 }: CanvasProps) {
   const editable = editor !== null;
   // Groups open in place (issue #102): to edit inside one, open it; to read the map, close it for the roll-up.
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => (editor ? new Set(groupIds(bundle.steps)) : new Set()));
+  // In the Editor a group that appears (just added, grouped, or brought back by undo) opens, so its steps can be edited.
+  const [knownGroups, setKnownGroups] = useState<ReadonlySet<string>>(() => new Set(groupIds(bundle.steps)));
+  const newGroups = editor ? groupIds(bundle.steps).filter((id) => !knownGroups.has(id)) : [];
+  if (editor && (newGroups.length || knownGroups.size !== groupIds(bundle.steps).length)) {
+    setKnownGroups(new Set(groupIds(bundle.steps)));
+    if (newGroups.length) setExpanded((prev) => new Set([...prev, ...newGroups]));
+  }
   const hasGroups = useMemo(() => bundle.steps.some((st) => isGroup(st) || st.child_process_id), [bundle.steps]);
   const allGroups = useMemo(() => groupIds(bundle.steps), [bundle.steps]);
   const toggleGroup = useCallback(
@@ -1217,7 +1227,7 @@ function Canvas({
           {/* Before the map in the page, so Tab reaches the toolbar first. */}
           {editable && editorState && (
             <div className="absolute top-2.5 left-2.5 z-10 max-w-[calc(100%-1.25rem)]">
-              <Toolbar bundle={bundle} editor={editor} state={editorState} onAdd={addFromToolbar} lanes={lanes} onToggleLanes={toggleLanes} lanesAvailable={!hasGroups} groups={allGroups.length ? { allOpen: allGroups.every((id) => expanded.has(id)), onToggle: toggleAllGroups } : null} savedLabel={savedLabel} />
+              <Toolbar bundle={bundle} editor={editor} state={editorState} onAdd={addFromToolbar} lanes={lanes} onToggleLanes={toggleLanes} lanesAvailable={!hasGroups} hideAdd={hideAdd} groups={allGroups.length ? { allOpen: allGroups.every((id) => expanded.has(id)), onToggle: toggleAllGroups } : null} savedLabel={savedLabel} />
             </div>
           )}
           {diff && diff.list.length > 0 && (
@@ -1409,6 +1419,7 @@ function Toolbar({
   lanes,
   onToggleLanes,
   lanesAvailable,
+  hideAdd,
   groups,
   savedLabel,
 }: {
@@ -1420,6 +1431,7 @@ function Toolbar({
   onToggleLanes: () => void;
   /** Swimlanes need every step in its own lane, so they are off while the process has groups. */
   lanesAvailable: boolean;
+  hideAdd: boolean;
   /** Open or close every group at once; null when the process has none. */
   groups: { allOpen: boolean; onToggle: () => void } | null;
   savedLabel: string;
@@ -1434,6 +1446,8 @@ function Toolbar({
       aria-label="Edit the process"
       className="flex flex-wrap items-center gap-1.5 rounded-token border border-line bg-panel/95 p-1.5 text-xs shadow-token"
     >
+      {!hideAdd && (
+<>
       <label className="sr-only" htmlFor="new-step-kind">
         Kind of step to add
       </label>
@@ -1477,6 +1491,8 @@ function Toolbar({
         Add step
       </button>
       <span aria-hidden className="mx-0.5 h-5 w-px bg-line" />
+</>
+)}
       <button
         type="button"
         onClick={() => editor.undo()}

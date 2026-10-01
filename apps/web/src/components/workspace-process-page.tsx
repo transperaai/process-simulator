@@ -44,6 +44,7 @@ export async function WorkspaceProcessPage({ slug, processId }: { slug: string; 
       analysisRules={rules.settings}
       registerHref={`${base}/issues`}
       settingsHref={`${base}/settings`}
+      editHref={canEdit ? `${base}/p/${live.process.id}/edit` : undefined}
       userId={viewer?.userId ?? null}
       viewer={viewer}
       processPicker={

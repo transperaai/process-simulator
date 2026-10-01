@@ -1,6 +1,6 @@
 # Handover
 
-Updated 1 Oct 2026 (evening), during the redesign build (Milestone A, A31–A58). Start a new session with:
+Updated 1 Oct 2026 (late evening), during the redesign build (Milestone A, A31–A58). Start a new session with:
 
 > Read `CLAUDE.md` and `docs/HANDOVER.md`, then carry on from "Next steps".
 
@@ -33,41 +33,48 @@ Merged to `main` (live on https://transpera-flow.vercel.app):
 | A38 process page v2 (#103) | #142 | read-only review page; levers inline in Projection; no Save run |
 | A56 churn drivers (#121) | #140 | migration 20261116000000, ENGINE 1.6.0 |
 | A51 block library (#116) | #143 | migration 20261117000000 |
+| A45 insights v2 (#110) | #145 | |
+| A40 process history (#105) | #144 | migration 20261118000000 |
+| Engine performance | #148 | recovers the A56 churn-tick cost; outputs bit-identical, ENGINE 1.6.0 |
+| A54 first principles (#119) | #147 | migration 20261119000000 |
+| A47 issues data and Acknowledge dialog (#112) | #149 | migration 20261120000000 (strictly additive; see below) |
 
 Open PRs (each gets an Opus review; findings go back to the builder; I apply the migration, then merge):
 
 | Ticket | PR | Migration | State |
 |---|---|---|---|
-| A40 process history (#105) | #144 | 20261118000000 (row 30) | security re-check passed; merging main, then apply and merge |
-| A45 insights v2 (#110) | #145 | none | fixing review findings (viewer buttons on Overview, one-write Dismiss) |
-| A54 first principles (#119) | not yet open | 20261119000000 (row 31) | building |
+| A46 AI analysis (#111) | #150 | 20261121000000 (row 33) | in review |
+| A49 solutions (#114) | not yet open | 20261122000000 (row 34) | building |
+| A48 issues pages (#113) | not yet open | 20261123000000 (row 35) if needed | building |
 
-Next to start: A47 issues data (after A45), then A48, A49, A46, A50, A52, A53 per the build plan.
+Next: A50 solution page (after A49), A52 suggestions (after A49 and A46), A53 sources must link (last).
 
-**Production database:** applied up to `20261117000000`. Migrations go on strictly in version order, before the PR
+**Production database:** applied up to `20261120000000`. Migrations go on strictly in version order, before the PR
 merges (the app reads the new tables). A PR that slips is renumbered, not applied out of order. See
 `docs/production-migrations.md`.
 
 **Austin's decisions on 1 Oct:** Northbeam's client groups are two services (SEO, PPC), no third "SEO + PPC"
 service; production numbers moving to client groups is fine ("it's an example, so clean it up"); the A41/A42 rule
-choices are confirmed (`docs/analysis-rules.md`).
+choices are confirmed (`docs/analysis-rules.md`). In the evening: churn drivers keep only late work and market on
+(no numbers move); dismissing an insight lasts until that process's next published version (built in A47); Save
+run stays removed (History replaces it; "Explain this run" has no entry point until A46/A52 give it one).
+
+**Issue statuses (A47):** the UI shows Open / Testing solutions / Resolved / Won't fix, stored as `open` /
+`in_progress` / `done` / `done` + `resolution = 'wont_fix'` (mapping in `packages/db/src/issue-status.ts`). A later
+"contract" migration that rewrites stored values and tightens the check needs Austin's go-ahead.
 
 **Waiting on Austin:**
-- **Churn driver defaults (A56):** only late work and market are on, at weight 1, so no existing numbers moved.
-  The prototype has all ten on (weights 0.5–1.5); that would take Northbeam from about 5.8 to about 10 clients lost
-  a run.
-- **Dismiss (A45):** dismissing an insight is permanent (an issue row with status `dismissed`); the prototype says
-  "dismissed for this run". There is also no per-row Acknowledge button yet.
-- **Save run is gone (A38):** History (A40) simulates versions in the browser instead; nothing writes `runs` now,
-  and "Explain this run" has no entry point.
-- **CI timing test:** `apps/web/test/scenarios.test.ts` "< 150 ms" sits close to its limit on CI runners (main
-  ~135 ms; A56 adds ~8%). It has failed intermittently on several PRs. Options: profile the engine, or measure
-  against a CI-calibrated budget.
+- **CI timing tests:** the PRD §6.7 tests (`scenarios.test.ts`, `servicing.test.ts`) use absolute limits that shared
+  GitHub runners miss by 15–20% now and then, even after #148. Options: a separate perf job with one retry, or
+  budgets relative to a baseline measured on the same runner. Tests have not been loosened.
+- **AI analysis sources (A46):** "read linked sources and quotes" defaults off (it would send interview quotes to
+  Anthropic). Switch on per workspace in Settings → AI analysis if wanted.
 - **24-month speed:** a slider move on full Northbeam at 24 months takes about 360–440 ms, against the 250 ms
   13-week target (A58 tests against the target scaled by horizon).
 
 **Follow-ups noted:** an exact per-month MRR series from the engine (A35's range covers new-client revenue only);
-an MCP client-groups tool; rule 9 in settings; the horizon picker on more pages; block delete/rename.
+an MCP client-groups tool; rule 9 in settings; the horizon picker on more pages; block delete/rename; the flaky
+`map-browser.test.ts` "does not move the view when a highlight changes" (fixed 700 ms wait).
 
 ## How we work
 

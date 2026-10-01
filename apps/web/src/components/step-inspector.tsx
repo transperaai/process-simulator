@@ -105,10 +105,12 @@ export function StepInspector({
     };
   const field = <T extends Scalar>(name: string) =>
     via<T>((b, v) => updateStep(b, id, { [name]: v }), { field: name, current: readField(step, name) as T });
-  const working = step.kind !== "start" && step.kind !== "end";
+  // A group (or a step holding a child process) has no numbers of its own: the steps inside it do the work.
+  const holder = step.kind === "group" || step.child_process_id !== null;
+  const working = step.kind !== "start" && step.kind !== "end" && !holder;
 
-  const kindOptions: SelectOption[] = [...STEP_KINDS, ...(step.kind === "subprocess" ? (["subprocess"] as const) : [])]
-    .filter((k) => !kindProblem(bundle, id, k))
+  const kindOptions: SelectOption[] = [...STEP_KINDS, ...(step.kind === "subprocess" || step.kind === "group" ? [step.kind] : [])]
+    .filter((k) => k === step.kind || !kindProblem(bundle, id, k))
     .map((k) => ({
     value: k,
     label: KIND_LABELS[k],
@@ -175,6 +177,14 @@ export function StepInspector({
           />
         )}
       </div>
+
+      {holder && (
+        <p className="rounded-token border border-line bg-panel-2 px-2 py-1.5 text-xs text-fg-2">
+          {step.kind === "group"
+            ? "A group is a box of steps. It has no hours, role or rework of its own: the steps inside it do the work, and the numbers are the same whether it is open or closed on the map."
+            : "This step holds a child process, a process with its own page and versions. The numbers are those of the child's steps."}
+        </p>
+      )}
 
       {working && (
         <>

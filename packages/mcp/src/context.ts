@@ -82,16 +82,18 @@ export async function resolveProcess(
   const list = () => processes.map((p) => ({ id: p.id, name: p.name }));
   if (!processes.length) throw new ToolError("not_found", `Workspace '${workspace.name}' has no processes`);
   if (!ref) {
-    const pipelines = processes.filter((p) => p.kind !== "servicing");
-    if (processes.length > 1 && pipelines.length === 1) {
+    // Child processes sit inside the process that holds them (issue #102): the default is among the top-level ones.
+    const top = processes.filter((p) => !p.parent_process_id);
+    const pipelines = top.filter((p) => p.kind !== "servicing");
+    if (top.length > 1 && pipelines.length === 1) {
       assumptions.push(`No process given; using the workspace's only pipeline ('${pipelines[0]!.name}'), whose runs include its servicing processes.`);
       return pipelines[0]!;
     }
-    if (processes.length > 1) {
+    if (top.length > 1) {
       throw new ToolError("ambiguous", "This workspace has more than one process; pass `process`", list());
     }
-    assumptions.push(`No process given; using the workspace's only process ('${processes[0]!.name}').`);
-    return processes[0]!;
+    assumptions.push(`No process given; using the workspace's only process ('${top[0]!.name}').`);
+    return top[0]!;
   }
   const needle = ref.trim().toLowerCase();
   const exact = processes.filter((p) => p.id === needle || p.name.toLowerCase() === needle);

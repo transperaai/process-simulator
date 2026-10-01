@@ -74,9 +74,9 @@ export function demoFirstPrinciples(): FirstPrinciples {
       root: "There are no written pricing and scoping rules",
     },
     measures: [
-      { id: "m1", text: "At least 6 wins in the period", kpi: "won", comparator: "atLeast", target: 6, horizon: "3 months" },
-      { id: "m2", text: "Win rate above 30%", kpi: "winRate", comparator: "atLeast", target: 0.3, horizon: "6 months" },
-      { id: "m3", text: "Average time to complete under 120 working hours", kpi: "cycleHours", comparator: "atMost", target: 120, horizon: "6 months" },
+      { id: "m1", text: "At least 8 wins in the period", kpi: "won", comparator: "atLeast", target: 8, horizon: "3 months" },
+      { id: "m2", text: "Win rate of at least 12%", kpi: "winRate", comparator: "atLeast", target: 0.12, horizon: "6 months" },
+      { id: "m3", text: "Average time to complete under 250 working hours", kpi: "cycleHours", comparator: "atMost", target: 250, horizon: "6 months" },
       { id: "m4", text: "Clients feel looked after from the first call", kpi: null, comparator: "atLeast", target: null, horizon: "" },
     ],
   };

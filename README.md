@@ -72,7 +72,8 @@ quarter from one more FTE in the top bottleneck role; see
 `packages/engine/src/shadow-price.ts`), `log_issue` and `list_issues`, and the
 process-building tools `add_source`, `create_process`, `add_step`,
 `update_step`, `remove_step`, `connect_steps`, `set_routing`, `import_process`,
-`publish_process`, `discard_draft`, `list_templates` and `create_from_template`.
+`publish_process`, `discard_draft`, `list_templates` and `create_from_template`, and the first-principles tools `get_first_principles`
+and `update_first_principles` (Claude fills them in from transcripts, into the draft).
 Building tools write only into a process's draft (`open_draft`), never live;
 left-out numbers become assumptions, cited numbers keep their evidence, and
 values someone entered are flagged as conflicts instead of overwritten

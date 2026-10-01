@@ -5,6 +5,8 @@ import { ProcessNav } from "@/components/process-nav";
 import { ProcessPage } from "@/components/process-page";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { processRatings } from "@/lib/processes/rows";
+import { DEMO_LIVE_VERSION, demoBundleAtVersion } from "@/lib/history/demo";
+import { parseVersion } from "@/lib/process-version";
 import { withDemoGroups } from "@/lib/demo/nested";
 import { demoBundle, demoSources } from "@/lib/sources/demo";
 
@@ -15,11 +17,14 @@ import { demoBundle, demoSources } from "@/lib/sources/demo";
  */
 export default async function DemoProcessPage(props: PageProps<"/demo/p/[processId]">) {
   const { processId } = await props.params;
-  const { nested } = await props.searchParams;
+  const { nested, version } = await props.searchParams;
   // Sources disagree on audit time (a conflict) and kickoff time is an assumption, so the checklist and the publish check can be tried.
   const pipeline = nested === "1" ? withDemoGroups(demoBundle()) : demoBundle();
-  const bundle = bundleForProcess(pipeline, processId);
-  if (!bundle) notFound();
+  const live = bundleForProcess(pipeline, processId);
+  if (!live) notFound();
+  // `?version=N` shows an earlier version, read only (the earlier versions are made from the sample: lib/history/demo.ts).
+  const earlier = parseVersion(version) ? demoBundleAtVersion(live, parseVersion(version)!) : null;
+  const bundle = earlier ?? live;
   const processes = processesOf(pipeline).map((p) => ({ id: p.id, name: p.name, kind: p.kind, live: true, draft: false, parentId: p.parent_process_id }));
   const hrefs = Object.fromEntries(processes.map((p) => [p.id, `/demo/p/${p.id}`]));
   const ratings = processRatings(processes, northbeamIssues(), [...pipeline.steps, ...(pipeline.otherProcesses ?? []).flatMap((p) => p.steps)]);
@@ -27,8 +32,9 @@ export default async function DemoProcessPage(props: PageProps<"/demo/p/[process
     <ProcessPage
       key={bundle.process.id}
       bundle={bundle}
-      liveVersion={bundle.revision.number}
-      mode="demo"
+      viewingVersion={earlier ? earlier.revision.number : null}
+      liveVersion={DEMO_LIVE_VERSION}
+      mode={earlier ? "readonly" : "demo"}
       scenarios={northbeamScenarios()}
       issues={northbeamIssues()}
       sources={demoSources()}

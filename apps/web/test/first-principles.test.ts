@@ -222,3 +222,21 @@ describe("goals met reads the same success measures on every page", () => {
     expect(a.some((i) => i.key === "success:measure:m1")).toBe(true);
   });
 });
+
+describe("restoring a version (A40) asks first when the draft has answers of its own", () => {
+  it("asks when the draft's first principles differ from live's, and not once the person has agreed", async () => {
+    const { mustAskBeforeRestore } = await import("@/lib/history/restore-check");
+    expect(mustAskBeforeRestore(false, true, true)).toBe(true);
+    expect(mustAskBeforeRestore(true, true, true)).toBe(false);
+    expect(mustAskBeforeRestore(false, true, false)).toBe(false);
+    expect(mustAskBeforeRestore(false, false, true)).toBe(false);
+  });
+  it("the restore action checks before it calls restore_version", () => {
+    const action = readFileSync(join(__dirname, "..", "src", "app", "w", "[slug]", "p", "[processId]", "history", "actions.ts"), "utf8");
+    const check = action.indexOf("mustAskBeforeRestore(replaceDraft");
+    expect(check).toBeGreaterThan(-1);
+    expect(check).toBeLessThan(action.indexOf('rpc("restore_version"'));
+    expect(action).toContain("firstPrinciplesDraftChanged(");
+    expect(action).toContain('return { status: "draft_exists" }');
+  });
+});

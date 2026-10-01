@@ -137,3 +137,10 @@ Checked on plain Postgres 16 with the auth shim (`packages/db/test/churn-drivers
 - The 25-driver cap is a `before insert` trigger that takes `pg_advisory_xact_lock(hashtextextended('churn_drivers:' || workspace_id, 0))` before counting, as `market_schedule`'s overlap check does. Supabase allows advisory locks inside a transaction; over PostgREST each request is one transaction.
 - The partial unique index `churn_drivers_driver_key (workspace_id, driver) where driver is not null` is not a valid `ON CONFLICT` target for supabase-js `upsert`, so the app selects, then inserts or updates, and retries the update when the insert loses a race (`23505`).
 - `stamp_provenance` is given a boolean column (`enabled`) as well as numbers; it compares `to_jsonb(new) -> col` values, so it works for either, but that is only exercised here.
+
+## Process history (issue #105, migration 20261118000000)
+
+Verified only against plain Postgres (the db test harness, `process-history.test.ts`), not against Supabase:
+
+- `revision_history` is `security definer` and reads `auth.users` and `audit_log` (both closed to ordinary members). It checks `can_read_workspace` itself and shows an email only to someone who manages the workspace. On Supabase, check that the function owner can read `auth.users`.
+- `restore_version` and `duplicate_version` are `security invoker` and copy rows with `jsonb_populate_record`, like `open_draft`. The deferred nesting trigger (`nesting_is_a_tree`) runs at commit, so a bad copy is refused when the RPC's transaction commits.

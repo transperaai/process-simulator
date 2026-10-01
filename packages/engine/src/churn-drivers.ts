@@ -163,6 +163,17 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
  * aren't custom are ignored, and a repeated id keeps its first entry.
  */
 export function resolveChurnDrivers(model: Pick<EngineModel, "churnDrivers">): ResolvedChurnDriver[] {
+  // A run asks once per replication: the answer for a model is the same, so it is kept (and must not be changed by callers).
+  const kept = resolved.get(model);
+  if (kept) return kept;
+  const out = resolveUncached(model);
+  resolved.set(model, out);
+  return out;
+}
+
+const resolved = new WeakMap<object, ResolvedChurnDriver[]>();
+
+function resolveUncached(model: Pick<EngineModel, "churnDrivers">): ResolvedChurnDriver[] {
   const given = new Map<string, EngineChurnDriver>();
   for (const d of model.churnDrivers ?? []) if (!given.has(d.id)) given.set(d.id, d);
   const out: ResolvedChurnDriver[] = [];

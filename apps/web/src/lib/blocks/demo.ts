@@ -33,7 +33,7 @@ function seed(): BlockRow[] {
   const b = "b1000000-0000-4000-8000-0000000000a2";
   const c = "b1000000-0000-4000-8000-0000000000a3";
   const approval = blockFromSteps({
-    steps: [task(template, a, "Send for sign-off", 24, 0.5, "Email the client the one-page summary."), task(template, b, "Chase if no reply", 264, 0.25, null), task(template, c, "Record the decision", 504, 0.25, null)],
+    steps: [task(template, a, "Send for sign-off", 24, 0.5, "Email the client the one-page summary."), task(template, b, "Chase if no reply", 214, 0.25, null), task(template, c, "Record the decision", 404, 0.25, null)],
     edges: [
       { id: "b2000000-0000-4000-8000-0000000000a1", revision_id: "", workspace_id: "", process_id: "", from_step_id: a, to_step_id: b, probability: 1, condition_tag: null, label: null },
       { id: "b2000000-0000-4000-8000-0000000000a2", revision_id: "", workspace_id: "", process_id: "", from_step_id: b, to_step_id: c, probability: 1, condition_tag: null, label: null },
@@ -42,7 +42,7 @@ function seed(): BlockRow[] {
   const d = "b1000000-0000-4000-8000-0000000000b1";
   const e = "b1000000-0000-4000-8000-0000000000b2";
   const qualifier = blockFromSteps({
-    steps: [task(template, d, "AI scores the lead", 24, 0.05, "Reads the enquiry and the website, then scores fit."), task(template, e, "Check the score", 264, 0.1, null)],
+    steps: [task(template, d, "AI scores the lead", 24, 0.05, "Reads the enquiry and the website, then scores fit."), task(template, e, "Check the score", 214, 0.1, null)],
     edges: [{ id: "b2000000-0000-4000-8000-0000000000b1", revision_id: "", workspace_id: "", process_id: "", from_step_id: d, to_step_id: e, probability: 1, condition_tag: null, label: null }],
   });
   return [

@@ -33,7 +33,7 @@ export function BlockLibrary({ blocks, mode, newHref }: { blocks: BlockRow[]; mo
       actions={
         newHref ? (
           <span className="inline-flex items-center">
-            <Link href={newHref} className={cn(buttonVariants({ variant: "outline" }), "border-edit bg-edit text-edit-fg hover:bg-edit/90 hover:text-edit-fg")}>
+            <Link href={newHref} className={cn(buttonVariants({ variant: "outline" }), "border-edit bg-edit text-edit-fg hover:bg-edit/90 hover:text-edit-fg dark:border-edit dark:bg-edit dark:hover:bg-edit/90")}>
               ✎ New block
             </Link>
             <Help

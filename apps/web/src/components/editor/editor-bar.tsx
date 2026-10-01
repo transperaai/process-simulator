@@ -19,7 +19,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** A button on the edit-coloured bar: outlined in its text colour, or solid (the main action). */
 const onBar = "border-edit-fg/50 bg-transparent text-edit-fg hover:bg-edit-fg/15 hover:text-edit-fg dark:bg-transparent dark:hover:bg-edit-fg/15";
-const onBarSolid = "border-edit-fg bg-edit-fg text-edit hover:bg-edit-fg/90 hover:text-edit";
+const onBarSolid = "border-edit-fg bg-edit-fg text-edit hover:bg-edit-fg/90 hover:text-edit dark:bg-edit-fg dark:hover:bg-edit-fg/90";
 
 /** Block mode's form: the name and description the block is saved with, and the save itself. */
 export interface BlockForm {

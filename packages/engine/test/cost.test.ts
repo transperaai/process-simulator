@@ -24,7 +24,7 @@ import {
   type EngineModel,
   type EngineStep,
 } from "../src";
-import { groupServiceOf } from "../src/clients";
+import { clientChurnMonthly, groupServiceOf } from "../src/clients";
 import { servicingStepIds } from "../src/servicing";
 
 // Cost per month (issue #108; docs/analysis-rules.md "Cost per month"): what a
@@ -266,6 +266,15 @@ describe("the cost of each insight", () => {
     expect(some).toBe(true);
   });
 
+  it("single point of failure: no wins lost, only missed client tasks, is n/a rather than A$0", () => {
+    const m = line(7, [{ id: "a", work: 4 }]);
+    const absence = absenceTest(m, { seed: 1, weeks: 2 });
+    const none = { ...absence, people: absence.people.map((f) => ({ ...f, winsLost: 0 })) };
+    const issue = find(detectIssues(m, simulate(m, 12, 1), NO_ESC, { absence: none }), "spof:step:a")!;
+    expect(issue.cost.perMonth).toBeNull();
+    expect(issue.cost.method).toMatch(/missed client tasks/);
+  });
+
   it("too busy: overtime that has its own insight isn't counted again", () => {
     const m = larkspurModel();
     const r = simulate(m, 12, 1);
@@ -318,7 +327,8 @@ describe("the cost of each insight", () => {
       const sid = i.key.split(":")[2]!;
       const members = Object.keys(r.clients!).filter((k) => groupServiceOf(k) === sid);
       const value = clientLossValue(grouped, grouped.clients![members[0]!]!, 12);
-      expect(i.cost.perMonth).toBeCloseTo(i.metrics.churn_monthly! * members.length * value, 6);
+      expect(i.cost.perMonth).toBeCloseTo(Math.max(0, i.metrics.churn_monthly! - clientChurnMonthly(grouped, grouped.clients![members[0]!]!)) * members.length * value, 6);
+      expect(i.cost.method).toMatch(/above the base rate/);
       expect(i.cost.perMonth).toBeGreaterThan(0);
     }
     const servicing = servicingStepIds(m);
@@ -340,13 +350,14 @@ describe("the cost of each insight", () => {
     expect(cycle.cost.perMonth).toBeCloseTo(((rs.kpi.won.mean / 26) * WEEKS_PER_MONTH) * 1000 * monthsLate, 6);
   });
 
-  it("churn risk: the chance it leaves in a month × what losing it is worth", () => {
+  it("churn risk: the churn above its base rate × what losing it is worth", () => {
     const m = northbeamWithServicing();
     const r = simulate(m, 12, 1);
     const issues = detectIssues(m, r).filter((i) => i.type === "churn_risk");
     for (const i of issues) {
       const client = m.clients![i.clientId!]!;
-      expect(i.cost.perMonth).toBeCloseTo(i.metrics.churn_monthly! * clientLossValue(m, client, 12), 6);
+      expect(i.cost.perMonth).toBeCloseTo(Math.max(0, i.metrics.churn_monthly! - clientChurnMonthly(m, client)) * clientLossValue(m, client, 12), 6);
+      expect(i.cost.method).toMatch(/above its base rate/);
     }
   });
 

@@ -61,11 +61,13 @@ export function churnRiskIssues(source: EngineModel, result: SimulationResult, m
       // Not yet on the rating model (rules 9 and 10 replace it): the old bands, as ratings.
       ...fixedRating(end < 30 || c.churned >= 0.5 ? "risk" : end < 40 ? "bad" : "good"),
       cost: (() => {
+        // Only the churn above the client's base rate counts: that is what late and missed work adds (as for the deadlines cost).
         const value = clientLossValue(model, client, money.capMonths);
+        const excess = Math.max(0, c.churnMonthly.mean - base);
         return {
-          perMonth: c.churnMonthly.mean * value,
+          perMonth: excess * value,
           hoursPerMonth: null,
-          method: `Through churn: a ${pct(c.churnMonthly.mean)} chance it leaves in a month × ${formatMoney(value, money.currency)}, its monthly fee × the tenure it has left (capped at ${num(money.capMonths, 0)} months).`,
+          method: `Through churn above its base rate: a ${pct(excess)} extra chance it leaves in a month (${pct(c.churnMonthly.mean)} against a base of ${pct(base)}) × ${formatMoney(value, money.currency)}, its monthly fee × the tenure it has left (capped at ${num(money.capMonths, 0)} months).`,
         };
       })(),
       title: `${client.name}: health ${trend}, at risk of churning`,
@@ -120,13 +122,16 @@ export function churnRiskIssues(source: EngineModel, result: SimulationResult, m
       type: "churn_risk",
       ...fixedRating(group.rating),
       cost: (() => {
-        // Clients expected to leave in a month × what losing one is worth (its fee × the tenure it has left, capped).
-        const value = clientLossValue(model, model.clients![members[0]!]!, money.capMonths);
-        const leaving = churnMonthly * members.length;
+        // Only the churn above the group's base rate counts: clients expected to leave in a month because of it × what losing one is worth.
+        const first = model.clients![members[0]!]!;
+        const value = clientLossValue(model, first, money.capMonths);
+        const base = clientChurnMonthly(model, first);
+        const excess = Math.max(0, churnMonthly - base);
+        const leaving = excess * members.length;
         return {
           perMonth: leaving * value,
           hoursPerMonth: null,
-          method: `Through churn: about ${num(leaving)} of the ${num(members.length, 0)} clients leave in a month (${pct(churnMonthly)} each) × ${formatMoney(value, money.currency)}, a client's monthly fee × the tenure it has left (capped at ${num(money.capMonths, 0)} months).`,
+          method: `Through churn above the base rate: about ${num(leaving)} of the ${num(members.length, 0)} clients leave in a month on top of the usual (${pct(churnMonthly)} each against a base of ${pct(base)}) × ${formatMoney(value, money.currency)}, a client's monthly fee × the tenure it has left (capped at ${num(money.capMonths, 0)} months).`,
         };
       })(),
       title: `${group.name} clients: health ${trend}, ${group.rating === "risk" ? "at risk of churning" : "slipping"}`,

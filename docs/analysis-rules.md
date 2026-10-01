@@ -123,8 +123,11 @@ Every insight shows an estimated cost per month in the workspace currency. The d
   insight shows time, not money.
 - **Single point of failure**: the damage of one absence (from the absence test) × absences a year (default 2) ÷ 12.
   The damage counts the wins lost in the absence window at deal value. Missed servicing tasks are not priced as deals;
-  they are flagged separately (a missed client deadline makes the insight Operational risk).
-- **Client health, churn driver, SLA missed**: churned clients × what a loss is worth after signing.
+  they are flagged separately (a missed client deadline makes the insight Operational risk). When no wins are lost,
+  only client tasks, the cost shows n/a rather than a zero.
+- **Client health, churn driver, SLA missed**: clients lost × what a loss is worth after signing. Only churn above a
+  client's (or group's) base rate counts, because that is what late and missed work adds; a client that churns at its
+  usual rate isn't a cost of the insight.
 - **Drop-off**: items lost above the benchmark × what a loss is worth at that step.
 - The rest are listed in the table below.
 - **Overlaps**: costs are estimates per insight and are not added up. A step's waiting cost and its drop-off cost can

@@ -608,6 +608,7 @@ export function detectIssues(
         type: "spof",
         ...ratingFields({ rating, base: rating, badMonth: false, bottleneck: false }),
         cost: (() => {
+          if (!(f.winsLost > 0)) return noCost("No wins are lost, only missed client tasks, and those aren't costed here.");
           // The damage of one absence (the wins it loses, at deal value, not servicing tasks; shared by the steps only they can do) × absences a year ÷ 12.
           const damage = (f.winsLost / Math.max(1, soleSteps.length)) * dealValue;
           return {

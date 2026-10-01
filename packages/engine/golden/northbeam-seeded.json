@@ -131,8 +131,8 @@
       "spof:step:kickoff": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false, "costPerMonth": 4578, "hoursPerMonth": null },
       "spof:step:report_strat": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false, "costPerMonth": 4578, "hoursPerMonth": null },
       "rework:step:ppc": { "rating": "risk", "base": "bad", "badMonth": true, "bottleneck": false, "costPerMonth": 79.99999999999999, "hoursPerMonth": 1.5999999999999996 },
-      "spof:step:report_fin": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false, "costPerMonth": 0, "hoursPerMonth": null },
       "capacity:role:strat": { "rating": "risk", "base": "good", "badMonth": true, "bottleneck": true, "costPerMonth": null, "hoursPerMonth": null },
+      "spof:step:report_fin": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": null },
       "wait:step:audit": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false, "costPerMonth": 13552.7120323629, "hoursPerMonth": null },
       "rework:step:audit": { "rating": "bad", "base": "bad", "badMonth": false, "bottleneck": false, "costPerMonth": 695.3333333333333, "hoursPerMonth": 9.933333333333332 },
       "rework:step:seo": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false, "costPerMonth": 61.11111111111111, "hoursPerMonth": 1.222222222222222 },
@@ -144,7 +144,7 @@
       "spare:person:priya": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false, "costPerMonth": 6891.96388255415, "hoursPerMonth": 153.15475294564777 },
       "spare:person:tom": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false, "costPerMonth": 6880.871195157728, "hoursPerMonth": 152.90824878128285 },
       "spare:person:rosa": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false, "costPerMonth": 5446.158796530219, "hoursPerMonth": 136.15396991325548 },
-      "churn_risk:client:c12": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false, "costPerMonth": 5203.296, "hoursPerMonth": null },
+      "churn_risk:client:c12": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false, "costPerMonth": 3187.2960000000007, "hoursPerMonth": null },
       "wait:step:ppc": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": 12.015589471873776 },
       "capacity:person:leah": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": null },
       "capacity:role:seo": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": null }

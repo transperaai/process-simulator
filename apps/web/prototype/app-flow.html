@@ -207,6 +207,56 @@ svg.map { display: block; }
 .badge circle { fill: var(--crit); }
 .badge text { font: 600 10.5px var(--f-mono); fill: var(--panel); }
 
+/* First principles flow */
+.fp { display: grid; grid-template-columns: 230px minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+@media (max-width: 1200px) { .fp { grid-template-columns: 200px minmax(0, 1fr); } .fpai { grid-column: 1 / -1; } }
+@media (max-width: 760px) { .fp { grid-template-columns: 1fr; } }
+.stepper { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 16px; }
+.stepper button { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: none; text-align: left; padding: 8px 10px; border-radius: 8px; color: var(--fg-2); }
+.stepper button:hover { background: var(--panel-2); }
+.stepper button.on { background: var(--panel); color: var(--fg); font-weight: 600; box-shadow: inset 0 0 0 1px var(--line), var(--shadow); }
+.stepper .sn { width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid var(--line-2); display: grid; place-items: center; font-family: var(--f-mono); font-size: 12px; flex: none; background: var(--panel); }
+.stepper .done .sn { background: var(--good); border-color: var(--good); color: var(--panel); }
+.stepper .on .sn { border-color: var(--accent); }
+.stepper .sn.fl, .stepper .done .sn.fl { background: var(--warn); border-color: var(--warn); color: var(--fg); }
+.rcards { display: flex; flex-direction: column; gap: 10px; }
+.rcard { border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; background: var(--panel); }
+.rtop { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.rtop > .inp { flex: 1 1 260px; font-weight: 500; }
+.rgrid { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 10px; }
+@media (max-width: 700px) { .rgrid { grid-template-columns: 1fr; } }
+.stepper .sl { flex: 1; font-size: 13.5px; }
+.stepper .sf { font-family: var(--f-mono); font-size: 11px; background: var(--warn-soft); border-radius: 99px; padding: 0 7px; color: var(--fg); }
+.fpmain { display: flex; flex-direction: column; gap: 8px; padding: 22px 24px; }
+.fpmain h2 { font-size: 22px; }
+.fpq { font-size: 15px; max-width: 70ch; }
+.fpbody { margin-top: 12px; display: flex; flex-direction: column; gap: 12px; }
+.fpbody table td { vertical-align: top; }
+.fpbody > .btn, .fpbody .stack > .btn { align-self: flex-start; }
+.fpnav { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 10px; }
+.inp.missing { border-color: var(--warn); background: var(--warn-soft); }
+.fpai { display: flex; flex-direction: column; gap: 10px; position: sticky; top: 16px; }
+.flags { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.flag { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; font-size: 13px; background: var(--fs); border-radius: 8px; padding: 8px 10px; }
+.flag .fi { width: 20px; height: 20px; border-radius: 50%; background: var(--fc); color: var(--panel); display: grid; place-items: center; font-weight: 700; font-size: 11.5px; font-family: var(--f-mono); }
+.fpall { border-top: 1px solid var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 2px; }
+.fprow { display: flex; justify-content: space-between; border: 0; background: none; padding: 4px 2px; font-size: 13px; text-align: left; color: var(--fg); }
+.fprow:hover { color: var(--accent); }
+.warnc { color: var(--warn); font-weight: 600; }
+:root[data-theme="dark"] .warnc { color: var(--warn); }
+.delc { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
+.delc.back { background: var(--panel-2); }
+.simres { background: var(--accent-soft); border-radius: 6px; padding: 7px 10px; font-size: 13px; }
+.lanes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 900px) { .lanes { grid-template-columns: 1fr; } }
+.lane { background: var(--bg); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.lcard { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 3px; }
+.whys { list-style: none; margin: 0; padding: 0 0 0 14px; border-left: 2px solid var(--line-2); display: flex; flex-direction: column; gap: 10px; }
+.whys li { display: flex; flex-direction: column; gap: 4px; }
+.whys li.root .inp { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.fp2 .mrow { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; }
+.principles.fp2 { grid-template-columns: 1.3fr 1.2fr 1fr; }
+@media (max-width: 980px) { .principles.fp2 { grid-template-columns: 1fr; } .principles.fp2 > div { border-left: 0; border-top: 1px solid var(--line); } }
 /* Lists */
 .status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; padding: 1px 8px; border-radius: 4px; background: var(--panel-2); white-space: nowrap; }
 .status.done { background: var(--good-soft); }
@@ -842,6 +892,100 @@ function sidebar() {
   </aside>`;
 }
 
+/* ---------------- First principles flow ---------------- */
+const FP_STEPS = [
+  { k: "job", n: "The job", q: "Who does this process serve, what progress are they trying to make, and what does done look like?", from: "Jobs to be done (Christensen, HBR 2016)" },
+  { k: "truths", n: "Hard truths vs assumptions", q: "What can't be argued away (law, contract, real capacity)? What is only habit or copied from others? Every truth needs a source; every assumption needs a test.", from: "Musk, TED 2013: “boil things down to their fundamental truths”" },
+  { k: "reqs", n: "Requirements", q: "List every rule the process follows. Each one needs a named person who owns it, not a team, and a reason. Then decide: keep, change, drop or challenge.", from: "Musk's algorithm, step 1: make the requirements less dumb" },
+  { k: "del", n: "Delete", q: "Which steps could go? For each, what would break and who has to agree? Simulate the deletion before deciding.", from: "Musk's algorithm, step 2: delete the part or process" },
+  { k: "saa", n: "Simplify, accelerate, automate", q: "Only after deleting. Simplify what's left, then speed it up, then automate. In that order.", from: "Musk's algorithm, steps 3 to 5" },
+  { k: "why", n: "Root cause", q: "Name the biggest problem, then ask why until you reach a cause in the process, not a person.", from: "Toyota's 5 Whys (Ohno, 1978)" },
+  { k: "measures", n: "Success measures", q: "Two to four measures, each tied to a number the simulation produces, with a target and a time horizon.", from: "Checked against every simulation run" },
+];
+let FP = {
+  sales: {
+    job: { who: "Founders of local service businesses (dentists, solicitors, trades)", progress: "Get more enquiries they can trust without learning marketing themselves", situation: "After a referral, or after a bad experience with another agency", done: "A signed 12-month retainer and a kickoff call in the diary" },
+    truths: [
+      { t: "Retainers are 12-month contracts", kind: "truth", src: "Contract template, v3" },
+      { t: "One strategist, 37.5 hours a week", kind: "truth", src: "People settings" },
+      { t: "Every proposal needs a full site audit", kind: "assumption", src: "Send 5 proposals with a light audit; compare win rate" },
+      { t: "Website leads must be enriched before the first call", kind: "assumption", src: "" },
+      { t: "Clients won't sign without seeing a strategist", kind: "truth", src: "" },
+    ],
+    reqs: [
+      { t: "The strategist writes every audit and proposal", owner: "maya", why: "The audit is how we beat cheaper agencies", v: "challenge" },
+      { t: "Every proposal is reviewed before it goes out", owner: "maya", why: "Pricing errors reached clients in September (issue #7)", v: "keep" },
+      { t: "Enrich every lead in the CRM before contact", owner: "team:Sales team", why: "We've always done it", v: "challenge" },
+      { t: "Sales can't quote prices", owner: "austin", why: "Pricing rules aren't written down", v: "change" },
+    ],
+    del: [
+      { step: "q_enrich", breaks: "Nothing before discovery; notes get taken on the call instead", agree: "tom", sim: { done: true, text: "First contact 1.4 d → 1.1 d. Discovery calls booked 55% → 56%. Nothing got worse." } },
+      { step: "a_comp", breaks: "Proposals are a little less tailored", agree: "maya", sim: { done: false } },
+      { step: "a_review", breaks: "Pricing errors come back (issue #7)", agree: "maya", sim: { done: true, text: "Keep it: proposals reworked after sending rises from 1 in 20 to 1 in 5." }, addBack: true },
+    ],
+    saa: {
+      simplify: [{ t: "One proposal template with three price tiers", steps: ["a_write"] }],
+      accelerate: [{ t: "Book discovery calls from a calendar link in the first reply", steps: ["q_book"] }],
+      automate: [{ t: "AI lead qualifier (solution)", steps: ["q_check", "q_enrich"], sol: "s4" }],
+    },
+    why: { problem: "Proposals go out late", chain: ["The strategist is busy", "She writes every audit and also reviews every monthly report", "Only she can price and scope work", "Pricing and scoping rules live in her head"], root: "There are no written pricing and scoping rules" },
+    measures: [
+      { m: "Proposal out within 3 working days of discovery", kpi: "Discovery to proposal (days)", target: "≤ 3 days", h: "6 months", meets: 58 },
+      { m: "Win rate above 30%", kpi: "Win rate", target: "> 30%", h: "6 months", meets: 61 },
+      { m: "First contact within 4 working hours", kpi: "Time to first contact", target: "< 4 h", h: "3 months", meets: 0 },
+      { m: "Clients feel looked after from the first call", kpi: null, target: "", h: "", meets: null },
+    ],
+  },
+};
+function fpFlags(f) {
+  const out = { job: [], truths: [], reqs: [], del: [], saa: [], why: [], measures: [] };
+  if (!f) return out;
+  const j = f.job; ["who", "progress", "done"].forEach(k => { if (!j[k]) out.job.push(["bad", `“${k === "who" ? "Who it serves" : k === "progress" ? "Progress they want" : "Done looks like"}” is empty.`]); });
+  if (j.done && f === FP.sales) out.job.push(["ok", "Every step in Sales contributes to “done” except Competitor scan, which no measure or requirement depends on."]);
+  f.truths.forEach(t => { if (t.kind === "truth" && !t.src) out.truths.push(["bad", `“${t.t}” is marked as a truth but has no source. Treat it as an assumption until it has one.`]); if (t.kind === "assumption" && !t.src) out.truths.push(["warn", `“${t.t}” has no test. How would you prove it wrong?`]); });
+  if (f === FP.sales) out.truths.push(["info", "The robustness check says win rate at Client decision is the most sensitive input. “Every proposal needs a full audit” touches it: test that one first."]);
+  f.reqs.forEach(r => { if (!r.owner || r.owner.startsWith("team:")) out.reqs.push(["bad", `“${r.t}” is owned by ${r.owner ? r.owner.slice(5) : "nobody"}. Name a person.`]); if (/always|habit/i.test(r.why) || !r.why) out.reqs.push(["warn", `“${r.t}”: the reason is “${r.why || "blank"}”. That's habit, not a reason.`]); });
+  if (f === FP.sales) out.reqs.push(["info", "“The strategist writes every audit and proposal” sits on the bottleneck (Audit & proposal, 82% busy, waits 25 h)."]);
+  const added = f.del.filter(d => d.addBack).length;
+  if (!f.del.length) out.del.push(["warn", "No delete candidates yet. If you never have to add a step back, you didn't delete enough."]);
+  else out.del.push([added ? "ok" : "warn", added ? `${f.del.length} delete candidates, ${added} added back (${Math.round(added / f.del.length * 100)}%). At or above 1 in 10, so you deleted enough to find a limit.` : `Nothing added back yet. Musk's rule of thumb: if you add back fewer than 1 in 10, you didn't delete enough.`]);
+  f.del.filter(d => !d.sim.done).forEach(d => out.del.push(["warn", `Deleting ${nodeName(d.step)} hasn't been simulated yet.`]));
+  const dels = new Set(f.del.filter(d => !d.addBack).map(d => d.step));
+  for (const lane of ["accelerate", "automate"]) f.saa[lane].forEach(c => c.steps.filter(s => dels.has(s)).forEach(s => out.saa.push(["bad", `“${c.t}” ${lane === "automate" ? "automates" : "speeds up"} ${nodeName(s)}, which is still a delete candidate. Decide the deletion first.`])));
+  if (f.saa.simplify.length && f === FP.sales) out.saa.push(["ok", "Simplify comes before automate for Write proposal. Good order."]);
+  if (!f.why.root) out.why.push(["warn", "No root cause yet. Keep asking why until you reach something in the process, not a person."]);
+  else if (f === FP.sales) { out.why.push(["ok", "The chain ends at a process cause (no written rules), not a person."]); out.why.push(["ok", "It matches the simulation: the bottleneck is the strategist at Audit & proposal."]); }
+  if (!f.measures.length) out.measures.push(["warn", "No measures yet. Add two to four the simulation can check."]);
+  f.measures.forEach(m => { if (!m.kpi) out.measures.push(["warn", `“${m.m}” can't be checked by the simulation. Keep it, but it won't get a pass rate.`]); else if (m.meets < 50) out.measures.push(["bad", `“${m.m}” is met in ${m.meets}% of runs today.`]); });
+  return out;
+}
+const FLAGI = { bad: ["!", "var(--crit)", "var(--crit-soft)"], warn: ["?", "var(--warn)", "var(--warn-soft)"], ok: ["✓", "var(--good)", "var(--good-soft)"], info: ["i", "var(--accent)", "var(--accent-soft)"] };
+const flagRow = ([lvl, t]) => `<li class="flag" style="--fc:${FLAGI[lvl][1]};--fs:${FLAGI[lvl][2]}"><span class="fi">${FLAGI[lvl][0]}</span><span>${esc(t)}</span></li>`;
+function fpDone(f, k) {
+  if (!f) return false;
+  return { job: () => f.job.who && f.job.progress && f.job.done, truths: () => f.truths.length > 0, reqs: () => f.reqs.length > 0, del: () => f.del.length > 0, saa: () => Object.values(f.saa).some(l => l.length), why: () => !!f.why.root, measures: () => f.measures.some(m => m.kpi) }[k]();
+}
+const ownerName = o => !o ? "—" : o.startsWith("team:") ? o.slice(5) : person(o).name;
+function fpInput(path, val, ph = "", cls = "") { return `<input class="inp ${cls}" data-fp="${path}" value="${esc(val)}" placeholder="${esc(ph)}">`; }
+function fpBody(pid, f, k) {
+  if (k === "job") return `<div class="grid2" style="gap:14px">${[["who", "Who it serves"], ["progress", "Progress they're trying to make"], ["situation", "In what situation"], ["done", "Done looks like"]].map(([kk, l]) => `<label class="field">${l}<textarea data-fp="job.${kk}">${esc(f.job[kk])}</textarea></label>`).join("")}</div>`;
+  if (k === "truths") return `<div class="rcards">${f.truths.map((t, i) => `<div class="rcard"><div class="rtop">${fpInput(`truths.${i}.t`, t.t, "A statement about this process")}<div class="seg">${["truth", "assumption"].map(x => `<button class="${t.kind === x ? "on" : ""}" data-act="fpset" data-path="truths.${i}.kind" data-v="${x}">${x === "truth" ? "Truth" : "Assumption"}</button>`).join("")}</div></div><label class="field">${t.kind === "truth" ? "Source: where does this come from?" : "Test: how would you prove it wrong?"}${fpInput(`truths.${i}.src`, t.src, t.kind === "truth" ? "e.g. contract, law, People settings" : "e.g. try it on 5 leads and compare", !t.src ? "missing" : "")}</label></div>`).join("")}</div><button class="btn sm" data-act="fpadd" data-k="truths">+ Add a statement</button>`;
+  if (k === "reqs") return `<div class="rcards">${f.reqs.map((r, i) => `<div class="rcard"><div class="rtop">${fpInput(`reqs.${i}.t`, r.t, "A rule this process follows")}<div class="seg">${["keep", "change", "drop", "challenge"].map(x => `<button class="${r.v === x ? "on" : ""}" data-act="fpset" data-path="reqs.${i}.v" data-v="${x}">${x[0].toUpperCase() + x.slice(1)}</button>`).join("")}</div></div>
+      <div class="rgrid"><label class="field">Owner (a person, not a team)<select class="inp ${!r.owner || r.owner.startsWith("team:") ? "missing" : ""}" data-fp="reqs.${i}.owner">${r.owner && r.owner.startsWith("team:") ? `<option value="${esc(r.owner)}" selected>${esc(r.owner.slice(5))} (a team)</option>` : ""}<option value="">Pick a person</option>${PEOPLE.map(p => `<option value="${p.id}" ${r.owner === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label><label class="field">Why it exists${fpInput(`reqs.${i}.why`, r.why, "The reason, not the habit", /always|habit/i.test(r.why) || !r.why ? "missing" : "")}</label></div></div>`).join("")}</div><button class="btn sm" data-act="fpadd" data-k="reqs">+ Add a requirement</button>`;
+  if (k === "del") return `<div class="stack">${f.del.map((d, i) => `<div class="card delc ${d.addBack ? "back" : ""}"><div class="spread"><div class="row"><b>${esc(nodeName(d.step))}</b>${d.addBack ? `<span class="status">Added back</span>` : `<span class="status test">Delete candidate</span>`}</div><div class="row">${d.sim.done ? "" : `<button class="btn sm primary" data-act="fpsimdel" data-i="${i}">▶ Simulate without it</button>`}<button class="btn sm" data-act="fpset" data-path="del.${i}.addBack" data-v="${d.addBack ? "" : "1"}">${d.addBack ? "Delete it after all" : "Add it back"}</button></div></div>
+      <div class="grid2" style="gap:10px"><label class="field">What breaks without it${fpInput(`del.${i}.breaks`, d.breaks)}</label><label class="field">Who has to agree<select class="inp" data-fp="del.${i}.agree">${PEOPLE.map(p => `<option value="${p.id}" ${d.agree === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label></div>
+      ${d.sim.done ? `<div class="simres">▶ ${esc(d.sim.text)}</div>` : ""}</div>`).join("")}
+      <button class="btn sm" data-act="fpadddel">+ Add a step to delete</button>
+      <p class="note">Rule of thumb from Musk: if you never have to add anything back, you didn't delete enough. Aim to add back about 1 in 10.</p></div>`;
+  if (k === "saa") return `<div class="lanes">${[["simplify", "1 · Simplify"], ["accelerate", "2 · Accelerate"], ["automate", "3 · Automate"]].map(([l, t]) => `<div class="lane"><span class="eyebrow">${t}</span>${f.saa[l].map(c => `<div class="lcard"><b>${esc(c.t)}</b><span class="small muted">${c.steps.map(nodeName).join(", ")}</span>${c.sol ? `<button class="link small" data-go="compare:${c.sol}">Open solution →</button>` : ""}</div>`).join("")}<button class="btn sm" data-act="fpaddlane" data-l="${l}">+ Add</button></div>`).join("")}</div>
+      <p class="note">Musk: “I literally automated, accelerated, simplified and then deleted.” The app warns when a change runs out of order.</p>`;
+  if (k === "why") return `<div class="stack"><label class="field">The biggest problem${fpInput("why.problem", f.why.problem)}</label>
+      <ol class="whys">${f.why.chain.map((w, i) => `<li><span class="eyebrow">Why ${i + 1}</span>${fpInput(`why.chain.${i}`, w)}</li>`).join("")}<li class="root"><span class="eyebrow">Root cause</span>${fpInput("why.root", f.why.root)}</li></ol>
+      <button class="btn sm" data-act="fpaddwhy">+ Ask why again</button></div>`;
+  if (k === "measures") return `<div class="tblwrap"><table><thead><tr><th>Measure</th><th>Simulation number</th><th>Target</th><th>Horizon</th><th>Met today</th></tr></thead><tbody>${f.measures.map((m, i) => `<tr><td>${fpInput(`measures.${i}.m`, m.m)}</td><td class="small">${m.kpi ? esc(m.kpi) : `<span class="muted">Not checked by simulation</span>`}</td><td class="mono small nowrap">${esc(m.target)}</td><td class="small nowrap">${esc(m.h)}</td><td style="min-width:150px">${m.meets == null ? `<span class="muted small">—</span>` : `<div class="row"><div class="bar" style="flex:1;min-width:60px"><i style="width:${m.meets}%;background:${m.meets >= 80 ? "var(--good)" : m.meets >= 50 ? "var(--warn)" : "var(--crit)"}"></i></div><span class="num small">${m.meets}% of runs</span></div>`}</td></tr>`).join("")}</tbody></table></div><button class="btn sm" data-act="fpadd" data-k="measures">+ Add a measure</button>`;
+}
+function fpTemplate() { return { job: { who: "", progress: "", situation: "", done: "" }, truths: [], reqs: [], del: [], saa: { simplify: [], accelerate: [], automate: [] }, why: { problem: "", chain: [""], root: "" }, measures: [] }; }
+
 /* ---------------- Screens ---------------- */
 function insightRows(list, mapKey, opts = {}) {
   if (!list.length) return `<div class="empty">Nothing in this group from the latest run.</div>`;
@@ -893,6 +1037,15 @@ function switcher(pid) {
     <button class="menufoot" data-go="processes">All processes →</button></div></details>`;
 }
 
+function principlesCard(pid) {
+  const f = FP[pid];
+  if (!f) { const pr = PRIN[pid]; return `<section class="card prin"><div class="prinhead"><span class="eyebrow">First principles</span><span class="small muted">${pr ? "Short version only" : "Not started"}</span><button class="btn sm edit" data-act="openfp" data-p="${pid}">Work through the 7 steps →</button></div>${pr ? `<div class="principles"><div class="goal"><span class="eyebrow">Goal</span><p>${esc(pr.goal)}</p></div><div><span class="eyebrow">Why we do it this way</span><p>${esc(pr.why)}</p></div><div><span class="eyebrow">Constraints</span><p>${esc(pr.constraints)}</p></div><div><span class="eyebrow">Success looks like</span><p>${esc(pr.success)}</p></div></div>` : `<p class="small muted" style="padding:12px 16px">Strip the process back to what's true: the job it does, hard truths, requirements with owners, what to delete, and how success is measured. AI uses this to judge the process.</p>`}</section>`; }
+  const flags = fpFlags(f), n = Object.values(flags).flat().filter(x => x[0] === "bad" || x[0] === "warn").length, done = FP_STEPS.filter(x => fpDone(f, x.k)).length;
+  return `<section class="card prin"><div class="prinhead"><span class="eyebrow">First principles</span><span class="small muted">${done} of 7 steps · ${n ? `<span class="warnc">${n} AI flags to look at</span>` : "no AI flags"}</span><button class="btn sm edit" data-act="openfp" data-p="${pid}">Open →</button></div>
+    <div class="principles fp2"><div class="goal"><span class="eyebrow">The job</span><p>${esc(f.job.progress)}</p><span class="small muted">For ${esc(f.job.who)}. Done: ${esc(f.job.done)}.</span></div>
+    <div><span class="eyebrow">Success measures · met today</span>${f.measures.filter(m => m.kpi).map(m => `<div class="mrow"><span class="small">${esc(m.m)}</span><span class="num small ${m.meets >= 80 ? "up" : m.meets >= 50 ? "warnc" : "down"}">${m.meets}%</span></div>`).join("")}</div>
+    <div><span class="eyebrow">Root cause</span><p>${esc(f.why.root)}</p><span class="eyebrow" style="margin-top:6px">Challenged</span><p class="small">${f.reqs.filter(r => r.v === "challenge").length} requirements · ${f.del.filter(d => !d.addBack).length} delete candidates</p></div></div></section>`;
+}
 function ideaCard(g) {
   const b = BLK[g.block], i = ISS.find(x => x.id === g.issue), key = "idea-" + g.id;
   const t = { root: { id: "root", name: b.name, cols: b.cols }, ...clone(b.defs) }; for (const k in b.defs) { t[k].id = k; t[k].added = true; } linkParents(t);
@@ -943,9 +1096,7 @@ const SCREENS = {
         <div class="row">${viewOld ? `<span class="viewing old"><i></i>Viewing version ${S.viewVersion.v} · read only</span><button class="btn sm" data-act="backlive">Back to live</button>` : `<span class="viewing"><i></i>Viewing live · version ${vers[0].v}</span>`}<span class="chip">${esc(nd.kind || "Process")}</span>${nd.rating ? pill(nd.rating) : ""}
         ${kids.length ? `<span class="small muted" style="margin-left:6px">Inside:</span>${kids.map(k => `<button class="chip btnchip" data-go="process:${k}">${esc(BASE[k].name)}</button>`).join("")}` : ""}</div></div>
       <div class="row"><button class="btn" data-go="history:${pid}">History</button><button class="btn edit" data-act="editdraft" data-p="${pid}">✎ Open in Editor</button></div></header>
-    <section class="card prin"><div class="prinhead"><span class="eyebrow">First principles</span><span class="small muted">AI judges the process against these</span><button class="btn ghost sm" data-act="editprin" data-p="${pid}">${pr ? "Edit" : "Write them"}</button></div>
-      ${pr ? `<div class="principles"><div class="goal"><span class="eyebrow">Goal</span><p>${esc(pr.goal)}</p></div><div><span class="eyebrow">Why we do it this way</span><p>${esc(pr.why)}</p></div><div><span class="eyebrow">Constraints</span><p>${esc(pr.constraints)}</p></div><div><span class="eyebrow">Success looks like</span><p>${esc(pr.success)}</p></div></div>`
-        : `<p class="small muted" style="padding:0 16px 14px">Not written yet. Add the goal, why it works this way, the constraints and what success looks like.</p>`}</section>
+    ${principlesCard(pid)}
     <section><div class="sechead"><h2>Projection</h2>${horizonSeg()}</div><div class="kpis">${kpisFor(pid)}</div></section>
     <section><div class="sechead"><div><h2>Map</h2><p>Coloured by rating. Red badges are confirmed issues. Click a step for detail.</p></div></div>
       ${mapBlock(key, { root: pid, issues: true })}</section>
@@ -957,6 +1108,23 @@ const SCREENS = {
       <div class="card chartcard"><h3>Wait before each step</h3>${hbars(Object.values(BASE).filter(x => !x.cols && x.w != null && desc(BASE, pid).has(x.id)).sort((a, b) => b.w - a.w).slice(0, 7).map(x => ({ label: x.name, v: x.w })), { max: 50, th: 16, fmt: fmtH, thLabel: "16 h rule", color: v => v >= 40 ? "var(--crit)" : v >= 16 ? "var(--warn)" : "var(--accent)" })}</div>
       <div class="card chartcard"><h3>How busy each role is</h3>${hbars(ROLEU)}</div>
     </div></section>`;
+  },
+  principles() {
+    const pid = S.p, f = FP[pid] || (FP[pid] = fpTemplate()), i = S.fpStep || 0, st = FP_STEPS[i], flags = fpFlags(f);
+    const done = FP_STEPS.filter(x => fpDone(f, x.k)).length;
+    const nflag = k => flags[k].filter(x => x[0] === "bad" || x[0] === "warn").length;
+    return `<header class="head"><div class="t"><nav class="crumbs"><button data-go="processes">Processes</button><span>/</span><button data-go="process:${pid}">${esc(pname(pid))}</button><span>/</span><span>First principles</span></nav>
+      <h1>First principles · ${esc(pname(pid))}</h1><p class="muted">Strip the process back to what's actually true, then rebuild it. Seven steps; AI checks every answer against the simulation.</p></div>
+      <div class="row"><span class="small muted">${done} of 7 steps filled in · ${FP_STEPS.reduce((a, x) => a + nflag(x.k), 0)} AI flags</span><div class="bar" style="width:120px"><i style="width:${done / 7 * 100}%"></i></div><button class="btn" data-go="process:${pid}">Back to ${esc(pname(pid))}</button></div></header>
+    <div class="fp">
+      <ol class="stepper">${FP_STEPS.map((x, j) => `<li><button class="${j === i ? "on" : ""} ${fpDone(f, x.k) ? "done" : ""}" data-act="fpstep" data-i="${j}"><span class="sn ${nflag(x.k) ? "fl" : ""}">${nflag(x.k) ? nflag(x.k) : fpDone(f, x.k) ? "✓" : j + 1}</span><span class="sl">${x.n}</span></button></li>`).join("")}</ol>
+      <section class="card fpmain"><span class="eyebrow">Step ${i + 1} of 7</span><h2>${st.n}</h2><p class="fpq">${st.q}</p><span class="small muted">Method: ${st.from}</span>
+        <div class="fpbody">${fpBody(pid, f, st.k)}</div>
+        <div class="spread fpnav"><button class="btn" data-act="fpstep" data-i="${i - 1}" ${i === 0 ? "disabled" : ""}>← ${i ? FP_STEPS[i - 1].n : ""}</button>${i < 6 ? `<button class="btn primary" data-act="fpstep" data-i="${i + 1}">${FP_STEPS[i + 1].n} →</button>` : `<button class="btn primary" data-go="process:${pid}">Done</button>`}</div></section>
+      <aside class="card fpai"><div class="aihead">${ico("suggestions")}<span>AI checks</span></div><span class="small muted">Checked against the latest simulation of ${esc(pname(pid))}.</span>
+        <ul class="flags">${flags[st.k].map(flagRow).join("") || `<li class="small muted">Nothing to check yet.</li>`}</ul>
+        <div class="fpall"><span class="eyebrow">All steps</span>${FP_STEPS.map((x, j) => `<button class="fprow" data-act="fpstep" data-i="${j}"><span>${x.n}</span><span class="num small ${nflag(x.k) ? "warnc" : "muted"}">${nflag(x.k) ? nflag(x.k) + " to fix" : "✓"}</span></button>`).join("")}</div></aside>
+    </div>`;
   },
   solutions() {
     const ideas = SUG.filter(g => g.kind === "Solution idea");
@@ -1161,7 +1329,7 @@ function editorScreen() {
       <label class="field">Evidence<button class="btn sm" data-act="addsource" data-k="step" data-id="${e.sel}">+ Cite a source</button></label>`}
       <div class="row"><button class="btn sm" data-act="eddelete">Delete</button></div></div>`
       : `<div class="stack"><span class="eyebrow">Inspector</span><p class="small muted">Select a step or group on the canvas to edit it.</p></div>`}
-      ${e.mode !== "block" ? `<div class="stack"><span class="eyebrow">First principles</span><p class="small">${esc((PRIN[e.root] || PRIN.company).goal)}</p><span class="small muted">AI checks your design against these when you simulate.</span></div>` : ""}
+      ${e.mode !== "block" ? `<div class="stack"><span class="eyebrow">First principles</span><p class="small">${esc(FP[e.root]?.job.progress || (PRIN[e.root] || PRIN.company).goal)}</p><span class="small muted">AI checks your design against these when you simulate.</span></div>` : ""}
     </div></div>
   <div class="edfoot">${e.sim ? `<span class="eyebrow">Compared with live</span>${e.sim.rows.map(r => `<div class="delta"><span class="small muted">${esc(r[0])}</span><b>${r[1]} → <span class="${r[3] ? "up" : "down"}">${r[2]}</span></b></div>`).join("")}${iss ? `<span>${verdict(e.sim.auto)} <span class="small muted">against the target</span></span>` : ""}`
     : `<span class="small muted">Press Simulate to run this version 30 times and compare it with live.</span>`}</div>
@@ -1363,6 +1531,14 @@ const ACTIONS = {
   edsaveselblk() { const e = S.ed, g = e.tree[e.sel]; const defs = {}; for (const k of desc(e.tree, e.sel)) if (k !== e.sel && !e.tree[k].cols) { const { id: _, parent, added, ...rest } = e.tree[k]; defs[k] = rest; } BLK["blk_" + Date.now()] = { name: g.name, type: "Manual", desc: "Saved from the Editor.", cols: clone(g.cols.map(c => c.filter(x => defs[x])).filter(c => c.length)), defs }; toast(`Saved “${g.name}” to the block library.`); renderEditorKeepScroll(); },
   verdict(d) { const s = SOL.find(x => x.id === d.id), f = forOf(s, +d.i); f.yours = f.yours === d.v ? null : d.v; if (f.yours) logIssue(+d.i, `Marked “${s.name}” as ${f.yours}.`); const y = window.scrollY; render(); window.scrollTo(0, y); toast(f.yours ? `Marked ${f.yours} for #${d.i}. Logged in the issue's history.` : "Verdict cleared."); },
   seeresolved() { S.issueView = "resolved"; go("issues"); },
+  openfp(d) { S.fpStep = 0; go("principles", d.p); },
+  fpstep(d) { if (+d.i < 0 || +d.i > 6) return; S.fpStep = +d.i; render(); window.scrollTo(0, 0); },
+  fpset(d) { setPath(FP[S.p], d.path, d.v === "" ? false : d.v === "1" ? true : d.v); keepY(); },
+  fpadd(d) { const f = FP[S.p]; ({ truths: () => f.truths.push({ t: "", kind: "assumption", src: "" }), reqs: () => f.reqs.push({ t: "", owner: "", why: "", v: "challenge" }), measures: () => f.measures.push({ m: "New measure", kpi: "Cycle time", target: "set a target", h: "6 months", meets: 40 }) })[d.k](); keepY(); },
+  fpadddel() { FP[S.p].del.push({ step: "a_site", breaks: "", agree: "austin", sim: { done: false } }); keepY(); },
+  fpaddlane(d) { FP[S.p].saa[d.l].push({ t: "New change", steps: ["q_enrich"] }); keepY(); toast("Added. It touches Enrich in CRM, so the AI checks the order."); },
+  fpaddwhy() { FP[S.p].why.chain.push(""); keepY(); },
+  fpsimdel(d) { const x = FP[S.p].del[+d.i]; x.sim = { done: true, text: `Without ${nodeName(x.step)}: proposal turnaround 3.1 d → 2.8 d; win rate 31% → 30% (within range).` }; keepY(); toast("Simulated 30 runs without that step."); },
   procview(d) { S.procView = d.v; render(); },
   issueview(d) { S.issueView = d.v; render(); },
   buildidea(d) { const g = SUG.find(x => x.id === d.id); const i = ISS.find(x => x.id === g.issue); const t = treeWith({ [g.target]: g.block }); startEditor({ mode: "solution", root: procOf(g.target), issue: i.id, tree: t, replaced: { [g.target]: g.block }, open: [...ancestors(g.target).filter(a => a !== "company" && a !== procOf(g.target)), g.target], name: g.title, idea: g.id }); toast("The AI's steps are placed. Adjust them, simulate, then save."); },
@@ -1402,6 +1578,8 @@ const ACTIONS = {
   mkdup() { const id = "c" + Date.now(); MARKETS[id] = { name: MARKETS[S.mk].name + " (custom)", preset: false, v: { ...MARKETS[S.mk].v } }; MCOL[id] = "var(--accent-soft)"; S.mk = id; render(); },
   mksched() { toast("Prototype: you'd pick a month range and a market here."); },
 };
+function setPath(o, path, v) { const ks = path.split("."); let t = o; ks.slice(0, -1).forEach(k => t = t[k]); t[ks.at(-1)] = v; }
+function keepY() { const y = window.scrollY; render(); window.scrollTo(0, y); }
 function keepAck() { if (!ACK) return; const t = $("#ack-title"); if (t) ACK.title = t.value; const l = $("#ack-tl"), g = $("#ack-tg"); if (l) ACK.target = { ...ACK.target, label: l.value, goal: g.value }; }
 
 document.addEventListener("input", e => {
@@ -1415,6 +1593,7 @@ document.addEventListener("input", e => {
   if (d.act === "edf") { const nd = S.ed.tree[S.ed.sel]; const f = d.f; nd[f] = f === "h" || f === "w" ? +a.value : a.value; if (!nd.added) nd.changed = true; delete nd.sub; S.ed.sim = null; MAPS.ed.sel = S.ed.sel; refreshMap("ed"); }
 });
 document.addEventListener("change", e => {
+  const fpEl = e.target.closest("[data-fp]"); if (fpEl && FP[S.p]) { setPath(FP[S.p], fpEl.dataset.fp, fpEl.value); keepY(); return; }
   const a = e.target.closest("[data-act]"); if (!a) return; const d = a.dataset;
   if (d.act === "drvon") { DRV.find(x => x.id === d.id).on = a.checked; const y = window.scrollY; render(); window.scrollTo(0, y); }
   if (d.act === "ackscope") { keepAck(); ACK.scope = a.value; ackModal(ACK); }

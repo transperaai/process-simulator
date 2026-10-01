@@ -4,5 +4,11 @@
     "date": "2026-09-30",
     "note": "First versioned engine: golden baselines for Northbeam (re-baselined after the prototype fixes, PRD §6.8), Northbeam as seeded, and Larkspur Creative.",
     "digest": "sha256:17ab712cd94c32495011d0b3fdbf5c115661a0f7379b72f4884d5540b329d144"
+  },
+  {
+    "version": "1.1.0",
+    "date": "2026-10-01",
+    "note": "Rating model (issue #106): detected issues carry a four-level rating (great/good/bad/risk) instead of four severities; the golden outputs now lock every issue's rating and how it was reached. StepResult gains a p90 field; no simulated number changed.",
+    "digest": "sha256:06356b685c1ed02db015434988562f69f7991261396fe0734d2531d085dd1170"
   }
 ]

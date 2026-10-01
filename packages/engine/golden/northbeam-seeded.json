@@ -1,7 +1,7 @@
 {
   "model": "northbeam-seeded",
   "description": "Northbeam as seeded: SEO and PPC services, named people, its 26-client roster, 10% overtime cap and two servicing processes.",
-  "engineVersion": "1.0.0",
+  "engineVersion": "1.1.0",
   "seed": 1,
   "reps": 30,
   "outputs": {
@@ -107,6 +107,26 @@
       "report_am": { "arrivals": 94.26666666666667, "departures": 93.76666666666667, "avgQueue": 0.2582539017676255, "avgWait": 1.413027545195345, "wip": 0.3333333333333333, "slaBreaches": 0 },
       "report_fin": { "arrivals": 93.76666666666667, "departures": 93.6, "avgQueue": 0.01281612255670888, "avgWait": 0.07088978594318288, "wip": 0, "slaBreaches": 0 },
       "checkin_call": { "arrivals": 211.2, "departures": 210.4, "avgQueue": 0.65052403773396, "avgWait": 1.5826158929693042, "wip": 1.3666666666666667, "slaBreaches": 0 }
+    },
+    "ratings": {
+      "capacity:role:strat": { "rating": "risk", "base": "good", "badMonth": true, "bottleneck": true },
+      "rework:step:ppc": { "rating": "risk", "base": "bad", "badMonth": true, "bottleneck": false },
+      "capacity:role:ppc": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },
+      "wait:step:audit": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },
+      "wait:step:kickoff": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },
+      "wait:step:report_ppc": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },
+      "wait:step:report_strat": { "rating": "bad", "base": "great", "badMonth": true, "bottleneck": true },
+      "rework:step:audit": { "rating": "bad", "base": "bad", "badMonth": false, "bottleneck": false },
+      "rework:step:onboard": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },
+      "rework:step:seo": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },
+      "capacity:person:leah": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false },
+      "capacity:role:seo": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false },
+      "wait:step:ppc": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false },
+      "spof:step:audit": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
+      "spof:step:kickoff": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
+      "spof:step:report_fin": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
+      "spof:step:report_strat": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
+      "churn_risk:client:c12": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false }
     },
     "rosterClients": {
       "c01": { "health": 91.3, "churned": 0.13333333333333333, "atRisk": 0 },

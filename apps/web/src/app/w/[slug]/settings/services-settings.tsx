@@ -3,7 +3,7 @@
 import { useActionState, useState, useTransition } from "react";
 import type { PricingModel, ServiceRow } from "@transpera-flow/db";
 import { NumberField, SelectField, TextField, ToggleField } from "@/components/fields";
-import { Help } from "@/components/help";
+import { Help, HelpLabel } from "@/components/help";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -79,11 +79,11 @@ function AddService({ workspaceId }: { workspaceId: string }) {
   return (
     <form action={action} className="mb-4 flex flex-wrap items-end gap-2">
       <label className="flex min-w-0 flex-col gap-1">
-        <span className="text-xs font-medium text-fg-2">Name</span>
+        <HelpLabel label="Name" description="The service as you'd say it to a client." example="SEO retainer" />
         <Input name="name" required maxLength={200} />
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs font-medium text-fg-2">Pricing</span>
+        <HelpLabel label="Pricing" description="How you charge for this service: a monthly fee, an hourly rate or a one-off price. Only monthly fees add new monthly income for now." example="A monthly fee of 2,500 means each client pays 2,500 every month they stay." />
         <NativeSelect name="pricing_model">
           {pricingOptions.map((o) => (
             <option key={o.value} value={o.value}>
@@ -93,7 +93,7 @@ function AddService({ workspaceId }: { workspaceId: string }) {
         </NativeSelect>
       </label>
       <label className="flex w-28 flex-col gap-1">
-        <span className="text-xs font-medium text-fg-2">Price</span>
+        <HelpLabel label="Price" description="What a client pays: per month for a retainer, per hour for hourly work." example="2,500 a month." />
         <Input
           name="price"
           type="number"
@@ -152,7 +152,7 @@ function ServiceItem({ service: sv, share, data }: { service: ServiceRow; share:
           save={serviceSaver(sv.id, "pricing_model")}
           options={pricingOptions}
           disabled={disabled}
-          hint="Only retainers add new MRR. Hourly services add no revenue until servicing work is simulated." help={{ description: "How the service is charged. Only retainers add new monthly revenue; hourly work adds none until servicing work is simulated.", example: "A retainer of 2,500 a month brings 2,500 each month the client stays." }} />
+          hint="Only monthly fees add new monthly income for now." help={{ description: "How you charge for this service: a monthly fee, an hourly rate or a one-off price. Only monthly fees add new monthly income for now.", example: "A monthly fee of 2,500 brings in 2,500 each month the client stays." }} />
         <NumberField
           label="Price"
           value={Number(sv.price)}
@@ -286,6 +286,7 @@ function FallbackLoad({ service: sv, data }: { service: ServiceRow; data: Worksp
             step={0.5}
             unit="h"
             disabled={!data.canEdit}
+            help={{ description: "How many hours a month this role spends looking after one client of this service.", example: `${r.name} 4 means each client costs this role 4 hours a month.` }}
           />
         ))}
       </div>

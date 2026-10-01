@@ -77,8 +77,8 @@ export function EditorView({
 
   const diff = useMemo(() => (hasDraft ? diffBundles(live, working) : EMPTY_DIFF), [hasDraft, live, working]);
   const names = useMemo(() => namesOf(working, live), [working, live]);
-  const workingModel = useEngineModel(working);
-  const liveModel = useEngineModel(live);
+  const workingModel = useEngineModel(working, null);
+  const liveModel = useEngineModel(live, null);
   const unresolved = useMemo(() => unresolvedSteps(working), [working]);
 
   // Selection can outlive what it points at (after a delete or an undo).

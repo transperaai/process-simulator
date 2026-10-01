@@ -162,6 +162,11 @@ function InlineValue({ column, current, onSet }: { column: EvidenceColumn; curre
         className="w-20 rounded-token border border-line bg-panel px-1.5 py-0.5 tabular-nums"
       />
       <span className="text-fg-3">{unit}</span>
+      <Help
+        label="New value"
+        description="Settle the disagreement by choosing the number to use for this step, once you have decided which source is right."
+        example="Two sources say 6 h and 12 h, and the strategist confirms 9 h: enter 9."
+      />
       <button type="submit" disabled={!valid} className={button}>
         Set
       </button>

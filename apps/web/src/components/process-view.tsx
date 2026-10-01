@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { PanelRight } from "lucide-react";
 import { isUnpublished, ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow, type SourceRow } from "@transpera-flow/db";
 import type { AnalysisSettings, EngineModel } from "@transpera-flow/engine";
@@ -21,6 +21,8 @@ import type { RealtimeSync } from "@/lib/realtime/sync";
 import type { View, Viewer } from "@/lib/realtime/transport";
 import { useRealtime } from "@/lib/realtime/use-realtime";
 import { useSimulation } from "@/lib/sim/use-simulation";
+import { horizonWeeks, isHorizonMonths } from "@/lib/horizon";
+import { useHiddenLevers } from "@/lib/levers/use-hidden-levers";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -31,6 +33,7 @@ import { MapSidePanel, type PanelOpen, type PanelTabId } from "./map/side-panel"
 import { useMapPanelRequest } from "./shell/map-panel-request";
 import { AssumptionChecklist } from "./evidence";
 import { ConflictPrompt } from "./fields";
+import { HorizonPicker } from "./horizon-picker";
 import { KpiStrip } from "./kpi-strip";
 import { PresenceBar } from "./presence-bar";
 import { SaveRunBar } from "./save-run";
@@ -53,7 +56,7 @@ export type EditMode = "live" | "demo" | "readonly";
 const DEMO_VIEWER: Viewer = { userId: "demo-you", name: "You", email: null };
 
 /** A bundle's engine model, the same object while the model is unchanged (moving a step doesn't change it). */
-export function useEngineModel(bundle: ProcessBundle): { model: EngineModel | null; error: string | null } {
+export function useEngineModel(bundle: ProcessBundle, weeks: number | null): { model: EngineModel | null; error: string | null } {
   const resolved = useMemo(() => {
     try {
       return { model: toEngineModel(bundle), error: null };
@@ -63,7 +66,12 @@ export function useEngineModel(bundle: ProcessBundle): { model: EngineModel | nu
     }
   }, [bundle]);
   const modelKey = resolved.model ? JSON.stringify(resolved.model) : null;
-  const model = useMemo(() => (modelKey ? (JSON.parse(modelKey) as EngineModel) : null), [modelKey]);
+  // The horizon picked on the page replaces the workspace's (issue #123); null keeps the workspace's.
+  const model = useMemo(() => {
+    if (!modelKey) return null;
+    const m = JSON.parse(modelKey) as EngineModel;
+    return weeks === null ? m : { ...m, horizonWeeks: weeks };
+  }, [modelKey, weeks]);
   return { model, error: resolved.error };
 }
 
@@ -79,6 +87,7 @@ export function ProcessView({
   viewer = null,
   sources = [],
   analysisRules,
+  hiddenLevers,
   processPicker,
   notice,
   editHref,
@@ -102,6 +111,8 @@ export function ProcessView({
   sources?: SourceRow[];
   /** The workspace's analysis rules, which rate the run (Settings → Analysis rules). Omitted: the defaults. */
   analysisRules?: AnalysisSettings;
+  /** The lever kinds the workspace has switched off in Settings -> Levers (the demo keeps its own in the tab). */
+  hiddenLevers?: string[];
   /** The process picker (and page heading), shown at the left of the top bar. */
   processPicker?: ReactNode;
   /** A notice above the results, such as the demo's. */
@@ -139,8 +150,25 @@ export function ProcessView({
   const diff = useMemo(() => (hasDraft ? diffBundles(live, working) : EMPTY_DIFF), [hasDraft, live, working]);
   const names = useMemo(() => namesOf(working, live), [working, live]);
 
-  const workingModel = useEngineModel(working);
-  const liveModel = useEngineModel(live);
+  // How far ahead to simulate: 1 to 24 months from the picker, or the workspace's own length until one is picked.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const horizonParam = Number(searchParams.get("horizon"));
+  const [pickedMonths, setPickedMonths] = useState<number | null>(isHorizonMonths(horizonParam) ? horizonParam : null);
+  // A pick goes in the address too, so a reload or a shared link keeps it.
+  const pickHorizon = (months: number) => {
+    setPickedMonths(months);
+    const next = new URLSearchParams(searchParams.toString());
+    next.set("horizon", String(months));
+    router.replace(`${pathname}?${next.toString()}`, { scroll: false });
+  };
+  const weeks = pickedMonths === null ? null : horizonWeeks(pickedMonths);
+  const hidden = useHiddenLevers(mode === "demo", hiddenLevers);
+  const leversHref = settingsHref ? `${settingsHref}/levers` : mode === "demo" ? "/demo/settings/levers" : undefined;
+
+  const workingModel = useEngineModel(working, weeks);
+  const liveModel = useEngineModel(live, weeks);
   const resolved = showingLive ? liveModel : workingModel;
   const model = resolved.model;
   // While an edit leaves the process unsimulatable, keep showing the last results.
@@ -456,7 +484,8 @@ export function ProcessView({
         {editable && <SaveProblems editor={editor} bundle={bundle} conflicts={state.conflicts} error={state.error} sync={sync} />}
       </div>
       {shownModel ? (
-        <div className="px-4 pt-3">
+        <div className="flex flex-col gap-2 px-4 pt-3">
+          <HorizonPicker weeks={shownModel.horizonWeeks} onChange={pickHorizon} />
           <KpiStrip model={shownModel} currency={bundle.workspace.settings.currency} result={result} status={sim.status} durationMs={sim.run?.durationMs} />
         </div>
       ) : null}
@@ -546,6 +575,8 @@ export function ProcessView({
                 onScenariosChange={issuesUi.onScenariosChange}
                 provenance={provenance}
                 retired={retired}
+                hiddenLevers={hidden}
+                leversHref={leversHref}
               />
             )
           }

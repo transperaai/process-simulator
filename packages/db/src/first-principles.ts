@@ -76,15 +76,20 @@ export function resolveFirstPrinciples(
   return earlier ? { doc: full(earlier), version: null, inheritedFrom: number.get(earlier.revision_id)! } : { doc: null, version: null, inheritedFrom: null };
 }
 
-/** Load the first principles of one revision of a process (own or inherited). */
-export async function loadFirstPrinciples(db: Db, processId: string, revisionId: string): Promise<ResolvedFirstPrinciples> {
+/** Load the first principles of several revisions of a process (each own or inherited), in one read. */
+export async function loadFirstPrinciplesFor(db: Db, processId: string, revisionIds: readonly string[]): Promise<Record<string, ResolvedFirstPrinciples>> {
   const [revisions, rows] = await Promise.all([
     db.from("process_revisions").select("id, number").eq("process_id", processId),
     db.from("first_principles").select(FIRST_PRINCIPLES_COLUMNS).eq("process_id", processId),
   ]);
   if (revisions.error) throw revisions.error;
   if (rows.error) throw rows.error;
-  return resolveFirstPrinciples(revisions.data, rows.data as unknown as FirstPrinciplesRow[], revisionId);
+  return Object.fromEntries(revisionIds.map((id) => [id, resolveFirstPrinciples(revisions.data, rows.data as unknown as FirstPrinciplesRow[], id)]));
+}
+
+/** Load the first principles of one revision of a process (own or inherited). */
+export async function loadFirstPrinciples(db: Db, processId: string, revisionId: string): Promise<ResolvedFirstPrinciples> {
+  return (await loadFirstPrinciplesFor(db, processId, [revisionId]))[revisionId]!;
 }
 
 export interface FirstPrinciplesOwner {

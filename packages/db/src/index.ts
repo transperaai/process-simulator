@@ -20,6 +20,7 @@ export {
   firstPrinciplesFromRow,
   firstPrinciplesToColumns,
   loadFirstPrinciples,
+  loadFirstPrinciplesFor,
   resolveFirstPrinciples,
   saveFirstPrinciples,
   type FirstPrinciplesOwner,

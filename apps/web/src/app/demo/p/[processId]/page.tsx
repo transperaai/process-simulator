@@ -35,6 +35,7 @@ export default async function DemoProcessPage(props: PageProps<"/demo/p/[process
       rating={ratings[bundle.process.id] ?? null}
       editHref={`/demo/edit?process=${bundle.process.id}${nested === "1" ? "&nested=1" : ""}`}
       historyHref={`/demo/p/${bundle.process.id}/history`}
+      firstPrinciples={{ doc: null, href: `/demo/p/${bundle.process.id}/first-principles` }}
       inside={processes.filter((p) => p.parentId === bundle.process.id).map((p) => ({ id: p.id, name: p.name, href: hrefs[p.id]! }))}
       processPicker={<ProcessNav processes={processes} current={bundle.process.id} hrefs={hrefs} ratings={ratings} processesHref="/demo/processes" companyMapHref="/demo" />}
       notice={

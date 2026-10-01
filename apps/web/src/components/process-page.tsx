@@ -8,13 +8,15 @@ import { Fragment, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { IssueRow, ProcessBundle, ScenarioRow, SourceRow } from "@transpera-flow/db";
-import { RATING_LABELS, type AnalysisSettings, type EngineModel, type Rating } from "@transpera-flow/engine";
+import { RATING_LABELS, successMeasureSource, type AnalysisSettings, type EngineModel, type FirstPrinciples, type Rating } from "@transpera-flow/engine";
 import { Help } from "@/components/help";
+import { FirstPrinciplesCard } from "@/components/first-principles/first-principles-card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { withHorizon } from "@/lib/editor/modes";
+import { useDemoFirstPrinciples } from "@/lib/first-principles/demo-store";
 import { horizonWeeks, isHorizonMonths, monthsForWeeks } from "@/lib/horizon";
 import { useHiddenLevers } from "@/lib/levers/use-hidden-levers";
 import { headlineCards } from "@/lib/overview/headline";
@@ -66,6 +68,7 @@ export function ProcessPage({
   editHref,
   historyHref,
   inside = [],
+  firstPrinciples,
   processPicker,
   notice,
 }: {
@@ -93,6 +96,8 @@ export function ProcessPage({
   historyHref: string;
   /** Processes inside this one. */
   inside?: ChildProcess[];
+  /** The version's first principles for the card at the top (A54); on the demo the answers edited in this tab replace `doc`. */
+  firstPrinciples?: { doc: FirstPrinciples | null; href: string; draftChanged?: boolean; inheritedFrom?: number | null };
   processPicker?: ReactNode;
   notice?: ReactNode;
 }) {
@@ -143,6 +148,11 @@ export function ProcessPage({
     return q ? `${pathname}?${q}` : pathname;
   })();
 
+  // First principles (A54): the card shows them, and their success measures feed rule 11 (goals met) in the insights.
+  const demoFirstPrinciples = useDemoFirstPrinciples(bundle.process.id);
+  const fpDoc = mode === "demo" ? demoFirstPrinciples : (firstPrinciples?.doc ?? null);
+  const successMeasures = useMemo(() => (fpDoc ? successMeasureSource(fpDoc, bundle.process.id) : undefined), [fpDoc, bundle.process.id]);
+
   const issuesUi = useProcessIssues({
     bundle,
     model,
@@ -153,6 +163,7 @@ export function ProcessPage({
     initialScenarios: scenarios,
     registerHref,
     analysisRules,
+    successMeasures,
     // A badge on the map takes you down to the issues on that step.
     onShowIssues: () => document.getElementById("issues")?.scrollIntoView({ behavior: "smooth", block: "start" }),
   });
@@ -242,14 +253,25 @@ export function ProcessPage({
           </div>
         )}
 
-        <Section id="first-principles" title="First principles">
-          <div className="rounded-token border border-dashed border-line p-4" data-testid="first-principles">
-            <p className="text-sm font-semibold">Not started</p>
-            <p className="mt-1 text-sm text-fg-2">
-              Strip the process back to what is true: the job it does, hard truths, who owns each requirement, what to delete and how success is
-              measured. The analysis will judge the process against it.
-            </p>
-          </div>
+        <Section
+          id="first-principles"
+          title="First principles"
+          help={{
+            label: "First principles",
+            description: "What the process is for, what is truly fixed, who owns each requirement, what could go, the root cause and how success is measured. The analysis judges the process against it, and each success measure is rated by how many simulated runs meet it.",
+            example: "Win rate at least 30%: met in 61% of runs today, so Good, could improve.",
+          }}
+        >
+          <FirstPrinciplesCard
+            bundle={bundle}
+            doc={fpDoc}
+            model={model}
+            result={result}
+            href={firstPrinciples?.href ?? "#first-principles"}
+            canEdit={mode !== "readonly" && !old}
+            draftChanged={firstPrinciples?.draftChanged}
+            inheritedFrom={firstPrinciples?.inheritedFrom}
+          />
         </Section>
 
         <Section id="projection" title="Projection">

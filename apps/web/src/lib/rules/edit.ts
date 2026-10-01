@@ -7,6 +7,7 @@ import {
   parseAnalysisSettings,
   toRatingConfig,
   detectIssues,
+  type SuccessMeasureSource,
   type AbsenceTest,
   type AnalysisMoney,
   type AnalysisOverride,
@@ -90,7 +91,7 @@ export function rerate(
   /** The absence test's result for this model (its own pass, see `useAbsenceTest`); without it "only one person can do it" raises nothing. */
   absence?: AbsenceTest | null,
   /** The workspace currency for the cost descriptions, and the shadow prices the too-busy cost needs (issue #108). */
-  costs: { currency?: string; shadowPrices?: Record<string, number> } = {},
+  costs: { currency?: string; shadowPrices?: Record<string, number>; successMeasures?: SuccessMeasureSource } = {},
 ): DetectedIssue[] {
   return detectIssues(model, result, toRatingConfig(settings, model.hoursPerWeek), {
     processId,
@@ -98,6 +99,8 @@ export function rerate(
     // The money settings (12-month cap, absences a year) are the workspace's.
     cost: { ...resolveMoney(settings), ...(costs.currency ? { currency: costs.currency } : {}) },
     ...(costs.shadowPrices ? { shadowPrices: costs.shadowPrices } : {}),
+    // The success measures of the process's first principles, for rule 11 (goals met; issue #119).
+    ...(costs.successMeasures ? { successMeasures: costs.successMeasures } : {}),
   });
 }
 

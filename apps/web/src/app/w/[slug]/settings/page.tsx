@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Page } from "@/components/shell/page";
 import { buttonVariants } from "@/components/ui/button";
 import { loadWorkspaceSettings } from "@/lib/data";
+import { ClientGroupsSettings } from "./client-groups-settings";
 import { DemandSettings } from "./demand-settings";
 import { MarketSettings } from "./market-settings";
 import { PeopleSettings, SimulationSettings } from "./people-settings";
@@ -28,6 +29,7 @@ export default async function WorkspaceSettingsPage(props: PageProps<"/w/[slug]/
       <SimulationSettings data={data} />
       <RolesSettings data={data} />
       <ServicesSettings data={data} />
+      <ClientGroupsSettings data={data} />
       <HealthSettings data={data} />
       <DemandSettings data={data} />
       <MarketSettings data={data} />

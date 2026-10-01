@@ -1,37 +1,52 @@
 # Handover
 
-Updated 30 Sep 2026, at the end of the Milestone A build session. Start a new session with:
+Updated 1 Oct 2026, during the overnight redesign build (Milestone A, A31–A58). Start a new session with:
 
 > Read `CLAUDE.md` and `docs/HANDOVER.md`, then carry on from "Next steps".
 
 ## Where things stand
 
-**Milestone A (#1, Audit-ready):** every ticket is merged to `main` and live on
-https://transpera-flow.vercel.app, including #88 (A29: new workspace, Roles in Settings, `upsert_role`). What's left
-is Austin's QA:
+**Redesign (Milestone A, #1):** Austin's QA turned into a redesign, validated with the HTML prototype
+(`apps/web/prototype/app-flow.html`, live at https://claude.ai/artifact/KqK4DAsAYLk4EnzbBGvLjr) and planned in
+`docs/plans/redesign-plan.md` (tickets A31–A58, #96–#123) and `docs/plans/build-plan.md` (rounds, guardrails).
+Builders follow `docs/plans/builder-brief.md`. Progress comments go on #1.
 
-- **Milestone A QA**: Austin works through `docs/qa/milestone-a.md` (196 items), then does a polish and flow
-  review. He wants the backlog from that review gathered in one go, not iterated on mid-way. Findings arrive as a
-  comment on #1 or in chat.
-- **#27 A24: Transcript to draft** (`ready-for-human`): the extraction skill and QA pack are merged (#90). Austin's
-  timed run follows `docs/extraction/qa/README.md` on the **Copperleaf Marketing (QA)** workspace (`copperleaf-qa`),
-  already set up in production. He has no real transcripts, so the Copperleaf interviews are the test material.
-  Findings go on #27.
+Merged to `main` (live on https://transpera-flow.vercel.app):
 
-- **#93 A30: shadcn/ui and a sidebar app shell.** PR 1 (#94: shadcn setup, theme tokens aliased to ours, sidebar
-  shell, map page with a docked right-hand panel) is merged. **PR 2 (restyle the remaining pages) is paused** until
-  Austin's QA list is triaged: no point restyling pages he may remove. Austin is happy with the direction "for now";
-  he plans to build a UI kit and we'll refine against it later. Known visual follow-ups for the map page (agreed
-  worth doing, not yet ticketed): fit the map to the canvas with bigger nodes; show 5–6 headline KPI cards with the
-  rest behind "More"; make the demo notice a small dismissible line; restyle the canvas toolbar as a floating
-  shadcn toolbar.
+| Ticket | PR | Notes |
+|---|---|---|
+| A31 record the redesign (#96) | #125 | PRD D21–D37, CONTEXT.md |
+| A32 remove Reports, Clients, Runs, Scenarios nav (#97) | #126 | |
+| A41 rating engine (#106) | #127 | ENGINE_VERSION 1.1.0 |
+| A33 app shell v2, (i) help (#98, closes #93) | #128 | |
+| A44 Settings → Analysis rules (#109) | #131 | migration 20261104000000 |
+| A57 market conditions (#122) | #130 | migration 20261105000000, ENGINE 1.2.0 |
+| A37 processes inside processes (#102) | #129 | migration 20261108000000 |
+| A42 new rules (#107) | #133 | migration 20261110000000, ENGINE 1.3.0 |
 
-**Milestones B (#2) and C (#3):** not started, and **on hold** until Austin's QA list is triaged (see Next steps).
-Tickets #30–#43 are `ready-for-agent`; #44 is `ready-for-human`. Their specs predate Austin using the product, so
-expect some to be rewritten or closed.
+Open PRs (each gets an Opus review; findings go back to the builder; I apply the migration, then merge):
 
-**Production database:** every migration in `packages/db/supabase/migrations/` is applied (up to
-`20261021000000_roles_and_workspaces`). See `docs/production-migrations.md`.
+| Ticket | PR | Migration | State |
+|---|---|---|---|
+| A55 client groups (#120) | #134 | 20261111000000 | merging main, ENGINE → 1.4.0; has a commented Northbeam alignment block to run by hand after applying |
+| A58 levers, help, 24-month horizon (#123) | #135 | 20261112000000 | fixing review findings |
+| A43 cost per month (#108) | #132 | 20261113000000 | merging main; uses A42's `lost_per_day_waiting` and A44's money settings |
+| A34 map v2 (#99) | #136 | none | in review |
+| A39 Editor screen (#104) | #137 | none | in review; merges after A34 |
+
+Next to start: A35, A36, A38, A45 after A34; A40, A51 after A39; A56 after A55. Then A47, A54, A48, A49, A46,
+A50, A52, A53 per the build plan.
+
+**Production database:** applied up to `20261110000000`. Migrations go on strictly in version order, before the PR
+merges (the app reads the new tables). A PR that slips is renumbered, not applied out of order. See
+`docs/production-migrations.md`.
+
+**Austin's decisions on 1 Oct:** Northbeam's client groups are two services (SEO, PPC), no third "SEO + PPC"
+service; production numbers moving to client groups is fine ("it's an example, so clean it up"); the A41/A42 rule
+choices are confirmed (`docs/analysis-rules.md`).
+
+**For Austin's review:** at a 24-month horizon a slider move on full Northbeam takes about 360–440 ms, against the
+250 ms interactive target for 13 weeks (A58 tests against the target scaled by the horizon).
 
 ## How we work
 
@@ -100,23 +115,12 @@ password to `postgres`.
 
 ## Next steps
 
-Agreed with Austin on 30 Sep: **refine Milestone A before building Milestone B.** B builds directly on A's screens
-and data (B1 roles, B2 People/Clients views, B6/B7 forecast), so building it first and then removing or reworking A
-features would pay twice. Git conflicts aren't the risk (we build wave by wave); stale ticket specs are.
+1. Drive the open PRs above to merged, in migration order.
+2. Start the next round as blockers merge (see the table's last line), up to four builders at once.
+3. After each merge: comment on the ticket, keep `docs/qa/milestone-a.md` current, update this file.
+4. Morning summary for Austin: what's live, anything parked, the 24-month performance note.
 
-1. **Austin is writing a QA list** from `docs/qa/milestone-a.md`: things to **remove**, **refine** and **add**. He'll
-   paste it into the new chat, possibly rough. Don't fix anything mid-list.
-2. **Triage it** (Opus-level work) against `docs/PRD.md` and the open tickets:
-   - removals and refinements → new tickets under #1 as a final Milestone A **polish wave** (numbered on from A30);
-   - additions → tickets in the right milestone (A if it's needed to be audit-ready, otherwise B or C);
-   - every B/C ticket the list affects → rewrite its spec, or close it `wontfix` with the reason;
-   - record the decisions in the PRD decision log, and update `docs/qa/milestone-a.md` for anything removed;
-   - fold in #93 PR 2 (restyle remaining pages) and the map-page visual follow-ups above, skipping removed pages.
-3. **Show Austin the revised plan** (tickets per wave, what was cut or rewritten) and get his approval before
-   building anything.
-4. **Build:** the polish wave first (plan with Opus, build with Sonnet, review with Opus; apply any migrations to
-   production as we go), then Milestone B on the corrected tickets.
-5. Keep `docs/qa/milestone-a.md` and the #27 QA pack current as behaviour changes.
+The 30 Sep plan (QA list → triage → build) is done: the triage became the redesign plan.
 
 ## Decisions from Austin (30 Sep)
 

@@ -79,16 +79,16 @@ function RoleItem({ role, usage, canEdit }: { role: Pick<RoleRow, "id" | "name" 
         {!role.active && <span className="rounded-lg bg-panel-2 px-1.5 text-xs text-fg-2">Inactive</span>}
       </summary>
       <div className="grid gap-4 px-1 pt-3 pb-2 sm:grid-cols-2">
-        <TextField label="Name" value={role.name} save={roleSaver(role.id, "name")} disabled={disabled} help={{ description: "The kind of work, as your team says it. Steps, people and clients name roles.", example: "Strategist" }} />
+        <TextField label="Name" value={role.name} save={roleSaver(role.id, "name")} disabled={disabled} help={{ description: "The kind of work, as your team says it. Steps and people name roles.", example: "Strategist" }} />
         <ToggleField
           label="Status"
           value={role.active}
           save={roleSaver(role.id, "active")}
           onLabel="Active"
-          offLabel="Inactive: hidden from pickers; steps, people and clients that have it keep it"
-          disabled={disabled} help={{ description: "Inactive roles are hidden from pickers. Steps, people and clients that already have the role keep it.", example: "Make a role inactive when you stop using it, instead of removing it." }} />
+          offLabel="Inactive: hidden from pickers; steps and people that have it keep it"
+          disabled={disabled} help={{ description: "Inactive roles are hidden from pickers. Steps and people that already have the role keep it.", example: "Make a role inactive when you stop using it, instead of removing it." }} />
         <p className="text-fg-2 sm:col-span-2">
-          Used by {plural(usage.steps, "step")} · {plural(usage.people, "person", "people")} · {plural(usage.clients, "client")}
+          Used by {plural(usage.steps, "step")} · {plural(usage.people, "person", "people")}
           {usage.services > 0 && <> · {plural(usage.services, "service")} (fallback load)</>}
         </p>
         {canEdit && !inUse(usage) && (

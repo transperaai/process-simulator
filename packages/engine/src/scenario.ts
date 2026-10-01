@@ -21,13 +21,15 @@
 // Framework-free and dependency-free, like the rest of the engine.
 
 import type { EngineModel, EnginePerson, EngineStep } from "./model";
+import { withClientGroups } from "./clients";
 import { healthRules, servicingLinks, tasksPerWeek } from "./servicing";
 
 /** Servicing tasks a week per servicing process from the roster's clients, in process id order. */
 export function servicingTasksPerWeek(m: EngineModel): Map<string, number> {
   const out = new Map<string, number>();
-  if (!m.clients) return out;
-  for (const client of Object.values(m.clients)) {
+  const roster = withClientGroups(m).clients;
+  if (!roster) return out;
+  for (const client of Object.values(roster)) {
     for (const sid of client.services) {
       const service = m.services?.[sid];
       if (!service) continue;

@@ -181,7 +181,7 @@ function ServiceItem({ service: sv, share, data }: { service: ServiceRow; share:
           max={600}
           step={1}
           disabled={disabled}
-          hint={retainer ? "How long a client stays: LTV and lost revenue use price × tenure." : "Used for retainers only."} help={{ description: "How many months a client typically stays. Lifetime value and lost revenue use price times tenure. Retainers only.", example: "At 2,500 a month and 18 months, a client is worth 45,000." }} />
+          hint={retainer ? "How long a client stays: LTV and lost revenue use price × tenure. Overridden by Typical stay in Services and client groups, once that is filled in." : "Used for retainers only."} help={{ description: "How many months a client typically stays. Lifetime value and lost revenue use price times tenure. Retainers only.", example: "At 2,500 a month and 18 months, a client is worth 45,000." }} />
         <NumberField
           label="Base churn"
           value={Number(sv.churn_monthly_base)}
@@ -192,7 +192,7 @@ function ServiceItem({ service: sv, share, data }: { service: ServiceRow; share:
           max={100}
           step={0.5}
           disabled={disabled}
-          hint="Monthly churn of a client in full health; revenue billed in the horizon stops when a client leaves." help={{ description: "The chance each month that a perfectly healthy client leaves. Revenue stops when a client leaves.", example: "At 2% a month, about 1 in 50 healthy clients leaves each month." }} />
+          hint="Monthly churn of a client in full health; revenue billed in the horizon stops when a client leaves. Overridden by Normal churn in Services and client groups, once that is filled in." help={{ description: "The chance each month that a perfectly healthy client leaves. Revenue stops when a client leaves.", example: "At 2% a month, about 1 in 50 healthy clients leaves each month." }} />
         <NumberField
           label="Churn sensitivity to health"
           value={sv.churn_health_sensitivity === undefined ? null : Number(sv.churn_health_sensitivity)}

@@ -2,6 +2,8 @@
 // what is being edited. Only `draft` is built here. `solution` (A49) and `block` (A51) plug into the same screen:
 // they fill in `available` and their save handlers when they land.
 
+import { isHorizonMonths } from "@/lib/horizon";
+
 export const EDITOR_MODES = ["draft", "solution", "block"] as const;
 export type EditorMode = (typeof EDITOR_MODES)[number];
 
@@ -43,6 +45,18 @@ export const MODE_INFO: Record<EditorMode, ModeInfo> = {
     arrivesWith: "The block library",
   },
 };
+
+/** The months a `?horizon=` names (the map's picker, carried into the Editor), or null for the model's own horizon. */
+export function parseHorizon(value: string | string[] | undefined): number | null {
+  const v = Array.isArray(value) ? value[0] : value;
+  const n = Number(v);
+  return v && isHorizonMonths(n) ? n : null;
+}
+
+/** The Editor's address with the map's horizon kept, if one was picked. */
+export function withHorizon(href: string, months: number | null): string {
+  return months === null ? href : `${href}${href.includes("?") ? "&" : "?"}horizon=${months}`;
+}
 
 /** The mode a `?mode=` parameter names; anything else is a draft. */
 export function parseEditorMode(value: string | string[] | undefined): EditorMode {

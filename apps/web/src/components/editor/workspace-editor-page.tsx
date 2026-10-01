@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { EditorView } from "@/components/editor/editor-view";
 import { canEditWorkspace, currentViewer } from "@/lib/access-data";
 import { loadProcessForEditing, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
-import { exitHref, parseEditorMode } from "@/lib/editor/modes";
+import { exitHref, parseEditorMode, parseHorizon } from "@/lib/editor/modes";
 
 /**
  * The Editor for a process of the workspace (issue #104): `/w/[slug]/p/[processId]/edit`. Full screen, outside the
@@ -15,7 +15,7 @@ export async function WorkspaceEditorPage({
 }: {
   slug: string;
   processId: string;
-  searchParams: { mode?: string | string[]; from?: string | string[] };
+  searchParams: { mode?: string | string[]; from?: string | string[]; horizon?: string | string[] };
 }) {
   const process = await loadProcessForEditing(slug, processId);
   if (!process) notFound();
@@ -37,6 +37,7 @@ export async function WorkspaceEditorPage({
       viewer={viewer}
       sourcesHref={`/w/${slug}/sources`}
       exitHref={exitHref(searchParams.from, base)}
+      horizonMonths={parseHorizon(searchParams.horizon)}
     />
   );
 }

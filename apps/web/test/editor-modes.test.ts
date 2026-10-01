@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EDITOR_MODES, MODE_INFO, exitHref, isEditorPath, parseEditorMode } from "@/lib/editor/modes";
+import { EDITOR_MODES, MODE_INFO, exitHref, isEditorPath, parseEditorMode, parseHorizon, withHorizon } from "@/lib/editor/modes";
 
 // The Editor's modes and where it lives (issue #104).
 
@@ -9,6 +9,13 @@ describe("editor modes", () => {
     expect(parseEditorMode(["block", "draft"])).toBe("block");
     expect(parseEditorMode("nonsense")).toBe("draft");
     expect(parseEditorMode(undefined)).toBe("draft");
+    expect(parseHorizon("12")).toBe(12);
+    expect(parseHorizon(["6"])).toBe(6);
+    expect(parseHorizon("7")).toBeNull();
+    expect(parseHorizon(undefined)).toBeNull();
+    expect(withHorizon("/demo/edit", 12)).toBe("/demo/edit?horizon=12");
+    expect(withHorizon("/demo/edit?nested=1", 3)).toBe("/demo/edit?nested=1&horizon=3");
+    expect(withHorizon("/demo/edit", null)).toBe("/demo/edit");
   });
 
   it("says what each mode is in a hint and gives it its own save buttons", () => {

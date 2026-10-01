@@ -85,6 +85,19 @@ describe("every (i) on the Editor screen", () => {
     }
   });
 
+  it("keeps each named (i), so deleting one is caught", () => {
+    const expected: Record<string, string[]> = {
+      "components/editor/inspector.tsx": ["Loose ends", "First principles", "First step"],
+      "components/editor/palette.tsx": ["Add", "Groups", "Blocks"],
+      "components/editor/editor-bar.tsx": ["Simulate"],
+      "components/editor/simulate-footer.tsx": ["Compared with live"],
+    };
+    for (const [file, labels] of Object.entries(expected)) {
+      const tags = helpTags(read(file));
+      expect(tags.map((t) => /label="([^"]+)"/.exec(t)?.[1]), file).toEqual(labels);
+    }
+  });
+
   it("puts one beside each heading of the palette, as the prototype has them", () => {
     expect(helpTags(read("components/editor/palette.tsx"))).toHaveLength(3);
   });

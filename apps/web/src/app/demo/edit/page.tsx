@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { bundleForProcess } from "@transpera-flow/db";
 import { EditorView } from "@/components/editor/editor-view";
 import { withDemoGroups } from "@/lib/demo/nested";
-import { exitHref, parseEditorMode } from "@/lib/editor/modes";
+import { exitHref, parseEditorMode, parseHorizon } from "@/lib/editor/modes";
 import { demoBundle, demoSources } from "@/lib/sources/demo";
 
 /**
@@ -26,6 +26,7 @@ export default async function DemoEditPage(props: PageProps<"/demo/edit">) {
       sources={demoSources()}
       sourcesHref="/demo/sources"
       exitHref={exitHref(search.from, back)}
+      horizonMonths={parseHorizon(search.horizon)}
     />
   );
 }

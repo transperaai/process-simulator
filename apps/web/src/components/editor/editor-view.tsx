@@ -15,6 +15,7 @@ import { EMPTY_DIFF, diffBundles, unresolvedSteps } from "@/lib/drafts/diff";
 import { useDraftSession } from "@/lib/drafts/use-draft-session";
 import { namesOf } from "@/lib/editor/describe";
 import type { Table } from "@/lib/editor/ops";
+import { horizonWeeks } from "@/lib/horizon";
 import { MODE_INFO, type EditorMode } from "@/lib/editor/modes";
 import { connect } from "@/lib/realtime/connect";
 import type { Viewer } from "@/lib/realtime/transport";
@@ -45,6 +46,7 @@ export function EditorView({
   viewer = null,
   sourcesHref,
   exitHref,
+  horizonMonths = null,
 }: {
   live: ProcessBundle;
   draft: ProcessBundle | null;
@@ -61,6 +63,8 @@ export function EditorView({
   sourcesHref?: string;
   /** Where Exit editor goes. */
   exitHref: string;
+  /** The horizon picked on the map, in months; null runs the model at its own length. */
+  horizonMonths?: number | null;
 }) {
   const router = useRouter();
   const stamp = useCallback(() => ({ at: new Date().toISOString(), by: userId }), [userId]);
@@ -77,8 +81,9 @@ export function EditorView({
 
   const diff = useMemo(() => (hasDraft ? diffBundles(live, working) : EMPTY_DIFF), [hasDraft, live, working]);
   const names = useMemo(() => namesOf(working, live), [working, live]);
-  const workingModel = useEngineModel(working, null);
-  const liveModel = useEngineModel(live, null);
+  const weeks = horizonMonths === null ? null : horizonWeeks(horizonMonths);
+  const workingModel = useEngineModel(working, weeks);
+  const liveModel = useEngineModel(live, weeks);
   const unresolved = useMemo(() => unresolvedSteps(working), [working]);
 
   // Selection can outlive what it points at (after a delete or an undo).
@@ -157,9 +162,6 @@ export function EditorView({
             Exit editor
           </Button>
         </div>
-        <p className="border-b border-line bg-edit-soft px-4 py-1.5 text-[12.5px]" role="note">
-          {info.hint}
-        </p>
         <main className="mx-auto flex w-full max-w-xl flex-1 flex-col gap-3 p-6">
           <h2 className="text-base font-bold">Coming soon</h2>
           <p className="text-sm text-fg-2">

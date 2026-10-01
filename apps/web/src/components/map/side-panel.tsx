@@ -24,6 +24,7 @@ export function MapSidePanel({
   stepTab,
   hasStep,
   draftTab,
+  draftLabel = "Draft",
   unresolved,
   modelTabs,
   step,
@@ -41,6 +42,8 @@ export function MapSidePanel({
   hasStep: boolean;
   /** The Draft tab exists (not while showing live). */
   draftTab: boolean;
+  /** What the tab is called: "Draft", or "To confirm" when there is no draft, only things to confirm. */
+  draftLabel?: string;
   /** Steps still unconfirmed, shown on the Draft tab. */
   unresolved: number;
   /** Insights and Scenarios exist (there is a model to show). */
@@ -74,7 +77,7 @@ export function MapSidePanel({
             )}
             {draftTab && (
               <TabsTrigger value="draft" className="gap-1.5 text-xs">
-                Draft
+                {draftLabel}
                 {unresolved > 0 && (
                   <Badge variant="outline" className="border-warn bg-warn-soft px-1.5 py-0 text-2xs tabular-nums text-fg" aria-label={`${unresolved} to confirm`}>
                     {unresolved}

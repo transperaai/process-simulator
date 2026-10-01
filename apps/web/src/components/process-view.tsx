@@ -33,6 +33,8 @@ import { MapSidePanel, type PanelOpen, type PanelTabId } from "./map/side-panel"
 import { useMapPanelRequest } from "./shell/map-panel-request";
 import { AssumptionChecklist } from "./evidence";
 import { ConflictPrompt } from "./fields";
+import { withHorizon } from "@/lib/editor/modes";
+import { panelTabs } from "@/lib/map/panel-tabs";
 import { HorizonPicker } from "./horizon-picker";
 import { KpiStrip } from "./kpi-strip";
 import { PresenceBar } from "./presence-bar";
@@ -330,7 +332,8 @@ export function ProcessView({
 
   // The side panel (issue #93): open state, and which tab is showing. Docked from lg up until told otherwise.
   const panelParam = useSearchParams().get("panel");
-  const draftHasContent = !showingLive && (unresolved.length > 0 || diff.list.length > 0);
+  const tabsAtStart = panelTabs({ hasDraft, showingLive, unresolved: unresolved.length, changes: diff.list.length, hasModel: !!shownModel, wanted: "draft" });
+  const draftHasContent = tabsAtStart.hasContent;
   const [panelOpen, setPanelOpen] = useState<PanelOpen>(panelParam === "issues" ? true : "auto");
   const [panelTab, setPanelTab] = useState<PanelTabId>(panelParam === "issues" ? "insights" : draftHasContent ? "draft" : "insights");
   const isNarrow = useIsMobile();
@@ -384,8 +387,9 @@ export function ProcessView({
     issuesUi.showIssues();
   }
   // A tab that no longer exists (the step was deselected, the draft is hidden) gives way to one that does.
-  const hasTab: Record<PanelTabId, boolean> = { step: editable && !!inspected, draft: hasDraft && !showingLive, insights: !!shownModel, scenarios: !!shownModel };
-  const activeTab: PanelTabId = hasTab[panelTab] ? panelTab : draftHasContent ? "draft" : hasTab.insights ? "insights" : hasTab.draft ? "draft" : "step";
+  const tabs = panelTabs({ hasDraft, showingLive, unresolved: unresolved.length, changes: diff.list.length, hasModel: !!shownModel, wanted: panelTab });
+  const hasTab: Record<PanelTabId, boolean> = { ...tabs.has, step: editable && !!inspected };
+  const activeTab: PanelTabId = hasTab[panelTab] ? panelTab : tabs.active;
   const panelShown = panelOpen === true || (panelOpen === "auto" && !isNarrow);
 
   const select = (table: Table, id: string) => {
@@ -426,7 +430,7 @@ export function ProcessView({
                   : `Viewing draft version ${drafts.draft?.number ?? live.revision.number + 1} (read-only)`}
               </span>
               <Button asChild size="sm" className="bg-edit text-edit-fg hover:bg-edit/90">
-                <Link href={editHref}>{hasDraft ? "✎ Open draft in Editor" : "✎ Edit process"}</Link>
+                <Link href={withHorizon(editHref, pickedMonths)}>{hasDraft ? "✎ Open draft in Editor" : "✎ Edit process"}</Link>
               </Button>
             </>
           )}
@@ -515,6 +519,7 @@ export function ProcessView({
           stepTab={editable}
           hasStep={hasTab.step}
           draftTab={hasTab.draft}
+          draftLabel={tabs.draftLabel}
           unresolved={unresolved.length}
           modelTabs={!!shownModel}
           step={

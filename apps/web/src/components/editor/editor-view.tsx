@@ -231,6 +231,8 @@ export function EditorView({
               onRestore={restore}
               savedLabel={hasDraft ? "Saved to draft" : "Saved"}
               hideAdd
+              // Nothing to play until Simulate has run.
+              showPlayback={!stale && !!pair?.draft.result}
             />
           </div>
         </main>

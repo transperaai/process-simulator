@@ -264,8 +264,9 @@ describe("per-field saves", () => {
 });
 
 describe("the roster in the engine model", () => {
+  // Northbeam is seeded with client groups, which replace the named roster (client-groups.test.ts); these tests are the roster's.
   const bundle = (change: (b: ProcessBundle) => void = () => {}) => {
-    const b = northbeamBundle();
+    const b = { ...northbeamBundle(), clientGroups: [] };
     change(b);
     return toEngineModel(b, { startDate: START });
   };

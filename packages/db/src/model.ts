@@ -9,6 +9,7 @@ import {
   type EngineDemand,
   type Distribution as EngineDistribution,
   type EngineClient,
+  type EngineClientGroup,
   type EngineEnd,
   type EngineHealthRules,
   type EngineGroup,
@@ -54,6 +55,8 @@ interface Graph {
   working: EngineStep[];
   /** End steps, by id. A child process's `done` ends are not here: they are exits of its group. */
   endSteps: StepRow[];
+  /** The process's target time end to end, in working hours, set on its start step (rule 13). */
+  targetCycleHours: number | null;
   /** Its groups, and the child processes its steps hold as groups, by the holder step's id. */
   groups: Record<string, EngineGroup>;
 }
@@ -161,6 +164,10 @@ function resolveGraph(steps: StepRow[], edges: EdgeRow[], tags: boolean, ctx: Gr
         ...(step.current_wip != null ? { currentWip: Number(step.current_wip) } : {}),
         // An SLA only counts breaches (detected issues); it doesn't change the run.
         ...(step.sla_hours != null ? { sla: Number(step.sla_hours) } : {}),
+        // The rules' per-step settings (docs/analysis-rules.md rules 5, 12): they rate the report, not the run.
+        ...(step.expected_wait_hours != null ? { expectedWaitHours: Number(step.expected_wait_hours) } : {}),
+        ...(step.lost_per_day_waiting != null ? { lostPerDayWaiting: Number(step.lost_per_day_waiting) } : {}),
+        ...(step.dropoff_benchmark != null ? { dropoffBenchmark: Number(step.dropoff_benchmark) } : {}),
         ...parentOf(step),
         next,
       };
@@ -172,6 +179,7 @@ function resolveGraph(steps: StepRow[], edges: EdgeRow[], tags: boolean, ctx: Gr
     // The process's own ends first, so its win and loss are the model's sinks.
     endSteps: [...steps.filter((step) => step.kind === "end").sort(byIdAsc), ...heldEnds],
     groups,
+    targetCycleHours: starts[0]!.target_cycle_hours != null ? Number(starts[0]!.target_cycle_hours) : null,
   };
 }
 
@@ -210,6 +218,8 @@ function pipelineOf(bundle: ProcessBundle): ProcessPart {
  *   placed in the calendar from the start date. Flat demand is left out.
  * - The client roster (see `engineClients`) and the overtime cap. A
  *   workspace with no clients maps exactly as before the roster existed.
+ * - Client groups (see `engineClientGroups`): clients counted per service.
+ *   With any, they replace the named roster, which the engine no longer sees.
  * - Steps and roles are ordered by id so the result, and therefore the
  *   simulation, doesn't depend on database row order.
  */
@@ -219,7 +229,7 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
   const pipeline = pipelineOf(bundle);
   const baseServices = engineServices(bundle, pipeline.process.id);
   const held = heldProcesses(bundle);
-  const { entry, working: pipelineSteps, endSteps, groups: pipelineGroups } = resolveGraph(pipeline.steps, pipeline.edges, Boolean(baseServices), {
+  const { entry, working: pipelineSteps, endSteps, groups: pipelineGroups, targetCycleHours } = resolveGraph(pipeline.steps, pipeline.edges, Boolean(baseServices), {
     parts: held,
     stack: [pipeline.process.id],
   });
@@ -251,7 +261,9 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
   const startDate = options.startDate ?? new Date().toISOString().slice(0, 10);
   const people = resolvePeopleRows(bundle, working, startDate);
   const demand = engineDemand(bundle, startDate);
-  const clients = engineClients(bundle, services, startDate);
+  // Client groups replace the named roster, which stays stored but is not simulated.
+  const clientGroups = engineClientGroups(bundle, services);
+  const clients = clientGroups ? undefined : engineClients(bundle, services, startDate);
   const market = engineMarket(bundle);
 
   const model: EngineModel = {
@@ -260,7 +272,11 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
     leadsPerWeek: arrivalsPerWeek(bundle, services),
     ...(demand ? { demand } : {}),
     ...(market ? { market } : {}),
-    activeClients: clients ? Object.keys(clients).length : s.active_clients,
+    activeClients: clientGroups
+      ? Object.values(clientGroups).reduce((a, g) => a + Math.round(g.count), 0)
+      : clients
+        ? Object.keys(clients).length
+        : s.active_clients,
     churnMonthly: s.churn_monthly,
     retainer: s.retainer,
     roles: engineRoles,
@@ -269,8 +285,10 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
     ...(s.availability_floor !== undefined ? { availabilityFloor: s.availability_floor } : {}),
     ...(s.overtime_cap !== undefined && s.overtime_cap !== null ? { overtimeCap: Number(s.overtime_cap) } : {}),
     ...(clients ? { clients } : {}),
+    ...(clientGroups ? { clientGroups } : {}),
     ...(Object.keys(servicing.processes).length ? { servicingProcesses: servicing.processes } : {}),
     ...optional("health", healthRules(s)),
+    ...(targetCycleHours !== null ? { targetCycleHours } : {}),
     ...(Object.keys(groups).length ? { groups } : {}),
     entry,
     sinks,
@@ -467,6 +485,30 @@ function engineClients(
     };
   }
   return clients;
+}
+
+/**
+ * Clients counted per service for the engine (docs/PRD.md decision D27; issue
+ * #120): one group for each service among this process's that has a row. With
+ * any, the engine simulates unnamed clients from them and the named roster is
+ * left out (it stays in the database, hidden). Undefined when no group applies:
+ * then the named roster, or the interim `active_clients`, as before.
+ */
+function engineClientGroups(bundle: ProcessBundle, services: Record<string, EngineService> | undefined): Record<string, EngineClientGroup> | undefined {
+  const groups: Record<string, EngineClientGroup> = {};
+  for (const g of [...(bundle.clientGroups ?? [])].sort((a, b) => cmp(a.service_id, b.service_id))) {
+    if (!services || !(g.service_id in services)) continue;
+    groups[g.service_id] = {
+      count: Number(g.client_count),
+      fee: Number(g.fee),
+      churnMonthly: Number(g.churn_monthly),
+      stayMonths: Number(g.stay_months),
+      health: Number(g.starting_health),
+    };
+  }
+  // Switch to groups only once some clients are counted; all-zero groups leave the interim count or roster in place.
+  const counted = Object.values(groups).reduce((a, g) => a + Math.round(g.count), 0);
+  return counted > 0 ? groups : undefined;
 }
 
 /**

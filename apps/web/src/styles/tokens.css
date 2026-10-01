@@ -23,6 +23,15 @@
   --edit: #6d3fc4;
   --edit-soft: #ece4fa;
   --edit-fg: #ffffff;
+  /* Map ratings (A34): Great, Good could improve (lime, so it doesn't clash with the brand blue), Bad not urgent, Operational risk. */
+  --rate-great: oklch(0.6 0.14 155);
+  --rate-great-soft: oklch(0.95 0.045 155);
+  --rate-good: oklch(0.72 0.16 128);
+  --rate-good-soft: oklch(0.95 0.06 128);
+  --rate-bad: var(--warn);
+  --rate-bad-soft: var(--warn-soft);
+  --rate-risk: var(--crit);
+  --rate-risk-soft: var(--crit-soft);
   /* Work items in playback, and those heading to a lost end. */
   --token: oklch(0.609 0.126 221.723);
   --token-lost: oklch(0.7 0 0);
@@ -88,6 +97,10 @@
     --edit: #a37ef0;
     --edit-soft: #2e2248;
     --edit-fg: #140a26;
+    --rate-great: oklch(0.66 0.14 155);
+    --rate-great-soft: oklch(0.3 0.05 155);
+    --rate-good: oklch(0.75 0.15 128);
+    --rate-good-soft: oklch(0.32 0.06 128);
     --token: oklch(0.715 0.143 215.221);
     --token-lost: oklch(0.5 0 0);
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.3);
@@ -119,6 +132,10 @@
   --edit: #a37ef0;
   --edit-soft: #2e2248;
   --edit-fg: #140a26;
+  --rate-great: oklch(0.66 0.14 155);
+  --rate-great-soft: oklch(0.3 0.05 155);
+  --rate-good: oklch(0.75 0.15 128);
+  --rate-good-soft: oklch(0.32 0.06 128);
   --token: oklch(0.715 0.143 215.221);
   --token-lost: oklch(0.5 0 0);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.3);

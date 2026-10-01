@@ -276,7 +276,82 @@ export function StepInspector({
               save={field("tool")}
             />
           </div>
+          <div className={sectionClass}>
+            <p className="text-xs font-semibold text-fg-2">Analysis rules</p>
+            <div className="grid grid-cols-2 gap-2">
+              <NumberField
+                label="Expected wait"
+                value={nullableNumber(step.expected_wait_hours)}
+                optional
+                unit="h"
+                min={0}
+                placeholder="Default"
+                save={field("expected_wait_hours")}
+                help={{
+                  description:
+                    "How long an item can sit in the queue for a person here before it counts as waiting too long. Left blank, the workspace default applies: 1 working day for sales steps, 2 for client work.",
+                  example: "4 h at Reply to the lead: a lead that waits 12 h for a reply is waiting 3 times too long.",
+                }}
+              />
+              <NumberField
+                label="Lost per day of waiting"
+                value={nullableNumber(step.lost_per_day_waiting)}
+                optional
+                scale={100}
+                unit="%"
+                min={0}
+                max={100}
+                step={1}
+                placeholder="None"
+                save={field("lost_per_day_waiting")}
+                help={{
+                  description:
+                    "The share of items that go cold for each working day they wait here. It turns waiting time into money in the insights. Left blank, waiting shows as time only.",
+                  example: "5% a day at Reply to the lead: a lead left 3 days has lost about 15% of its chance of signing.",
+                }}
+              />
+            </div>
+            <NumberField
+              label="Work lost benchmark"
+              value={nullableNumber(step.dropoff_benchmark)}
+              optional
+              scale={100}
+              unit="%"
+              min={0}
+              max={100}
+              step={1}
+              placeholder="Not rated"
+              save={field("dropoff_benchmark")}
+              help={{
+                description:
+                  "The share of the work leaving this step that you would accept losing here, such as leads that don't go any further. If the simulation loses more than this, the step is flagged. Left blank, the step isn't checked.",
+                example: "30% at Check fit: losing 45% of leads here is 1.5 times the benchmark, so it is flagged as Bad.",
+              }}
+            />
+          </div>
         </>
+      )}
+
+      {/* Only a top-level pipeline has a time target: a servicing process runs to its tasks' SLAs, and a child
+          process is timed as part of the pipeline that holds it. */}
+      {step.kind === "start" && bundle.process.kind === "pipeline" && !bundle.process.parent_process_id && (
+        <div className={sectionClass}>
+          <NumberField
+            label="Time target"
+            value={nullableNumber(step.target_cycle_hours)}
+            optional
+            unit="h"
+            min={0.1}
+            step={1}
+            placeholder="Not rated"
+            save={field("target_cycle_hours")}
+            help={{
+              description:
+                "How long an item should take from here to the end of the process, in working hours. If the simulation takes longer than this, the process is flagged as too slow. Left blank, the process isn't checked.",
+              example: "120 h (about 3 working weeks): if leads take 190 h on average to become clients, that is 1.6 times the target, so it is Operational risk.",
+            }}
+          />
+        </div>
       )}
 
       {working && (

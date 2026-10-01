@@ -27,6 +27,7 @@ export const COMPANY_AUDIT_TABLES = [
   "clients",
   "client_services",
   "client_assignments",
+  "client_groups",
   "lead_sources",
   "seasonality",
   "demand_settings",
@@ -38,6 +39,7 @@ const NOUN: Record<string, string> = {
   services: "service",
   people: "person",
   clients: "client",
+  client_groups: "client group",
   lead_sources: "lead source",
   seasonality: "seasonality",
   demand_settings: "demand growth",
@@ -58,7 +60,8 @@ export function describeAuditEntry(e: AuditEntry, model: CompanyModel): string {
     if (table === "people" || table === "person_roles" || table === "person_skills" || table === "person_leave") {
       return String(row.name ?? name(model.people, row.person_id ?? e.target_id));
     }
-    if (table.startsWith("client")) return String(row.name ?? name(model.clients, row.client_id ?? e.target_id));
+    if (table === "client_groups") return String(name(model.services, row.service_id));
+    if (table === "clients" || table === "client_services" || table === "client_assignments") return String(row.name ?? name(model.clients, row.client_id ?? e.target_id));
     if (table === "services") return String(row.name ?? name(model.services, e.target_id));
     if (table === "roles") return String(row.name ?? name(model.roles, e.target_id));
     if (table === "lead_sources") return String(row.name ?? model.leadSources.find((l) => l.id === e.target_id)?.name ?? "a lead source");

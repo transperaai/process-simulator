@@ -110,12 +110,14 @@ export {
 } from "./fixtures/larkspur";
 export {
   CLIENT_ASSIGNMENT_COLUMNS,
+  CLIENT_GROUP_COLUMNS,
   CLIENT_COLUMNS,
   CLIENT_SERVICE_COLUMNS,
   DEMAND_SETTINGS_COLUMNS,
   ISSUE_COLUMNS,
   LEAD_SOURCE_COLUMNS,
   listProcesses,
+  loadClientGroups,
   loadClients,
   loadMarket,
   MARKET_CONDITION_COLUMNS,

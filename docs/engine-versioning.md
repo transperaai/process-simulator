@@ -1,7 +1,7 @@
 # Engine versioning and golden models
 
 The engine's numbers are the product, so none may move unnoticed (docs/PRD.md §6.9 layer 3, decision D16;
-issue #22; ADR 0009). Three golden models are run at a fixed seed on every push, their key outputs are compared
+issue #22; ADR 0009). Five golden models are run at a fixed seed on every push, their key outputs are compared
 exactly with approved baselines, and every change that moves one needs a new baseline and a new `ENGINE_VERSION`,
 which every run records.
 
@@ -10,7 +10,8 @@ which every run records.
 | Golden model | Fixture | What it covers |
 |---|---|---|
 | `northbeam` | `northbeamModel()` | The prototype's model, re-baselined after the §6.8 fixes: pooled head-counts, one implicit retainer, automatic warm-up. |
-| `northbeam-seeded` | `northbeamWithServicing()` | Northbeam as the seed loads it: SEO and PPC services with condition-tag routing, 11 named people, the 26-client roster, a 10% overtime cap, and two servicing processes whose late and missed tasks move health and churn. |
+| `northbeam-seeded` | `northbeamWithServicing()` | Northbeam with its 26 named clients (the seed now counts clients per service: see `northbeam-groups`): SEO and PPC services with condition-tag routing, 11 named people, the 26-client roster, a 10% overtime cap, and two servicing processes whose late and missed tasks move health and churn. |
+| `northbeam-groups` | `northbeamWithClientGroups()` | Northbeam with its clients counted per service (17 SEO clients at health 83, 12 PPC clients at health 52, from `NORTHBEAM_CLIENT_GROUPS`) and simulated as unnamed clients, with the same servicing (issue #120). |
 | `larkspur` | `larkspurModel()` | Larkspur Creative, the "second, messier sample agency" (§6.9): overloaded designers, a copywriter past her week on overtime, an 18-client named roster whose health drives churn, and the corners Northbeam leaves alone (below). |
 
 Each runs with the app's defaults, 30 replications at seed 1. The outputs kept (`keyOutputs` in
@@ -20,7 +21,17 @@ touchpoints, the bottleneck role, step and person, utilisation per role (total w
 pipeline, client, servicing and overtime shares) and per person, each step's arrivals, departures, queue, wait,
 WIP and SLA breaches, each roster client's final health, churn and at-risk shares, and the rating of every detected
 issue with how it was reached (the average's band, a bad month, the bottleneck), so a moved cut-off or escalator shows
-as a baseline change.
+as a baseline change. They also lock the absence test (`absenceTest` at its defaults: who is tested, work lost, weeks
+to recover, missed client tasks) and each step's visits sent straight to a lost end.
+
+### The absence test and the performance targets
+
+The absence test (docs/analysis-rules.md rule 8) is a separate pass, not part of `simulate`, so the baseline stays
+inside docs/PRD.md §6.7. It costs (people tested + 1) × 10 replications: about 60% of a baseline run for the seeded
+Northbeam (two people tested: ~160 ms beside a ~270 ms baseline on a loaded machine) and 90% for Larkspur (four).
+It is limited to people who are the sole holder of a step, at most 8, and runs in its own worker after the baseline
+(`apps/web/src/lib/sim/absence.ts`), so the insight panel shows the other rules first and adds "only one person can do
+it" when the pass returns. `new-rules.test.ts` checks the pass alone stays under the seeded target (250 ms).
 
 The baselines are `packages/engine/golden/<model>.json`, one metric per line so a diff reads as a list of what
 moved. `golden/versions.json` is the ledger: every approved version, the date, why the numbers moved, and a sha256

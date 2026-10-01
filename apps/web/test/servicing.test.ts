@@ -44,7 +44,8 @@ describe("recurrences in settings", () => {
 
 describe("client retention", () => {
   it("reads each client's simulated retention from the run", () => {
-    const b = northbeamBundle();
+    // The named roster (client groups, which replace it in the seeded Northbeam, are tested in client-groups.test.ts).
+    const b = { ...northbeamBundle(), clientGroups: [] };
     const r = simulate(toEngineModel(b, { startDate: START }), 10, 1);
     const swift = b.clients!.find((c) => c.name === "Swift Courier Co")!;
     const retention = clientRetention(r.clients![swift.id]!);
@@ -57,7 +58,7 @@ describe("client retention", () => {
 
 describe("churn-risk issues in the register", () => {
   it("tracking one links its client", () => {
-    const b = northbeamBundle();
+    const b = { ...northbeamBundle(), clientGroups: [] };
     const model = toEngineModel(b, { startDate: START });
     const issue = detectIssues(model, simulate(model, 10, 1)).find((i) => i.type === "churn_risk")!;
     expect(issue.clientId).toBeTruthy();
@@ -66,6 +67,17 @@ describe("churn-risk issues in the register", () => {
     const parsed = parsePromoteInput(input);
     expect(parsed.ok && parsed.value.client_id).toBe(issue.clientId);
     expect(parsePromoteInput({ ...input, client_id: "nope" }).ok).toBe(false);
+  });
+
+  it("a client group's churn risk is one issue for the group and links no client (issue #120)", () => {
+    const b = northbeamBundle();
+    const unhappy = { ...b, clientGroups: b.clientGroups!.map((g) => ({ ...g, starting_health: 20 })) };
+    const model = toEngineModel(unhappy, { startDate: START });
+    const issues = detectIssues(model, simulate(model, 10, 1)).filter((i) => i.type === "churn_risk");
+    expect(issues.map((i) => i.key).sort()).toEqual(b.clientGroups!.map((g) => `churn_risk:group:${g.service_id}`).sort());
+    const input = promoteInput(issues[0]!, b.process.id, []);
+    expect(input.client_id).toBeUndefined();
+    expect(parsePromoteInput(input).ok).toBe(true);
   });
 });
 

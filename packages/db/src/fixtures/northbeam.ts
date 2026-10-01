@@ -1,7 +1,8 @@
-import { NORTHBEAM_FALLBACK_LOAD, NORTHBEAM_ROSTER, NORTHBEAM_TEAM, northbeamClientKey } from "@transpera-flow/engine/northbeam-roster";
+import { NORTHBEAM_CLIENT_GROUPS, NORTHBEAM_FALLBACK_LOAD, NORTHBEAM_ROSTER, NORTHBEAM_TEAM, northbeamClientKey } from "@transpera-flow/engine/northbeam-roster";
 import { NORTHBEAM_SERVICING } from "@transpera-flow/engine/northbeam-servicing";
 import type {
   ClientAssignmentRow,
+  ClientGroupRow,
   ClientRow,
   ClientServiceRow,
   DemandSettingsRow,
@@ -129,6 +130,10 @@ const step = (
   tool,
   notes: null,
   sla_hours: null,
+  expected_wait_hours: null,
+  lost_per_day_waiting: null,
+  dropoff_benchmark: null,
+  target_cycle_hours: null,
   current_wip: null,
   parent_step_id: null,
   entry_step_id: null,
@@ -268,6 +273,25 @@ function roster(): { clients: ClientRow[]; clientServices: ClientServiceRow[]; c
     assign("fin", "rosa");
   });
   return { clients, clientServices, clientAssignments };
+}
+
+/**
+ * Northbeam's clients counted per service (issue #120): what the audit would
+ * enter, from the engine's NORTHBEAM_CLIENT_GROUPS. The 26 named clients above
+ * stay in the database, hidden, and are not simulated while these exist.
+ */
+function clientGroups(): ClientGroupRow[] {
+  return NORTHBEAM_CLIENT_GROUPS.map((g, i) => ({
+    id: id("0", i + 1),
+    workspace_id: ws,
+    service_id: northbeamServiceIds[g.service],
+    client_count: g.count,
+    fee: g.fee,
+    churn_monthly: g.churnMonthly,
+    stay_months: g.stayMonths,
+    starting_health: g.health,
+    provenance: Object.fromEntries(["client_count", "fee", "churn_monthly", "stay_months", "starting_health"].map((c) => [c, ESTIMATE])),
+  }));
 }
 
 function demandSettings(): DemandSettingsRow {
@@ -426,6 +450,10 @@ function servicingProcesses(firstEdge: number): { parts: ProcessPart[]; links: S
         tool: s.tool,
         notes: null,
         sla_hours: null,
+        expected_wait_hours: null,
+        lost_per_day_waiting: null,
+        dropoff_benchmark: null,
+        target_cycle_hours: null,
         current_wip: null,
         parent_step_id: null,
         entry_step_id: null,
@@ -485,6 +513,9 @@ export function northbeamBundle(): ProcessBundle {
         churn_monthly: 0.03,
         retainer: 3800,
         overtime_cap: 0.1,
+        // Typical client health for a small SEO and PPC agency (issue #120), as an audit would enter it.
+        client_health_benchmark_low: 70,
+        client_health_benchmark_high: 80,
       },
     },
     roles: [
@@ -548,6 +579,7 @@ export function northbeamBundle(): ProcessBundle {
     seasonality: [],
     demand: demandSettings(),
     ...roster(),
+    clientGroups: clientGroups(),
     servicingLinks: servicing.links,
     otherProcesses: servicing.parts,
   };

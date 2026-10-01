@@ -184,6 +184,66 @@ export type Database = {
           },
         ]
       }
+      client_groups: {
+        Row: {
+          client_count: number
+          churn_monthly: number
+          created_at: string
+          created_by: string | null
+          fee: number
+          id: string
+          provenance: Json
+          service_id: string
+          starting_health: number
+          stay_months: number
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          client_count?: number
+          churn_monthly?: number
+          created_at?: string
+          created_by?: string | null
+          fee?: number
+          id?: string
+          provenance?: Json
+          service_id: string
+          starting_health?: number
+          stay_months?: number
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          client_count?: number
+          churn_monthly?: number
+          created_at?: string
+          created_by?: string | null
+          fee?: number
+          id?: string
+          provenance?: Json
+          service_id?: string
+          starting_health?: number
+          stay_months?: number
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_groups_service_id_workspace_id_fkey"
+            columns: ["service_id", "workspace_id"]
+            isOneToOne: true
+            referencedRelation: "services"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "client_groups_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_services: {
         Row: {
           client_id: string
@@ -1638,9 +1698,12 @@ export type Database = {
           created_at: string
           created_by: string | null
           current_wip: number | null
+          dropoff_benchmark: number | null
+          expected_wait_hours: number | null
           entry_step_id: string | null
           id: string
           kind: string
+          lost_per_day_waiting: number | null
           name: string
           notes: string | null
           outcome: string | null
@@ -1654,6 +1717,7 @@ export type Database = {
           rework_to_step_id: string | null
           role_id: string | null
           sla_hours: number | null
+          target_cycle_hours: number | null
           tool: string | null
           updated_at: string
           wait_dist: string
@@ -1674,9 +1738,12 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           current_wip?: number | null
+          dropoff_benchmark?: number | null
+          expected_wait_hours?: number | null
           entry_step_id?: string | null
           id?: string
           kind?: string
+          lost_per_day_waiting?: number | null
           name: string
           notes?: string | null
           outcome?: string | null
@@ -1690,6 +1757,7 @@ export type Database = {
           rework_to_step_id?: string | null
           role_id?: string | null
           sla_hours?: number | null
+          target_cycle_hours?: number | null
           tool?: string | null
           updated_at?: string
           wait_dist?: string
@@ -1710,9 +1778,12 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           current_wip?: number | null
+          dropoff_benchmark?: number | null
+          expected_wait_hours?: number | null
           entry_step_id?: string | null
           id?: string
           kind?: string
+          lost_per_day_waiting?: number | null
           name?: string
           notes?: string | null
           outcome?: string | null
@@ -1726,6 +1797,7 @@ export type Database = {
           rework_to_step_id?: string | null
           role_id?: string | null
           sla_hours?: number | null
+          target_cycle_hours?: number | null
           tool?: string | null
           updated_at?: string
           wait_dist?: string

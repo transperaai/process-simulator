@@ -57,34 +57,45 @@ button { cursor: pointer; }
 .eyebrow { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); font-weight: 600; }
 
 /* Shell */
-.app { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: 100%; }
+.app { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100%; }
 .side { border-right: 1px solid var(--line); padding: 16px 10px 24px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
-.brand { font-family: var(--f-display); font-weight: 700; font-size: 16px; padding: 2px 10px 10px; display: flex; align-items: baseline; gap: 8px; }
-.brand span { font-family: var(--f-mono); font-size: 10px; font-weight: 500; color: var(--edit); border: 1px solid var(--edit); border-radius: 4px; padding: 0 4px; }
-.ws { padding: 8px 10px; margin-bottom: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); display: flex; flex-direction: column; }
-.ws b { font-weight: 600; }
-.navlabel { padding: 14px 10px 4px; }
-.nav { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 6px 10px; border-radius: 6px; border: 0; background: none; color: var(--fg-2); }
+.brand { display: flex; align-items: center; gap: 10px; padding: 4px 10px 14px; }
+.brand .mark { width: 22px; height: 22px; border-radius: 6px; background: conic-gradient(from 200deg, var(--accent), var(--teal), var(--edit), var(--accent)); flex: none; }
+.brand .bname { font-family: var(--f-display); font-weight: 700; font-size: 16.5px; letter-spacing: -0.01em; white-space: nowrap; }
+.ws { display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin-bottom: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.ws b { font-weight: 600; font-size: 13.5px; }
+.wsav { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-family: var(--f-display); font-weight: 700; flex: none; }
+.navgroup { display: flex; flex-direction: column; gap: 2px; }
+.navlabel { padding: 16px 10px 6px; }
+.nav { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 7px 10px; border-radius: 8px; border: 0; background: none; color: var(--fg-2); font-size: 14px; }
+.nav .ico { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .nav:hover { background: var(--panel-2); color: var(--fg); }
-.nav.on { background: var(--panel); color: var(--fg); font-weight: 600; box-shadow: inset 0 0 0 1px var(--line); }
-.nav .cnt { margin-left: auto; font-family: var(--f-mono); font-size: 11px; background: var(--panel-2); border-radius: 99px; padding: 0 7px; }
-.nav .cnt.warn { background: var(--warn-soft); }
-.nav .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.tree .nav { font-size: 13px; padding-block: 4px; }
-.main { padding: 24px 28px 72px; min-width: 0; display: flex; flex-direction: column; gap: 28px; }
+.nav.on { background: var(--panel); color: var(--fg); font-weight: 600; box-shadow: inset 0 0 0 1px var(--line), var(--shadow); }
+.nav.on .ico { color: var(--accent); }
+.nav .cnt { margin-left: auto; font-family: var(--f-mono); font-size: 11px; background: var(--panel-2); border-radius: 99px; padding: 0 7px; font-weight: 500; color: var(--fg-2); }
+.nav .cnt.warn { background: var(--warn-soft); color: var(--fg); }
+.nav .cnt.ai { background: var(--edit-soft); color: var(--edit); }
+.sidefoot { margin-top: auto; padding: 16px 10px 0; line-height: 1.4; }
+.main { padding: 28px 36px 80px; min-width: 0; display: flex; flex-direction: column; gap: 36px; max-width: 1480px; width: 100%; }
 .head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
 .head .t { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .crumbs { display: flex; gap: 6px; flex-wrap: wrap; font-size: 12.5px; color: var(--fg-2); }
-.crumbs button { border: 0; background: none; padding: 0; color: var(--accent); }
+.crumbs button { border: 0; background: none; padding: 0; color: var(--fg-2); }
+.crumbs button:hover { color: var(--accent); text-decoration: underline; }
+.crumbs span { color: var(--fg-3); }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .spread { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
 section { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .sechead { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
-.sechead p { color: var(--fg-2); font-size: 13px; max-width: 70ch; }
+.sechead { align-items: flex-end; }
+.sechead > div:not(.row) { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sechead p { color: var(--fg-2); font-size: 13px; max-width: 72ch; }
+.sechead p b { color: var(--fg); font-family: var(--f-mono); font-weight: 500; }
 @media (max-width: 860px) {
   .app { grid-template-columns: 1fr; }
   .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); padding: 12px 16px; }
-  .side .navlabel, .side .ws, .side .tree { display: none; }
+  .side .navlabel, .side .ws, .side .sidefoot { display: none; }
+  .navgroup { flex-direction: row; flex-wrap: wrap; }
   .nav { width: auto; }
   .main { padding: 20px 16px 64px; }
 }
@@ -132,6 +143,7 @@ section { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .kpi .v { font-family: var(--f-display); font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.kpi .v.txt { font-size: 20px; line-height: 1.2; padding-block: 4px 3px; }
 .kpi .v small { font-size: 14px; font-weight: 500; color: var(--fg-2); }
 .kpi .r { font-family: var(--f-mono); font-size: 11.5px; color: var(--fg-2); }
 .kpi.focus { border-color: var(--crit); box-shadow: inset 3px 0 0 var(--crit); }
@@ -152,7 +164,7 @@ section { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 /* Map */
 .mapwrap { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; min-width: 0; display: flex; flex-direction: column; }
 .maptools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
-.mapscroll { overflow: auto; padding: 4px; max-height: 560px; }
+.mapscroll { overflow: auto; padding: 4px; max-height: 640px; }
 .mapwrap.tall .mapscroll { max-height: none; }
 svg.map { display: block; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; color: var(--fg-2); }
@@ -163,44 +175,89 @@ svg.map { display: block; }
 .node { cursor: pointer; transition: opacity var(--m, 120ms); }
 .node .nbox { fill: var(--panel); stroke: var(--line-2); stroke-width: 1; }
 .node:hover .nbox { stroke: var(--fg-3); }
-.node.dim { opacity: .28; }
+.node.dim { opacity: .4; }
 .node.hl .nbox { stroke: var(--accent); stroke-width: 2.5; }
 .node.reg .nbox { stroke: var(--crit); stroke-width: 2; stroke-dasharray: 5 3; }
 .node.sel .nbox { stroke: var(--edit); stroke-width: 3; }
 .node.added .nbox { stroke: var(--edit); stroke-dasharray: 5 3; fill: var(--edit-soft); }
 .node.changed .nbox { stroke: var(--edit); }
-.nname { font: 600 12.5px var(--f-sans); fill: var(--fg); }
-.nsub { font: 400 10.5px var(--f-mono); fill: var(--fg-2); }
+.nname { font: 600 13px var(--f-sans); fill: var(--fg); }
+.nrole { font: 400 11.5px var(--f-sans); fill: var(--fg-2); }
+.node .stack2 { fill: var(--panel-2); }
+.maptitle { font-size: 13px; font-weight: 600; margin-right: 4px; }
+.seg.zoom button { font-family: var(--f-sans); padding: 3px 10px; font-size: 13px; }
+.nsub { font: 400 11px var(--f-mono); fill: var(--fg-2); }
 .nsub.up { fill: var(--good); font-weight: 500; }
 .nsub.down { fill: var(--crit); font-weight: 500; }
 .nsub.dl { fill: var(--edit); font-weight: 500; }
 .nutil { font: 500 10.5px var(--f-mono); }
-.tgl rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1; }
-.tgl text { font: 600 10.5px var(--f-mono); fill: var(--accent); }
+.tgl rect { fill: var(--accent-soft); stroke: none; }
+.tgl:hover rect { fill: var(--accent); }
+.tgl:hover text { fill: var(--accent-fg); }
+.tgl text { font: 600 11px var(--f-sans); fill: var(--accent); }
 .tgl { cursor: pointer; }
-.gbox { fill: var(--bg); stroke: var(--line-2); stroke-dasharray: 4 4; }
+.gbox { fill: color-mix(in srgb, var(--bg) 70%, var(--panel)); stroke: var(--line-2); stroke-dasharray: 5 4; }
 .group.hl .gbox { stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: none; }
 .group.reg .gbox { stroke: var(--crit); stroke-width: 2; }
 .group.dim { opacity: .45; }
 .group.changed .gbox { stroke: var(--edit); stroke-width: 2; fill: var(--edit-soft); }
 .group.sel .gbox { stroke: var(--edit); stroke-width: 3; stroke-dasharray: none; }
-.ghead { font: 600 12px var(--f-sans); fill: var(--fg); }
-.gsub { font: 400 10.5px var(--f-mono); fill: var(--fg-2); }
+.ghead { font: 600 13.5px var(--f-sans); fill: var(--fg); }
+.gsub { font: 400 11px var(--f-mono); fill: var(--fg-2); }
 .badge circle { fill: var(--crit); }
-.badge text { font: 600 10px var(--f-mono); fill: #fff; }
+.badge text { font: 600 10.5px var(--f-mono); fill: var(--panel); }
 
 /* Lists */
-.list { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-.irow { display: grid; grid-template-columns: 168px minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 11px 14px; border-top: 1px solid var(--line); cursor: pointer; }
-.irow:first-child { border-top: 0; }
-.irow:hover, .irow.on { background: var(--panel-2); }
-.irow .txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.irow .txt b { font-weight: 600; }
-.irow .txt span { font-size: 12.5px; color: var(--fg-2); }
 .src { font-family: var(--f-mono); font-size: 11px; color: var(--fg-2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
-.src.ai { color: var(--edit); border-color: var(--edit); }
-.acked { font-size: 12.5px; color: var(--fg-2); white-space: nowrap; }
-@media (max-width: 760px) { .irow { grid-template-columns: 1fr; gap: 6px; } }
+.src.ai { color: var(--edit); border-color: color-mix(in srgb, var(--edit) 60%, transparent); }
+.empty { border: 1px dashed var(--line-2); border-radius: 10px; padding: 18px; color: var(--fg-2); font-size: 13.5px; text-align: center; }
+.nowrap { white-space: nowrap; }
+.link { border: 0; background: none; padding: 0; color: var(--accent); text-align: left; font: inherit; }
+.link:hover { text-decoration: underline; }
+h2 .link { color: var(--fg); }
+.cdot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+.chip b { font-family: var(--f-mono); font-weight: 500; color: var(--fg-2); }
+.chip:disabled { opacity: .45; cursor: default; }
+.aisum { border: 1px solid color-mix(in srgb, var(--edit) 35%, var(--line)); background: linear-gradient(90deg, var(--edit-soft), var(--panel) 60%); border-radius: 10px; padding: 12px 16px; display: flex; flex-direction: column; gap: 6px; }
+.aisum p { max-width: 86ch; }
+.aihead { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; color: var(--edit); }
+.aihead .ico, .how .ico, .kind .ico, .touch .ico { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.aihead .btn { margin-left: auto; color: var(--edit); }
+.kind { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; color: var(--fg-2); }
+.kind.ai { color: var(--edit); }
+.verdicts { display: flex; flex-wrap: wrap; gap: 6px 20px; }
+.verdicts > div { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+.switch { position: relative; display: inline-block; }
+.switch summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; padding: 0 6px 0 0; }
+.switch summary::-webkit-details-marker { display: none; }
+.switch summary .ico { width: 22px; height: 22px; fill: none; stroke: var(--fg-2); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; border-radius: 6px; }
+.switch summary:hover .ico { background: var(--panel-2); }
+.switch .menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow-overlay); padding: 6px; min-width: 260px; display: flex; flex-direction: column; font-family: var(--f-sans); font-size: 14px; font-weight: 400; letter-spacing: 0; }
+.switch .menu button { display: flex; align-items: center; gap: 8px; border: 0; background: none; text-align: left; padding: 7px 12px; border-radius: 6px; color: var(--fg); }
+.switch .menu button:hover, .switch .menu button.on { background: var(--panel-2); }
+.switch .menu button.on { font-weight: 600; }
+.switch .menu .menufoot { border-top: 1px solid var(--line); border-radius: 0 0 6px 6px; margin-top: 4px; padding-top: 9px; color: var(--accent); }
+.prin { padding: 0; overflow: hidden; gap: 0; }
+.prinhead { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.prinhead .btn { margin-left: auto; }
+.principles .goal p { font-weight: 500; }
+.principles p { font-size: 13.5px; }
+table.proc .pname { display: inline-flex; gap: 8px; align-items: center; }
+.iss { display: inline-grid; place-items: center; min-width: 22px; height: 20px; border-radius: 99px; background: var(--crit); color: var(--panel); font-size: 11.5px; padding: 0 6px; }
+.list { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.irow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 16px; align-items: center; padding: 12px 16px 12px 18px; border-top: 1px solid var(--line); cursor: pointer; position: relative; }
+.irow::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--pc); }
+.irow:first-child { border-top: 0; }
+.irow:hover, .irow:focus-visible { background: color-mix(in srgb, var(--panel-2) 70%, var(--panel)); }
+.irow .txt { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.irow .txt b { font-weight: 600; font-size: 14.5px; }
+.irow .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 13px; color: var(--fg-2); }
+.irow .meta .pill { font-size: 11.5px; padding: 1px 8px; }
+.irow .touch { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--fg-3); }
+.how { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--fg-3); white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.how.ai { color: var(--edit); font-weight: 600; }
+.irow .act { min-width: 112px; display: flex; justify-content: flex-end; }
+@media (max-width: 760px) { .irow { grid-template-columns: 1fr; gap: 8px; } .irow .act { justify-content: flex-start; } }
 .filters { display: flex; flex-wrap: wrap; gap: 6px; }
 .tblwrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
@@ -228,8 +285,8 @@ td.n, th.n { text-align: right; font-family: var(--f-mono); font-variant-numeric
 /* Charts */
 svg.chart { width: 100%; height: auto; display: block; }
 .chart .grid { stroke: var(--line); stroke-width: 1; }
-.chart .ax { font: 400 11px var(--f-mono); fill: var(--fg-2); }
-.chart .lbl { font: 500 12px var(--f-sans); fill: var(--fg); }
+.chart .ax { font: 400 13px var(--f-mono); fill: var(--fg-2); }
+.chart .lbl { font: 600 14px var(--f-sans); fill: var(--fg); }
 .chart .band { fill: var(--accent); opacity: .16; }
 .chart .line { fill: none; stroke: var(--accent); stroke-width: 2.25; }
 .chart .line.b { stroke: var(--edit); stroke-dasharray: 5 3; }
@@ -269,9 +326,10 @@ svg.chart { width: 100%; height: auto; display: block; }
 .edbar h1 { font-size: 17px; }
 .edbar .btn { border-color: color-mix(in srgb, var(--edit-fg) 50%, transparent); background: transparent; color: var(--edit-fg); }
 .edbar .btn.solid { background: var(--edit-fg); color: var(--edit); border-color: var(--edit-fg); }
+.edbar input::placeholder { color: color-mix(in srgb, var(--edit-fg) 70%, transparent); }
 .edbar input { background: color-mix(in srgb, var(--edit-fg) 14%, transparent); border: 1px solid color-mix(in srgb, var(--edit-fg) 40%, transparent); color: var(--edit-fg); border-radius: 6px; padding: 5px 9px; min-width: 240px; }
 .edhint { background: var(--edit-soft); padding: 6px 16px; font-size: 12.5px; border-bottom: 1px solid var(--line); }
-.edbody { display: grid; grid-template-columns: 230px minmax(0, 1fr) 300px; min-height: 0; }
+.edbody { display: grid; grid-template-columns: 264px minmax(0, 1fr) 300px; min-height: 0; }
 .edcol { overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px; background: var(--panel); }
 .edcol.l { border-right: 1px solid var(--line); }
 .edcol.r { border-left: 1px solid var(--line); }
@@ -283,7 +341,8 @@ svg.chart { width: 100%; height: auto; display: block; }
 .pal button { border: 1px dashed var(--line-2); background: var(--bg); border-radius: 6px; padding: 8px 6px; font-size: 12.5px; }
 .pal button:hover { border-color: var(--edit); }
 .blk { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; background: var(--bg); }
-.blk .row { justify-content: space-between; }
+.blk .row { justify-content: space-between; flex-wrap: nowrap; }
+.blk .btns { display: flex; gap: 6px; }
 .edfoot { border-top: 1px solid var(--line); background: var(--panel); padding: 10px 16px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; }
 .delta { display: flex; flex-direction: column; gap: 1px; padding-right: 20px; border-right: 1px solid var(--line); }
 .delta:last-of-type { border-right: 0; }
@@ -490,7 +549,7 @@ const LEVERS = [
 ];
 
 /* ---------------- State ---------------- */
-const S = { screen: "overview", p: null, h: 6, open: {}, all: {}, fit: {}, hl: {}, ratingFilter: {}, settings: "churn", mk: "c1", ed: null, nextIssue: 16, nextSol: 5, viewVersion: null };
+const S = { screen: "overview", p: null, h: 6, open: {}, all: {}, fit: {}, zoom: {}, menu: false, hl: {}, ratingFilter: {}, settings: "churn", mk: "c1", ed: null, nextIssue: 16, nextSol: 5, viewVersion: null };
 const MAPS = {};
 
 /* ---------------- Helpers ---------------- */
@@ -522,9 +581,9 @@ function treeWith(replace) {
 }
 
 /* ---------------- Map renderer ---------------- */
-const LW = 168, LH = 70, GX = 46, GY = 18, PAD = 18, HEAD = 40;
+const LW = 204, LH = 84, GX = 52, GY = 20, PAD = 20, HEAD = 48;
 const isOpen = (c, id) => !!(c.tree[id].cols && c.tree[id].cols.length) && (c.all || c.open.has(id));
-function meas(c, id) { if (isOpen(c, id)) { const m = measCols(c, c.tree[id].cols); return { w: Math.max(m.w + PAD * 2, 200), h: m.h + HEAD + PAD }; } return { w: LW, h: LH }; }
+function meas(c, id) { if (isOpen(c, id)) { const m = measCols(c, c.tree[id].cols); return { w: Math.max(m.w + PAD * 2, 240), h: m.h + HEAD + PAD }; } return { w: LW, h: LH }; }
 function measCols(c, cols) {
   const cm = cols.map(col => { const ms = col.map(id => meas(c, id)); return { ms, w: Math.max(...ms.map(m => m.w)), h: ms.reduce((a, m) => a + m.h, 0) + GY * (col.length - 1) }; });
   return { cm, w: cm.reduce((a, x) => a + x.w, 0) + GX * (cols.length - 1), h: Math.max(...cm.map(x => x.h)) };
@@ -544,50 +603,55 @@ function place(c, cols, x0, y0, H) {
   for (let i = 0; i < colBoxes.length - 1; i++) for (const a of colBoxes[i]) for (const b of colBoxes[i + 1]) c.edges.push([a, b]);
   return m;
 }
-function trunc(s, n) { return s.length > n ? s.slice(0, n - 1) + "…" : s; }
+function trunc(s, n) { s = String(s ?? ""); return s.length > n ? s.slice(0, n - 1) + "…" : s; }
 function issueCount(t, id, open) {
   const set = open ? new Set([id]) : desc(t, id);
   return ISS.filter(i => i.status !== "Closed" && i.nodes.some(x => set.has(x))).length;
 }
+const utilColor = u => u >= .85 ? "var(--crit)" : u >= .75 ? "var(--warn)" : "var(--fg-2)";
 function renderMap(key) {
   const o = MAPS[key]; const ok = o.openKey || key;
   const c = { tree: o.tree || BASE, open: S.open[ok] || (S.open[ok] = new Set(o.defaultOpen || [])), all: !!S.all[ok], boxes: {}, items: [], edges: [] };
   const root = c.tree[o.root];
   if (!root.cols || !root.cols.length) return `<p class="muted small" style="padding:24px">No steps yet. Add one from the left.</p>`;
-  const m = place(c, root.cols, 20, 20);
-  const W = m.w + 40, H = m.h + 40;
+  const m = place(c, root.cols, 24, 24);
+  const W = m.w + 48, H = m.h + 48;
   const vis = id => { let k = id; while (k && !c.boxes[k]) k = c.tree[k]?.parent; return k; };
   const hlSet = new Set((S.hl[key] || o.hl || []).map(vis).filter(Boolean));
   const regSet = new Set((o.region || []).map(vis).filter(Boolean));
-  const fit = S.fit[ok] !== false;
-  let s = `<svg class="map" viewBox="0 0 ${W} ${H}" style="width:${fit ? "100%" : W + "px"};min-width:${fit ? Math.min(W, 520) : W}px" role="img" aria-label="Process map: ${esc(root.name)}">
+  const z = S.zoom[ok];
+  let s = `<svg class="map" data-w="${W}" data-ok="${ok}" viewBox="0 0 ${W} ${H}" style="width:${z ? Math.round(W * z) + "px" : W + "px"}" role="img" aria-label="Process map: ${esc(root.name)}">
   <defs><marker id="ar-${key}" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="arrow" d="M0,0 L8,4 L0,8 z"/></marker></defs>`;
   for (const [a, b] of c.edges) { const x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x - 2, y2 = b.y + b.h / 2, mx = (x1 + x2) / 2; s += `<path class="edge" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" marker-end="url(#ar-${key})"/>`; }
   for (const it of c.items) {
     const b = it.b, nd = c.tree[b.id];
-    const cls = [hlSet.size && !hlSet.has(b.id) && !(it.kind === "group") ? "dim" : "", hlSet.has(b.id) ? "hl" : "", regSet.has(b.id) ? "reg" : "", o.sel === b.id ? "sel" : "", nd.added ? "added" : "", nd.changed ? "changed" : ""].join(" ");
+    const cls = [hlSet.size && !hlSet.has(b.id) && it.kind !== "group" ? "dim" : "", hlSet.has(b.id) ? "hl" : "", regSet.has(b.id) ? "reg" : "", o.sel === b.id ? "sel" : "", nd.added ? "added" : "", nd.changed ? "changed" : ""].join(" ");
     const stripe = nd.rating ? RT[nd.rating].c : "var(--line-2)";
     const ic = o.issues ? issueCount(c.tree, b.id, it.kind === "group") : 0;
-    const badge = ic ? `<g class="badge" transform="translate(${b.w - 4},4)"><circle r="9"/><text text-anchor="middle" y="3.5">${ic}</text></g>` : "";
+    const badge = ic ? `<g class="badge" transform="translate(${b.w - 16},18)"><title>${ic} confirmed issue${ic > 1 ? "s" : ""}</title><circle r="9"/><text text-anchor="middle" y="3.5">${ic}</text></g>` : "";
     if (it.kind === "group") {
       s += `<g class="group ${cls}" data-node="${b.id}" data-map="${key}" transform="translate(${b.x},${b.y})">
-        <rect class="gbox" width="${b.w}" height="${b.h}" rx="12"/>
-        <rect x="10" y="12" width="4" height="18" rx="2" fill="${stripe}"/>
-        <g class="tgl" data-toggle="${b.id}" data-map="${key}"><rect x="20" y="10" width="22" height="20" rx="4"/><text x="31" y="24" text-anchor="middle">−</text></g>
-        <text class="ghead" x="50" y="20">${esc(nd.name)}</text>
-        <text class="gsub" x="50" y="33">${leafCount(c.tree, b.id)} steps${nd.changed ? " · changed" : ""}</text>${badge}</g>`;
+        <rect class="gbox" width="${b.w}" height="${b.h}" rx="14"/>
+        <circle cx="20" cy="24" r="5" fill="${stripe}"/>
+        <text class="ghead" x="32" y="22">${esc(nd.name)}</text>
+        <text class="gsub" x="32" y="37">${leafCount(c.tree, b.id)} steps${nd.changed ? " · changed" : ""}</text>
+        <g class="tgl" data-toggle="${b.id}" data-map="${key}" transform="translate(${b.w - (ic ? 112 : 88)},12)"><rect width="76" height="24" rx="12"/><text x="38" y="16" text-anchor="middle">Collapse</text></g>${badge}</g>`;
     } else {
-      const lines = nd.sub ? nd.sub : [nd.role ? ROLES[nd.role] : "", [nd.h != null ? fmtH(nd.h) + " work" : "", nd.w ? fmtH(nd.w) + " wait" : ""].filter(Boolean).join(" · ")];
+      const grp = !!(nd.cols && nd.cols.length);
+      const l2 = nd.sub ? nd.sub[0] : nd.role ? ROLES[nd.role] : "";
+      const l3 = nd.sub ? nd.sub[1] : [nd.h != null ? fmtH(nd.h) + " work" : "", nd.w ? fmtH(nd.w) + " wait" : ""].filter(Boolean).join(" · ");
       const dl = o.deltas && o.deltas[b.id];
-      const u = nd.u != null ? `<text class="nutil" x="${b.w - 10}" y="22" text-anchor="end" fill="${nd.u >= .85 ? "var(--crit)" : nd.u >= .75 ? "var(--warn)" : "var(--fg-2)"}">${Math.round(nd.u * 100)}%</text>` : "";
-      const tg = nd.cols ? `<g class="tgl" data-toggle="${b.id}" data-map="${key}"><rect x="${b.w - 52}" y="${b.h - 24}" width="44" height="18" rx="4"/><text x="${b.w - 30}" y="${b.h - 11}" text-anchor="middle">+${leafCount(c.tree, b.id)}</text></g>` : "";
-      s += `<g class="node ${cls}" data-node="${b.id}" data-map="${key}" transform="translate(${b.x},${b.y})" tabindex="0">
-        <rect class="nbox" width="${b.w}" height="${b.h}" rx="9"/>
-        <rect x="5" y="8" width="4" height="${b.h - 16}" rx="2" fill="${stripe}"/>
-        <text class="nname" x="17" y="22">${esc(trunc(nd.name, u ? 19 : 22))}</text>${u}
-        <text class="nsub" x="17" y="40">${esc(trunc(lines[0] || "", 24))}</text>
-        <text class="nsub ${dl ? "dl" : ""}" x="17" y="56">${esc(trunc(dl || lines[1] || "", nd.cols ? 16 : 24))}</text>
-        ${tg}${badge}</g>`;
+      const u = nd.u != null && !grp ? `<text class="nutil" x="${b.w - 14}" y="45" text-anchor="end" fill="${utilColor(nd.u)}">${Math.round(nd.u * 100)}% busy</text>` : "";
+      const nameMax = ic ? 18 : 24;
+      s += `<g class="node ${grp ? "isgroup" : ""} ${cls}" data-node="${b.id}" data-map="${key}" transform="translate(${b.x},${b.y})" tabindex="0" role="button" aria-label="${esc(nd.name)}">
+        ${grp ? `<rect class="nbox stack2" x="5" y="5" width="${b.w}" height="${b.h}" rx="10"/>` : ""}
+        <rect class="nbox" width="${b.w}" height="${b.h}" rx="10"/>
+        <rect x="0" y="0" width="5" height="${b.h}" rx="2.5" fill="${stripe}" class="stripe"/>
+        <text class="nname" x="18" y="25">${esc(trunc(nd.name, nameMax))}</text>
+        <text class="nrole" x="18" y="45">${esc(trunc(l2, u ? 14 : 26))}</text>${u}
+        <text class="nsub ${dl ? "dl" : ""}" x="18" y="67">${esc(trunc(dl || (grp ? leafCount(c.tree, b.id) + " steps inside" : l3), grp ? 15 : 27))}</text>
+        ${grp ? `<g class="tgl" data-toggle="${b.id}" data-map="${key}" transform="translate(${b.w - 78},54)"><rect width="66" height="22" rx="11"/><text x="33" y="15" text-anchor="middle">Expand</text></g>` : ""}
+        ${badge}</g>`;
     }
   }
   return s + "</svg>";
@@ -595,20 +659,35 @@ function renderMap(key) {
 function mapBlock(key, o) {
   MAPS[key] = o; const ok = o.openKey || key;
   if (!S.open[ok]) S.open[ok] = new Set(o.defaultOpen || []);
-  const all = S.all[ok], fit = S.fit[ok] !== false;
-  return `<div class="mapwrap ${o.tall ? "tall" : ""}" id="mw-${key}">
+  const all = S.all[ok];
+  return `<div class="mapwrap ${o.tall ? "tall" : ""} ${o.flat ? "flat" : ""}" id="mw-${key}">
     <div class="maptools"><div class="row">
-      ${o.title ? `<b class="small">${o.title}</b>` : ""}
+      ${o.title ? `<b class="maptitle">${o.title}</b>` : ""}
       <button class="btn sm ${all ? "on" : ""}" data-act="expandall" data-map="${key}">${all ? "Collapse all" : "Expand all"}</button>
-      <button class="btn sm" data-act="fit" data-map="${key}">${fit ? "Actual size" : "Fit to width"}</button></div>
-      ${o.legend === false ? "" : `<div class="legend">${RORDER.map(r => `<span style="--pc:${RT[r].c}"><i></i>${RT[r].l}</span>`).join("")}${o.issues ? `<span><svg width="12" height="12"><circle cx="6" cy="6" r="6" fill="var(--crit)"/></svg>Confirmed issues</span>` : ""}</div>`}
+      <div class="seg zoom" role="group" aria-label="Zoom"><button data-act="zoom" data-map="${key}" data-z="-" aria-label="Zoom out">−</button><button data-act="zoom" data-map="${key}" data-z="fit">Fit</button><button data-act="zoom" data-map="${key}" data-z="+" aria-label="Zoom in">+</button></div></div>
+      ${o.legend === false ? "" : `<div class="legend">${RORDER.map(r => `<span style="--pc:${RT[r].c}"><i></i>${RT[r].l}</span>`).join("")}${o.issues ? `<span><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="6" fill="var(--crit)"/></svg>Confirmed issues</span>` : ""}</div>`}
     </div><div class="mapscroll" id="ms-${key}">${renderMap(key)}</div></div>`;
 }
 function refreshMap(key) {
   const ok = MAPS[key]?.openKey || key;
   for (const k of Object.keys(MAPS)) if ((MAPS[k].openKey || k) === ok || k === key) { const el = document.getElementById("ms-" + k); if (el) el.innerHTML = renderMap(k); }
+  autoZoom();
 }
-
+/* Fit each map to its panel unless that would shrink it below 70%; then it scrolls instead. */
+function autoZoom() {
+  document.querySelectorAll("svg.map").forEach(svg => {
+    const ok = svg.dataset.ok; if (S.zoom[ok]) return;
+    const box = svg.parentElement, W = +svg.dataset.w, cw = box.clientWidth - 8;
+    const z = Math.max(.7, Math.min(1.15, cw / W));
+    svg.style.width = Math.round(W * z) + "px";
+  });
+}
+function scrollToHl(key) {
+  const sc = document.getElementById("ms-" + key); if (!sc) return;
+  const el = sc.querySelector(".hl, .reg, .sel"); if (!el) return;
+  const r = el.getBoundingClientRect(), rs = sc.getBoundingClientRect();
+  sc.scrollLeft += (r.left - rs.left) - 40;
+}
 /* ---------------- Charts ---------------- */
 function niceTicks(min, max, n = 4) {
   const span = max - min || 1, s0 = span / n, mag = 10 ** Math.floor(Math.log10(s0));
@@ -631,12 +710,12 @@ function lineBand(pts, fmt, xl, alt) {
   return s + "</svg>";
 }
 function hbars(rows, { max = 1.1, th = .85, fmt = v => Math.round(v * 100) + "%", color, thLabel = "85% line" } = {}) {
-  const W = 640, rh = 30, T = 6, L = 150, R = 64, H = T + rows.length * rh + (th != null ? 22 : 6);
+  const W = 640, rh = 34, T = 6, L = 170, R = 70, H = T + rows.length * rh + (th != null ? 22 : 6);
   const X = v => L + Math.min(v, max) / max * (W - L - R);
   let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">`;
   rows.forEach((r, i) => {
     const y = T + i * rh; const c = color ? color(r.v) : r.v >= .95 ? "var(--crit)" : r.v >= .85 ? "var(--warn)" : "var(--accent)";
-    s += `<text class="ax" x="${L - 10}" y="${y + 19}" text-anchor="end" style="font-family:var(--f-sans);font-size:12px;fill:var(--fg)">${esc(r.label)}</text>
+    s += `<text class="ax" x="${L - 10}" y="${y + 19}" text-anchor="end" style="font-family:var(--f-sans);font-size:14px;fill:var(--fg)">${esc(r.label)}</text>
       <rect x="${L}" y="${y + 9}" width="${Math.max(2, X(r.v) - L)}" height="13" rx="3" fill="${c}"/>`;
     if (r.hi != null) s += `<line class="whisk" x1="${X(r.lo)}" x2="${X(r.hi)}" y1="${y + 15.5}" y2="${y + 15.5}"/><line class="whisk" x1="${X(r.hi)}" x2="${X(r.hi)}" y1="${y + 11}" y2="${y + 20}"/>`;
     s += `<text class="ax" x="${W - R + 10}" y="${y + 19}">${fmt(r.v)}${r.hi != null ? "" : ""}</text>`;
@@ -650,7 +729,7 @@ const ROLEU = [{ label: "Strategist", v: .82, lo: .73, hi: .97 }, { label: "PPC 
 const HZ = [1, 3, 6, 12, 24];
 function horizonSeg() { return `<div class="row"><span class="small muted">Projection</span><div class="seg" role="group" aria-label="Time horizon">${HZ.map(h => `<button class="${S.h === h ? "on" : ""}" data-act="horizon" data-h="${h}">${h}m</button>`).join("")}</div>
   <button class="chip btnchip" data-go="settings:market" title="Market conditions">Market: ${esc(MARKETS[SCHED[0].m].name)}, then ${esc(MARKETS[SCHED[1].m].name)} from M${SCHED[1].from}</button></div>`; }
-function kpi(label, v, r, extra = "", focus = false) { return `<div class="kpi ${focus ? "focus" : ""}"><span class="eyebrow">${label}</span><span class="v">${v}</span><span class="r">${r}</span>${extra ? `<span class="small muted">${extra}</span>` : ""}</div>`; }
+function kpi(label, v, r, extra = "", focus = false) { return `<div class="kpi ${focus ? "focus" : ""}"><span class="eyebrow">${label}</span><span class="v ${/^[£\d.]/.test(String(v)) ? "" : "txt"}">${v}</span><span class="r">${r}</span>${extra ? `<span class="small muted">${extra}</span>` : ""}</div>`; }
 function mrrSeries(h, alt = 0) {
   const steps = h <= 3 ? Math.round(h * 4.33) : h, pts = [];
   for (let i = 0; i <= steps; i++) { const m = h <= 3 ? i / 4.33 : i; const soft = m > 6 ? (m - 6) * 900 : 0; const mean = 78400 + 2150 * m - soft + alt * m * 1100; const sp = 1300 * Math.sqrt(m) + 260 * m; pts.push({ m, mean, lo: mean - sp, hi: mean + sp * .9 }); }
@@ -679,106 +758,151 @@ function kpisFor(pid) {
 }
 
 /* ---------------- Sidebar ---------------- */
-function navBtn(go, label, extra = "", on = false) { return `<button class="nav ${on ? "on" : ""}" data-go="${go}">${label}${extra}</button>`; }
-function treeNav(id, depth) {
-  const nd = BASE[id]; if (!nd.cols) return "";
-  const on = S.screen === "process" && S.p === id;
-  let s = `<button class="nav ${on ? "on" : ""}" data-go="process:${id}" style="padding-left:${10 + depth * 14}px"><span class="dot" style="background:${nd.rating ? RT[nd.rating].c : "var(--fg-3)"}"></span>${esc(id === "company" ? "Company map" : nd.name)}</button>`;
-  nd.cols.flat().forEach(k => s += treeNav(k, depth + 1));
-  return s;
-}
+const ICON = {
+  overview: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  processes: '<rect x="3" y="4" width="7" height="5" rx="1.5"/><rect x="14" y="15" width="7" height="5" rx="1.5"/><path d="M6.5 9v3a2.5 2.5 0 0 0 2.5 2.5h5"/>',
+  issues: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/>',
+  solutions: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>',
+  library: '<path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/>',
+  suggestions: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>',
+  sources: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>',
+  people: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.4 3.3-5.5 6.5-5.5s5.9 2.1 6.5 5.5M16 4.8a3.4 3.4 0 0 1 0 6.4M21.5 20c-.4-2.4-1.8-4.1-3.8-4.9"/>',
+  settings: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+};
+const ico = k => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`;
+function navBtn(go, icon, label, extra = "", on = false) { return `<button class="nav ${on ? "on" : ""}" data-go="${go}" ${on ? 'aria-current="page"' : ""}>${ico(icon)}<span>${label}</span>${extra}</button>`; }
 function sidebar() {
   const sc = S.screen; const unlinked = SRC.filter(s => !s.links.length).length;
   return `<aside class="side">
-    <div class="brand">Transpera Flow<span>PROTOTYPE</span></div>
-    <div class="ws"><b>Northbeam Digital</b><span class="small muted">Sample data · nothing is saved</span></div>
-    ${navBtn("overview", "Company overview", "", sc === "overview")}
-    <div class="navlabel eyebrow">Processes</div>
-    <div class="tree">${treeNav("company", 0)}</div>
-    <div class="navlabel eyebrow">Work</div>
-    ${navBtn("issues", "Issues", `<span class="cnt">${ISS.length}</span>`, sc === "issues" || sc === "issue" || sc === "compare")}
-    ${navBtn("library", "Block library", "", sc === "library")}
-    ${navBtn("suggestions", "Suggestions", SUG.length ? `<span class="cnt">${SUG.length}</span>` : "", sc === "suggestions")}
-    ${navBtn("sources", "Sources", unlinked ? `<span class="cnt warn" title="Not linked to anything">${unlinked}</span>` : "", sc === "sources")}
-    <div class="navlabel eyebrow">Company</div>
-    ${navBtn("people", "People", "", sc === "people")}
-    ${navBtn("settings", "Settings", "", sc === "settings")}
+    <div class="brand"><span class="mark" aria-hidden="true"></span><span class="bname">Transpera Flow</span></div>
+    <div class="ws"><span class="wsav" aria-hidden="true">N</span><span class="stack" style="gap:0"><b>Northbeam Digital</b><span class="small muted">Prototype · sample data</span></span></div>
+    <nav class="navgroup" aria-label="Main">
+      ${navBtn("overview", "overview", "Overview", "", sc === "overview")}
+      ${navBtn("processes", "processes", "Processes", `<span class="cnt">${Object.values(BASE).filter(x => x.cols && x.id !== "company").length}</span>`, sc === "processes" || sc === "process" || sc === "history")}
+      <div class="navlabel eyebrow">Improve</div>
+      ${navBtn("issues", "issues", "Issues", `<span class="cnt">${ISS.length}</span>`, sc === "issues" || sc === "issue")}
+      ${navBtn("solutions", "solutions", "Solutions", `<span class="cnt">${SOL.length}</span>`, sc === "solutions" || sc === "compare")}
+      ${navBtn("library", "library", "Block library", "", sc === "library")}
+      ${navBtn("suggestions", "suggestions", "Suggestions", SUG.length ? `<span class="cnt ai">${SUG.length}</span>` : "", sc === "suggestions")}
+      <div class="navlabel eyebrow">Company</div>
+      ${navBtn("sources", "sources", "Sources", unlinked ? `<span class="cnt warn" title="${unlinked} not linked to anything">${unlinked}</span>` : "", sc === "sources")}
+      ${navBtn("people", "people", "People", "", sc === "people")}
+      ${navBtn("settings", "settings", "Settings", "", sc === "settings")}
+    </nav>
+    <div class="sidefoot small muted">Clickable prototype. Nothing you do here is saved.</div>
   </aside>`;
 }
 
 /* ---------------- Screens ---------------- */
-function insightRows(list, mapKey) {
-  if (!list.length) return `<div class="card muted">Nothing in this group from the latest run.</div>`;
-  return `<div class="list" data-hlist="${mapKey}">${list.map(i => `
-    <div class="irow" data-hl="${i.nodes.join(",")}" data-map="${mapKey}" data-act="insight" data-id="${i.id}" tabindex="0">
-      <div>${pill(i.rating)}</div>
-      <div class="txt"><b>${esc(i.title)}</b><span>${esc(i.metric)} · ${i.nodes.map(nodeName).join(", ")}</span></div>
-      <span class="src ${i.kind === "ai" ? "ai" : ""}">${i.kind === "ai" ? "AI" : "Rule: " + esc(i.rule)}</span>
-      ${i.ack ? `<button class="btn ghost sm" data-go="issue:${i.ack}">Issue #${i.ack} →</button>` : `<button class="btn sm" data-act="ack" data-id="${i.id}">Acknowledge</button>`}
+function insightRows(list, mapKey, opts = {}) {
+  if (!list.length) return `<div class="empty">Nothing in this group from the latest run.</div>`;
+  return `<div class="list">${list.map(i => `
+    <div class="irow" style="--pc:${RT[i.rating].c}" data-hl="${i.nodes.join(",")}" data-map="${mapKey}" data-act="insight" data-id="${i.id}" tabindex="0">
+      <div class="txt"><b>${esc(i.title)}</b>
+        <span class="meta">${pill(i.rating)}<span>${esc(i.metric)}</span></span>
+        <span class="touch">${ico("processes")}${i.nodes.map(nodeName).join(", ")}${opts.showProc ? ` · ${esc(nodeName(procOf(i.nodes[0])))}` : ""}</span></div>
+      <span class="how ${i.kind === "ai" ? "ai" : ""}">${i.kind === "ai" ? `${ico("suggestions")}AI` : esc(i.rule)}</span>
+      <div class="act">${i.ack ? `<button class="btn ghost sm" data-go="issue:${i.ack}">Issue #${i.ack} →</button>` : `<button class="btn sm" data-act="ack" data-id="${i.id}">Acknowledge</button>`}</div>
     </div>`).join("")}</div>`;
+}
+function ratingFilters(pid, list) {
+  const f = S.ratingFilter[pid];
+  return `<div class="filters" role="group" aria-label="Filter by rating"><button class="chip btnchip ${!f ? "on" : ""}" data-act="rfilter" data-p="${pid}" data-r="">All <b>${list.length}</b></button>${RORDER.map(r => { const c = list.filter(i => i.rating === r).length; return `<button class="chip btnchip ${f === r ? "on" : ""}" data-act="rfilter" data-p="${pid}" data-r="${r}" ${c ? "" : "disabled"}><span class="cdot" style="background:${RT[r].c}"></span>${RT[r].l} <b>${c}</b></button>`; }).join("")}</div>`;
+}
+function aiSummary(pid) {
+  const t = AISUM[pid];
+  return `<div class="aisum"><div class="aihead">${ico("suggestions")}<span>AI read of this run</span><span class="small muted">· uses ${pid === "company" ? "the company's" : "this process's"} first principles, results and sources</span><button class="btn ghost sm" data-act="aireview" data-p="${pid}">Run again</button></div>
+    <p>${t || "AI hasn't reviewed this process yet. Write its first principles so the review can judge it against your goal."}</p></div>`;
 }
 function insightSection(pid, mapKey) {
   const list = insFor(pid); const f = S.ratingFilter[pid];
   const shown = list.filter(i => !f || i.rating === f).sort((a, b) => RORDER.indexOf(a.rating) - RORDER.indexOf(b.rating));
-  return `<section id="insights"><div class="sechead"><h2>Insights</h2><p>The raw analysis from the latest simulation. Hover a row to see it on the map. Nothing becomes an issue, or shows on the map, until you acknowledge it.</p></div>
-    <div class="filters"><button class="chip btnchip ${!f ? "on" : ""}" data-act="rfilter" data-p="${pid}" data-r="">All ${list.length}</button>${RORDER.map(r => { const c = list.filter(i => i.rating === r).length; return `<button class="chip btnchip ${f === r ? "on" : ""}" data-act="rfilter" data-p="${pid}" data-r="${r}"><span class="pill" style="--pc:${RT[r].c};--ps:transparent;padding:0"><i></i></span>${RT[r].l} ${c}</button>`; }).join("")}</div>
+  return `<section id="insights"><div class="sechead"><div><h2>Insights</h2><p>The raw analysis from the latest run, worst first. Hover one to see where it sits on the map. It only becomes an issue when you acknowledge it.</p></div></div>
+    ${aiSummary(pid)}
+    ${ratingFilters(pid, list)}
     ${insightRows(shown, mapKey)}</section>`;
 }
 function issueTable(list) {
-  if (!list.length) return `<div class="card muted">No confirmed issues yet. Acknowledge an insight, or add one by hand.</div>`;
-  return `<div class="tblwrap"><table><thead><tr><th>#</th><th>Issue</th><th>Rating</th><th>Touches</th><th>Owners</th><th>Status</th><th>Solutions</th></tr></thead><tbody>
-  ${list.map(i => { const ss = SOL.filter(s => s.issue === i.id); const best = ss.find(s => (s.yours || s.auto) === "pass"); return `<tr class="click" data-go="issue:${i.id}"><td class="mono">#${i.id}</td><td><b>${esc(i.title)}</b></td><td>${pill(i.rating)}</td><td class="small">${i.nodes.map(nodeName).join(", ")}</td><td>${avatars(i.owners)}</td><td class="small">${esc(i.status)}</td><td class="small">${ss.length ? `${ss.length} tried ${best ? verdict("pass") : ""}` : "None yet"}</td></tr>`; }).join("")}
+  if (!list.length) return `<div class="empty">No confirmed issues yet. Acknowledge an insight, or add one by hand.</div>`;
+  return `<div class="tblwrap"><table><thead><tr><th>Issue</th><th>Rating</th><th>Touches</th><th>Owners</th><th>Status</th><th>Solutions</th></tr></thead><tbody>
+  ${list.map(i => { const ss = SOL.filter(s => s.issue === i.id); const best = ss.find(s => (s.yours || s.auto) === "pass"); return `<tr class="click" data-go="issue:${i.id}"><td><span class="mono muted">#${i.id}</span> <b>${esc(i.title)}</b></td><td>${pill(i.rating)}</td><td class="small">${i.nodes.map(nodeName).join(", ")}</td><td>${avatars(i.owners)}</td><td class="small nowrap">${esc(i.status)}</td><td class="small nowrap">${ss.length ? `${ss.length} tried ${best ? verdict("pass") : ""}` : `<span class="muted">None yet</span>`}</td></tr>`; }).join("")}
   </tbody></table></div>`;
 }
 function solCards(list) {
-  if (!list.length) return `<div class="card muted">No solutions yet. Open an issue and choose Build solution.</div>`;
-  return `<div class="solgrid">${list.map(s => `<div class="card sol"><div class="spread"><span class="src ${s.type === "AI block" ? "ai" : ""}">${esc(s.type)}</span><span class="small muted">${s.date}</span></div>
-    <h3>${esc(s.name)}</h3><span class="small muted">For #${s.issue} · ${esc(ISS.find(i => i.id === s.issue).title)}</span>
-    <div class="row small"><span class="muted">Automatic</span>${verdict(s.auto)}<span class="muted">Yours</span>${verdict(s.yours)}</div>
-    <div class="row"><button class="btn sm" data-go="compare:${s.id}">Compare side by side</button><button class="btn sm" data-act="opensol" data-id="${s.id}">Open in Editor</button></div></div>`).join("")}</div>`;
+  if (!list.length) return `<div class="empty">No solutions yet. Open an issue and choose Build solution.</div>`;
+  return `<div class="solgrid">${list.map(s => `<div class="card sol"><div class="spread"><span class="kind ${s.type === "AI block" ? "ai" : ""}">${s.type === "AI block" ? ico("suggestions") : ico("library")}${esc(s.type)}</span><span class="small muted">${s.date}</span></div>
+    <h3>${esc(s.name)}</h3><button class="link small" data-go="issue:${s.issue}">#${s.issue} · ${esc(ISS.find(i => i.id === s.issue).title)}</button>
+    <div class="verdicts"><div><span class="eyebrow">Automatic</span>${verdict(s.auto)}</div><div><span class="eyebrow">Yours</span>${verdict(s.yours)}</div>${s.robust ? `<div><span class="eyebrow">Holds in</span><span class="num">${s.robust}%</span></div>` : ""}</div>
+    <div class="row"><button class="btn sm primary" data-go="compare:${s.id}">Compare</button><button class="btn sm" data-act="opensol" data-id="${s.id}">Open in Editor</button></div></div>`).join("")}</div>`;
+}
+const pname = id => id === "company" ? "Company map" : nodeName(id);
+function procList(id = "company", depth = 0, out = []) { const nd = BASE[id]; if (!nd.cols) return out; out.push([id, depth]); nd.cols.flat().forEach(k => procList(k, depth + 1, out)); return out; }
+function switcher(pid) {
+  return `<details class="switch"><summary aria-label="Switch process">${esc(pname(pid))}<svg viewBox="0 0 24 24" class="ico" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></summary>
+    <div class="menu" role="menu">${procList().map(([id, d]) => `<button role="menuitem" class="${id === pid ? "on" : ""}" data-go="process:${id}" style="padding-left:${12 + d * 16}px"><span class="cdot" style="background:${BASE[id].rating ? RT[BASE[id].rating].c : "var(--fg-3)"}"></span>${esc(pname(id))}</button>`).join("")}
+    <button class="menufoot" data-go="processes">All processes →</button></div></details>`;
 }
 
 const SCREENS = {
   overview() {
     const top = INS.slice().sort((a, b) => RORDER.indexOf(a.rating) - RORDER.indexOf(b.rating)).slice(0, 5);
-    return `<div class="head"><div class="t"><span class="eyebrow">Company overview</span><h1>Northbeam Digital</h1><span class="viewing"><i></i>Live model · simulated 30 times · 1 Oct</span></div>${horizonSeg()}</div>
+    const cnt = r => INS.filter(i => i.rating === r).length;
+    return `<header class="head"><div class="t"><span class="eyebrow">Overview</span><h1>Northbeam Digital</h1><span class="viewing"><i></i>Live model · 30 simulated runs · updated 1 Oct</span></div>${horizonSeg()}</header>
     <div class="kpis">${kpisFor("company")}</div>
-    <section><div class="sechead"><h2>Company map</h2><p>Each box is a process. Use + to open one in place, Expand all to see every step, or click a box to go to its page.</p></div>
+    <section><div class="sechead"><div><h2>Company map</h2><p>Every process in the business. Expand one in place, or click it to open its page.</p></div><button class="btn ghost" data-go="processes">All processes →</button></div>
       ${mapBlock("ov", { root: "company", issues: true })}</section>
+    <section><div class="sechead"><div><h2>What the analysis found</h2><p>${["risk", "bad", "good", "great"].map(r => `<b>${cnt(r)}</b> ${RT[r].l.toLowerCase()}`).join(" · ")}</p></div><button class="btn ghost" data-go="process:company">See all insights →</button></div>
+      ${aiSummary("company")}
+      ${insightRows(top, "ov", { showProc: true })}</section>
+    <section><div class="sechead"><div><h2>Trends</h2><p>Projected over the next ${S.h} month${S.h > 1 ? "s" : ""}, with the 10–90% range from 30 runs.</p></div></div>
     <div class="grid2">
-      <div class="card chartcard"><div class="spread"><h3>Monthly recurring revenue</h3><div class="legend"><span style="--pc:var(--accent)"><i></i>Average</span><span style="--pc:color-mix(in srgb,var(--accent) 25%,transparent)"><i></i>10–90% range</span></div></div>${lineBand(mrrSeries(S.h), v => "£" + Math.round(v / 1000) + "k", xlab(S.h))}${S.h > 6 ? `<span class="small muted">Growth slows after month 6 because of the Soft market in your market schedule.</span>` : ""}</div>
-      <div class="card chartcard"><div class="spread"><h3>How busy each role is</h3><div class="legend"><span style="--pc:var(--accent)"><i></i>Average</span><span>— Bad month (P90)</span></div></div>${hbars(ROLEU)}</div>
-    </div>
-    <div class="card ai-card stack"><div class="spread"><span class="eyebrow">AI analysis · reads results, principles and sources</span><button class="btn sm" data-act="aireview" data-p="company">Run AI review again</button></div><p style="max-width:80ch">${AISUM.company}</p><span class="small muted">Every number in this summary comes from the simulation. AI explains them; it doesn't make them up.</span></div>
-    <section><div class="sechead"><h2>Most important insights</h2><button class="btn ghost" data-go="process:company">See all on the company map →</button></div>${insightRows(top, "ov")}</section>`;
+      <div class="card chartcard"><div class="spread"><h3>Monthly recurring revenue</h3><div class="legend"><span style="--pc:var(--accent)"><i></i>Average</span><span style="--pc:color-mix(in srgb,var(--accent) 30%,transparent)"><i></i>10–90% range</span></div></div>${lineBand(mrrSeries(S.h), v => "£" + Math.round(v / 1000) + "k", xlab(S.h))}${S.h > 6 ? `<span class="small muted">Growth slows after month 6 because of the Soft market in your market schedule.</span>` : ""}</div>
+      <div class="card chartcard"><div class="spread"><h3>How busy each role is</h3><div class="legend"><span style="--pc:var(--accent)"><i></i>Average</span><span><svg width="14" height="8" aria-hidden="true"><line x1="0" x2="14" y1="4" y2="4" stroke="var(--fg-2)" stroke-width="1.5"/></svg>10–90% range</span></div></div>${hbars(ROLEU)}</div>
+    </div></section>`;
+  },
+  processes() {
+    const rows = procList().filter(([id]) => id !== "company");
+    return `<header class="head"><div class="t"><span class="eyebrow">Processes</span><h1>Processes</h1><p class="muted">The company map and everything inside it. A process can hold smaller processes, which expand on the map.</p></div>
+      <div class="row"><button class="btn" data-go="process:company">Open company map</button><button class="btn edit" data-act="editdraft" data-p="company">✎ New process</button></div></header>
+    <div class="tblwrap"><table class="proc"><thead><tr><th>Process</th><th>Type</th><th>Rating</th><th class="n">Steps</th><th class="n">Open issues</th><th>Live version</th></tr></thead><tbody>
+      ${rows.map(([id, d]) => { const nd = BASE[id], iss = issuesFor(id).length, v = (VERSIONS[id] || VERSIONS.sales)[0]; return `<tr class="click" data-go="process:${id}"><td><span style="padding-left:${(d - 1) * 22}px" class="pname">${d > 1 ? `<span class="muted">↳</span>` : ""}<b>${esc(nd.name)}</b></span></td><td class="small">${esc(nd.kind || "Process")}</td><td>${pill(nd.rating)}</td><td class="n">${leafCount(BASE, id)}</td><td class="n">${iss ? `<span class="iss">${iss}</span>` : `<span class="muted">0</span>`}</td><td class="small nowrap">v${v.v} · ${v.date.replace(" 2026", "")}</td></tr>`; }).join("")}
+    </tbody></table></div>`;
   },
   process() {
     const pid = S.p, nd = BASE[pid], key = "pr-" + pid, pr = PRIN[pid], vers = VERSIONS[pid] || VERSIONS.sales;
-    const crumbs = ancestors(pid).map(a => `<button data-go="${a === "company" ? "process:company" : "process:" + a}">${esc(a === "company" ? "Company map" : BASE[a].name)}</button><span>›</span>`).join("");
+    const crumbs = [`<button data-go="processes">Processes</button><span>/</span>`, ...ancestors(pid).map(a => `<button data-go="process:${a}">${esc(pname(a))}</button><span>/</span>`)].join("");
     const viewOld = S.viewVersion && S.viewVersion.p === pid;
-    return `<div class="head"><div class="t"><div class="crumbs">${crumbs}<span>${esc(pid === "company" ? "Company map" : nd.name)}</span></div>
-        <h1>${esc(pid === "company" ? "Company map" : nd.name)}</h1>
-        <div class="row">${viewOld ? `<span class="viewing old"><i></i>Viewing version ${S.viewVersion.v} · read only</span><button class="btn sm" data-act="backlive">Back to live</button>` : `<span class="viewing"><i></i>Viewing live · version ${vers[0].v}</span>`}<span class="chip">${esc(nd.kind || "Process")}</span>${nd.rating ? pill(nd.rating) : ""}</div></div>
-      <div class="row"><button class="btn" data-go="history:${pid}">History</button><button class="btn edit" data-act="editdraft" data-p="${pid}">✎ Open in Editor</button></div></div>
-    <section><div class="spread"><span class="eyebrow">First principles${pr ? "" : " · not written yet"}</span><button class="btn ghost sm" data-act="editprin" data-p="${pid}">Edit</button></div>
-      ${pr ? `<div class="card principles"><div><span class="eyebrow">Goal</span>${esc(pr.goal)}</div><div><span class="eyebrow">Why we do it this way</span>${esc(pr.why)}</div><div><span class="eyebrow">Constraints</span>${esc(pr.constraints)}</div><div><span class="eyebrow">Success looks like</span>${esc(pr.success)}</div></div>`
-        : `<div class="card muted small">Write the goal, the reason it works this way, the constraints and what success looks like. AI analysis uses these to judge the process.</div>`}</section>
-    <div class="spread"><h2>Projection</h2>${horizonSeg()}</div>
-    <div class="kpis">${kpisFor(pid)}</div>
-    ${mapBlock(key, { root: pid, issues: true, tall: false })}
+    const kids = (nd.cols || []).flat().filter(k => BASE[k].cols);
+    const iss = issuesFor(pid), sols = solsFor(pid);
+    return `<header class="head"><div class="t"><nav class="crumbs" aria-label="Breadcrumb">${crumbs}</nav>
+        <h1 class="h1switch">${switcher(pid)}</h1>
+        <div class="row">${viewOld ? `<span class="viewing old"><i></i>Viewing version ${S.viewVersion.v} · read only</span><button class="btn sm" data-act="backlive">Back to live</button>` : `<span class="viewing"><i></i>Viewing live · version ${vers[0].v}</span>`}<span class="chip">${esc(nd.kind || "Process")}</span>${nd.rating ? pill(nd.rating) : ""}
+        ${kids.length ? `<span class="small muted" style="margin-left:6px">Inside:</span>${kids.map(k => `<button class="chip btnchip" data-go="process:${k}">${esc(BASE[k].name)}</button>`).join("")}` : ""}</div></div>
+      <div class="row"><button class="btn" data-go="history:${pid}">History</button><button class="btn edit" data-act="editdraft" data-p="${pid}">✎ Open in Editor</button></div></header>
+    <section class="card prin"><div class="prinhead"><span class="eyebrow">First principles</span><span class="small muted">AI judges the process against these</span><button class="btn ghost sm" data-act="editprin" data-p="${pid}">${pr ? "Edit" : "Write them"}</button></div>
+      ${pr ? `<div class="principles"><div class="goal"><span class="eyebrow">Goal</span><p>${esc(pr.goal)}</p></div><div><span class="eyebrow">Why we do it this way</span><p>${esc(pr.why)}</p></div><div><span class="eyebrow">Constraints</span><p>${esc(pr.constraints)}</p></div><div><span class="eyebrow">Success looks like</span><p>${esc(pr.success)}</p></div></div>`
+        : `<p class="small muted" style="padding:0 16px 14px">Not written yet. Add the goal, why it works this way, the constraints and what success looks like.</p>`}</section>
+    <section><div class="sechead"><h2>Projection</h2>${horizonSeg()}</div><div class="kpis">${kpisFor(pid)}</div></section>
+    <section><div class="sechead"><div><h2>Map</h2><p>Coloured by rating. Red badges are confirmed issues. Click a step for detail.</p></div></div>
+      ${mapBlock(key, { root: pid, issues: true })}</section>
     ${insightSection(pid, key)}
+    <section><div class="sechead"><div><h2>Issues</h2><p>Confirmed by you, linked to this process or its steps.</p></div><button class="btn" data-act="newissue" data-p="${pid}">+ New issue</button></div>${issueTable(iss)}</section>
+    <section><div class="sechead"><div><h2>Solutions</h2><p>Bundles of steps tested against an issue. They never change the live map.</p></div></div>${solCards(sols)}</section>
+    <section><div class="sechead"><div><h2>Supporting data</h2><p>From the latest run.</p></div></div>
     <div class="grid2">
       <div class="card chartcard"><h3>Wait before each step</h3>${hbars(Object.values(BASE).filter(x => !x.cols && x.w != null && desc(BASE, pid).has(x.id)).sort((a, b) => b.w - a.w).slice(0, 7).map(x => ({ label: x.name, v: x.w })), { max: 50, th: 16, fmt: fmtH, thLabel: "16 h rule", color: v => v >= 40 ? "var(--crit)" : v >= 16 ? "var(--warn)" : "var(--accent)" })}</div>
       <div class="card chartcard"><h3>How busy each role is</h3>${hbars(ROLEU)}</div>
-    </div>
-    <div class="card ai-card stack"><div class="spread"><span class="eyebrow">AI analysis · uses this process's first principles</span><button class="btn sm" data-act="aireview" data-p="${pid}">Run AI review again</button></div><p style="max-width:80ch">${AISUM[pid] || "AI hasn't reviewed this process yet. Write its first principles first so the review can judge it against your goal."}</p></div>
-    <section><div class="sechead"><h2>Issues</h2><p>Only issues you've confirmed. They show as red badges on the map.</p><button class="btn" data-act="newissue" data-p="${pid}">+ New issue</button></div>${issueTable(issuesFor(pid))}</section>
-    <section><div class="sechead"><h2>Solutions</h2><p>Each solution is a bundle of steps tested against an issue. They never change the live map.</p></div>${solCards(solsFor(pid))}</section>`;
+    </div></section>`;
+  },
+  solutions() {
+    return `<header class="head"><div class="t"><span class="eyebrow">Improve</span><h1>Solutions</h1><p class="muted">Every solution tried, grouped by the issue it was built for.</p></div></header>
+    ${ISS.filter(i => SOL.some(s => s.issue === i.id)).map(i => `<section><div class="sechead"><div class="row">${pill(i.rating)}<h2><button class="link" data-go="issue:${i.id}">#${i.id} ${esc(i.title)}</button></h2></div><button class="btn sm edit" data-act="buildsol" data-id="${i.id}">✎ Build another</button></div>${solCards(SOL.filter(s => s.issue === i.id))}</section>`).join("")}`;
   },
   issues() {
-    return `<div class="head"><div class="t"><span class="eyebrow">Work</span><h1>Issues</h1><p class="muted">Confirmed problems, each linked to a process or to specific steps.</p></div><button class="btn primary" data-act="newissue" data-p="company">+ New issue</button></div>
-      ${issueTable(ISS)}
-      <section><div class="sechead"><h2>All solutions</h2></div>${solCards(SOL)}</section>`;
+    const f = S.ratingFilter.issues; const list = ISS.filter(i => !f || i.rating === f).sort((a, b) => RORDER.indexOf(a.rating) - RORDER.indexOf(b.rating));
+    return `<header class="head"><div class="t"><span class="eyebrow">Improve</span><h1>Issues</h1><p class="muted">Problems you've confirmed. Each one is linked to a whole process or to one or more steps.</p></div><button class="btn primary" data-act="newissue" data-p="company">+ New issue</button></header>
+      ${ratingFilters("issues", ISS)}
+      ${issueTable(list)}`;
   },
   issue() {
     const i = ISS.find(x => x.id === +S.p); const ss = SOL.filter(s => s.issue === i.id); const ins = INS.find(x => x.id === i.from);
@@ -789,7 +913,7 @@ const SCREENS = {
       ${mapBlock("is-" + i.id, { root: i.proc, hl: i.nodes, defaultOpen: openGroups, title: "Where this issue sits", legend: false })}
       <div class="card stack"><h3>What's wrong</h3><p>${esc(i.desc)}</p>${ins ? `<div class="note">${esc(ins.why)}</div>` : ""}</div>
       <section><div class="sechead"><h2>Solutions tried</h2><p>Every attempt is kept, with the automatic verdict against the target and your own call.</p></div>
-        ${ss.length ? `<div class="tblwrap"><table><thead><tr><th>Solution</th><th>Type</th><th>Date</th><th>Automatic</th><th>Holds in</th><th>Yours</th><th></th></tr></thead><tbody>${ss.map(s => `<tr><td><b>${esc(s.name)}</b>${s.note ? `<div class="small muted">${esc(s.note)}</div>` : ""}</td><td><span class="src ${s.type === "AI block" ? "ai" : ""}">${esc(s.type)}</span></td><td class="small">${s.date}</td><td>${verdict(s.auto)}</td><td class="n">${s.robust ? s.robust + "%" : "—"}</td><td>${verdict(s.yours)}</td><td><button class="btn sm" data-go="compare:${s.id}">Compare</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="card muted">Nothing tried yet. Build solution opens the Editor with this issue's steps outlined.</div>`}
+        ${ss.length ? `<div class="tblwrap"><table><thead><tr><th>Solution</th><th>Type</th><th>Date</th><th>Automatic</th><th>Holds in</th><th>Yours</th><th></th></tr></thead><tbody>${ss.map(s => `<tr><td><b>${esc(s.name)}</b>${s.note ? `<div class="small muted">${esc(s.note)}</div>` : ""}</td><td><span class="src ${s.type === "AI block" ? "ai" : ""}">${esc(s.type)}</span></td><td class="small nowrap">${s.date}</td><td>${verdict(s.auto)}</td><td class="n">${s.robust ? s.robust + "%" : "—"}</td><td>${verdict(s.yours)}</td><td><button class="btn sm" data-go="compare:${s.id}">Compare</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="card muted">Nothing tried yet. Build solution opens the Editor with this issue's steps outlined.</div>`}
       </section></div>
       <div class="stack">
         <div class="card stack"><span class="eyebrow">Target</span><b>${esc(i.target.label)}</b><div class="row"><span class="small muted">Now</span><span class="num">${esc(i.target.now)}</span><span class="small muted">Goal</span><span class="num">${esc(i.target.goal)}</span></div><span class="small muted">Solutions get an automatic pass or fail against this. You make the final call.</span></div>
@@ -835,7 +959,7 @@ const SCREENS = {
   },
   library() {
     return `<div class="head"><div class="t"><span class="eyebrow">Work</span><h1>Block library</h1><p class="muted">Saved bundles of steps. Drop one into a solution, or into a process in the Editor. AI solutions are blocks too.</p></div><button class="btn edit" data-act="newblock">✎ New block</button></div>
-    <div class="solgrid">${Object.entries(BLK).map(([id, b]) => { const t = { root: { id: "root", name: b.name, cols: b.cols }, ...clone(b.defs) }; for (const k in b.defs) t[k].id = k; linkParents(t); MAPS["blk-" + id] = { root: "root", tree: t }; S.fit["blk-" + id] = true;
+    <div class="solgrid">${Object.entries(BLK).map(([id, b]) => { const t = { root: { id: "root", name: b.name, cols: b.cols }, ...clone(b.defs) }; for (const k in b.defs) t[k].id = k; linkParents(t); MAPS["blk-" + id] = { root: "root", tree: t }; 
       return `<div class="card sol"><div class="spread"><span class="src ${b.type === "AI" ? "ai" : ""}">${b.type}</span><span class="small muted">Used in ${SOL.filter(s => Object.values(s.replace).includes(id)).length} solutions</span></div><h3>${esc(b.name)}</h3><p class="small muted">${esc(b.desc)}</p><div id="ms-blk-${id}" style="overflow-x:auto">${renderMap("blk-" + id)}</div></div>`; }).join("")}</div>`;
   },
   people() {
@@ -919,7 +1043,7 @@ SETTINGS.company = SETTINGS.placeholder; SETTINGS.roles = SETTINGS.placeholder;
 function startEditor(o) {
   const tree = clone(o.tree || BASE);
   S.ed = { mode: o.mode, root: o.root, issue: o.issue || null, tree, sel: null, replaced: o.replaced || {}, sim: null, name: o.name || "", n: 0, back: [S.screen, S.p] };
-  S.open.ed = new Set(o.open || []); S.all.ed = false; S.fit.ed = o.root === "company" ? false : true;
+  S.open.ed = new Set(o.open || []); S.all.ed = false; S.zoom.ed = 1;
   go("editor");
 }
 function editorScreen() {
@@ -940,7 +1064,7 @@ function editorScreen() {
   <div class="edbody">
     <div class="edcol l">
       <div class="stack" style="gap:8px"><span class="eyebrow">Add</span><div class="pal"><button data-act="edadd" data-k="Step">+ Step</button><button data-act="edadd" data-k="Decision">+ Decision</button><button data-act="edadd" data-k="Wait">+ Wait</button><button data-act="edadd" data-k="Group">+ Group</button></div><span class="small muted">Adds after the selected step.</span></div>
-      <div class="stack" style="gap:8px"><span class="eyebrow">Blocks</span>${Object.entries(BLK).map(([id, b]) => `<div class="blk"><div class="row"><b class="small">${esc(b.name)}</b><span class="src ${b.type === "AI" ? "ai" : ""}">${b.type}</span></div><span class="small muted">${leafCount({ r: { cols: b.cols }, ...b.defs }, "r")} steps</span><div class="row"><button class="btn sm" data-act="edreplace" data-b="${id}">Replace selected</button><button class="btn sm" data-act="edinsert" data-b="${id}">Insert</button></div></div>`).join("")}</div>
+      <div class="stack" style="gap:8px"><span class="eyebrow">Blocks</span>${Object.entries(BLK).map(([id, b]) => `<div class="blk"><div class="row"><b class="small">${esc(b.name)}</b><span class="src ${b.type === "AI" ? "ai" : ""}">${b.type}</span></div><span class="small muted">${leafCount({ r: { cols: b.cols }, ...b.defs }, "r")} steps</span><div class="btns"><button class="btn sm" data-act="edreplace" data-b="${id}">Replace selected</button><button class="btn sm" data-act="edinsert" data-b="${id}">Insert</button></div></div>`).join("")}</div>
       ${iss ? `<div class="stack" style="gap:6px"><span class="eyebrow">Issue area</span>${iss.nodes.map(x => `<button class="chip btnchip" data-act="edselect" data-id="${x}">${esc(nodeName(x))}</button>`).join("")}<span class="small muted">Target: ${esc(iss.target.label)} ${esc(iss.target.goal)}</span></div>` : ""}
     </div>
     <div class="edcanvas">${mapBlock("ed", MAPS.ed)}</div>
@@ -1036,14 +1160,21 @@ function sourceModal(pre) {
 }
 
 /* ---------------- Routing and events ---------------- */
-function go(screen, p) { S.screen = screen; S.p = p ?? null; closeModal(); render(); window.scrollTo(0, 0); }
+function go(screen, p) { S.screen = screen; S.p = p ?? null; closeModal(); render(); window.scrollTo(0, 0); if (screen === "editor") scrollToHl("ed"); }
+function refreshWrap(key) {
+  const ok = MAPS[key]?.openKey || key;
+  for (const k of Object.keys(MAPS)) if ((MAPS[k].openKey || k) === ok) { const el = document.getElementById("mw-" + k); if (el) el.outerHTML = mapBlock(k, MAPS[k]); }
+  autoZoom();
+}
 function render() {
   const app = $("#app");
   for (const k of Object.keys(MAPS)) if (k !== "ed") delete MAPS[k];
-  if (S.screen === "editor") { app.innerHTML = editorScreen(); return; }
+  if (S.screen === "editor") { app.innerHTML = editorScreen(); autoZoom(); return; }
   app.innerHTML = `<div class="app">${sidebar()}<main class="main">${SCREENS[S.screen]()}</main></div>`;
+  autoZoom();
+  if (S.screen === "issue") scrollToHl("is-" + S.p);
 }
-function renderEditorKeepScroll() { const c = document.querySelector(".edcanvas"); const sx = c?.scrollLeft, sy = c?.scrollTop; render(); const c2 = document.querySelector(".edcanvas"); if (c2) { c2.scrollLeft = sx || 0; c2.scrollTop = sy || 0; } }
+function renderEditorKeepScroll() { const c = document.getElementById("ms-ed"); const sx = c?.scrollLeft, sy = c?.scrollTop; render(); const c2 = document.getElementById("ms-ed"); if (c2) { c2.scrollLeft = sx || 0; c2.scrollTop = sy || 0; } }
 
 document.addEventListener("click", e => {
   const tg = e.target.closest("[data-toggle]");
@@ -1066,8 +1197,14 @@ const ACTIONS = {
   close() { closeModal(); },
   closebg(d, a, e) { if (e.target === a) closeModal(); },
   horizon(d) { S.h = +d.h; render(); },
-  expandall(d) { const ok = MAPS[d.map]?.openKey || d.map; S.all[ok] = !S.all[ok]; if (!S.all[ok]) S.open[ok] = new Set(); if (d.map === "ed") renderEditorKeepScroll(); else { const btn = document.querySelectorAll(`[data-act=expandall]`); render(); } },
-  fit(d) { const ok = MAPS[d.map]?.openKey || d.map; S.fit[ok] = S.fit[ok] === false; if (d.map === "ed") renderEditorKeepScroll(); else render(); },
+  expandall(d) { const ok = MAPS[d.map]?.openKey || d.map; S.all[ok] = !S.all[ok]; if (!S.all[ok]) S.open[ok] = new Set(); if (d.map === "ed") renderEditorKeepScroll(); else refreshWrap(d.map); },
+  zoom(d) {
+    const ok = MAPS[d.map]?.openKey || d.map, svg = document.querySelector(`#ms-${d.map} svg.map`); if (!svg) return;
+    const W = +svg.dataset.w, cur = S.zoom[ok] || svg.getBoundingClientRect().width / W;
+    if (d.z === "fit") S.zoom[ok] = Math.max(.3, Math.min(1.2, (svg.parentElement.clientWidth - 8) / W));
+    else S.zoom[ok] = Math.max(.3, Math.min(1.8, cur + (d.z === "+" ? .15 : -.15)));
+    refreshMap(d.map);
+  },
   rfilter(d) { S.ratingFilter[d.p] = d.r || null; const y = window.scrollY; render(); window.scrollTo(0, y); },
   insight(d, a, e) { if (e.target.closest("button") && e.target.closest("button") !== a) return; insightModal(d.id); },
   ack(d) { const i = INS.find(x => x.id === d.id); const pid = procOf(i.nodes[0]); ackModal({ fromInsight: i.id, title: i.title, rating: i.rating, scope: "steps", nodes: [...i.nodes], owners: ["austin"], sources: SRC.filter(s => s.links.some(([k, v]) => k === "insight" && v === i.id)).map(s => s.id), target: { label: "", goal: "" }, proc: i.nodes.every(x => desc(BASE, pid).has(x)) ? pid : "company" }); },

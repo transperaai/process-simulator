@@ -14,10 +14,13 @@
 // (`IssueStatus`); `loadIssues` converts on the way out, and `save_issue` and the per-field status save convert on the
 // way in. A later "contract" migration, with Austin's go-ahead, can rewrite the stored values and tighten the check.
 
-import type { IssueStatus } from "./types.ts";
+import type { IssueStatus } from "./types";
 
 export type StoredIssueStatus = "open" | "in_progress" | "done" | "dismissed";
 export type StoredResolution = "wont_fix" | null;
+
+/** The stored statuses an issue still to be dealt with has: Open and Testing solutions. */
+export const ACTIVE_STORED_STATUSES: StoredIssueStatus[] = (["open", "testing"] as const).map((s) => storedStatus(s).status);
 
 /** The status a stored row is shown with. */
 export function uiStatus(status: StoredIssueStatus, resolution: StoredResolution | string | null): IssueStatus {

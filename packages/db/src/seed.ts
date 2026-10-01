@@ -1,4 +1,4 @@
-import { storedStatus } from "./issue-status.ts";
+import { storedStatus } from "@transpera-flow/db/issue-status";
 import type { IssueRow, ProcessBundle, ScenarioRow, SourceRow, WorkspaceAccess } from "./types";
 
 type Value = string | number | boolean | null | object;

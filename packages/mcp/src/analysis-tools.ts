@@ -33,6 +33,9 @@ import { runTool, ToolError } from "./result";
 
 /** The statuses a tool may give or filter an issue by: the four a person sees, and the two old spellings of testing and resolved. */
 const ISSUE_STATUS_INPUT = ["open", "testing", "resolved", "wont_fix", "in_progress", "done"] as const;
+/** An issue is about a process when its first link (`process_id`) or any other link is. */
+const touches = (i: { process_id: string | null; links: readonly { process_id: string | null }[] }, processId: string | undefined) =>
+  !!processId && (i.process_id === processId || i.links.some((l) => l.process_id === processId));
 const normaliseStatus = (s: (typeof ISSUE_STATUS_INPUT)[number] | undefined): "open" | "testing" | "resolved" | "wont_fix" =>
   s === "in_progress" ? "testing" : s === "done" ? "resolved" : (s ?? "open");
 
@@ -480,11 +483,11 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
           (i) =>
             (!wanted || i.status === wanted) &&
             (!args.type || i.type === args.type) &&
-            (!args.process || i.process_id === proc?.id) &&
+            (!args.process || touches(i, proc?.id)) &&
             (!client || i.client_id === client.id),
         );
         const stepNames = new Map<string, string>();
-        for (const p of processes.filter((p) => filtered.some((i) => i.process_id === p.id))) {
+        for (const p of processes.filter((p) => filtered.some((i) => touches(i, p.id)))) {
           for (const s of await processSteps(ctx, p)) stepNames.set(s.id, s.name);
         }
         const nameIn = (list: { id: string; name: string }[] | null) => (id: string | null) => {

@@ -684,3 +684,50 @@ describe("the status mapping", () => {
     expect(out).not.toHaveProperty("resolution");
   });
 });
+
+describe("small guards", () => {
+  it("a dismissal that doesn't say which version defaults to its process's live revision (what the deployed app writes)", async () => {
+    const live = (await db.client.query("select live_revision_id from processes where id = $1", [NORTHBEAM_PROCESS_ID])).rows[0].live_revision_id;
+    expect(live).not.toBeNull();
+    const ins = async (extra: string, val: unknown, k: string) =>
+      (await db.client.query(`insert into issues (workspace_id, type, title, source, detected_key, status, ${extra}) values ($1, 'delay', 'Old app dismissal', 'promoted', $2, 'dismissed', $3) returning id, dismissed_revision_id`, [ws, k, val])).rows[0];
+    expect((await ins("process_id", NORTHBEAM_PROCESS_ID, "wait:step:guard-1")).dismissed_revision_id).toBe(live);
+    // Through its step when the process isn't named.
+    expect((await ins("step_id", audit, "wait:step:guard-2")).dismissed_revision_id).toBe(live);
+    // A revision that is given is kept.
+    const other = (await db.client.query("select id from process_revisions where process_id = $1 and id <> $2 limit 1", [NORTHBEAM_PROCESS_ID, live])).rows[0]?.id ?? null;
+    if (other) {
+      const kept = await db.client.query("insert into issues (workspace_id, type, title, source, detected_key, status, process_id, dismissed_revision_id) values ($1, 'delay', 'x', 'promoted', 'wait:step:guard-3', 'dismissed', $2, $3) returning dismissed_revision_id", [ws, NORTHBEAM_PROCESS_ID, other]);
+      expect(kept.rows[0].dismissed_revision_id).toBe(other);
+    }
+    // A process that was never published has none: null means "before any version".
+    const fresh = (await db.client.query("insert into processes (workspace_id, name) values ($1, 'Never published') returning id", [ws])).rows[0].id;
+    expect((await ins("process_id", fresh, "wait:step:guard-4")).dismissed_revision_id).toBeNull();
+    // Updating a row that is already dismissed doesn't move its anchor.
+    await db.client.query("update issues set title = 'renamed' where detected_key = 'wait:step:guard-4'");
+    expect((await db.client.query("select dismissed_revision_id from issues where detected_key = 'wait:step:guard-4'")).rows[0].dismissed_revision_id).toBeNull();
+  });
+
+  it("the same link, owner or source given twice is one, not an error that reads as already tracked", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      const l = { process_id: NORTHBEAM_PROCESS_ID, step_id: audit };
+      const r = await save(c, ws, null, { title: "Twice" }, [l, l, { process_id: null, step_id: audit }], [rosa, rosa], [northbeamSourceIds.salesNotes, northbeamSourceIds.salesNotes]);
+      for (const t of ["issue_links", "issue_owners", "issue_sources"]) {
+        expect((await c.query(`select count(*)::int as n from ${t} where issue_id = $1`, [r.id])).rows[0].n, t).toBe(1);
+      }
+      await save(c, ws, r.id, {}, [l, l], [priya, priya], []);
+      expect((await c.query("select count(*)::int as n from issue_links where issue_id = $1", [r.id])).rows[0].n).toBe(1);
+    });
+  });
+
+  it("an acknowledged issue can't be dismissed again; an insight still dismissed can", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      const key = `wait:step:${audit}`;
+      const acknowledged = await save(c, ws, null, { title: "Acknowledged", type: "delay", source: "promoted", detected_key: key, status: "open" });
+      expect(acknowledged.number).not.toBeNull();
+      await fails(c, () => save(c, ws, acknowledged.id, { status: "dismissed" }), /acknowledged issue cannot be dismissed/);
+      const insight = await save(c, ws, null, { title: "Insight", type: "delay", source: "promoted", detected_key: `${key}-2`, status: "dismissed" });
+      expect((await save(c, ws, insight.id, { status: "dismissed" })).status).toBe("dismissed");
+    });
+  });
+});

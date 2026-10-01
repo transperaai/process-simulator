@@ -19,6 +19,25 @@
 -- Verify after applying: row-level security is on for the four new tables (select relname, relrowsecurity from pg_class where relname like 'issue_%'),
 -- every issue has a number (select count(*) from public.issues where number is null and status <> 'dismissed': expect 0), `select status, count(*) from public.issues group by 1`
 -- shows only open, in_progress, done, dismissed (unchanged) and `select resolution, count(*) from public.issues group by 1` only nulls, each issue has a 'created' row in issue_events, and the schema_migrations row exists.
+--
+-- Post-deploy reconciliation (run after the new app is deployed; the old app can edit issues between applying this and
+-- the deploy, and it only writes the compatibility columns). Lists issues whose process_id, step_id or owner_person_id
+-- is not among their links or owners. Expect no rows; for any it lists, add the missing link or owner:
+--
+--   select i.id, i.number, i.process_id, i.step_id, i.owner_person_id
+--   from public.issues i
+--   where (i.step_id is not null and not exists (select 1 from public.issue_links l where l.issue_id = i.id and l.step_id = i.step_id))
+--      or (i.step_id is null and i.process_id is not null and not exists (select 1 from public.issue_links l where l.issue_id = i.id and l.process_id = i.process_id and l.step_id is null))
+--      or (i.owner_person_id is not null and not exists (select 1 from public.issue_owners o where o.issue_id = i.id and o.person_id = i.owner_person_id));
+--
+--   -- and the fix, idempotent (the history log notes each as an edit):
+--   insert into public.issue_links (issue_id, workspace_id, process_id, step_id)
+--     select i.id, i.workspace_id, coalesce(i.process_id, (select s.process_id from public.steps s where s.id = i.step_id and s.workspace_id = i.workspace_id limit 1)), i.step_id
+--     from public.issues i where (i.step_id is not null or i.process_id is not null)
+--       and not exists (select 1 from public.issue_links l where l.issue_id = i.id and l.step_id is not distinct from i.step_id)
+--     on conflict do nothing;
+--   insert into public.issue_owners (issue_id, person_id, workspace_id)
+--     select id, owner_person_id, workspace_id from public.issues where owner_person_id is not null on conflict do nothing;
 
 begin;
 set local lock_timeout = '5s';
@@ -186,6 +205,13 @@ begin
   end if;
   if new.status <> 'dismissed' then
     new.dismissed_revision_id := null;
+  elsif new.dismissed_revision_id is null and (tg_op = 'INSERT' or old.status <> 'dismissed') then
+    -- Dismissed without saying against which version (the deployed app before this change, or a plain insert): it is
+    -- dismissed against the live revision of its process (its process, else its step's), where there is one. A process
+    -- that has never been published has none: null then means "before any version".
+    select p.live_revision_id into new.dismissed_revision_id from public.processes p
+      where p.workspace_id = new.workspace_id
+        and p.id = coalesce(new.process_id, (select s.process_id from public.steps s where s.id = new.step_id and s.workspace_id = new.workspace_id limit 1));
   end if;
   return new;
 end;
@@ -617,6 +643,11 @@ begin
       if not coalesce(key_known, false) then
         raise exception 'save_issue: only an insight can be dismissed' using errcode = '22023';
       end if;
+      -- An issue someone acknowledged (it has a number) is not dismissed again: only an insight still dismissed, or one
+      -- that never became an issue, can be.
+      if p_id is not null and not exists (select 1 from public.issues where id = p_id and (status = 'dismissed' or number is null)) then
+        raise exception 'save_issue: an acknowledged issue cannot be dismissed' using errcode = '22023';
+      end if;
     end if;
     p_fields := p_fields || case st
       when 'testing' then '{"status": "in_progress", "resolution": null}'::jsonb
@@ -646,7 +677,10 @@ begin
           raise exception 'save_issue: step % is not a step of that process in this workspace', lk.step_id using errcode = '22023';
         end if;
       end if;
-      v_links := v_links || jsonb_build_array(jsonb_build_object('process_id', step_process, 'step_id', lk.step_id));
+      -- The same link given twice is one link.
+      if not v_links @> jsonb_build_array(jsonb_build_object('process_id', step_process, 'step_id', lk.step_id)) then
+        v_links := v_links || jsonb_build_array(jsonb_build_object('process_id', step_process, 'step_id', lk.step_id));
+      end if;
     end loop;
   end if;
 
@@ -682,14 +716,14 @@ begin
   if p_owners is not null then
     delete from public.issue_owners o where o.issue_id = v_issue and not (o.person_id = any (p_owners));
     insert into public.issue_owners (issue_id, person_id, workspace_id)
-      select v_issue, p, p_workspace from unnest(p_owners) as p on conflict do nothing;
+      select v_issue, p, p_workspace from (select distinct unnest(p_owners) as p) u on conflict do nothing;
     update public.issues set owner_person_id = p_owners[1] where id = v_issue;
   end if;
 
   if p_sources is not null then
     delete from public.issue_sources s where s.issue_id = v_issue and not (s.source_id = any (p_sources));
     insert into public.issue_sources (issue_id, source_id, workspace_id)
-      select v_issue, p, p_workspace from unnest(p_sources) as p on conflict do nothing;
+      select v_issue, p, p_workspace from (select distinct unnest(p_sources) as p) u on conflict do nothing;
   end if;
 
   select to_jsonb(i) into result from public.issues i where i.id = v_issue;
@@ -863,6 +897,13 @@ begin
   end if;
   if new.status <> 'dismissed' then
     new.dismissed_revision_id := null;
+  elsif new.dismissed_revision_id is null and (tg_op = 'INSERT' or old.status <> 'dismissed') then
+    -- Dismissed without saying against which version (the deployed app before this change, or a plain insert): it is
+    -- dismissed against the live revision of its process (its process, else its step's), where there is one. A process
+    -- that has never been published has none: null then means "before any version".
+    select p.live_revision_id into new.dismissed_revision_id from public.processes p
+      where p.workspace_id = new.workspace_id
+        and p.id = coalesce(new.process_id, (select s.process_id from public.steps s where s.id = new.step_id and s.workspace_id = new.workspace_id limit 1));
   end if;
   return new;
 end;
@@ -1294,6 +1335,11 @@ begin
       if not coalesce(key_known, false) then
         raise exception 'save_issue: only an insight can be dismissed' using errcode = '22023';
       end if;
+      -- An issue someone acknowledged (it has a number) is not dismissed again: only an insight still dismissed, or one
+      -- that never became an issue, can be.
+      if p_id is not null and not exists (select 1 from public.issues where id = p_id and (status = 'dismissed' or number is null)) then
+        raise exception 'save_issue: an acknowledged issue cannot be dismissed' using errcode = '22023';
+      end if;
     end if;
     p_fields := p_fields || case st
       when 'testing' then '{"status": "in_progress", "resolution": null}'::jsonb
@@ -1323,7 +1369,10 @@ begin
           raise exception 'save_issue: step % is not a step of that process in this workspace', lk.step_id using errcode = '22023';
         end if;
       end if;
-      v_links := v_links || jsonb_build_array(jsonb_build_object('process_id', step_process, 'step_id', lk.step_id));
+      -- The same link given twice is one link.
+      if not v_links @> jsonb_build_array(jsonb_build_object('process_id', step_process, 'step_id', lk.step_id)) then
+        v_links := v_links || jsonb_build_array(jsonb_build_object('process_id', step_process, 'step_id', lk.step_id));
+      end if;
     end loop;
   end if;
 
@@ -1359,14 +1408,14 @@ begin
   if p_owners is not null then
     delete from public.issue_owners o where o.issue_id = v_issue and not (o.person_id = any (p_owners));
     insert into public.issue_owners (issue_id, person_id, workspace_id)
-      select v_issue, p, p_workspace from unnest(p_owners) as p on conflict do nothing;
+      select v_issue, p, p_workspace from (select distinct unnest(p_owners) as p) u on conflict do nothing;
     update public.issues set owner_person_id = p_owners[1] where id = v_issue;
   end if;
 
   if p_sources is not null then
     delete from public.issue_sources s where s.issue_id = v_issue and not (s.source_id = any (p_sources));
     insert into public.issue_sources (issue_id, source_id, workspace_id)
-      select v_issue, p, p_workspace from unnest(p_sources) as p on conflict do nothing;
+      select v_issue, p, p_workspace from (select distinct unnest(p_sources) as p) u on conflict do nothing;
   end if;
 
   select to_jsonb(i) into result from public.issues i where i.id = v_issue;

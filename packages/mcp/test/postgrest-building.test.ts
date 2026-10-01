@@ -854,4 +854,41 @@ describe.skipIf(!POSTGREST_URL)("MCP process building over PostgREST (drafts onl
     expect(by("Sales")).toMatchObject({ kind: "group" });
     await editor.close();
   });
+
+  it("changes a group's first step, and moves the old first step out of the group listed before it, without partial writes or false conflicts", async () => {
+    const editor = await connect(editorToken, options);
+    const made = await call<Outcome>(editor, "import_process", {
+      process_json: {
+        name: "Entry changes",
+        steps: [
+          { name: "Start", kind: "start" },
+          { name: "Box", steps: [{ name: "A", work_hours: 1, role: "Consultant" }, { name: "B", work_hours: 1, role: "Consultant" }, { name: "C", work_hours: 1, role: "Consultant" }] },
+          { name: "End", kind: "end", outcome: "won" },
+        ],
+        edges: [{ from: "Start", to: "Box" }, { from: "Box", to: "End" }],
+      },
+    });
+    expect(made.ok, JSON.stringify(made)).toBe(true);
+    const proc = await processRow("Entry changes");
+    const rowsOf = async () => (await stepsOf(proc.draft_revision_id!)) as unknown as { id: string; name: string; parent_step_id: string | null; entry_step_id: string | null }[];
+    const by = async (n: string) => (await rowsOf()).find((r) => r.name === n)!;
+    expect((await by("Box")).entry_step_id).toBe((await by("A")).id);
+
+    // (a) Another step becomes the first step: no conflict, and the group ends with it.
+    const changed = await call<Outcome & { edit_conflicts: unknown[] }>(editor, "import_process", { target: "Entry changes", process_json: { steps: [{ name: "Box", entry: "B" }] } });
+    expect(changed.ok, JSON.stringify(changed)).toBe(true);
+    expect(changed.data.edit_conflicts).toEqual([]);
+    expect((await by("Box")).entry_step_id).toBe((await by("B")).id);
+
+    // (b) The first step moves out, listed before its group, and the group gets a new one in the same call.
+    const moved = await call<Outcome & { edit_conflicts: unknown[] }>(editor, "import_process", {
+      target: "Entry changes",
+      process_json: { steps: [{ name: "B", parent: null }, { name: "Box", entry: "C" }] },
+    });
+    expect(moved.ok, JSON.stringify(moved)).toBe(true);
+    expect(moved.data.edit_conflicts).toEqual([]);
+    expect((await by("B")).parent_step_id).toBeNull();
+    expect((await by("Box")).entry_step_id).toBe((await by("C")).id);
+    await editor.close();
+  });
 });

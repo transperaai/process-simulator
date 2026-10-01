@@ -471,18 +471,17 @@ async function applyPlan(
   // Moves into and out of groups first, then first steps, which need their group's steps to be in place.
   const entries = [
     ...plan.insertSteps.filter((s) => s.entry_step_id).map((s) => ({ id: s.id, base: { entry_step_id: null } as Record<string, unknown>, changes: { entry_step_id: s.entry_step_id } as Record<string, unknown> })),
-    ...plan.updateSteps.filter((u) => typeof u.changes.entry_step_id === "string").map((u) => ({ id: u.id, base: { entry_step_id: u.base.entry_step_id ?? null }, changes: { entry_step_id: u.changes.entry_step_id } })),
+    ...plan.updateSteps.filter((u) => typeof u.changes.entry_step_id === "string").map((u) => ({ id: u.id, base: { entry_step_id: u.base.entry_step_id ?? null }, changes: { entry_step_id: u.changes.entry_step_id } })).map((e) => ({ ...e, base: { entry_step_id: null } })),
   ];
   // Each request is checked on its own when it commits, so the order matters: steps leave their groups first, then kinds and
   // other fields change (a group becoming a task is empty by then; a task becoming a group is one before steps move in), then
   // steps enter groups.
   const pick = (o: Record<string, unknown>, keys: string[]) => Object.fromEntries(Object.entries(o).filter(([k]) => keys.includes(k)));
   const phases: ((u: (typeof plan.updateSteps)[number]) => { base: Record<string, unknown>; changes: Record<string, unknown> } | null)[] = [
-    (u) => {
-      // A group's first step is cleared before anything moves, and set again once the steps are in place.
-      const out = Object.fromEntries(Object.entries(u.changes).filter(([k, v]) => (k === "parent_step_id" && v === null) || k === "entry_step_id").map(([k, v]) => [k, k === "entry_step_id" ? null : v]));
-      return Object.keys(out).length ? { base: pick(u.base, Object.keys(out)), changes: out } : null;
-    },
+    // Every group's first step is cleared before any step moves (whatever order the JSON lists them in), and set again at the
+    // end, once the steps are in place: a step can't leave a group that still names it.
+    (u) => ("entry_step_id" in u.changes ? { base: pick(u.base, ["entry_step_id"]), changes: { entry_step_id: null } } : null),
+    (u) => (u.changes.parent_step_id === null ? { base: pick(u.base, ["parent_step_id"]), changes: { parent_step_id: null } } : null),
     (u) => {
       const changes = Object.fromEntries(Object.entries(u.changes).filter(([k]) => k !== "entry_step_id" && k !== "parent_step_id"));
       return Object.keys(changes).length ? { base: Object.fromEntries(Object.entries(u.base).filter(([k]) => k in changes)), changes } : null;

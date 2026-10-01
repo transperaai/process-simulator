@@ -82,6 +82,8 @@ export function splitStep(bundle: ProcessBundle, id: string, newId: () => string
     rework_rate: 0,
     rework_to_step_id: null,
     sla_hours: null,
+    // Where work is lost is after the first half, on the second.
+    dropoff_benchmark: null,
   };
   const second: StepRow = {
     ...copy(),

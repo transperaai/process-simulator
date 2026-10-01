@@ -16,6 +16,7 @@
 // prices are in.
 
 import type { EngineClient, EngineModel, EngineService, EngineStep } from "./model";
+import { flattenModel } from "./flatten";
 import { routeFor } from "./simulate";
 import { servicingStepIds } from "./servicing";
 import { shadowPrice, type ShadowPriceOptions } from "./shadow-price";
@@ -133,7 +134,9 @@ export function averageDealValue(model: EngineModel, capMonths: number): number 
  * end, or one that never ends, counts 0). Rework repeats a step but doesn't
  * change where the item ends up, so it doesn't count.
  */
-export function chanceToSignByStep(model: EngineModel, tags: readonly string[]): Record<string, number> {
+export function chanceToSignByStep(nested: EngineModel, tags: readonly string[]): Record<string, number> {
+  // Groups are drawn away first: a nested model gives the chance of the same model drawn flat (flatten.ts).
+  const model = flattenModel(nested);
   const chance: Record<string, number> = {};
   for (const s of model.steps) chance[s.id] = 0;
   const routes = new Map(model.steps.map((s) => [s.id, routeFor(s.next, [...tags])]));

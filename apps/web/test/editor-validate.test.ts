@@ -50,6 +50,13 @@ describe("parseFieldUpdate", () => {
       ["current_wip", 2.5],
       ["current_wip", -1],
       ["sla_hours", -2],
+      // The analysis rules' step settings.
+      ["expected_wait_hours", -1],
+      ["lost_per_day_waiting", 1.5],
+      ["lost_per_day_waiting", -0.1],
+      ["dropoff_benchmark", 2],
+      ["target_cycle_hours", 0],
+      ["target_cycle_hours", -5],
       ["x", Infinity],
     ];
     for (const [field, value] of bad) {
@@ -57,6 +64,13 @@ describe("parseFieldUpdate", () => {
     }
     expect(parseFieldUpdate("edges", { probability: 1 }, { probability: 1.2 })).toBeNull();
     expect(parseFieldUpdate("edges", { from_step_id: northbeamStepIds.audit }, { from_step_id: "x" })).toBeNull();
+  });
+
+  it("accepts the analysis rules' step settings, and blank for each", () => {
+    for (const [field, value] of [["expected_wait_hours", 4], ["lost_per_day_waiting", 0.05], ["dropoff_benchmark", 0.3], ["target_cycle_hours", 120]] as const) {
+      expect(parseFieldUpdate("steps", { [field]: null }, { [field]: value }), field).not.toBeNull();
+      expect(parseFieldUpdate("steps", { [field]: value }, { [field]: null }), `${field} blank`).not.toBeNull();
+    }
   });
 
   it("keeps end steps, and only end steps, with an outcome when both change", () => {

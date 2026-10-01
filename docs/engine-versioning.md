@@ -20,7 +20,17 @@ touchpoints, the bottleneck role, step and person, utilisation per role (total w
 pipeline, client, servicing and overtime shares) and per person, each step's arrivals, departures, queue, wait,
 WIP and SLA breaches, each roster client's final health, churn and at-risk shares, and the rating of every detected
 issue with how it was reached (the average's band, a bad month, the bottleneck), so a moved cut-off or escalator shows
-as a baseline change.
+as a baseline change. They also lock the absence test (`absenceTest` at its defaults: who is tested, work lost, weeks
+to recover, missed client tasks) and each step's visits sent straight to a lost end.
+
+### The absence test and the performance targets
+
+The absence test (docs/analysis-rules.md rule 8) is a separate pass, not part of `simulate`, so the baseline stays
+inside docs/PRD.md §6.7. It costs (people tested + 1) × 10 replications: about 60% of a baseline run for the seeded
+Northbeam (two people tested: ~160 ms beside a ~270 ms baseline on a loaded machine) and 90% for Larkspur (four).
+It is limited to people who are the sole holder of a step, at most 8, and runs in its own worker after the baseline
+(`apps/web/src/lib/sim/absence.ts`), so the insight panel shows the other rules first and adds "only one person can do
+it" when the pass returns. `new-rules.test.ts` checks the pass alone stays under the seeded target (250 ms).
 
 The baselines are `packages/engine/golden/<model>.json`, one metric per line so a diff reads as a list of what
 moved. `golden/versions.json` is the ledger: every approved version, the date, why the numbers moved, and a sha256
@@ -78,6 +88,24 @@ way.
    approved, which bumps the version.
 4. Ledger versions only increase, and each has a reason.
 
+## Market conditions (engine 1.2.0)
+
+`EngineModel.market` holds a schedule of seven factors per month (`packages/engine/src/market.ts`, decision D29). A
+model with no market, or with every factor 1 in every month, runs exactly as before: `activeMarket` returns null and
+every code path is the old one, so no golden number moved and 1.2.0 was approved with `golden:approve --bump`.
+Enquiries change the arrival rate month by month (`demand.ts`). Enquiries that sign scale, once per path, the
+probability of the edges to the sale at the step that decides it: the step whose edges all lead only to a win or
+only to a loss (Northbeam's and Larkspur's `decision`); earlier steps, whose edges can still end either way, are
+left alone. Time to decide scales external waits at steps before the sale (steps that can still reach a lost end),
+not onboarding, delivery or servicing. Prices scale the fee of each client won (new MRR, billed, LTV added). Clients
+leaving scale churn. Known limits, for the churn driver (A56): `lostRevenue` is valued at today's price, LTV uses
+today's tenure, a roster client's reported `churnMonthly` is its base rate, and the pooled billing estimate uses the
+churn factor of the month a client is won in. `withMarketCondition` replaces any schedule on the model. The
+`northbeam-downturn` golden model runs Northbeam as seeded under Downturn, so a change to this maths shows up in the
+golden test. Time to hire and late payments are stored but change
+nothing, as the engine has no hiring or cash-flow model yet. To run a model under one condition (the stress test
+on solution pages): `simulate(withMarketCondition(model, MARKET_PRESETS.downturn.factors), reps, seed)`.
+
 ## Where the version goes
 
 - `SimulationResult.engineVersion` on every run, in the browser worker and on the server.
@@ -130,3 +158,11 @@ rest.
   `larkspurModel()`; `database.test.ts` checks the seeded database round-trips to the same model.
 - App: `/demo/larkspur`, read-only from the fixtures, on any deployment.
 - Production: not loaded. It is a test and demo agency; add it by hand only if wanted.
+
+## Nested models (issue #102)
+
+A step can hold its own steps: a group, or a child process. The engine flattens a nested model to leaf steps before every run
+(`flattenModel` in `packages/engine/src/flatten.ts`, called by `simulate`, `runOnce` and `initialState`; a model with no groups comes back
+as the same object). A nested model therefore gives exactly the numbers of the same model drawn flat, which `test/nesting.test.ts` and
+`packages/db/test/nested-model.test.ts` check, and the golden models (all flat) did not move: introducing groups needed no `ENGINE_VERSION` bump.
+Draw a group open or closed, or move a step into one, and no number changes; adding or removing steps still does, as before.

@@ -20,7 +20,7 @@ begin;
 --        select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
 --        where n.nspname='public' and p.proname='create_workspace' and pg_get_functiondef(p.oid) like '%"currency":"GBP"%';
 --   2. This migration is not applied yet. Expect 0 rows:
---        select version from supabase_migrations.schema_migrations where version >= '20261109000000';
+--        select version from supabase_migrations.schema_migrations where version >= '20261113000000';
 --
 -- Rollback (run as one transaction):
 --
@@ -81,7 +81,7 @@ begin;
 --     return ws;
 --   end;
 --   $$;
---   delete from supabase_migrations.schema_migrations where version = '20261109000000';
+--   delete from supabase_migrations.schema_migrations where version = '20261113000000';
 --   commit;
 --
 -- Production data: none needed. Workspaces already created keep their currency.
@@ -151,7 +151,7 @@ $$;
 revoke all on function public.create_workspace(text, text, jsonb) from public, anon;
 grant execute on function public.create_workspace(text, text, jsonb) to authenticated;
 
-insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261109000000', 'cost_per_month', array[$mig$-- Cost per month (docs/analysis-rules.md "Cost per month"; issue #108).
+insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261113000000', 'cost_per_month', array[$mig$-- Cost per month (docs/analysis-rules.md "Cost per month"; issue #108).
 --
 -- New workspaces default to AUD. `public.create_workspace` is redefined as a
 -- copy of the 20261021000000 version whose default settings carry
@@ -171,7 +171,7 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --        select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
 --        where n.nspname='public' and p.proname='create_workspace' and pg_get_functiondef(p.oid) like '%"currency":"GBP"%';
 --   2. This migration is not applied yet. Expect 0 rows:
---        select version from supabase_migrations.schema_migrations where version >= '20261109000000';
+--        select version from supabase_migrations.schema_migrations where version >= '20261113000000';
 --
 -- Rollback (run as one transaction):
 --
@@ -232,7 +232,7 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --     return ws;
 --   end;
 --   $$;
---   delete from supabase_migrations.schema_migrations where version = '20261109000000';
+--   delete from supabase_migrations.schema_migrations where version = '20261113000000';
 --   commit;
 --
 -- Production data: none needed. Workspaces already created keep their currency.

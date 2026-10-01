@@ -10,7 +10,7 @@ import {
   toEngineModel,
   type IssueRow,
 } from "@transpera-flow/db";
-import { detectIssues, simulate, storedOfRating, type DetectedIssue } from "@transpera-flow/engine";
+import { absenceTest, detectIssues, simulate, storedOfRating, type DetectedIssue } from "@transpera-flow/engine";
 import {
   NO_FILTERS,
   entryView,
@@ -64,7 +64,7 @@ const scenarios = northbeamScenarios();
 function northbeamDetections(): DetectedIssue[] {
   const b = northbeamBundle();
   const model = toEngineModel({ ...b, clients: [], clientServices: [], clientAssignments: [] }, START);
-  return detectIssues(model, simulate(model, 30, 1)).filter((d) => d.key.startsWith("spof:"));
+  return detectIssues(model, simulate(model, 30, 1), {}, { absence: absenceTest(model) }).filter((d) => d.key.startsWith("spof:"));
 }
 
 const manual: IssueInput = {
@@ -87,10 +87,12 @@ describe("the register merges tracked issues with this run's detections", () => 
 
   it("shows a promoted detection once, as tracked, and keeps the rest as detected", () => {
     expect(detected.map((d) => d.key)).toEqual([`spof:step:${audit}`, `spof:step:${kickoff}`]);
+    // The absence test rates the person, so both of Maya's steps are Operational risk, and the detection sorts above the tracked issues.
     expect(entries.map((e) => [e.kind, entryView(e).title])).toEqual([
-      ["tracked", "Every proposal is built by hand"],
-      ["tracked", "Only Maya Collins can do Audit & proposal"],
       ["detected", "Only Maya Collins can do Kickoff & strategy"],
+      // The same rating, so the one with a cost (the absence test's damage) comes before the one with none.
+      ["tracked", "Only Maya Collins can do Audit & proposal"],
+      ["tracked", "Every proposal is built by hand"],
       ["tracked", "Lead scoring could skip unqualified discovery calls"],
     ]);
     const promoted = entries[1]!;
@@ -119,8 +121,8 @@ describe("the register merges tracked issues with this run's detections", () => 
     expect(titles({ process: NORTHBEAM_PROCESS_ID })).toHaveLength(4);
     // About Maya, or owned by her: both spof issues name her.
     expect(titles({ person: northbeamPersonIds["Maya Collins"]! })).toEqual([
-      "Only Maya Collins can do Audit & proposal",
       "Only Maya Collins can do Kickoff & strategy",
+      "Only Maya Collins can do Audit & proposal",
     ]);
     // Rosa owns the two audit issues.
     expect(titles({ person: northbeamPersonIds["Rosa Diaz"]! })).toHaveLength(2);
@@ -141,7 +143,7 @@ describe("the register merges tracked issues with this run's detections", () => 
 });
 
 describe("cost per month (issue #108)", () => {
-  const cheap: DetectedIssue = { ...northbeamDetections()[0]!, key: "wait:step:cheap", cost: { perMonth: 800, hoursPerMonth: null, method: "x" } };
+  const cheap: DetectedIssue = { ...northbeamDetections()[0]!, rating: "bad", key: "wait:step:cheap", cost: { perMonth: 800, hoursPerMonth: null, method: "x" } };
   const dear: DetectedIssue = { ...cheap, key: "wait:step:dear", cost: { perMonth: 9000, hoursPerMonth: null, method: "y" } };
   const timeOnly: DetectedIssue = { ...cheap, key: "wait:step:time", cost: { perMonth: null, hoursPerMonth: 12, method: "z" } };
   const none: DetectedIssue = { ...cheap, key: "wait:step:none", cost: { perMonth: null, hoursPerMonth: null, method: "n" } };

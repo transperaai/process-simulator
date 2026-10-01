@@ -7,6 +7,7 @@ import {
   parseAnalysisSettings,
   toRatingConfig,
   detectIssues,
+  type AbsenceTest,
   type AnalysisMoney,
   type AnalysisOverride,
   type AnalysisRuleId,
@@ -63,7 +64,7 @@ export const setMoney = (s: AnalysisSettings, patch: Partial<Omit<AnalysisMoney,
   clean({ ...s, money: { ...s.money, ...patch, waitHours: patch.waitHours ? { ...s.money?.waitHours, ...patch.waitHours } : s.money?.waitHours } });
 
 /** The rule an issue's detector belongs to; null for findings that aren't from a rule on the rating model. */
-const RATED = new Set<string>(["busy", "overtime", "queue", "wait", "rework", "sla"]);
+const RATED = new Set<string>(["busy", "overtime", "queue", "wait", "rework", "sla", "spare", "spof", "dropoff", "cycle", "success"]);
 export const ruleOfIssue = (i: Pick<DetectedIssue, "key">): RatingRuleId | null => {
   const rule = ruleOfFinding(i);
   return rule && RATED.has(rule) ? (rule as RatingRuleId) : null;
@@ -86,11 +87,14 @@ export function rerate(
   result: SimulationResult,
   settings: AnalysisSettings,
   processId?: string | null,
+  /** The absence test's result for this model (its own pass, see `useAbsenceTest`); without it "only one person can do it" raises nothing. */
+  absence?: AbsenceTest | null,
   /** The workspace currency for the cost descriptions, and the shadow prices the too-busy cost needs (issue #108). */
   costs: { currency?: string; shadowPrices?: Record<string, number> } = {},
 ): DetectedIssue[] {
   return detectIssues(model, result, toRatingConfig(settings, model.hoursPerWeek), {
     processId,
+    absence,
     // The money settings (12-month cap, absences a year) are the workspace's.
     cost: { ...resolveMoney(settings), ...(costs.currency ? { currency: costs.currency } : {}) },
     ...(costs.shadowPrices ? { shadowPrices: costs.shadowPrices } : {}),

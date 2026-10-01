@@ -84,7 +84,7 @@ export function NodeMenu({
 
   if (!step) return null;
   const many = menu.ids.length > 1;
-  const working = step.kind !== "start" && step.kind !== "end";
+  const working = step.kind !== "start" && step.kind !== "end" && step.kind !== "group" && !step.child_process_id;
   const run = (fn: () => void, refocus = true) => () => {
     fn();
     onClose(refocus);
@@ -203,7 +203,7 @@ export function NodeMenu({
       </>
     );
   } else if (view === "kind") {
-    const kinds: StepKind[] = [...STEP_KINDS, ...(step.kind === "subprocess" ? (["subprocess"] as const) : [])];
+    const kinds: StepKind[] = [...STEP_KINDS, ...(step.kind === "subprocess" || step.kind === "group" ? [step.kind] : [])];
     const outgoing = bundle.edges.filter((e) => e.from_step_id === step.id).length;
     const incoming = bundle.edges.filter((e) => e.to_step_id === step.id).length;
     body = (

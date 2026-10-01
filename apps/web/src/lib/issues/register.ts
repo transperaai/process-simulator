@@ -7,6 +7,8 @@ import type { IssueRow, IssueSource, IssueStatus, ScenarioRow } from "@transpera
 import {
   RATINGS,
   compareCostsDesc,
+  RATING_LABELS,
+  ratingRank,
   compareRatingsDesc,
   noCost,
   ratingOfStored,
@@ -224,6 +226,18 @@ export interface StepBadge {
   /** The worst rating among them. */
   rating: Rating;
   titles: string[];
+}
+
+/**
+ * A step's rating on the map, from its open issues: the worst of them, as a rank
+ * (higher is worse) with its label, or null for a step with none. A closed group
+ * takes the worst of the steps inside it (issue #102).
+ */
+export function stepRatingOf(badges: Record<string, StepBadge>): (stepId: string) => { rank: number; label: string } | null {
+  return (stepId) => {
+    const b = badges[stepId];
+    return b ? { rank: ratingRank(b.rating), label: RATING_LABELS[b.rating] } : null;
+  };
 }
 
 /** Open issues per step, for the badges on the map. */

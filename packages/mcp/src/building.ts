@@ -24,6 +24,8 @@ import {
   EVIDENCE_COLUMNS,
   EVIDENCE_LABELS,
   formatParameter,
+  groupHasExit,
+  groupsLetOut,
   isOpenAssumption,
   isRetiredStep,
   openConflict,
@@ -42,9 +44,12 @@ import {
 } from "@transpera-flow/db";
 import { ToolError } from "./result";
 
-/** Step kinds the tools create (the editor's palette; sub-processes come later). */
+/** Step kinds the step tools create (the editor's palette). */
 export const BUILD_STEP_KINDS = ["task", "wait", "decision", "start", "end"] as const satisfies readonly StepKind[];
-export type BuildStepKind = (typeof BUILD_STEP_KINDS)[number];
+/** Steps that hold others (issue #102): a group of steps, or a step holding a child process. Only `import_process` writes them. */
+export const NESTING_KINDS = ["group", "subprocess"] as const satisfies readonly StepKind[];
+export const IMPORT_STEP_KINDS = [...BUILD_STEP_KINDS, ...NESTING_KINDS] as const;
+export type BuildStepKind = (typeof IMPORT_STEP_KINDS)[number];
 export const OUTCOMES = ["won", "lost", "done"] as const satisfies readonly StepOutcome[];
 export const DISTRIBUTIONS = ["constant", "triangular", "lognormal"] as const satisfies readonly Distribution[];
 
@@ -83,6 +88,12 @@ export interface StepFields {
   notes?: string | null;
   sla_hours?: number | null;
   current_wip?: number | null;
+  /** The group the step sits in (a step id), null for the top level. Only import_process sets it. */
+  parent_step_id?: string | null;
+  /** A group's first step (one of its own steps). */
+  entry_step_id?: string | null;
+  /** The child process a `subprocess` step holds. */
+  child_process_id?: string | null;
   x?: number;
   y?: number;
   evidence?: Citation[];
@@ -200,7 +211,13 @@ export const STEP_DEFAULTS: Record<BuildStepKind, { work_hours: number; wait_hou
   decision: { work_hours: 0, wait_hours: 0, rework_rate: 0, assumed: [] },
   start: { work_hours: 0, wait_hours: 0, rework_rate: 0, assumed: [] },
   end: { work_hours: 0, wait_hours: 0, rework_rate: 0, assumed: [] },
+  // A holder of other steps does no work itself: its steps' numbers are the numbers.
+  group: { work_hours: 0, wait_hours: 0, rework_rate: 0, assumed: [] },
+  subprocess: { work_hours: 0, wait_hours: 0, rework_rate: 0, assumed: [] },
 };
+
+/** The step fields a group (or a step holding a child process) can't have: the engine would ignore them. */
+const HOLDER_FIELDS = ["role_id", "person_id", "work_hours", "wait_hours", "rework_rate", "sla_hours", "current_wip", "work_params", "wait_params", "evidence", "reasoning"] as const;
 
 /** The outcome a new end step gets: won, then lost, then done, whichever the process lacks (as in the editor). */
 export function nextOutcome(steps: readonly Pick<StepRow, "kind" | "outcome">[]): StepOutcome {
@@ -217,6 +234,15 @@ export function checkStepFields(f: StepFields, label: string): void {
   if (f.tool && f.tool.length > 200) bad("tool must be at most 200 characters.");
   if (f.notes && f.notes.length > 4000) bad("notes must be at most 4000 characters.");
   if (f.outcome && f.kind && f.kind !== "end") bad("only end steps have an outcome.");
+  if (f.kind === "group" || f.child_process_id) {
+    const given = HOLDER_FIELDS.filter((k) => f[k] !== undefined && f[k] !== null && !(Array.isArray(f[k]) && (f[k] as unknown[]).length === 0));
+    if (given.length) {
+      bad(`${f.kind === "group" ? "a group" : "a step holding a child process"} does no work itself, so it takes no ${given.join(", ")}: give the numbers to the steps inside it.`);
+    }
+  }
+  if (f.parent_step_id !== undefined && f.parent_step_id !== null && (f.kind === "start" || f.kind === "end")) bad("start and end steps stay at the top level, not inside a group.");
+  if (f.child_process_id && f.kind !== undefined && f.kind !== "subprocess") bad("only a sub-process step can hold a child process.");
+  if (f.entry_step_id && f.kind !== undefined && f.kind !== "group") bad("only a group has a first step (entry).");
   for (const phase of PHASES) {
     const params = f[`${phase}_params`];
     if (params) {
@@ -383,7 +409,15 @@ export function buildNewStep(
     tool: f.tool?.trim() || null,
     notes: f.notes?.trim() || null,
     sla_hours: f.sla_hours ?? null,
+    // The analysis rules' step settings are set in the editor, not by the building tools.
+    expected_wait_hours: null,
+    lost_per_day_waiting: null,
+    dropoff_benchmark: null,
+    target_cycle_hours: null,
     current_wip: f.current_wip ?? null,
+    parent_step_id: f.parent_step_id ?? null,
+    entry_step_id: f.entry_step_id ?? null,
+    child_process_id: f.child_process_id ?? null,
     x: Math.round(f.x ?? 0),
     y: Math.round(f.y ?? 0),
     assumption: false,
@@ -456,7 +490,9 @@ export function buildStepChange(row: StepRow, f: StepFields, stamp: Stamp, opts:
     kept.push({ step_id: row.id, step: row.name, field, kept: readField(row, field), proposed, reason });
 
   if (f.name !== undefined) b.set("name", f.name.trim());
-  for (const field of ["role_id", "person_id", "rework_to_step_id"] as const) if (f[field] !== undefined) b.set(field, f[field]);
+  for (const field of ["role_id", "person_id", "rework_to_step_id", "parent_step_id", "entry_step_id", "child_process_id"] as const) {
+    if (f[field] !== undefined) b.set(field, f[field]);
+  }
   for (const field of ["tool", "notes"] as const) if (f[field] !== undefined) b.set(field, f[field]?.trim() || null);
   for (const field of ["x", "y"] as const) if (f[field] !== undefined) b.set(field, Math.round(f[field]!));
 
@@ -573,15 +609,60 @@ export function startProblem(g: Graph): string | null {
   return starts.length > 1 ? `A process has one start step; this would have ${starts.length} (${starts.map((s) => s.name).join(", ")}).` : null;
 }
 
+/**
+ * Why the steps can't nest as they are, or null (the database enforces the same,
+ * as migration 20261108000000 says, but refuses a whole write with one message):
+ * a step sits only in a group of the same draft, never in itself or below itself;
+ * a group's first step is one of its own; start and end steps stay at the top
+ * level; a group, or a step holding a child process, has no numbers of its own.
+ */
+export function nestingProblem(g: Graph): string | null {
+  const byId = new Map(g.steps.map((s) => [s.id, s]));
+  for (const s of g.steps) {
+    if (s.parent_step_id) {
+      const parent = byId.get(s.parent_step_id);
+      if (!parent) return `Step '${s.name}' sits inside a step that isn't in the process.`;
+      if (parent.kind !== "group") return `Step '${s.name}' sits inside '${parent.name}', which isn't a group (kind group).`;
+      if (s.kind === "start" || s.kind === "end") return `'${s.name}' is a ${s.kind} step: those stay at the top level of the process, not inside the group '${parent.name}'.`;
+      const seen = new Set([s.id]);
+      for (let at: StepRow | undefined = parent; at; at = at.parent_step_id ? byId.get(at.parent_step_id) : undefined) {
+        if (seen.has(at.id)) return `Step '${s.name}' would sit inside itself.`;
+        seen.add(at.id);
+      }
+    }
+    if (s.kind === "group" && s.entry_step_id && byId.get(s.entry_step_id)?.parent_step_id !== s.id) {
+      return `Group '${s.name}': its first step (entry) must be one of the steps inside it.`;
+    }
+    if (s.entry_step_id && s.kind !== "group") return `Step '${s.name}' has a first step but isn't a group.`;
+    if (s.child_process_id && s.kind !== "subprocess") return `Step '${s.name}' holds a child process but isn't a sub-process step.`;
+    if (s.kind === "group" || s.child_process_id) {
+      const own = [s.role_id, s.person_id, s.sla_hours, s.current_wip].some((v) => v !== null && v !== undefined) || Number(s.work_hours) !== 0 || Number(s.wait_hours) !== 0 || Number(s.rework_rate) !== 0;
+      if (own) return `'${s.name}' ${s.kind === "group" ? "is a group" : "holds a child process"}, so it has no role, hours, rework, SLA or WIP of its own: those belong to the steps inside it.`;
+    }
+  }
+  return null;
+}
+
 /** Steps to flag (commands.ts `stepWarnings`), plus a missing start step. */
 export function graphWarnings(g: Graph): { step_id: string | null; step: string | null; warning: string }[] {
   const out: { step_id: string | null; step: string | null; warning: string }[] = [];
   if (!g.steps.some((s) => s.kind === "start")) out.push({ step_id: null, step: null, warning: "The process has no start step yet." });
   for (const step of g.steps) {
     if (step.kind === "end") continue;
+    if (step.kind === "group" && !g.steps.some((s) => s.parent_step_id === step.id)) {
+      out.push({ step_id: step.id, step: step.name, warning: "This group has no steps yet." });
+    }
     const outgoing = g.edges.filter((e) => e.from_step_id === step.id);
     if (!outgoing.length) {
-      out.push({ step_id: step.id, step: step.name, warning: "Nothing leaves this step yet." });
+      // Inside a group, a step with nothing leaving it is where the group ends: it leaves through the group's own edges.
+      if (step.parent_step_id) {
+        if (step.kind !== "group" && !groupsLetOut(g.steps, g.edges, step.id)) {
+          out.push({ step_id: step.id, step: step.name, warning: "Nothing leaves this step, and no group it is in has a connection out." });
+        }
+        continue;
+      }
+      if (step.kind === "group" && groupHasExit(g.steps, g.edges, step.id)) continue;
+      out.push({ step_id: step.id, step: step.name, warning: step.kind === "group" ? "Nothing leaves this group yet." : "Nothing leaves this step yet." });
       continue;
     }
     if (step.kind === "start") {
@@ -613,38 +694,69 @@ export function placeStep(g: Graph, after: StepRow | null, before: StepRow | nul
   return { x: Math.max(...g.steps.map((s) => Number(s.x))) + 240, y: Math.min(...g.steps.map((s) => Number(s.y))) };
 }
 
+/** Where a group's steps start inside its box (relative to the group): room for its name above them. */
+export const GROUP_PADDING = { x: 24, y: 56 };
+
 /**
  * Positions for steps that have none, left to right by distance from the
  * start step, stacked within each column; below any steps already placed.
+ * Each level of nesting is laid out on its own: a group's steps are placed
+ * relative to the group, from its first step on.
  */
 export function layoutSteps(g: Graph, unplaced: ReadonlySet<string>): Map<string, { x: number; y: number }> {
-  const depth = new Map<string, number>();
-  const start = g.steps.find((s) => s.kind === "start") ?? g.steps.find((s) => !g.edges.some((e) => e.to_step_id === s.id));
-  const queue: string[] = [];
-  if (start) {
-    depth.set(start.id, 0);
-    queue.push(start.id);
+  const byId = new Map(g.steps.map((s) => [s.id, s]));
+  const levels = new Map<string | null, StepRow[]>();
+  for (const s of g.steps) {
+    const key = s.parent_step_id ?? null;
+    levels.set(key, [...(levels.get(key) ?? []), s]);
   }
-  while (queue.length) {
-    const id = queue.shift()!;
-    for (const e of g.edges.filter((e) => e.from_step_id === id)) {
-      if (!depth.has(e.to_step_id)) {
-        depth.set(e.to_step_id, depth.get(id)! + 1);
-        queue.push(e.to_step_id);
+  const out = new Map<string, { x: number; y: number }>();
+  for (const [parent, members] of levels) {
+    if (!members.some((m) => unplaced.has(m.id))) continue;
+    const inLevel = new Set(members.map((m) => m.id));
+    /** The step of this level that holds `id`: itself, or the group of this level it sits in. */
+    const here = (id: string): string | null => {
+      for (let cur: string | null = id, hops = 0; cur && hops < 100; hops++) {
+        if (inLevel.has(cur)) return cur;
+        cur = byId.get(cur)?.parent_step_id ?? null;
+      }
+      return null;
+    };
+    const links = g.edges
+      .map((e) => [here(e.from_step_id), here(e.to_step_id)] as const)
+      .filter((l): l is readonly [string, string] => l[0] !== null && l[1] !== null && l[0] !== l[1]);
+    const depth = new Map<string, number>();
+    const entry = parent ? byId.get(parent)?.entry_step_id : null;
+    const first =
+      (entry && inLevel.has(entry) ? entry : undefined) ??
+      members.find((s) => s.kind === "start")?.id ??
+      members.find((s) => !links.some((l) => l[1] === s.id))?.id;
+    const queue: string[] = [];
+    if (first) {
+      depth.set(first, 0);
+      queue.push(first);
+    }
+    while (queue.length) {
+      const id = queue.shift()!;
+      for (const [from, to] of links) {
+        if (from === id && !depth.has(to)) {
+          depth.set(to, depth.get(id)! + 1);
+          queue.push(to);
+        }
       }
     }
-  }
-  const maxDepth = Math.max(0, ...depth.values());
-  const placed = g.steps.filter((s) => !unplaced.has(s.id));
-  const top = placed.length ? Math.max(...placed.map((s) => Number(s.y))) + 160 : 0;
-  const perColumn = new Map<number, number>();
-  const out = new Map<string, { x: number; y: number }>();
-  for (const s of g.steps) {
-    if (!unplaced.has(s.id)) continue;
-    const d = depth.get(s.id) ?? maxDepth + 1;
-    const slot = perColumn.get(d) ?? 0;
-    perColumn.set(d, slot + 1);
-    out.set(s.id, { x: d * 240, y: top + slot * 140 });
+    const maxDepth = Math.max(0, ...depth.values());
+    const placed = members.filter((s) => !unplaced.has(s.id));
+    const origin = parent === null ? { x: 0, y: 0 } : GROUP_PADDING;
+    const top = placed.length ? Math.max(...placed.map((s) => Number(s.y))) + 160 : origin.y;
+    const perColumn = new Map<number, number>();
+    for (const s of members) {
+      if (!unplaced.has(s.id)) continue;
+      const d = depth.get(s.id) ?? maxDepth + 1;
+      const slot = perColumn.get(d) ?? 0;
+      perColumn.set(d, slot + 1);
+      out.set(s.id, { x: origin.x + d * 240, y: top + slot * 140 });
+    }
   }
   return out;
 }
@@ -654,10 +766,76 @@ export function layoutSteps(g: Graph, unplaced: ReadonlySet<string>): Map<string
 // ---------------------------------------------------------------------------
 
 /** A step of the import JSON, with role, person and sources resolved; `rework_to` still a reference. */
-export interface ImportStep extends Omit<StepFields, "rework_to_step_id"> {
+export interface ImportStep extends Omit<StepFields, "rework_to_step_id" | "parent_step_id" | "entry_step_id"> {
   id?: string;
   name: string;
   rework_to?: string | null;
+  /** The group the step sits in: a step in this JSON or in the draft (id or name); null for the top level. */
+  parent?: string | null;
+  /** A group's first step (id or name). Default: its first step in the JSON. */
+  entry?: string | null;
+}
+
+/** A step of process_json as the caller wrote it: possibly holding steps (a group) or a child process. */
+export interface NestedStep {
+  name: string;
+  kind?: string;
+  parent?: string | null;
+  steps?: NestedStep[];
+  child_process?: string;
+  process?: unknown;
+}
+
+/** A step that holds a child process: which one it names, or the process to create (or write into) for it. */
+export interface Holder<P = unknown> {
+  step: string;
+  child_process?: string;
+  process?: P;
+}
+
+export const MAX_NESTING_DEPTH = 8;
+
+/**
+ * process_json's steps with the groups unfolded: every step in one list, those
+ * written inside a group's `steps` given that group as their `parent` (by
+ * name), and the steps that hold child processes listed apart. A step with
+ * `steps` is a group, one with `child_process` or `process` a sub-process
+ * step, so `kind` can be left out; a `kind` that says otherwise is refused.
+ */
+export function flattenNesting<T extends NestedStep>(
+  steps: readonly T[],
+): { steps: Omit<T, "steps" | "child_process" | "process">[]; holders: Holder<T["process"]>[] } {
+  const out: Omit<T, "steps" | "child_process" | "process">[] = [];
+  const holders: Holder<T["process"]>[] = [];
+  const walk = (list: readonly NestedStep[], parent: string | null, depth: number) => {
+    if (depth > MAX_NESTING_DEPTH) throw new ToolError("invalid_input", `Groups are nested more than ${MAX_NESTING_DEPTH} deep (inside '${parent}'); flatten the structure.`);
+    for (const step of list) {
+      const { steps: inside, child_process, process, ...rest } = step as NestedStep & Record<string, unknown>;
+      let kind = rest.kind as string | undefined;
+      if (inside !== undefined) {
+        if (kind !== undefined && kind !== "group") throw new ToolError("invalid_input", `Step '${step.name}' has steps inside it, so it is a group, not '${kind}'.`);
+        kind = "group";
+      }
+      if (child_process !== undefined || process !== undefined) {
+        if (child_process !== undefined && process !== undefined) throw new ToolError("invalid_input", `Step '${step.name}' gives both child_process and process; give one.`);
+        if (inside !== undefined) throw new ToolError("invalid_input", `Step '${step.name}' can't hold both steps and a child process.`);
+        if (kind !== undefined && kind !== "subprocess") throw new ToolError("invalid_input", `Step '${step.name}' holds a child process, so it is a subprocess step, not '${kind}'.`);
+        kind = "subprocess";
+        holders.push({ step: step.name, ...(child_process !== undefined ? { child_process } : {}), ...(process !== undefined ? { process: process as T["process"] } : {}) });
+      }
+      if (parent !== null) {
+        const said = rest.parent as string | null | undefined;
+        if (said !== undefined && said !== null && normalizeName(said) !== normalizeName(parent)) {
+          throw new ToolError("invalid_input", `Step '${step.name}' is listed inside '${parent}' but says its parent is '${said}'.`);
+        }
+        rest.parent = parent;
+      }
+      out.push({ ...rest, ...(kind !== undefined ? { kind } : {}) } as Omit<T, "steps" | "child_process" | "process">);
+      if (inside !== undefined) walk(inside, step.name, depth + 1);
+    }
+  };
+  walk(steps, null, 1);
+  return { steps: out, holders };
 }
 
 export interface ImportEdge {
@@ -778,7 +956,9 @@ export function planImport(
   input.steps.forEach((s, i) => {
     const id = idOf[i]!;
     const rework = s.rework_to === undefined ? undefined : s.rework_to === null ? null : ref(s.rework_to, `'${s.name}' rework_to`);
-    const fields: StepFields = { ...s, rework_to_step_id: rework };
+    const parent = s.parent === undefined ? undefined : s.parent === null ? null : ref(s.parent, `'${s.name}' parent`);
+    const entry = s.entry === undefined ? undefined : s.entry === null ? null : ref(s.entry, `'${s.name}' entry`);
+    const fields: StepFields = { ...s, rework_to_step_id: rework, parent_step_id: parent, entry_step_id: entry };
     // Matched by name: the draft's spelling stays (matched by id, a different name is a rename).
     if (matched[i]!.by === "name") delete fields.name;
     const existing = rows.get(id);
@@ -802,7 +982,39 @@ export function planImport(
   // Steps the JSON leaves out.
   const listed = new Set(idOf);
   const removeSteps = input.remove_missing ? draft.steps.filter((s) => !listed.has(s.id)) : [];
+  // Deleting a group deletes the steps inside it, so they must go too or be moved out first.
+  const removing = new Set(removeSteps.map((s) => s.id));
+  for (const g of removeSteps.filter((s) => s.kind === "group")) {
+    const stays = [...rows.values()].filter((r) => r.parent_step_id === g.id && !removing.has(r.id));
+    if (stays.length) {
+      throw new ToolError("invalid_input", `Group '${g.name}' isn't in process_json, so remove_missing would remove it and the steps inside it; '${stays[0]!.name}' is listed, so list the group too or give the step a different parent.`);
+    }
+  }
   for (const s of removeSteps) rows.delete(s.id);
+
+  // A group with steps but no first step starts at the first of its steps in the JSON.
+  const setField = (id: string, field: "entry_step_id", value: string) => {
+    const inserted = insertSteps.find((r) => r.id === id);
+    if (inserted) inserted[field] = value;
+    else {
+      const pending = updateSteps.find((u) => u.id === id);
+      const original = draft.steps.find((d) => d.id === id);
+      if (pending) {
+        pending.base[field] ??= original?.[field] ?? null;
+        pending.changes[field] = value;
+      } else updateSteps.push({ id, name: rows.get(id)!.name, base: { [field]: original?.[field] ?? null }, changes: { [field]: value } });
+    }
+    rows.set(id, { ...rows.get(id)!, [field]: value });
+  };
+  for (const g of [...rows.values()].filter((r) => r.kind === "group" && !r.entry_step_id)) {
+    const inside = [...rows.values()].filter((r) => r.parent_step_id === g.id);
+    if (!inside.length) continue;
+    const order = (r: StepRow) => {
+      const i = idOf.indexOf(r.id);
+      return i < 0 ? Number.MAX_SAFE_INTEGER : i;
+    };
+    setField(g.id, "entry_step_id", [...inside].sort((a, b) => order(a) - order(b))[0]!.id);
+  }
   let steps = [...rows.values()];
 
   // 3. Edges.
@@ -884,6 +1096,8 @@ export function planImport(
   const after: Graph = { steps, edges };
   const start = startProblem(after);
   if (start) throw new ToolError("invalid_input", start);
+  const nesting = nestingProblem(after);
+  if (nesting) throw new ToolError("invalid_input", nesting);
   for (const s of steps) {
     const problem = reworkProblem(after, s.id, s.rework_to_step_id);
     if (problem) throw new ToolError("invalid_input", `Step '${s.name}': ${problem}`);

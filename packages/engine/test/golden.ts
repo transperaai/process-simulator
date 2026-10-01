@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { detectIssues, larkspurModel, northbeamModel, northbeamWithServicing, simulate, type EngineModel, type SimulationResult, type Stat } from "../src";
+import { MARKET_PRESETS, absenceTest, detectIssues, larkspurModel, northbeamModel, northbeamWithServicing, simulate, withMarketCondition, type EngineModel, type SimulationResult, type Stat } from "../src";
 
 export const GOLDEN_DIR = new URL("../golden/", import.meta.url);
 export const VERSION_FILE = new URL("../src/version.ts", import.meta.url);
@@ -40,6 +40,13 @@ export const GOLDEN_MODELS: GoldenModel[] = [
     reps: 30,
   },
   {
+    name: "northbeam-downturn",
+    description: "Northbeam as seeded under the Downturn market for the whole run: fewer enquiries that sign less, slower decisions, lower prices, more churn (market.ts).",
+    model: () => withMarketCondition(northbeamWithServicing(), MARKET_PRESETS.downturn.factors),
+    seed: 1,
+    reps: 30,
+  },
+  {
     name: "larkspur",
     description: "Larkspur Creative, the messier agency: overloaded designers, a copywriter on overtime, an 18-client roster with health-driven churn, starting from WIP.",
     model: larkspurModel,
@@ -59,6 +66,8 @@ const stat = (s: Stat) => ({ mean: s.mean, p10: s.p10, p90: s.p90 });
  */
 export function keyOutputs(model: EngineModel, r: SimulationResult) {
   const k = r.kpi;
+  // The absence test (absence.ts) at its defaults: 10 replications at the baseline's seed, 2 weeks away.
+  const absence = absenceTest(model, { seed: r.seed });
   return {
     initialState: r.initialState,
     throughput: { won: stat(k.won), lost: stat(k.lost), done: stat(k.done), wonPerWeek: k.won.mean / model.horizonWeeks },
@@ -79,13 +88,17 @@ export function keyOutputs(model: EngineModel, r: SimulationResult) {
     steps: Object.fromEntries(
       Object.entries(r.steps).map(([id, s]) => [
         id,
-        { arrivals: s.arrivals, departures: s.departures, avgQueue: s.avgQueue, avgWait: s.avgWait, wip: s.wip, slaBreaches: s.slaBreaches },
+        { arrivals: s.arrivals, departures: s.departures, avgQueue: s.avgQueue, avgWait: s.avgWait, wip: s.wip, slaBreaches: s.slaBreaches, lostHere: s.lostHere ?? 0 },
       ]),
+    ),
+    // Who the absence test covers, and what it found (work lost, weeks to recover, missed client tasks).
+    absence: Object.fromEntries(
+      absence.people.map((f) => [f.personId, { steps: f.stepIds, workLost: f.workLost, itemsLost: f.itemsLost, recoveryWeeks: f.recoveryWeeks, recovered: f.recovered, extraMissed: f.extraMissed }]),
     ),
     // The rating of every detected issue and how it was reached (ratings.ts), so a moved cut-off or escalator shows here.
     // The cost per month of each (cost.ts), without the shadow-price run the busy rule's money cost needs.
     ratings: Object.fromEntries(
-      detectIssues(model, r).map((i) => [
+      detectIssues(model, r, {}, { absence }).map((i) => [
         i.key,
         {
           rating: i.rating,

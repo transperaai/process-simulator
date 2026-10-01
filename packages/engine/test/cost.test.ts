@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   WEEKS_PER_MONTH,
+  absenceTest,
   averageDealValue,
   chanceToSign,
   churnLossValue,
@@ -87,6 +88,26 @@ describe("what a loss is worth", () => {
     const seo = 3500 * 12;
     const ppc = 4200 * 12;
     expect(averageDealValue(m, 12)).toBeCloseTo(0.55 * seo + 0.45 * ppc, 6);
+  });
+
+  it("a nested model gives the same chance to sign, and loss value, as the same model drawn flat", () => {
+    const flat = northbeamModel();
+    const inside = (id: string, parent: string, next?: EngineStep["next"]): EngineStep => ({ ...flat.steps.find((s) => s.id === id)!, parent, ...(next ? { next } : {}) });
+    const nested: EngineModel = {
+      ...flat,
+      groups: {
+        sales: { name: "Sales", entry: "qualify", next: [{ to: "audit", p: 0.7 }, { to: "lost", p: 0.3 }] },
+        setup: { name: "Setup", entry: "seo", next: [{ to: "won", p: 1 }] },
+      },
+      steps: flat.steps.map((s) =>
+        s.id === "qualify" ? inside("qualify", "sales") : s.id === "discovery" ? inside("discovery", "sales", []) : s.id === "seo" || s.id === "ppc" ? inside(s.id, "setup") : s.id === "live" ? inside("live", "setup", []) : s,
+      ),
+    };
+    for (const s of flat.steps) {
+      expect(chanceToSign(nested, s.id), s.id).toBeCloseTo(chanceToSign(flat, s.id), 12);
+      expect(lossValueAtStep(nested, s, 12), s.id).toBeCloseTo(lossValueAtStep(flat, s, 12), 6);
+    }
+    expect(chanceToSign(nested, "qualify")).toBeCloseTo(0.1232, 4);
   });
 
   it("copes with loops: a step that sends half its items back still ends where its other half goes", () => {
@@ -212,11 +233,16 @@ describe("the cost of each insight", () => {
     }
   });
 
-  it("single point of failure waits on the absence test: n/a for now", () => {
-    const m = line(2, [{ id: "a", work: 2 }]);
-    const issue = find(detectIssues(m, simulate(m, 6, 1), NO_ESC), "spof:step:a")!;
-    expect(issue.cost.perMonth).toBeNull();
-    expect(issue.cost.hoursPerMonth).toBeNull();
+  it("single point of failure: the damage of one absence x absences a year / 12", () => {
+    const m = line(7, [{ id: "a", work: 4 }]);
+    const absence = absenceTest(m, { seed: 1, weeks: 2 });
+    const issue = find(detectIssues(m, simulate(m, 12, 1), NO_ESC, { absence }), "spof:step:a");
+    expect(issue).toBeDefined();
+    const f = absence.people[0]!;
+    // 12,000 a deal (1,000 a month for the 12-month cap); the one step only they can do carries all of it.
+    expect(issue!.cost.perMonth).toBeCloseTo((f.itemsLost * 12000 * 2) / 12, 6);
+    const more = find(detectIssues(m, simulate(m, 12, 1), NO_ESC, { absence, cost: { absencesPerYear: 4 } }), "spof:step:a")!;
+    expect(more.cost.perMonth).toBeCloseTo(issue!.cost.perMonth! * 2, 6);
   });
 
   it("missed deadlines: client work costs the churn it drives; a step that isn't client work has no money method", () => {
@@ -234,15 +260,26 @@ describe("the cost of each insight", () => {
     // Excess churn (the simulated monthly churn above each client's base) x what losing it is worth, shared by each step's breaches.
     let excess = 0;
     for (const [cid, c] of Object.entries(m.clients!)) {
-      const base = m.services![c.services[0]!]!.churnMonthly;
-      const mean = c.services.reduce((s, id) => s + m.services![id]!.churnMonthly, 0) / c.services.length;
-      excess += Math.max(0, r.clients![cid]!.churnMonthly.mean - (c.services.length ? mean : base)) * clientLossValue(m, c, 12);
+      const mean = c.services.reduce((sum, id) => sum + m.services![id]!.churnMonthly, 0) / c.services.length;
+      excess += Math.max(0, r.clients![cid]!.churnMonthly.mean - mean) * clientLossValue(m, c, 12);
     }
-    const total = [...servicing].reduce((s, id) => s + (r.steps[id]?.slaBreaches ?? 0), 0);
-    for (const i of client) {
-      expect(i.cost.perMonth).toBeCloseTo(excess * (r.steps[i.stepId!]!.slaBreaches / total), 6);
-    }
-    expect(client.reduce((s, i) => s + i.cost.perMonth!, 0)).toBeGreaterThan(0);
+    const total = [...servicing].reduce((sum, id) => sum + (r.steps[id]?.slaBreaches ?? 0), 0);
+    for (const i of client) expect(i.cost.perMonth).toBeCloseTo(excess * (r.steps[i.stepId!]!.slaBreaches / total), 6);
+    expect(client.reduce((sum, i) => sum + i.cost.perMonth!, 0)).toBeGreaterThan(0);
+  });
+
+  it("spare time: idle hours at cost rates; too slow overall: revenue delayed; goals met: no money method", () => {
+    const quiet = line(1, [{ id: "a", work: 2 }]);
+    const rq = simulate(quiet, 8, 1);
+    const spare = find(detectIssues(quiet, rq, NO_ESC), "spare:role:r")!;
+    expect(spare.cost.hoursPerMonth).toBeCloseTo(spare.metrics.free_hours_week! * WEEKS_PER_MONTH, 6);
+    expect(spare.cost.perMonth).toBeCloseTo(spare.cost.hoursPerMonth! * 50, 6);
+
+    const slow: EngineModel = { ...line(3, [{ id: "a", work: 4 }], { churnMonthly: 0.05 }), targetCycleHours: 1 };
+    const rs = simulate(slow, 8, 1);
+    const cycle = detectIssues(slow, rs, NO_ESC).find((i) => i.key.startsWith("cycle:"))!;
+    const monthsLate = (rs.kpi.cycle.mean - 1) / (40 * WEEKS_PER_MONTH);
+    expect(cycle.cost.perMonth).toBeCloseTo(((rs.kpi.won.mean / 26) * WEEKS_PER_MONTH) * 1000 * monthsLate, 6);
   });
 
   it("churn risk: the chance it leaves in a month × what losing it is worth", () => {

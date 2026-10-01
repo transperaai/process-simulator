@@ -11,6 +11,8 @@ import type {
   DemandSettingsRow,
   IssueRow,
   LeadSourceRow,
+  MarketConditionRow,
+  MarketScheduleRow,
   EdgeRow,
   PersonRow,
   ProcessBundle,
@@ -66,8 +68,23 @@ export async function loadServicingContext(
     db.from("service_servicing").select(SERVICE_SERVICING_COLUMNS).eq("workspace_id", workspaceId).order("id"),
   ]);
   const live = processes.filter((p) => p.id !== process.id && p.live_revision_id);
-  const pipeline = process.kind === "servicing" ? live.find((p) => p.kind !== "servicing") : undefined;
-  const wanted = live.filter((p) => p.kind === "servicing" || p === pipeline);
+  // A child process runs inside its parent, so it is never the pipeline a servicing process runs beside.
+  const pipeline = process.kind === "servicing" ? live.find((p) => p.kind !== "servicing" && !p.parent_process_id) : undefined;
+  const base = live.filter((p) => p.kind === "servicing" || p === pipeline);
+  // The child processes (any depth) of this process and of those, which the steps holding them are simulated through.
+  const reached = new Set([process.id, ...base.map((p) => p.id)]);
+  const children: typeof live = [];
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const p of live) {
+      if (p.parent_process_id && reached.has(p.parent_process_id) && !reached.has(p.id)) {
+        reached.add(p.id);
+        children.push(p);
+        grew = true;
+      }
+    }
+  }
+  const wanted = [...base, ...children.filter((c) => !base.includes(c))];
   const revisionIds = wanted.map((p) => p.live_revision_id!);
   const [revisions, steps, edges] = revisionIds.length
     ? await Promise.all([
@@ -125,6 +142,23 @@ export const LEAD_SOURCE_COLUMNS = "id, workspace_id, name, volume_week, convers
 export const SEASONALITY_COLUMNS = "id, workspace_id, month, multiplier, provenance" as const;
 export const DEMAND_SETTINGS_COLUMNS = "workspace_id, growth_monthly, provenance" as const;
 
+/** The `MarketConditionRow` and `MarketScheduleRow` columns. */
+export const MARKET_CONDITION_COLUMNS = "id, workspace_id, name, preset, leads, conv, cycle, price, churn, hire, pay" as const;
+export const MARKET_SCHEDULE_COLUMNS = "id, workspace_id, from_month, to_month, condition_id" as const;
+
+/** A workspace's market conditions (presets first, then its own by name) and its 24-month schedule in month order. */
+export async function loadMarket(db: Db, workspaceId: string): Promise<{ marketConditions: MarketConditionRow[]; marketSchedule: MarketScheduleRow[] }> {
+  const [conditions, schedule] = await Promise.all([
+    db.from("market_conditions").select(MARKET_CONDITION_COLUMNS).eq("workspace_id", workspaceId).order("created_at").order("id"),
+    db.from("market_schedule").select(MARKET_SCHEDULE_COLUMNS).eq("workspace_id", workspaceId).order("from_month").order("id"),
+  ]);
+  return {
+    // preset is check-constrained to MarketPreset.
+    marketConditions: (rows(conditions) ?? []) as MarketConditionRow[],
+    marketSchedule: rows(schedule) ?? [],
+  };
+}
+
 /** Load one process revision with everything needed to render and simulate it. */
 export async function loadProcessBundle(
   db: Db,
@@ -133,7 +167,7 @@ export async function loadProcessBundle(
   revisionId: string,
 ): Promise<ProcessBundle> {
   const ws = workspace.id;
-  const [revision, roles, steps, edges, people, personRoles, personSkills, personLeave, services, leadSources, seasonality, demand, roster, servicing, settingsProvenance] =
+  const [revision, roles, steps, edges, people, personRoles, personSkills, personLeave, services, leadSources, seasonality, demand, roster, servicing, market, settingsProvenance] =
     await Promise.all([
       db.from("process_revisions").select("id, workspace_id, process_id, number, status").eq("id", revisionId).single(),
       db.from("roles").select("*").eq("workspace_id", ws),
@@ -150,6 +184,7 @@ export async function loadProcessBundle(
       db.from("demand_settings").select(DEMAND_SETTINGS_COLUMNS).eq("workspace_id", ws).maybeSingle(),
       loadClients(db, ws),
       loadServicingContext(db, ws, process),
+      loadMarket(db, ws),
       db.from("workspaces").select("provenance").eq("id", ws).maybeSingle(),
     ]);
   const wsProvenance = rows(settingsProvenance)?.provenance;
@@ -184,10 +219,11 @@ export async function loadProcessBundle(
     demand: rows(demand) as DemandSettingsRow | null,
     ...roster,
     ...servicing,
+    ...market,
   };
 }
 
-const PROCESS_COLUMNS = "id, workspace_id, name, kind, entity_name, description, live_revision_id" as const;
+const PROCESS_COLUMNS = "id, workspace_id, name, kind, entity_name, description, live_revision_id, parent_process_id" as const;
 
 /** A workspace's processes, oldest first. */
 export async function listProcesses(db: Db, workspaceId: string): Promise<(ProcessRow & { draft_revision_id: string | null })[]> {
@@ -217,6 +253,8 @@ export interface ProcessListing {
   live: boolean;
   /** Has an open draft. */
   draft: boolean;
+  /** The process it sits inside, or null (or absent) for a top-level process: the company map's steps (issue #102). */
+  parentId?: string | null;
 }
 
 /**
@@ -257,9 +295,10 @@ export async function loadProcessBySlug(
   if (error) throw error;
   if (!workspace) return null;
   const all = await listProcesses(db, workspace.id);
-  const process = processId ? all.find((p) => p.id === processId) : all.find((p) => p.live_revision_id);
+  // The default is a top-level process: a child process opens from the step that holds it, or from the list.
+  const process = processId ? all.find((p) => p.id === processId) : (all.find((p) => p.live_revision_id && !p.parent_process_id) ?? all.find((p) => p.live_revision_id));
   if (!process) return null;
-  const processes = all.map((p) => ({ id: p.id, name: p.name, kind: p.kind, live: Boolean(p.live_revision_id), draft: Boolean(p.draft_revision_id) }));
+  const processes = all.map((p) => ({ id: p.id, name: p.name, kind: p.kind, live: Boolean(p.live_revision_id), draft: Boolean(p.draft_revision_id), parentId: p.parent_process_id }));
   const { draft_revision_id: draftId, ...row } = process;
   if (!process.live_revision_id) {
     // Never published: only its draft exists.

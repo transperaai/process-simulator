@@ -7,7 +7,7 @@
 // worker has run it.
 
 import { useEffect, useMemo, useState } from "react";
-import type { AnalysisSettings, DetectedIssue, EngineModel, SimulationResult } from "@transpera-flow/engine";
+import type { AbsenceTest, AnalysisSettings, DetectedIssue, EngineModel, SimulationResult } from "@transpera-flow/engine";
 import { rerate } from "@/lib/rules/edit";
 
 export interface IssueCostsRequest {
@@ -37,8 +37,9 @@ export function useDetectedIssues(
   rules: AnalysisSettings,
   processId: string,
   currency: string,
+  absence?: AbsenceTest | null,
 ): DetectedIssue[] | null {
-  const first = useMemo(() => (model && result ? rerate(model, result, rules, processId, { currency }) : null), [model, result, rules, processId, currency]);
+  const first = useMemo(() => (model && result ? rerate(model, result, rules, processId, absence, { currency }) : null), [model, result, rules, processId, currency, absence]);
   const roleIds = useMemo(() => (first ? costedRoleIds(first) : []), [first]);
   const wanted = roleIds.join("\n");
   const [prices, setPrices] = useState<{ model: EngineModel; result: SimulationResult; value: Record<string, number> } | null>(null);
@@ -69,7 +70,7 @@ export function useDetectedIssues(
   return useMemo(() => {
     if (!model || !result || !first) return first;
     return prices && prices.model === model && prices.result === result
-      ? rerate(model, result, rules, processId, { currency, shadowPrices: prices.value })
+      ? rerate(model, result, rules, processId, absence, { currency, shadowPrices: prices.value })
       : first;
-  }, [model, result, first, prices, rules, processId, currency]);
+  }, [model, result, first, prices, rules, processId, currency, absence]);
 }

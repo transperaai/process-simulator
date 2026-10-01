@@ -1,7 +1,9 @@
 export * from "./model";
+export { flattenModel, isNested, NestingError } from "./flatten";
 export { ENGINE_VERSION } from "./version";
 export { DEFAULT_AVAILABILITY_FLOOR, initialState, pct, resolvePeople, runOnce, simulate, stat } from "./simulate";
 export { checkDemand, demandFactor, isFlatDemand, WEEKS_PER_CALENDAR_MONTH } from "./demand";
+export * from "./market";
 export { mulberry32 } from "./random";
 export {
   NORTHBEAM_FALLBACK_LOAD,
@@ -67,6 +69,29 @@ export {
   type PersonLoad,
 } from "./clients";
 export { overtimeIssues } from "./overtime-issues";
+export {
+  ABSENCE_MAX_PEOPLE,
+  ABSENCE_REPS,
+  ABSENCE_START_WEEK,
+  CLIENT_MISSED_MIN,
+  absenceCandidates,
+  absenceTest,
+  eligible,
+  type AbsenceCandidate,
+  type AbsenceFinding,
+  type AbsenceOptions,
+  type AbsenceTest,
+} from "./absence";
+export {
+  NO_SUCCESS_MEASURES,
+  SUCCESS_KPIS,
+  checkSuccessMeasures,
+  successKpiValues,
+  type SuccessCheck,
+  type SuccessKpi,
+  type SuccessMeasure,
+  type SuccessMeasureSource,
+} from "./success";
 export {
   HEALTH_RULE_KEYS,
   HIRE_PREFIX,
@@ -215,6 +240,7 @@ export {
   type StepConstraint,
 } from "./bottlenecks";
 export {
+  DEFAULT_ABSENCE,
   DEFAULT_RATING_CONFIG,
   DEFAULT_RATING_CUTOFFS,
   OVERRIDE_KINDS,
@@ -238,6 +264,7 @@ export {
   resolveRule,
   storedOfRating,
   worseRating,
+  type AbsenceSettings,
   type Cutoffs,
   type OverrideKind,
   type Rating,

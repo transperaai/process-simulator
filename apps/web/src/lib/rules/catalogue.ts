@@ -213,7 +213,7 @@ const UI: Record<AnalysisRuleId, Omit<RuleUi, "id" | "overrideKinds">> = {
 };
 
 /** Rules whose detector already runs but still on its old cut-offs: switching them off works now, their cut-offs apply later. */
-export const OLD_LOGIC: ReadonlySet<AnalysisRuleId> = new Set<AnalysisRuleId>(["spof", "health", "sources", "broken"]);
+export const OLD_LOGIC: ReadonlySet<AnalysisRuleId> = new Set<AnalysisRuleId>(["health", "sources", "broken"]);
 
 /** Which kinds of override make sense for a rule, from the prototype's `over`. All kinds are allowed; this orders the picker. */
 const OVERRIDE_KINDS: Record<AnalysisRuleId, readonly OverrideKind[]> = {

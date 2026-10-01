@@ -4,12 +4,13 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { IssueRow, ProcessBundle, ScenarioRow } from "@transpera-flow/db";
-import { detectBrokenScenarios, type AnalysisSettings, type EngineModel, type RetiredSteps, type SimulationResult } from "@transpera-flow/engine";
+import { detectBrokenScenarios, resolveMoney, type AnalysisSettings, type EngineModel, type RetiredSteps, type SimulationResult } from "@transpera-flow/engine";
 import { perceptionGapDetections } from "@/lib/issues/perception";
 import { rerate, visibleFindings } from "@/lib/rules/edit";
 import { useRatingSettings } from "@/lib/rules/use-rating-settings";
 import { entryView, promoteInput, registerEntries, stepBadges, stepRatingOf } from "@/lib/issues/register";
 import { useIssues } from "@/lib/issues/use-issues";
+import { useAbsenceTest } from "@/lib/sim/absence";
 import { IssuesRegister } from "./issues-register";
 import type { EditMode } from "./process-view";
 import { StepIssueBadges } from "./step-issue-badges";
@@ -73,9 +74,11 @@ export function useProcessIssues({
   const rules = useRatingSettings(mode === "demo", analysisRules);
   // Perception gaps from the steps' evidence (issue #21), unless that rule is off.
   const gaps = useMemo(() => visibleFindings(rules, perceptionGapDetections(bundle.steps)), [bundle.steps, rules]);
+  // The absence test (rule 8) runs in its own worker once the baseline is done; until it returns, that rule raises nothing.
+  const absence = useAbsenceTest(model && result && !running ? model : null, result?.seed ?? 1, resolveMoney(rules).absenceWeeks);
   const detected = useMemo(
-    () => (model && result ? visibleFindings(rules, [...broken, ...rerate(model, result, rules, bundle.process.id), ...gaps]) : null),
-    [model, result, broken, gaps, rules, bundle.process.id],
+    () => (model && result ? visibleFindings(rules, [...broken, ...rerate(model, result, rules, bundle.process.id, absence), ...gaps]) : null),
+    [model, result, broken, gaps, rules, bundle.process.id, absence],
   );
   const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);
 

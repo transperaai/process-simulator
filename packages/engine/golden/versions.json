@@ -16,5 +16,17 @@
     "date": "2026-10-01",
     "note": "Market conditions (A57): the engine applies a 24-month market schedule; adds the northbeam-downturn golden model (Northbeam as seeded under Downturn). No existing model's numbers moved: with no market, or Stable throughout, runs are exactly as before.",
     "digest": "sha256:f21c60478c5b62173cbf0e07b0eb7079b163c21926f4f4224fea27cf5eeccd85"
+  },
+  {
+    "version": "1.3.0",
+    "date": "2026-10-01",
+    "note": "New analysis rules (issue #107): detected issues now include spare time, work lost at a step, too slow overall, goals met and the absence test (which replaces flagging every one-person step); the golden outputs also lock the absence test's results and the visits each step sends straight to a lost end. StepResult gains lostHere (and p90.lostShare); no simulated number changed.",
+    "digest": "sha256:d34e90ef8401dd0ae4d78ea71f1f9a7091ebf0ce9cd251199804a1422d4865f5"
+  },
+  {
+    "version": "1.4.0",
+    "date": "2026-10-01",
+    "note": "Client groups (A55): clients can be counted per service and are simulated as unnamed clients; groups that count no clients change nothing; adds the northbeam-groups golden model, and the group churn-risk findings join it. The existing golden models do not move.",
+    "digest": "sha256:98ec6a6b6e850ef4d5dfe27ac7b6f35a17ac5ac0c2bec9bc68599349ce48d278"
   }
 ]

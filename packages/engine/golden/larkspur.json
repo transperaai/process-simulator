@@ -1,7 +1,7 @@
 {
   "model": "larkspur",
   "description": "Larkspur Creative, the messier agency: overloaded designers, a copywriter on overtime, an 18-client roster with health-driven churn, starting from WIP.",
-  "engineVersion": "1.2.0",
+  "engineVersion": "1.4.0",
   "seed": 1,
   "reps": 30,
   "outputs": {
@@ -98,22 +98,56 @@
       "priti": { "util": 0.20578842869428027, "overtime": 0 }
     },
     "steps": {
-      "triage": { "arrivals": 151.03333333333333, "departures": 149.4, "avgQueue": 0.0011751604672335931, "avgWait": 0.007594263447958057, "wip": 0, "slaBreaches": 0 },
-      "pitch": { "arrivals": 90.16666666666667, "departures": 87.66666666666667, "avgQueue": 0.0680180863285069, "avgWait": 0.7312002470579538, "wip": 0.16666666666666666, "slaBreaches": 0 },
-      "concepts": { "arrivals": 86.2, "departures": 81.63333333333334, "avgQueue": 2.184819359396819, "avgWait": 23.203029562042165, "wip": 3.966666666666667, "slaBreaches": 3.7 },
-      "decision": { "arrivals": 61.5, "departures": 63.3, "avgQueue": 0, "avgWait": 0, "wip": 0, "slaBreaches": 0 },
-      "onboard": { "arrivals": 26.5, "departures": 25.533333333333335, "avgQueue": 0.01130376488213461, "avgWait": 0.3981645002050077, "wip": 0, "slaBreaches": 0 },
-      "workshop": { "arrivals": 25.533333333333335, "departures": 25.033333333333335, "avgQueue": 0.015392874775445391, "avgWait": 0.5569672339552862, "wip": 0.03333333333333333, "slaBreaches": 0 },
-      "social_setup": { "arrivals": 13.2, "departures": 12.9, "avgQueue": 0.03212123502355465, "avgWait": 2.3320717501627213, "wip": 0, "slaBreaches": 0 },
-      "content_plan": { "arrivals": 9.2, "departures": 5.833333333333333, "avgQueue": 1.0747351228803994, "avgWait": 97.01802191107184, "wip": 2.4, "slaBreaches": 0 },
-      "web_design": { "arrivals": 6.5, "departures": 5.566666666666666, "avgQueue": 0.1977281652104382, "avgWait": 23.047443964753278, "wip": 0.5333333333333333, "slaBreaches": 0 },
-      "web_build": { "arrivals": 5.033333333333333, "departures": 6.266666666666667, "avgQueue": 0.09514090823830969, "avgWait": 19.29765465931255, "wip": 0.1, "slaBreaches": 0.13333333333333333 },
-      "launch": { "arrivals": 21.666666666666668, "departures": 21.666666666666668, "avgQueue": 0.00022689648947936723, "avgWait": 0.009514933360783986, "wip": 0, "slaBreaches": 0 },
-      "cal_plan": { "arrivals": 86.6, "departures": 86.33333333333333, "avgQueue": 0.023084062266956838, "avgWait": 0.25757995252931093, "wip": 0.03333333333333333, "slaBreaches": 0 },
-      "cal_social": { "arrivals": 86.33333333333333, "departures": 84.93333333333334, "avgQueue": 0.4378934482352825, "avgWait": 4.835260157943449, "wip": 0.5, "slaBreaches": 0 },
-      "cal_design": { "arrivals": 104.63333333333334, "departures": 98.33333333333333, "avgQueue": 2.7680463957549053, "avgWait": 25.344241723137362, "wip": 5.5, "slaBreaches": 0 },
-      "cal_approve": { "arrivals": 78.63333333333334, "departures": 76.76666666666667, "avgQueue": 0.020389529668643547, "avgWait": 0.2513157358815977, "wip": 0.03333333333333333, "slaBreaches": 0 },
-      "adhoc_design": { "arrivals": 133.03333333333333, "departures": 124.2, "avgQueue": 3.669429469233001, "avgWait": 25.654362358020983, "wip": 8.566666666666666, "slaBreaches": 0 }
+      "triage": { "arrivals": 151.03333333333333, "departures": 149.4, "avgQueue": 0.0011751604672335931, "avgWait": 0.007594263447958057, "wip": 0, "slaBreaches": 0, "lostHere": 59.233333333333334 },
+      "pitch": { "arrivals": 90.16666666666667, "departures": 87.66666666666667, "avgQueue": 0.0680180863285069, "avgWait": 0.7312002470579538, "wip": 0.16666666666666666, "slaBreaches": 0, "lostHere": 21.6 },
+      "concepts": { "arrivals": 86.2, "departures": 81.63333333333334, "avgQueue": 2.184819359396819, "avgWait": 23.203029562042165, "wip": 3.966666666666667, "slaBreaches": 3.7, "lostHere": 0 },
+      "decision": { "arrivals": 61.5, "departures": 63.3, "avgQueue": 0, "avgWait": 0, "wip": 0, "slaBreaches": 0, "lostHere": 36.8 },
+      "onboard": { "arrivals": 26.5, "departures": 25.533333333333335, "avgQueue": 0.01130376488213461, "avgWait": 0.3981645002050077, "wip": 0, "slaBreaches": 0, "lostHere": 0 },
+      "workshop": { "arrivals": 25.533333333333335, "departures": 25.033333333333335, "avgQueue": 0.015392874775445391, "avgWait": 0.5569672339552862, "wip": 0.03333333333333333, "slaBreaches": 0, "lostHere": 0 },
+      "social_setup": { "arrivals": 13.2, "departures": 12.9, "avgQueue": 0.03212123502355465, "avgWait": 2.3320717501627213, "wip": 0, "slaBreaches": 0, "lostHere": 0 },
+      "content_plan": { "arrivals": 9.2, "departures": 5.833333333333333, "avgQueue": 1.0747351228803994, "avgWait": 97.01802191107184, "wip": 2.4, "slaBreaches": 0, "lostHere": 0 },
+      "web_design": { "arrivals": 6.5, "departures": 5.566666666666666, "avgQueue": 0.1977281652104382, "avgWait": 23.047443964753278, "wip": 0.5333333333333333, "slaBreaches": 0, "lostHere": 0 },
+      "web_build": { "arrivals": 5.033333333333333, "departures": 6.266666666666667, "avgQueue": 0.09514090823830969, "avgWait": 19.29765465931255, "wip": 0.1, "slaBreaches": 0.13333333333333333, "lostHere": 0 },
+      "launch": { "arrivals": 21.666666666666668, "departures": 21.666666666666668, "avgQueue": 0.00022689648947936723, "avgWait": 0.009514933360783986, "wip": 0, "slaBreaches": 0, "lostHere": 0 },
+      "cal_plan": { "arrivals": 86.6, "departures": 86.33333333333333, "avgQueue": 0.023084062266956838, "avgWait": 0.25757995252931093, "wip": 0.03333333333333333, "slaBreaches": 0, "lostHere": 0 },
+      "cal_social": { "arrivals": 86.33333333333333, "departures": 84.93333333333334, "avgQueue": 0.4378934482352825, "avgWait": 4.835260157943449, "wip": 0.5, "slaBreaches": 0, "lostHere": 0 },
+      "cal_design": { "arrivals": 104.63333333333334, "departures": 98.33333333333333, "avgQueue": 2.7680463957549053, "avgWait": 25.344241723137362, "wip": 5.5, "slaBreaches": 0, "lostHere": 0 },
+      "cal_approve": { "arrivals": 78.63333333333334, "departures": 76.76666666666667, "avgQueue": 0.020389529668643547, "avgWait": 0.2513157358815977, "wip": 0.03333333333333333, "slaBreaches": 0, "lostHere": 0 },
+      "adhoc_design": { "arrivals": 133.03333333333333, "departures": 124.2, "avgQueue": 3.669429469233001, "avgWait": 25.654362358020983, "wip": 8.566666666666666, "slaBreaches": 0, "lostHere": 0 }
+    },
+    "absence": {
+      "hana": {
+        "steps": [ "pitch", "workshop" ],
+        "workLost": 0,
+        "itemsLost": 0,
+        "recoveryWeeks": 1,
+        "recovered": true,
+        "extraMissed": 0
+      },
+      "imogen": {
+        "steps": [ "content_plan" ],
+        "workLost": 0,
+        "itemsLost": 0,
+        "recoveryWeeks": 0,
+        "recovered": true,
+        "extraMissed": 0
+      },
+      "marek": {
+        "steps": [ "web_build" ],
+        "workLost": 0.0006574621959237344,
+        "itemsLost": 0.1,
+        "recoveryWeeks": 0,
+        "recovered": true,
+        "extraMissed": 0.4000000000000057
+      },
+      "priti": {
+        "steps": [ "onboard" ],
+        "workLost": 0,
+        "itemsLost": 0,
+        "recoveryWeeks": 1,
+        "recovered": true,
+        "extraMissed": 0.20000000000000284
+      }
     },
     "ratings": {
       "capacity:role:copy": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
@@ -134,16 +168,15 @@
       "churn_risk:client:l09": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
       "churn_risk:client:l14": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
       "capacity:role:design": { "rating": "bad", "base": "bad", "badMonth": false, "bottleneck": false },
-      "spof:step:content_plan": { "rating": "bad", "base": "bad", "badMonth": false, "bottleneck": false },
       "rework:step:social_setup": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },
       "churn_risk:client:l10": { "rating": "bad", "base": "bad", "badMonth": false, "bottleneck": false },
       "churn_risk:client:l13": { "rating": "bad", "base": "bad", "badMonth": false, "bottleneck": false },
-      "spof:step:onboard": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
-      "spof:step:pitch": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
-      "spof:step:web_build": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
-      "spof:step:workshop": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
       "sla:step:concepts": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false },
       "sla:step:web_build": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false },
+      "spare:person:callum": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
+      "spare:person:hana": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
+      "spare:person:jess": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
+      "spare:person:priti": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
       "churn_risk:client:l01": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
       "churn_risk:client:l02": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
       "churn_risk:client:l05": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },

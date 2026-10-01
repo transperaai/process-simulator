@@ -17,7 +17,7 @@ export interface NavItem {
   tone?: CountTone;
   /** What the count means, for the badge's accessible name ("open", "pending"). */
   countNoun?: string;
-  /** A page that is not built yet: it opens a "Coming in A3x" placeholder (or, for People, a section of Settings). */
+  /** A page that is not built yet: it opens a "Coming in A3x" placeholder. */
   soon?: string;
   /** On a map route, this item opens that tab of the map's side panel instead of navigating (the read-only Larkspur demo). */
   panel?: "issues";
@@ -49,7 +49,7 @@ const matches = (rest: string, path: string) => rest === path || rest.startsWith
  * The shared shape: `base` is where the workspace's pages live (`/w/<slug>` or `/demo`), `rest` the path under it.
  * The map (the workspace root and `/p/<id>`) belongs to Processes until A35 turns Overview into the landing page.
  */
-function groups(base: string, rest: string, counts: NavCounts, extra: { people: string | null; settings: boolean; access: boolean; rules?: boolean; levers?: boolean }): NavGroup[] {
+function groups(base: string, rest: string, counts: NavCounts, extra: { settings: boolean; access: boolean; rules?: boolean; levers?: boolean }): NavGroup[] {
   const onMap = rest === "" || rest.startsWith("/p/");
   const item = (i: Omit<NavItem, "href" | "active"> & { path: string; active?: boolean }): NavItem => {
     const { path, active, ...fields } = i;
@@ -57,9 +57,8 @@ function groups(base: string, rest: string, counts: NavCounts, extra: { people: 
   };
   const company: NavItem[] = [
     item({ key: "sources", label: "Sources", path: "/sources", icon: "sources", count: counts.unlinkedSources, tone: "warn", countNoun: "not linked to anything" }),
+    item({ key: "people", label: "People", path: "/people", icon: "people" }),
   ];
-  // People is a section of Settings until it gets its own page, so it never shows as the current page.
-  if (extra.people) company.push({ key: "people", label: "People", href: extra.people, active: false, icon: "people" });
   if (extra.settings) company.push(item({ key: "settings", label: "Settings", path: "/settings", icon: "settings", active: rest === "/settings" || rest === "/settings/rules" || rest === "/settings/levers" }));
   // The demo has no Settings page, so its Analysis rules and Levers are reached from the sidebar directly.
   if (extra.rules) company.push(item({ key: "rules", label: "Analysis rules", path: "/settings/rules", icon: "settings" }));
@@ -91,13 +90,13 @@ function groups(base: string, rest: string, counts: NavCounts, extra: { people: 
 export function workspaceNav({ slug, pathname, canManage, counts }: { slug: string; pathname: string; canManage: boolean; counts: NavCounts }): NavGroup[] {
   const base = `/w/${slug}`;
   const rest = pathname.startsWith(base) ? pathname.slice(base.length) : "\u0000";
-  return groups(base, rest, counts, { people: `${base}/settings#people-heading`, settings: true, access: canManage });
+  return groups(base, rest, counts, { settings: true, access: canManage });
 }
 
-/** Northbeam on the demo: no database, so no People, Settings or Access (but its Analysis rules and Levers, edited in memory). */
+/** Northbeam on the demo: no database, so no Settings or Access (but its Analysis rules and Levers, edited in memory). */
 function demoGroups(pathname: string, counts: NavCounts): NavGroup[] {
   const rest = pathname === "/demo" ? "" : pathname.startsWith("/demo/") ? pathname.slice("/demo".length) : "\u0000";
-  return groups("/demo", rest, counts, { people: null, settings: false, access: false, rules: true, levers: true });
+  return groups("/demo", rest, counts, { settings: false, access: false, rules: true, levers: true });
 }
 
 /** Larkspur is a read-only map: just the map, and its issues in the map's side panel. */

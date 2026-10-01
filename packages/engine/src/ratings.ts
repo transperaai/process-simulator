@@ -32,7 +32,7 @@ export const compareRatingsDesc = (a: Rating, b: Rating): number => ratingRank(b
 export type Cutoffs = readonly [good: number, bad: number, risk: number];
 
 /** The rules this model rates (the numbers are those in docs/analysis-rules.md). */
-export const RATING_RULE_IDS = ["busy", "overtime", "queue", "wait", "rework", "sla"] as const;
+export const RATING_RULE_IDS = ["busy", "overtime", "queue", "wait", "rework", "sla", "spare", "spof", "dropoff", "cycle", "success"] as const;
 export type RatingRuleId = (typeof RATING_RULE_IDS)[number];
 
 export interface RatingRuleMeta {
@@ -48,6 +48,12 @@ export interface RatingRuleMeta {
   upperInclusive: boolean;
   /** Whether a bad month (P90) can raise the rating. Queue growth is too noisy per run to read a P90 from. */
   badMonth: boolean;
+  /**
+   * The rule rates a number where lower is worse (spare time: "under 40% busy"; goals met: "80% of runs or more
+   * is Great"). Its cut-offs then run from high to low; `upperInclusive` still says which band a value on a
+   * cut-off goes to (true: the better one).
+   */
+  lowerIsWorse?: boolean;
 }
 
 export const RATING_RULES: Record<RatingRuleId, RatingRuleMeta> = {
@@ -57,6 +63,11 @@ export const RATING_RULES: Record<RatingRuleId, RatingRuleMeta> = {
   wait: { number: 5, name: "Waiting too long", upperInclusive: true, badMonth: true },
   rework: { number: 6, name: "Rework", upperInclusive: false, badMonth: true },
   sla: { number: 7, name: "Missed deadlines", upperInclusive: false, badMonth: true },
+  spare: { number: 2, name: "Spare time", upperInclusive: true, badMonth: false, lowerIsWorse: true },
+  spof: { number: 8, name: "Only one person can do it", upperInclusive: false, badMonth: false },
+  dropoff: { number: 12, name: "Work lost at a step", upperInclusive: true, badMonth: true },
+  cycle: { number: 13, name: "Too slow overall", upperInclusive: true, badMonth: true },
+  success: { number: 11, name: "Goals met", upperInclusive: true, badMonth: false, lowerIsWorse: true },
 };
 
 /**
@@ -69,6 +80,12 @@ export const RATING_RULES: Record<RatingRuleId, RatingRuleMeta> = {
  * - wait: average wait for a person ÷ the step's expected wait, 1 / 1.5 / 3.
  * - rework: simulated share of visits that repeat, 5 / 10 / 20%.
  * - sla: share of visits over the step's SLA, 5 / 10 / 25%.
+ * - spare: utilisation, lower is worse: an opportunity (Good) under 40%; no Bad or Operational risk band (0 / 0).
+ * - spof: the share of work lost while the person is away, 5 / 5 / 20% (no Good band). The weeks to recover are
+ *   rated by `absence.recoveryCutoffs`.
+ * - dropoff: share of work lost at a step ÷ the step's benchmark, 1 / 1.25 / 1.5.
+ * - cycle: end-to-end time ÷ the process's target, 1 / 1.25 / 1.5.
+ * - success: the share of runs that meet a success measure, lower is worse: 80 / 50 / 20%.
  */
 export const DEFAULT_RATING_CUTOFFS: Record<RatingRuleId, Cutoffs> = {
   busy: [0.7, 0.85, 0.95],
@@ -77,7 +94,25 @@ export const DEFAULT_RATING_CUTOFFS: Record<RatingRuleId, Cutoffs> = {
   wait: [1, 1.5, 3],
   rework: [0.05, 0.1, 0.2],
   sla: [0.05, 0.1, 0.25],
+  spare: [0.4, 0, 0],
+  spof: [0.05, 0.05, 0.2],
+  dropoff: [1, 1.25, 1.5],
+  cycle: [1, 1.25, 1.5],
+  success: [0.8, 0.5, 0.2],
 };
+
+/**
+ * The absence test's settings (rule 8, docs/analysis-rules.md): how long the person is away, how often it
+ * happens in a year (for the cost), and the cut-offs for the weeks their queues take to get back to normal
+ * (within 1 week is Great, up to 4 is Bad, longer is Operational risk; no Good band).
+ */
+export interface AbsenceSettings {
+  weeks: number;
+  perYear: number;
+  recoveryCutoffs: Cutoffs;
+}
+
+export const DEFAULT_ABSENCE: AbsenceSettings = { weeks: 2, perYear: 2, recoveryCutoffs: [1, 1, 4] };
 
 /** What an override can be attached to. The most specific match wins (see `OVERRIDE_PRECEDENCE`). */
 export const OVERRIDE_KINDS = ["person", "step", "role", "service", "process"] as const;
@@ -113,6 +148,8 @@ export interface RatingConfig {
   };
   /** Rule 5's default expected wait for a person, in working days of the model's week (`hoursPerWeek / 5`), when nothing sets one. */
   expectedWaitDays: { pipeline: number; servicing: number };
+  /** The absence test (rule 8). */
+  absence: AbsenceSettings;
 }
 
 /** What a caller passes: any part of the config; the rest takes the defaults. */
@@ -120,12 +157,13 @@ export interface RatingConfigInput {
   rules?: { [R in RatingRuleId]?: Partial<RatingRuleConfig> };
   escalators?: Partial<RatingConfig["escalators"]>;
   expectedWaitDays?: Partial<RatingConfig["expectedWaitDays"]>;
+  absence?: Partial<AbsenceSettings>;
 }
 
 export function defaultRatingConfig(): RatingConfig {
   const rules = {} as Record<RatingRuleId, RatingRuleConfig>;
   for (const id of RATING_RULE_IDS) rules[id] = { enabled: true, cutoffs: DEFAULT_RATING_CUTOFFS[id], overrides: [] };
-  return { rules, escalators: { badMonth: true, bottleneck: true }, expectedWaitDays: { pipeline: 1, servicing: 2 } };
+  return { rules, escalators: { badMonth: true, bottleneck: true }, expectedWaitDays: { pipeline: 1, servicing: 2 }, absence: { ...DEFAULT_ABSENCE } };
 }
 
 export const DEFAULT_RATING_CONFIG: RatingConfig = defaultRatingConfig();
@@ -138,6 +176,7 @@ export function resolveRatingConfig(input: RatingConfigInput = {}): RatingConfig
     rules: base.rules,
     escalators: { ...base.escalators, ...input.escalators },
     expectedWaitDays: { ...base.expectedWaitDays, ...input.expectedWaitDays },
+    absence: { ...base.absence, ...input.absence },
   };
 }
 
@@ -245,8 +284,17 @@ export interface RatingOutcome {
 export function rateValue(
   cutoffs: Cutoffs,
   input: RatingInput,
-  opts: { upperInclusive?: boolean; badMonth?: boolean; bottleneck?: boolean } = {},
+  opts: { upperInclusive?: boolean; badMonth?: boolean; bottleneck?: boolean; lowerIsWorse?: boolean } = {},
 ): RatingOutcome {
+  if (opts.lowerIsWorse) {
+    // Mirror the number and the cut-offs, so the same bands apply (`upperInclusive` keeps its meaning).
+    const neg = (v: number) => (v === 0 ? 0 : -v);
+    return rateValue(
+      [neg(cutoffs[0]), neg(cutoffs[1]), neg(cutoffs[2])],
+      { ...input, average: neg(input.average), p90: input.p90 == null ? input.p90 : neg(input.p90) },
+      { ...opts, lowerIsWorse: false },
+    );
+  }
   const upper = opts.upperInclusive ?? false;
   const base = bandOf(cutoffs, input.average, upper);
   let band = base;
@@ -273,6 +321,7 @@ export function rateRule(
   const meta = RATING_RULES[rule];
   return rateValue(resolved.cutoffs, input, {
     upperInclusive: meta.upperInclusive,
+    lowerIsWorse: meta.lowerIsWorse,
     badMonth: meta.badMonth && config.escalators.badMonth,
     bottleneck: config.escalators.bottleneck,
   });
@@ -318,3 +367,19 @@ const RATING_TO_STORED: Record<Rating, StoredSeverity> = { risk: "critical", bad
 
 export const ratingOfStored = (s: StoredSeverity): Rating => STORED_TO_RATING[s];
 export const storedOfRating = (r: Rating): StoredSeverity => RATING_TO_STORED[r];
+
+/**
+ * Rule 9, client health (docs/analysis-rules.md): a client group's simulated
+ * health, 0 to 100, where higher is better. Great from 75, Good from 65, Bad
+ * from 50, Operational risk under 50. The cut-offs are listed best first, so
+ * they run the other way round to the other rules'.
+ */
+export const CLIENT_HEALTH_CUTOFFS: Cutoffs = [75, 65, 50];
+
+/** Rate a client group's (or the company's) health. A cut-off belongs to the better band: 75 is Great, 65 is Good, 50 is Bad. */
+export function rateClientHealth(health: number, cutoffs: Cutoffs = CLIENT_HEALTH_CUTOFFS): Rating {
+  if (health >= cutoffs[0]) return "great";
+  if (health >= cutoffs[1]) return "good";
+  if (health >= cutoffs[2]) return "bad";
+  return "risk";
+}

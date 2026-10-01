@@ -46,6 +46,13 @@ export interface WorkspaceSettings {
   health_late_penalty?: number;
   health_missed_penalty?: number;
   health_initial?: number;
+  /**
+   * The range of company client health that is normal for the business, 0–100
+   * (for example 70 to 80 for a small agency). The People page shows the
+   * company's simulated client health against it. Left out: no benchmark.
+   */
+  client_health_benchmark_low?: number;
+  client_health_benchmark_high?: number;
 }
 
 export interface WorkspaceRow {
@@ -152,6 +159,14 @@ export interface StepRow {
   notes: string | null;
   /** Target hours for one visit to the step (queue + hands-on + wait); visits over it are SLA breaches. */
   sla_hours: number | null;
+  /** How long an item may queue for a person before it counts as waiting too long, in hours; null: the workspace default for the step's kind. */
+  expected_wait_hours: number | null;
+  /** The share of items that go cold for each working day they wait here (0 to 1); null: none assumed. For the cost of waiting. */
+  lost_per_day_waiting: number | null;
+  /** The share of the items leaving the step that may be lost here and still be fine (0 to 1); null: the step isn't rated for work lost. */
+  dropoff_benchmark: number | null;
+  /** Set on the process's start step: how long an item should take end to end, in working hours; null: the process isn't rated. */
+  target_cycle_hours: number | null;
   /** Items sitting at this step now; null when not entered (docs/PRD.md §6.3.1). */
   current_wip: number | null;
   x: number;
@@ -350,6 +365,29 @@ export interface ClientAssignmentRow {
   workspace_id: string;
 }
 
+/**
+ * The clients of one service, counted instead of named (docs/PRD.md decision
+ * D27; issue #120). One row per service. The engine simulates that many
+ * unnamed clients from these numbers.
+ */
+export interface ClientGroupRow {
+  id: string;
+  workspace_id: string;
+  service_id: string;
+  /** How many clients the service has today. */
+  client_count: number;
+  /** What one client pays a month. */
+  fee: number;
+  /** Share of clients that leave each month when all is going well (0–1). */
+  churn_monthly: number;
+  /** How long a client usually stays, in months. */
+  stay_months: number;
+  /** 0–100. */
+  starting_health: number;
+  /** Provenance of the five numbers. */
+  provenance: ProvenanceMap;
+}
+
 export type SourceKind = "transcript" | "notes" | "screenshot";
 
 /**
@@ -512,6 +550,12 @@ export interface ProcessBundle {
   clients?: ClientRow[];
   clientServices?: ClientServiceRow[];
   clientAssignments?: ClientAssignmentRow[];
+  /**
+   * Clients counted per service (issue #120). With any groups the engine
+   * simulates unnamed clients from them and ignores the named roster above
+   * (which stays stored, hidden); with none, the roster applies as before.
+   */
+  clientGroups?: ClientGroupRow[];
   /**
    * Client servicing (issue #19): which servicing processes each service's
    * clients run, and the workspace's other processes at their live
@@ -678,6 +722,7 @@ export type _SchemaDriftChecks = [
   Assert<Matches<ClientRow, "clients">>,
   Assert<Matches<ClientServiceRow, "client_services">>,
   Assert<Matches<ClientAssignmentRow, "client_assignments">>,
+  Assert<Matches<ClientGroupRow, "client_groups">>,
   // recurrence and provenance are jsonb; RecurrenceJson and ProvenanceMap are their app-side shapes.
   Assert<Matches<Omit<ServiceServicingRow, "recurrence">, "service_servicing">>,
   Assert<Matches<LeadSourceRow, "lead_sources">>,

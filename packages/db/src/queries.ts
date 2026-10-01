@@ -6,6 +6,7 @@ import { partitionSteps } from "./retired";
 import type { RunRow } from "./runs";
 import type {
   ClientAssignmentRow,
+  ClientGroupRow,
   ClientRow,
   ClientServiceRow,
   DemandSettingsRow,
@@ -137,6 +138,16 @@ export async function loadClients(
   };
 }
 
+/** The `ClientGroupRow` columns. */
+export const CLIENT_GROUP_COLUMNS = "id, workspace_id, service_id, client_count, fee, churn_monthly, stay_months, starting_health, provenance" as const;
+
+/** A workspace's client groups (clients counted per service), by creation order. */
+export async function loadClientGroups(db: Db, workspaceId: string): Promise<ClientGroupRow[]> {
+  const r = await db.from("client_groups").select(CLIENT_GROUP_COLUMNS).eq("workspace_id", workspaceId).order("created_at").order("id");
+  // provenance is jsonb; ProvenanceMap is its app-side shape.
+  return (rows(r) ?? []) as ClientGroupRow[];
+}
+
 /** The `LeadSourceRow`, `SeasonalityRow` and `DemandSettingsRow` columns. */
 export const LEAD_SOURCE_COLUMNS = "id, workspace_id, name, volume_week, conversion_to_qualified, provenance" as const;
 export const SEASONALITY_COLUMNS = "id, workspace_id, month, multiplier, provenance" as const;
@@ -167,7 +178,7 @@ export async function loadProcessBundle(
   revisionId: string,
 ): Promise<ProcessBundle> {
   const ws = workspace.id;
-  const [revision, roles, steps, edges, people, personRoles, personSkills, personLeave, services, leadSources, seasonality, demand, roster, servicing, market, settingsProvenance] =
+  const [revision, roles, steps, edges, people, personRoles, personSkills, personLeave, services, leadSources, seasonality, demand, roster, clientGroups, servicing, market, settingsProvenance] =
     await Promise.all([
       db.from("process_revisions").select("id, workspace_id, process_id, number, status").eq("id", revisionId).single(),
       db.from("roles").select("*").eq("workspace_id", ws),
@@ -183,6 +194,7 @@ export async function loadProcessBundle(
       db.from("seasonality").select(SEASONALITY_COLUMNS).eq("workspace_id", ws),
       db.from("demand_settings").select(DEMAND_SETTINGS_COLUMNS).eq("workspace_id", ws).maybeSingle(),
       loadClients(db, ws),
+      loadClientGroups(db, ws),
       loadServicingContext(db, ws, process),
       loadMarket(db, ws),
       db.from("workspaces").select("provenance").eq("id", ws).maybeSingle(),
@@ -218,6 +230,7 @@ export async function loadProcessBundle(
     seasonality: (rows(seasonality) ?? []) as SeasonalityRow[],
     demand: rows(demand) as DemandSettingsRow | null,
     ...roster,
+    clientGroups,
     ...servicing,
     ...market,
   };

@@ -66,7 +66,7 @@ const desc = (...indices: number[]): Chain => ({ indices, dir: "desc" });
 
 export const ANALYSIS_RULE_SPECS: Record<AnalysisRuleId, AnalysisRuleSpec> = {
   busy: { number: 1, defaults: [0.7, 0.85, 0.95], chains: [asc(0, 1, 2)], max: 5, overridable: true, engine: "busy" },
-  spare: { number: 2, defaults: [0.4], chains: [], max: 1, overridable: true, engine: null },
+  spare: { number: 2, defaults: [0.4], chains: [], max: 1, overridable: true, engine: "spare" },
   // Share of the overtime cap used: any regular overtime is Bad, the cap used up is Operational risk.
   overtime: { number: 3, defaults: [0.01, 0.95], chains: [asc(0, 1)], max: 1, overridable: true, engine: "overtime" },
   // Items a week the queue grows by; at or over this is Operational risk.
@@ -75,13 +75,13 @@ export const ANALYSIS_RULE_SPECS: Record<AnalysisRuleId, AnalysisRuleSpec> = {
   rework: { number: 6, defaults: [0.05, 0.1, 0.2], chains: [asc(0, 1, 2)], max: 1, overridable: true, engine: "rework" },
   sla: { number: 7, defaults: [0.05, 0.1, 0.25], chains: [asc(0, 1, 2)], max: 1, overridable: true, engine: "sla" },
   // Work lost: Great under, Operational risk over; weeks to recover: Great within, Operational risk beyond.
-  spof: { number: 8, defaults: [0.05, 0.2, 1, 4], chains: [asc(0, 1), asc(2, 3)], max: 100, overridable: true, engine: null },
+  spof: { number: 8, defaults: [0.05, 0.2, 1, 4], chains: [asc(0, 1), asc(2, 3)], max: 100, overridable: true, engine: "spof" },
   health: { number: 9, defaults: [75, 65, 50], chains: [desc(0, 1, 2)], max: 100, overridable: true, engine: null },
   // A driver's share of churn for Bad, and the client group health below which it is Operational risk.
   driver: { number: 10, defaults: [0.3, 50], chains: [], max: 100, overridable: false, engine: null },
-  success: { number: 11, defaults: [0.8, 0.5, 0.2], chains: [desc(0, 1, 2)], max: 1, overridable: true, engine: null },
-  dropoff: { number: 12, defaults: [1.25, 1.5], chains: [asc(0, 1)], max: 100, overridable: true, engine: null },
-  cycle: { number: 13, defaults: [1.25, 1.5], chains: [asc(0, 1)], max: 100, overridable: true, engine: null },
+  success: { number: 11, defaults: [0.8, 0.5, 0.2], chains: [desc(0, 1, 2)], max: 1, overridable: true, engine: "success" },
+  dropoff: { number: 12, defaults: [1.25, 1.5], chains: [asc(0, 1)], max: 100, overridable: true, engine: "dropoff" },
+  cycle: { number: 13, defaults: [1.25, 1.5], chains: [asc(0, 1)], max: 100, overridable: true, engine: "cycle" },
   sources: { number: 14, defaults: [2], chains: [], max: 1000, overridable: false, engine: null },
   broken: { number: 15, defaults: [], chains: [], max: 0, overridable: false, engine: null },
 };
@@ -94,6 +94,15 @@ const TO_CUTOFFS: Record<RatingRuleId, (inputs: readonly number[]) => Cutoffs> =
   wait: (i) => [i[0]!, i[1]!, i[2]!],
   rework: (i) => [i[0]!, i[1]!, i[2]!],
   sla: (i) => [i[0]!, i[1]!, i[2]!],
+  // Spare time: Good under the cut-off; there is no Bad or Operational risk band.
+  spare: (i) => [i[0]!, 0, 0],
+  // Only one person can do it: the first two inputs are work lost (no Good band). The last two, the weeks to recover, are
+  // `config.absence.recoveryCutoffs` (see `toRatingConfig`); they are not per-subject, so an override's recovery weeks are ignored.
+  spof: (i) => [i[0]!, i[0]!, i[1]!],
+  success: (i) => [i[0]!, i[1]!, i[2]!],
+  // Work lost at a step and too slow overall: at or within the benchmark / target is Great, then Good up to the first input.
+  dropoff: (i) => [1, i[0]!, i[1]!],
+  cycle: (i) => [1, i[0]!, i[1]!],
 };
 
 /** The cut-offs of the rating model for a rule's inputs; null for a rule the engine doesn't rate from these settings. */
@@ -385,6 +394,11 @@ export function toRatingConfig(settings: AnalysisSettings | null | undefined, ho
   }
   if (s.escalators?.badMonth === false) config.escalators.badMonth = false;
   if (s.escalators?.bottleneck === false) config.escalators.bottleneck = false;
+  // The absence test: the recovery cut-offs are the last two inputs of "Only one person can do it" (rule-wide: overrides
+  // for one person or step change the work-lost cut-offs only), and its length and frequency are money settings.
+  const spof = resolveAnalysisRule(s, "spof");
+  const money = resolveMoney(s);
+  config.absence = { weeks: money.absenceWeeks, perYear: money.absencesPerYear, recoveryCutoffs: [spof.inputs[2]!, spof.inputs[2]!, spof.inputs[3]!] };
   const hoursPerDay = hoursPerWeek / 5;
   const w = s.money?.waitHours;
   if (hoursPerDay > 0 && w?.pipeline !== undefined) config.expectedWaitDays.pipeline = w.pipeline / hoursPerDay;
@@ -400,6 +414,10 @@ const RULE_OF_KEY_PREFIX: Record<string, AnalysisRuleId> = {
   spof: "spof",
   rework: "rework",
   sla: "sla",
+  spare: "spare",
+  dropoff: "dropoff",
+  cycle: "cycle",
+  success: "success",
   churn_risk: "health",
   broken_scenario: "broken",
   perception_gap: "sources",

@@ -1,7 +1,7 @@
 {
   "model": "northbeam-downturn",
   "description": "Northbeam as seeded under the Downturn market for the whole run: fewer enquiries that sign less, slower decisions, lower prices, more churn (market.ts).",
-  "engineVersion": "1.2.0",
+  "engineVersion": "1.4.0",
   "seed": 1,
   "reps": 30,
   "outputs": {
@@ -92,23 +92,45 @@
       "rosa": { "util": 0.19972856515861948, "overtime": 0 }
     },
     "steps": {
-      "qualify": { "arrivals": 59.666666666666664, "departures": 59.5, "avgQueue": 0.00044226613203275536, "avgWait": 0.003912548809159415, "wip": 0, "slaBreaches": 0 },
-      "discovery": { "arrivals": 32.6, "departures": 32.06666666666667, "avgQueue": 0.0007646946916451205, "avgWait": 0.011468882353396055, "wip": 0, "slaBreaches": 0 },
-      "audit": { "arrivals": 25.7, "departures": 25.5, "avgQueue": 0.16312042503504465, "avgWait": 3.1314848874239334, "wip": 0.16666666666666666, "slaBreaches": 0 },
-      "decision": { "arrivals": 22.366666666666667, "departures": 22.266666666666666, "avgQueue": 0, "avgWait": 0, "wip": 0, "slaBreaches": 0 },
-      "onboard": { "arrivals": 6.366666666666666, "departures": 6.3, "avgQueue": 0.004920503410693386, "avgWait": 0.4275786139278685, "wip": 0, "slaBreaches": 0 },
-      "kickoff": { "arrivals": 5.733333333333333, "departures": 5.6, "avgQueue": 0.04050618887375155, "avgWait": 3.480344567932199, "wip": 0.03333333333333333, "slaBreaches": 0 },
-      "seo": { "arrivals": 3.466666666666667, "departures": 3.4, "avgQueue": 0.006153210044917687, "avgWait": 1.0122395379920643, "wip": 0, "slaBreaches": 0 },
-      "ppc": { "arrivals": 2.8, "departures": 3.066666666666667, "avgQueue": 0.025026577866808564, "avgWait": 3.5128062855281996, "wip": 0, "slaBreaches": 0 },
-      "live": { "arrivals": 5.8, "departures": 5.8, "avgQueue": 0.00393966378588936, "avgWait": 0.33185988433641617, "wip": 0.03333333333333333, "slaBreaches": 0 },
-      "report_strat": { "arrivals": 86.7, "departures": 86.93333333333334, "avgQueue": 0.5036167845639323, "avgWait": 3.0883160705523918, "wip": 0.6333333333333333, "slaBreaches": 0 },
-      "report_seo": { "arrivals": 51.8, "departures": 51.6, "avgQueue": 0.7892853864024243, "avgWait": 7.830563565284498, "wip": 0.8666666666666667, "slaBreaches": 0 },
-      "report_ppc": { "arrivals": 35.13333333333333, "departures": 35.333333333333336, "avgQueue": 1.0547822854763813, "avgWait": 15.354172398069778, "wip": 0.5666666666666667, "slaBreaches": 0 },
-      "report_am": { "arrivals": 86.93333333333334, "departures": 86.93333333333334, "avgQueue": 0.18599951408936552, "avgWait": 1.1049879182180187, "wip": 0.13333333333333333, "slaBreaches": 0 },
-      "report_fin": { "arrivals": 86.93333333333334, "departures": 86.7, "avgQueue": 0.009674409269268039, "avgWait": 0.05844457696174724, "wip": 0, "slaBreaches": 0 },
-      "checkin_call": { "arrivals": 188, "departures": 187.43333333333334, "avgQueue": 0.47481498980388104, "avgWait": 1.3060243555162236, "wip": 0.7333333333333333, "slaBreaches": 0 }
+      "qualify": { "arrivals": 59.666666666666664, "departures": 59.5, "avgQueue": 0.00044226613203275536, "avgWait": 0.003912548809159415, "wip": 0, "slaBreaches": 0, "lostHere": 26.9 },
+      "discovery": { "arrivals": 32.6, "departures": 32.06666666666667, "avgQueue": 0.0007646946916451205, "avgWait": 0.011468882353396055, "wip": 0, "slaBreaches": 0, "lostHere": 9.5 },
+      "audit": { "arrivals": 25.7, "departures": 25.5, "avgQueue": 0.16312042503504465, "avgWait": 3.1314848874239334, "wip": 0.16666666666666666, "slaBreaches": 0, "lostHere": 0 },
+      "decision": { "arrivals": 22.366666666666667, "departures": 22.266666666666666, "avgQueue": 0, "avgWait": 0, "wip": 0, "slaBreaches": 0, "lostHere": 16.466666666666665 },
+      "onboard": { "arrivals": 6.366666666666666, "departures": 6.3, "avgQueue": 0.004920503410693386, "avgWait": 0.4275786139278685, "wip": 0, "slaBreaches": 0, "lostHere": 0 },
+      "kickoff": { "arrivals": 5.733333333333333, "departures": 5.6, "avgQueue": 0.04050618887375155, "avgWait": 3.480344567932199, "wip": 0.03333333333333333, "slaBreaches": 0, "lostHere": 0 },
+      "seo": { "arrivals": 3.466666666666667, "departures": 3.4, "avgQueue": 0.006153210044917687, "avgWait": 1.0122395379920643, "wip": 0, "slaBreaches": 0, "lostHere": 0 },
+      "ppc": { "arrivals": 2.8, "departures": 3.066666666666667, "avgQueue": 0.025026577866808564, "avgWait": 3.5128062855281996, "wip": 0, "slaBreaches": 0, "lostHere": 0 },
+      "live": { "arrivals": 5.8, "departures": 5.8, "avgQueue": 0.00393966378588936, "avgWait": 0.33185988433641617, "wip": 0.03333333333333333, "slaBreaches": 0, "lostHere": 0 },
+      "report_strat": { "arrivals": 86.7, "departures": 86.93333333333334, "avgQueue": 0.5036167845639323, "avgWait": 3.0883160705523918, "wip": 0.6333333333333333, "slaBreaches": 0, "lostHere": 0 },
+      "report_seo": { "arrivals": 51.8, "departures": 51.6, "avgQueue": 0.7892853864024243, "avgWait": 7.830563565284498, "wip": 0.8666666666666667, "slaBreaches": 0, "lostHere": 0 },
+      "report_ppc": { "arrivals": 35.13333333333333, "departures": 35.333333333333336, "avgQueue": 1.0547822854763813, "avgWait": 15.354172398069778, "wip": 0.5666666666666667, "slaBreaches": 0, "lostHere": 0 },
+      "report_am": { "arrivals": 86.93333333333334, "departures": 86.93333333333334, "avgQueue": 0.18599951408936552, "avgWait": 1.1049879182180187, "wip": 0.13333333333333333, "slaBreaches": 0, "lostHere": 0 },
+      "report_fin": { "arrivals": 86.93333333333334, "departures": 86.7, "avgQueue": 0.009674409269268039, "avgWait": 0.05844457696174724, "wip": 0, "slaBreaches": 0, "lostHere": 0 },
+      "checkin_call": { "arrivals": 188, "departures": 187.43333333333334, "avgQueue": 0.47481498980388104, "avgWait": 1.3060243555162236, "wip": 0.7333333333333333, "slaBreaches": 0, "lostHere": 0 }
+    },
+    "absence": {
+      "maya": {
+        "steps": [ "audit", "kickoff", "report_strat" ],
+        "workLost": 0.10173802458668928,
+        "itemsLost": 24,
+        "recoveryWeeks": 4,
+        "recovered": true,
+        "extraMissed": 17.4
+      },
+      "rosa": {
+        "steps": [ "report_fin" ],
+        "workLost": 0.03899957609156422,
+        "itemsLost": 9.2,
+        "recoveryWeeks": 1,
+        "recovered": true,
+        "extraMissed": 7
+      }
     },
     "ratings": {
+      "spof:step:audit": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
+      "spof:step:kickoff": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
+      "spof:step:report_fin": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
+      "spof:step:report_strat": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
       "rework:step:ppc": { "rating": "risk", "base": "bad", "badMonth": true, "bottleneck": false },
       "capacity:role:ppc": { "rating": "bad", "base": "great", "badMonth": true, "bottleneck": true },
       "wait:step:report_ppc": { "rating": "bad", "base": "great", "badMonth": true, "bottleneck": true },
@@ -117,10 +139,9 @@
       "rework:step:seo": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },
       "capacity:person:sam": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false },
       "wait:step:ppc": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false },
-      "spof:step:audit": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
-      "spof:step:kickoff": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
-      "spof:step:report_fin": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
-      "spof:step:report_strat": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false }
+      "spare:person:priya": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
+      "spare:person:rosa": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
+      "spare:person:tom": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false }
     },
     "rosterClients": {
       "c01": { "health": 94.86666666666666, "churned": 0.13333333333333333, "atRisk": 0 },

@@ -183,6 +183,26 @@ export interface EngineClient {
   assignments: Record<string, string>;
 }
 
+/**
+ * The clients of one service, counted instead of named (docs/PRD.md §3 "Client
+ * group", decision D27). The engine simulates that many unnamed clients, each
+ * billing `fee` a month, churning at `churnMonthly` and starting at `health`,
+ * so late or missed servicing work still lowers health and drives churn
+ * (see `withClientGroups` in clients.ts).
+ */
+export interface EngineClientGroup {
+  /** How many clients the service has today (whole clients; rounded). */
+  count: number;
+  /** Average fee one client pays a month. */
+  fee: number;
+  /** Normal churn a month (0-1) at full health: the service's base churn for these clients and for clients won later. */
+  churnMonthly: number;
+  /** Typical stay in months: the service's expected tenure (lifetime value and lost revenue). */
+  stayMonths: number;
+  /** Average health at the start, 0-100. */
+  health: number;
+}
+
 export interface EngineStep {
   id: string;
   name: string;
@@ -219,10 +239,23 @@ export interface EngineStep {
   /**
    * How long an item may queue for a person before it counts as waiting too
    * long, in hours (docs/analysis-rules.md rule 5). Omitted: the rating
-   * config's default for the step's kind (8 h for pipeline steps, 16 h for
-   * servicing steps). It rates the report; it doesn't change the simulation.
+   * config's default for the step's kind (1 working day for pipeline steps, 2
+   * for servicing steps). It rates the report; it doesn't change the simulation.
    */
   expectedWaitHours?: number;
+  /**
+   * The share of items that go cold for each working day they wait here
+   * (0.05 is 5% a day), for the cost of waiting (docs/analysis-rules.md rule
+   * 5, A43). It prices the report; it doesn't change the simulation.
+   */
+  lostPerDayWaiting?: number;
+  /**
+   * The share of the items leaving this step that may be lost here and still
+   * be fine (0.3 is 30%), for "work lost at a step" (rule 12). Omitted: the
+   * rule doesn't rate this step. It rates the report; it doesn't change the
+   * simulation.
+   */
+  dropoffBenchmark?: number;
   next: EngineEdge[];
 }
 
@@ -324,6 +357,15 @@ export interface EngineModel {
    */
   clients?: Record<string, EngineClient>;
   /**
+   * Client groups by service id (decision D27): the clients counted per
+   * service. When present, the engine builds the roster from them (unnamed
+   * clients, nobody assigned, so their work is shared across each role's
+   * people) and they replace `clients`. A group also sets its service's base
+   * churn and expected tenure. Omitted or empty: `clients` (named) or the
+   * pooled `activeClients`, as before.
+   */
+  clientGroups?: Record<string, EngineClientGroup>;
+  /**
    * Servicing processes by id (see `EngineService.servicing`). Omitted or
    * empty: no servicing, and the model runs exactly as before it existed.
    */
@@ -337,6 +379,12 @@ export interface EngineModel {
    * Ignored when any step has `currentWip`: the run starts from that instead.
    */
   warmupWeeks?: number;
+  /**
+   * How long an item should take end to end, in working hours (rule 13, "too
+   * slow overall"). Omitted: the rule doesn't rate this process. It rates the
+   * report; it doesn't change the simulation.
+   */
+  targetCycleHours?: number;
   /**
    * Groups by id (see `EngineGroup`), for steps inside groups or child
    * processes. Omitted: a flat model, simulated exactly as before groups existed.
@@ -403,12 +451,18 @@ export interface StepResult {
   /** Of those, visits that took longer than the step's `sla` (0 when it has none). */
   slaBreaches: number;
   /**
+   * Visits that went straight from this step to a lost end (work lost here,
+   * docs/analysis-rules.md rule 12). Divided by `departures`. Absent from runs
+   * saved before the rule.
+   */
+  lostHere?: number;
+  /**
    * The 90th percentile across replications of the step's average wait, of its
    * share of visits repeated (`reworks / departures`) and of its share of
    * visits over the SLA: a bad month, for the rating model's escalator
    * (ratings.ts). Absent from runs saved before the rating model.
    */
-  p90?: { avgWait: number; reworkShare: number; slaBreachShare: number };
+  p90?: { avgWait: number; reworkShare: number; slaBreachShare: number; lostShare?: number };
 }
 
 /**
@@ -482,6 +536,14 @@ export interface ServiceCounts {
   lost: number;
 }
 
+/** Weekly samples of one replication, taken at each weekly tick when asked for (the absence test). */
+export interface WeeklySamples {
+  /** Queue length at each step at the end of week 1, 2, ... */
+  queue: Record<string, number[]>;
+  /** Cumulative completed items (won, done, and servicing tasks on time or late) at the end of each week. */
+  completed: number[];
+}
+
 export interface ReplicationResult {
   /** Entities reaching their first `won` end. */
   won: number;
@@ -518,6 +580,8 @@ export interface ReplicationResult {
    * during the warm-up or as starting WIP have negative times.
    */
   entities: TraceEntity[] | null;
+  /** Present only when the run was asked to sample weekly (see `WeeklySamples`). */
+  weekly?: WeeklySamples;
   H: number;
   /** Warm-up simulated before t = 0 and discarded. */
   warmupHours: number;

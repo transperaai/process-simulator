@@ -62,7 +62,7 @@ export function Help({ label, description, example, className }: HelpProps) {
         side="bottom"
         align="center"
         collisionPadding={12}
-        className="w-72 max-w-[calc(100vw-24px)] gap-1.5 text-[13px] leading-snug"
+        className="w-72 max-w-[calc(100vw-24px)] gap-1.5 text-[13px] leading-snug font-normal tracking-normal normal-case"
         onOpenAutoFocus={(e) => e.preventDefault()}
         onCloseAutoFocus={(e) => e.preventDefault()}
         onInteractOutside={on("outside")}

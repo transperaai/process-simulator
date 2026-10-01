@@ -1,7 +1,7 @@
 {
   "model": "northbeam",
   "description": "Northbeam Digital, the prototype's model re-baselined after the §6.8 fixes: pooled head-counts, one implicit retainer, automatic warm-up.",
-  "engineVersion": "1.0.0",
+  "engineVersion": "1.1.0",
   "seed": 1,
   "reps": 30,
   "outputs": {
@@ -94,6 +94,20 @@
       "seo": { "arrivals": 6.933333333333334, "departures": 6.733333333333333, "avgQueue": 0, "avgWait": 0, "wip": 0, "slaBreaches": 0 },
       "ppc": { "arrivals": 5.633333333333334, "departures": 5.1, "avgQueue": 0.017241990554987246, "avgWait": 0.6427941834674274, "wip": 0.03333333333333333, "slaBreaches": 0 },
       "live": { "arrivals": 10.633333333333333, "departures": 10.366666666666667, "avgQueue": 0.0005882093555124239, "avgWait": 0.022587812538613906, "wip": 0, "slaBreaches": 0 }
+    },
+    "ratings": {
+      "capacity:role:strat": { "rating": "risk", "base": "good", "badMonth": true, "bottleneck": true },
+      "wait:step:audit": { "rating": "risk", "base": "bad", "badMonth": false, "bottleneck": true },
+      "wait:step:kickoff": { "rating": "risk", "base": "bad", "badMonth": true, "bottleneck": false },
+      "rework:step:audit": { "rating": "risk", "base": "bad", "badMonth": false, "bottleneck": true },
+      "rework:step:seo": { "rating": "risk", "base": "bad", "badMonth": true, "bottleneck": false },
+      "capacity:role:ppc": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },
+      "rework:step:onboard": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },
+      "rework:step:ppc": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },
+      "capacity:role:am": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false },
+      "capacity:role:seo": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false },
+      "spof:step:audit": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
+      "spof:step:kickoff": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false }
     },
     "rosterClients": null
   }

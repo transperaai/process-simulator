@@ -1,5 +1,5 @@
 // The narration number check (issue #29; docs/PRD.md §7.3, decision D15): a
-// language model may write the executive summary and "explain this run", but
+// language model may write "explain this run", but
 // it may never state a figure the engine didn't produce. This module finds
 // every number in a piece of text and matches each one against the figures
 // the model was given. Pure and deterministic; the rules are recorded in
@@ -10,7 +10,7 @@
 //   such as "k"/"m"/"thousand", and unit: %, percentage points, days, hours,
 //   weeks), a spelled-out number from "two" upwards, or a date.
 // - It matches a figure of a compatible kind: money only money, in the
-//   report's currency; % only shares (0.94 is 94%); percentage points only
+//   run's currency; % only shares (0.94 is 94%); percentage points only
 //   points; days also hours converted at the workspace's day length. Plain
 //   counts, hours, days and weeks are otherwise interchangeable, because the
 //   engine's own sentences write "falls by 9.7 days (range 1.2–18.2)".
@@ -56,7 +56,7 @@ export interface CheckContext {
   dates: readonly string[];
   /** Names whose digits are part of the name, not figures. */
   names: readonly string[];
-  /** The report's currency (ISO code). */
+  /** The run's currency (ISO code). */
   currency: string;
   /** Working hours in a day (hours per week / 5), to read hours as days. */
   hoursPerDay: number;

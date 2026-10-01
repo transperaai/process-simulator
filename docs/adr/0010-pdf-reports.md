@@ -1,6 +1,6 @@
 # 10. PDF reports: one HTML document, printed by headless Chromium, stored in Postgres
 
-Date: 30 Sep 2026 · Status: accepted · Issue: #28 · Implements PRD §9 "PDF", §7.1 `export_report`, §6.5, D2, D15
+Date: 30 Sep 2026 · Status: superseded: reports, the PDF route and `export_report` were removed in A32 (#97); the `reports` and `robustness_results` tables stay, unused · Issue: #28 · Implements PRD §9 "PDF", §7.1 `export_report`, §6.5, D2, D15
 
 ## Context
 

@@ -1616,6 +1616,9 @@ function clientResults(model: EngineModel, runs: ReplicationResult[]): Record<st
   return out;
 }
 
+/** A share of a step's visits (0 when there were none). */
+const visitShare = (n: number, visits: number) => (visits > 0 ? Math.min(1, n / visits) : 0);
+
 export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationResult {
   model = flattenModel(model);
   const runs: ReplicationResult[] = [];
@@ -1642,6 +1645,11 @@ export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationRes
       queueGrowth: avg((r) => r.steps[s.id]!.queueGrowth),
       departures: avg((r) => r.steps[s.id]!.departures),
       slaBreaches: avg((r) => r.steps[s.id]!.slaBreaches),
+      p90: {
+        avgWait: pct(runs.map((r) => r.steps[s.id]!.avgWait), 0.9),
+        reworkShare: pct(runs.map((r) => visitShare(r.steps[s.id]!.reworks, r.steps[s.id]!.departures)), 0.9),
+        slaBreachShare: pct(runs.map((r) => visitShare(r.steps[s.id]!.slaBreaches, r.steps[s.id]!.departures)), 0.9),
+      },
     };
   }
   const roles: Record<string, RoleResult> = {};

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { northbeamStepIds as ids, rollUp, toEngineModel, visibleEdges, visibleSteps, type ProcessBundle } from "@transpera-flow/db";
-import { simulate } from "@transpera-flow/engine";
+import { RATING_LABELS, ratingRank, simulate } from "@transpera-flow/engine";
+import { stepRatingOf } from "@/lib/issues/register";
 import { DEMO_GROUP_IDS, withDemoGroups } from "@/lib/demo/nested";
 import { copySteps, deleteSteps, kindProblem, pasteSteps, stepWarnings } from "@/lib/editor/commands";
 import { parseNewStep } from "@/lib/editor/validate";
@@ -56,6 +57,22 @@ describe("the demo's nested view", () => {
     const setup = rollUp(b.steps, DEMO_GROUP_IDS.setup);
     expect(setup.steps).toBe(3);
     expect(setup.handsOnHours).toBe(10 + 8 + 2);
+  });
+
+  it("takes the worst rating of the open issues on the steps inside a closed group", () => {
+    const b = nested();
+    const rating = stepRatingOf({
+      [ids.qualify]: { count: 1, rating: "bad", titles: ["a"] },
+      [ids.discovery]: { count: 2, rating: "risk", titles: ["b", "c"] },
+      [ids.audit]: { count: 1, rating: "risk", titles: ["outside"] },
+    });
+    const roll = rollUp(b.steps, DEMO_GROUP_IDS.conversation, { rating: (id) => rating(id)?.rank ?? null });
+    expect(roll.worstRating).toBe(ratingRank("risk"));
+    expect(rating(ids.discovery)).toEqual({ rank: ratingRank("risk"), label: RATING_LABELS.risk });
+    // The set-up group has no issues, so it shows no rating.
+    expect(rollUp(b.steps, DEMO_GROUP_IDS.setup, { rating: (id) => rating(id)?.rank ?? null }).worstRating).toBeNull();
+    // Only a worse step changes the answer: bad alone reads bad.
+    expect(rollUp(b.steps, DEMO_GROUP_IDS.conversation, { rating: (id) => (id === ids.qualify ? rating(id)!.rank : null) }).worstRating).toBe(ratingRank("bad"));
   });
 
   it("sizes an open group around its steps, and falls back to a card when closed", () => {

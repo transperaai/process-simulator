@@ -4,7 +4,6 @@ import {
   DEMAND_SETTINGS_COLUMNS,
   LEAD_SOURCE_COLUMNS,
   listProcesses,
-  loadClients,
   loadIssues,
   loadLiveProcessBySlug,
   loadProcessBySlug,
@@ -35,7 +34,6 @@ import {
   type WorkspaceRow,
   type WorkspaceSettings,
 } from "@transpera-flow/db";
-import type { RosterData } from "./clients/roster";
 import { roleUsage, type RoleUsage } from "./roles";
 import { createClient } from "./supabase/server";
 
@@ -85,6 +83,11 @@ export async function loadWorkspaceIssues(workspaceId: string): Promise<IssueRow
 /** The workspace's processes, by id and name, for the register's process filter. */
 export async function loadProcessNames(workspaceId: string): Promise<{ id: string; name: string }[]> {
   return (await listProcesses(await createClient(), workspaceId)).map((p) => ({ id: p.id, name: p.name }));
+}
+
+/** The workspace's processes with their kind, in creation order, for the Processes page. */
+export async function loadProcessList(workspaceId: string): Promise<{ id: string; name: string; kind: string }[]> {
+  return (await listProcesses(await createClient(), workspaceId)).map((p) => ({ id: p.id, name: p.name, kind: p.kind }));
 }
 
 /** The workspace's saved scenarios, oldest first (RLS: everyone in the workspace can read them). */
@@ -243,40 +246,5 @@ export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSett
     demand: demand.data as DemandSettingsRow | null,
     // recurrence and provenance are jsonb; the table's check limits recurrence to RecurrenceJson.
     servicingLinks: (servicingLinks.data ?? []) as unknown as ServiceServicingRow[],
-  };
-}
-
-/**
- * The Clients page: the roster, and the roles, people and services it links
- * to (issue #18), with the live pipeline and its servicing processes to
- * simulate each client's health and churn (issue #19).
- */
-export async function loadRoster(slug: string): Promise<RosterData | null> {
-  const supabase = await createClient();
-  const { data: workspace, error } = await supabase.from("workspaces").select("id, name, slug, settings").eq("slug", slug).maybeSingle();
-  if (error) throw error;
-  if (!workspace) return null;
-  const ws = workspace.id;
-  const [canEdit, roles, people, personRoles, services, roster, simulation] = await Promise.all([
-    supabase.rpc("can_edit_workspace", { ws }),
-    supabase.from("roles").select("id, name, color, headcount, default_cost_rate, ongoing_hours_per_client_week").eq("workspace_id", ws).order("name"),
-    supabase.from("people").select("id, name, fte, capacity_hours_week, active").eq("workspace_id", ws).order("name"),
-    supabase.from("person_roles").select("person_id, role_id, workspace_id").eq("workspace_id", ws),
-    supabase.from("services").select(SERVICE_COLUMNS).eq("workspace_id", ws).order("created_at").order("id"),
-    loadClients(supabase, ws),
-    loadLiveProcessBySlug(supabase, slug),
-  ]);
-  for (const r of [canEdit, roles, people, personRoles, services]) if (r.error) throw r.error;
-  return {
-    workspace: { ...workspace, settings: workspace.settings as unknown as WorkspaceSettings },
-    canEdit: canEdit.data === true,
-    roles: roles.data ?? [],
-    people: people.data ?? [],
-    personRoles: personRoles.data ?? [],
-    // The cast narrows pricing_model and gives fallback_ongoing_load its shape.
-    services: (services.data ?? []) as ServiceRow[],
-    ...roster,
-    servicingLinks: simulation?.servicingLinks ?? [],
-    simulation,
   };
 }

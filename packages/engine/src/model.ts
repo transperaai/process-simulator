@@ -214,6 +214,13 @@ export interface EngineStep {
    * with no `next` inside a group leaves through the group's own `next`.
    */
   parent?: string;
+  /**
+   * How long an item may queue for a person before it counts as waiting too
+   * long, in hours (docs/analysis-rules.md rule 5). Omitted: the rating
+   * config's default for the step's kind (8 h for pipeline steps, 16 h for
+   * servicing steps). It rates the report; it doesn't change the simulation.
+   */
+  expectedWaitHours?: number;
   next: EngineEdge[];
 }
 
@@ -387,6 +394,13 @@ export interface StepResult {
   departures: number;
   /** Of those, visits that took longer than the step's `sla` (0 when it has none). */
   slaBreaches: number;
+  /**
+   * The 90th percentile across replications of the step's average wait, of its
+   * share of visits repeated (`reworks / departures`) and of its share of
+   * visits over the SLA: a bad month, for the rating model's escalator
+   * (ratings.ts). Absent from runs saved before the rating model.
+   */
+  p90?: { avgWait: number; reworkShare: number; slaBreachShare: number };
 }
 
 /**

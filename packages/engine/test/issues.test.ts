@@ -4,12 +4,17 @@ import {
   detectIssues,
   isBlocking,
   northbeamModel,
+  northbeamWithServicing,
+  RATINGS,
+  pct,
   simulate,
   type DetectedIssue,
   type EngineModel,
   type EnginePerson,
   type EngineStep,
+  type RatingConfigInput,
 } from "../src";
+import { SEED_STRIDE } from "../src/simulate";
 
 // Detected issues (issue #17): one small, hand-checkable model per detector,
 // Northbeam as it is and overloaded, and stable keys.
@@ -46,7 +51,9 @@ function line(
   };
 }
 
-const run = (m: EngineModel, reps = 12) => detectIssues(m, simulate(m, reps, 1));
+const run = (m: EngineModel, reps = 12, config: RatingConfigInput = {}) => detectIssues(m, simulate(m, reps, 1), config);
+/** Bands only: both escalators off, so the rating is the average's band. */
+const NO_ESC: RatingConfigInput = { escalators: { badMonth: false, bottleneck: false } };
 const keys = (issues: DetectedIssue[]) => issues.map((i) => i.key);
 const find = (issues: DetectedIssue[], key: string) => issues.find((i) => i.key === key);
 const person = (roles: string[], extra: Partial<EnginePerson> = {}): EnginePerson => ({ name: "", roles, capacity: 40, ...extra });
@@ -59,14 +66,15 @@ function fixesApply(m: EngineModel, issues: DetectedIssue[]) {
   }
 }
 
-describe("capacity: role or person over the utilisation threshold", () => {
+describe("too busy (rule 1): role or person", () => {
   it("flags a role at ~90% (9 items/wk × 4 h on 40 h) and not one at ~50%", () => {
-    // Offered load 9 × 4 / 40 = 0.9: over 85%, under 95%, so a warning.
+    // Offered load 9 × 4 / 40 = 0.9: 85–95% is Bad on the average alone.
     const busy = line(9, [{ id: "a", work: 4 }]);
-    const issues = run(busy);
+    const issues = run(busy, 12, NO_ESC);
     const issue = find(issues, "capacity:role:r")!;
     expect(issue.type).toBe("capacity");
-    expect(issue.severity).toBe("warning");
+    expect(issue.rating).toBe("bad");
+    expect(issue.escalation).toEqual({ base: "bad", badMonth: false, bottleneck: false });
     expect(issue.metrics.utilisation).toBeGreaterThan(0.85);
     expect(issue.metrics.utilisation).toBeLessThan(0.95);
     expect(issue.title).toMatch(/^Role r at (8[6-9]|9\d)% utilisation$/);
@@ -75,15 +83,17 @@ describe("capacity: role or person over the utilisation threshold", () => {
     fixesApply(busy, issues);
 
     expect(keys(run(line(5, [{ id: "a", work: 4 }])))).not.toContain("capacity:role:r");
+    // 70–85% is Good, could improve.
+    expect(find(run(line(7.5, [{ id: "a", work: 4 }]), 12, NO_ESC), "capacity:role:r")?.rating).toBe("good");
   });
 
-  it("is critical when client work alone exceeds capacity (50 clients × 1 h/wk on 40 h)", () => {
+  it("is Operational risk when client work alone exceeds capacity (50 clients × 1 h/wk on 40 h)", () => {
     // Every lead is lost, so no client is won and the load stays at 50 h/wk
     // (ongoing load follows the live client count; docs/PRD.md §6.8 item 2).
     const m = line(1, [{ id: "a", work: 1, next: [{ to: "lost", p: 1 }] }], { r: 1 }, { activeClients: 50 });
     m.roles.r!.ongoing = 1;
     const issue = find(run(m), "capacity:role:r")!;
-    expect(issue.severity).toBe("critical");
+    expect(issue.rating).toBe("risk");
     expect(issue.title).toBe("Role r: client work alone exceeds capacity");
     expect(issue.metrics.ongoing_hours_week).toBeCloseTo(50);
   });
@@ -111,7 +121,7 @@ describe("capacity: role or person over the utilisation threshold", () => {
   });
 });
 
-describe("queue growing without bound", () => {
+describe("work piling up (rule 4)", () => {
   it("flags a step offered 10 items/wk that can clear 8 (5 h each on 40 h): the queue grows ~2 a week", () => {
     const m = line(10, [{ id: "a", work: 5 }]);
     const r = simulate(m, 12, 1);
@@ -121,7 +131,7 @@ describe("queue growing without bound", () => {
     const issues = detectIssues(m, r);
     const issue = find(issues, "queue:step:a")!;
     expect(issue.type).toBe("bottleneck");
-    expect(issue.severity).toBe("critical");
+    expect(issue.rating).toBe("risk");
     expect(issue.title).toBe("The queue at Step a keeps growing");
     // Its wait is unbounded too; the queue issue covers it.
     expect(keys(issues)).not.toContain("wait:step:a");
@@ -134,19 +144,62 @@ describe("queue growing without bound", () => {
   });
 });
 
-describe("wait over threshold", () => {
-  it("flags queueing over the threshold: M/D/1 at 80% with 4 h service waits ~8 h (Pollaczek–Khinchine)", () => {
-    // Wq = ρ / (2(1 − ρ)) × S = 0.8 / 0.4 × 4 h = 8 h. Under the default 16 h, over a 4 h threshold.
+describe("waiting too long (rule 5)", () => {
+  it("rates queueing against the step's expected wait: M/D/1 at 80% with 4 h service waits ~8 h (Pollaczek–Khinchine)", () => {
+    // Wq = ρ / (2(1 − ρ)) × S = 0.8 / 0.4 × 4 h = 8 h. The default expected wait for a pipeline step is 8 h.
     const m = line(8, [{ id: "a", work: 4 }]);
     const r = simulate(m, 12, 1);
     expect(r.steps.a!.avgWait).toBeGreaterThan(6);
     expect(r.steps.a!.avgWait).toBeLessThan(10);
-    expect(keys(detectIssues(m, r))).not.toContain("wait:step:a");
-    const issue = find(detectIssues(m, r, { waitHours: 4 }), "wait:step:a")!;
+    const wait = (config: RatingConfigInput) => find(detectIssues(m, r, { ...NO_ESC, ...config }), "wait:step:a");
+    // ~8 h against 8 h expected is about 1x: Great or just into Good, nowhere near Bad.
+    expect(["great", "good"]).toContain(wait({})?.rating ?? "great");
+    // A 4 h expected wait makes it ~2x: Bad (1.5-3x).
+    const issue = wait({ expectedWaitDays: { pipeline: 0.5 } })!;
     expect(issue.type).toBe("delay");
-    // ~2× the threshold: serious (1.5×) but not critical (2.5×).
-    expect(issue.severity).toBe("serious");
+    expect(issue.rating).toBe("bad");
+    expect(issue.metrics.expected_wait_hours).toBe(4);
+    expect(issue.metrics.wait_ratio).toBeGreaterThan(1.5);
     expect(issue.title).toMatch(/^Work waits [\d.]+ working days? for Step a$/);
+    // A 2 h expected wait: ~4x, Operational risk.
+    expect(wait({ expectedWaitDays: { pipeline: 0.25 } })?.rating).toBe("risk");
+  });
+
+  it("takes the expected wait from the step, or an override, before the default", () => {
+    const base = line(8, [{ id: "a", work: 4 }]);
+    const r = simulate(base, 12, 1);
+    const withStep = line(8, [{ id: "a", work: 4, expectedWaitHours: 2 }]);
+    expect(find(detectIssues(withStep, r, NO_ESC), "wait:step:a")?.rating).toBe("risk");
+    const override: RatingConfigInput = { ...NO_ESC, rules: { wait: { overrides: [{ kind: "step", id: "a", expectedWaitHours: 40 }] } } };
+    expect(find(detectIssues(withStep, r, override), "wait:step:a")).toBeUndefined();
+  });
+
+  it("defaults to 1 working day for pipeline steps and 2 for servicing steps, of the model's week", () => {
+    for (const hoursPerWeek of [40, 37.5]) {
+      const day = hoursPerWeek / 5;
+      const pipeline = { ...line(8, [{ id: "a", work: 4 }]), hoursPerWeek };
+      const r = simulate(pipeline, 4, 1);
+      const asServicing: EngineModel = { ...pipeline, servicingProcesses: { sp: { name: "Monthly report", entry: "a", steps: ["a"] } } };
+      // The same long wait held to each default.
+      const slow = { ...r, steps: { a: { ...r.steps.a!, avgWait: 100, p90: undefined } } };
+      expect(find(detectIssues(pipeline, slow, NO_ESC), "wait:step:a")?.metrics.expected_wait_hours).toBeCloseTo(day);
+      expect(find(detectIssues(asServicing, slow, NO_ESC), "wait:step:a")?.metrics.expected_wait_hours).toBeCloseTo(2 * day);
+    }
+  });
+
+  it("takes the most specific expected wait: person/step override, the step's own, role/service/process override, default", () => {
+    const base = line(8, [{ id: "a", work: 4, expectedWaitHours: 20 }], { r: 1 });
+    const r = simulate(base, 4, 1);
+    const slow = { ...r, steps: { a: { ...r.steps.a!, avgWait: 100, p90: undefined } } };
+    const expected = (m: EngineModel, overrides: NonNullable<RatingConfigInput["rules"]>["wait"] extends infer W ? (W extends { overrides?: infer O } ? O : never) : never) =>
+      find(detectIssues(m, slow, { ...NO_ESC, rules: { wait: { overrides } } }), "wait:step:a")?.metrics.expected_wait_hours;
+    const noOwn = line(8, [{ id: "a", work: 4 }], { r: 1 });
+    // A role override loses to the step's own setting, but beats the default.
+    expect(expected(base, [{ kind: "role", id: "r", expectedWaitHours: 30 }])).toBe(20);
+    expect(expected(noOwn, [{ kind: "role", id: "r", expectedWaitHours: 30 }])).toBe(30);
+    expect(expected(noOwn, [{ kind: "process", id: "p", expectedWaitHours: 30 }])).toBe(8);
+    // A step override beats the step's own setting.
+    expect(expected(base, [{ kind: "role", id: "r", expectedWaitHours: 30 }, { kind: "step", id: "a", expectedWaitHours: 10 }])).toBe(10);
   });
 });
 
@@ -156,7 +209,7 @@ describe("single point of failure", () => {
     const issues = run(m);
     const issue = find(issues, "spof:step:a")!;
     expect(issue.type).toBe("spof");
-    expect(issue.severity).toBe("warning");
+    expect(issue.rating).toBe("good");
     expect(issue.title).toBe("Only one Role solo can do Step a");
     expect(issue.fix?.patch).toEqual([{ path: "roles.solo.headcount", op: "add", value: 1 }]);
     expect(keys(issues)).not.toContain("spof:step:b");
@@ -176,31 +229,52 @@ describe("single point of failure", () => {
   });
 });
 
-describe("rework over threshold", () => {
-  it("flags 30% rework as a warning, 45% as serious, and leaves 10% alone", () => {
-    const m = line(2, [{ id: "a", rework: 0.3 }, { id: "b", rework: 0.45 }, { id: "c", rework: 0.1 }], { r: 3 });
-    const issues = run(m);
-    expect(find(issues, "rework:step:a")).toMatchObject({ type: "failure", severity: "warning", title: "30% of Step a is done twice" });
-    expect(find(issues, "rework:step:b")?.severity).toBe("serious");
+describe("rework (rule 6): rated from the simulation, not the rate typed in", () => {
+  it("rates 12% Bad, 30% and 45% Operational risk, and leaves 3% alone", () => {
+    const m = line(2, [{ id: "a", rework: 0.3 }, { id: "b", rework: 0.45 }, { id: "c", rework: 0.03 }, { id: "d", rework: 0.12 }], { r: 4 });
+    const issues = run(m, 12, NO_ESC);
+    expect(find(issues, "rework:step:a")).toMatchObject({ type: "failure", rating: "risk" });
+    expect(find(issues, "rework:step:b")?.rating).toBe("risk");
+    expect(find(issues, "rework:step:d")?.rating).toBe("bad");
     expect(keys(issues)).not.toContain("rework:step:c");
     expect(find(issues, "rework:step:a")?.fix?.patch).toEqual([{ path: "steps.a.rework_rate", op: "multiply", value: 0.5 }]);
-    // Observed share of visits that were repeats is close to the model's 30%.
-    expect(find(issues, "rework:step:a")!.metrics.observed_share).toBeGreaterThan(0.2);
-    expect(find(issues, "rework:step:a")!.metrics.observed_share).toBeLessThan(0.4);
+    // The title and metrics carry the simulated share, which is close to the model's 30%.
+    const share = find(issues, "rework:step:a")!.metrics.observed_share!;
+    expect(share).toBeGreaterThan(0.2);
+    expect(share).toBeLessThan(0.4);
+    expect(find(issues, "rework:step:a")!.title).toBe(`${Math.round(share * 100)}% of Step a is done twice`);
     fixesApply(m, issues);
+  });
+
+  it("follows the simulated result, whatever the model says", () => {
+    const m = line(2, [{ id: "a", rework: 0.3 }, { id: "b", rework: 0 }], { r: 2 });
+    const r = simulate(m, 12, 1);
+    // Typed 30% but nothing was repeated in the run: no issue. Typed 0% but half of visits repeated: an issue.
+    const tampered = {
+      ...r,
+      steps: {
+        a: { ...r.steps.a!, reworks: 0, p90: undefined },
+        b: { ...r.steps.b!, reworks: r.steps.b!.departures / 2, p90: undefined },
+      },
+    };
+    const issues = detectIssues(m, tampered, NO_ESC);
+    expect(keys(issues)).not.toContain("rework:step:a");
+    expect(find(issues, "rework:step:b")).toMatchObject({ rating: "risk", title: "50% of Step b is done twice" });
   });
 });
 
-describe("SLA breach", () => {
+describe("missed deadlines (rule 7)", () => {
   it("flags every visit breaching a 2 h SLA on a 3 h constant step, and none under a 5 h one", () => {
     const m = line(2, [{ id: "a", work: 3, sla: 2 }, { id: "b", work: 3, sla: 5 }], { r: 2 });
     const r = simulate(m, 12, 1);
     expect(r.steps.a!.slaBreaches).toBe(r.steps.a!.departures);
     const issues = detectIssues(m, r);
     const issue = find(issues, "sla:step:a")!;
-    expect(issue).toMatchObject({ type: "sla", severity: "critical", title: "Step a misses its 2 h SLA 100% of the time" });
+    expect(issue).toMatchObject({ type: "sla", rating: "risk", title: "Step a misses its 2 h SLA 100% of the time" });
     expect(issue.metrics.breach_share).toBe(1);
-    expect(keys(issues)).not.toContain("sla:step:b");
+    // Under a 5 h SLA nothing breaches on average; a rare bad month at most.
+    expect(find(issues, "sla:step:b")?.rating ?? "great").not.toBe("risk");
+    expect(find(issues, "sla:step:b")?.metrics.breach_share ?? 0).toBeLessThan(0.05);
   });
 
   it("suggests halving the external wait when that, not the queue, breaks the SLA", () => {
@@ -217,12 +291,45 @@ describe("SLA breach", () => {
 });
 
 describe("Northbeam", () => {
-  it("as seeded: the strategist is the only one who can do audits and kickoffs, at ~80%", () => {
+  it("the strategist example from docs/analysis-rules.md: Good on 82%, Bad after a bad month, Operational risk as the bottleneck", () => {
+    const m = northbeamWithServicing();
+    const r = simulate(m, 30, 1);
+    const strat = r.kpi.roles.strat!.util;
+    // Average ~82%: Good, could improve (70-85%). A bad month (P90) is over the 85% cut-off. She is the bottleneck.
+    expect(strat.mean).toBeGreaterThan(0.8);
+    expect(strat.mean).toBeLessThan(0.85);
+    expect(strat.p90).toBeGreaterThan(0.85);
+    expect(r.bnRole).toBe("strat");
+
+    const issue = find(detectIssues(m, r), "capacity:role:strat")!;
+    expect(issue.rating).toBe("risk");
+    expect(issue.escalation).toEqual({ base: "good", badMonth: true, bottleneck: true });
+    expect(issue.title).toMatch(/^Strategist \(Maya Collins\) at 8[0-4]% utilisation$/);
+    expect(issue.evidence).toContain("Rated Good, could improve on the average, raised to Operational risk");
+
+    // Each step of the example, with the escalators switched on one at a time.
+    const only = (badMonth: boolean, bottleneck: boolean) =>
+      find(detectIssues(m, r, { escalators: { badMonth, bottleneck } }), "capacity:role:strat")!.rating;
+    expect(only(false, false)).toBe("good");
+    expect(only(true, false)).toBe("bad");
+    expect(only(false, true)).toBe("bad");
+    expect(only(true, true)).toBe("risk");
+  });
+
+  it("the old engine didn't flag her (82% is under 85%); the same run now lists her", () => {
+    const m = northbeamWithServicing();
+    const r = simulate(m, 30, 1);
+    expect(r.roles.strat!.util).toBeLessThan(0.85);
+    expect(keys(detectIssues(m, r))).toContain("capacity:role:strat");
+  });
+
+  it("as seeded: the strategist is the only one who can do audits and kickoffs", () => {
     const m = northbeamModel();
     const issues = run(m, 30);
-    expect(keys(issues)).toEqual(["spof:step:audit", "spof:step:kickoff"]);
-    expect(issues[0]!.title).toBe("Only one Strategist can do Audit & proposal");
-    expect(issues[0]!.fix?.name).toBe("Hire another Strategist");
+    expect(keys(issues)).toEqual(expect.arrayContaining(["spof:step:audit", "spof:step:kickoff"]));
+    const audit = find(issues, "spof:step:audit")!;
+    expect(audit.title).toBe("Only one Strategist can do Audit & proposal");
+    expect(audit.fix?.name).toBe("Hire another Strategist");
     fixesApply(m, issues);
   });
 
@@ -230,20 +337,89 @@ describe("Northbeam", () => {
     const m = northbeamModel();
     m.leadsPerWeek *= 1.8;
     const issues = run(m, 30);
-    // The extra wins' client work counts as it lands (docs/PRD.md §6.8 item
-    // 2), which takes the strategist just past 100%: critical.
-    expect(keys(issues)).toEqual([
-      "capacity:role:strat",
-      "queue:step:audit",
-      "wait:step:kickoff",
-      "spof:step:audit",
-      "spof:step:kickoff",
-    ]);
-    // Severity order: critical first.
-    expect(issues.map((i) => i.severity)).toEqual(["critical", "critical", "critical", "serious", "serious"]);
+    expect(find(issues, "capacity:role:strat")?.rating).toBe("risk");
+    expect(find(issues, "queue:step:audit")?.rating).toBe("risk");
+    expect(find(issues, "wait:step:kickoff")?.rating).toBe("risk");
+    // Most severe first.
+    const ranks = issues.map((i) => RATINGS.indexOf(i.rating));
+    expect(ranks).toEqual([...ranks].sort((x, y) => y - x));
     // The suggested fix clears the growing queue.
     const fixed = applyPatches(m, find(issues, "queue:step:audit")!.fix!.patch).model;
     expect(keys(run(fixed, 30))).not.toContain("queue:step:audit");
+  });
+});
+
+describe("re-rating a run with a new config, without simulating again", () => {
+  it("gives new ratings from the same result", () => {
+    const m = northbeamWithServicing();
+    const r = simulate(m, 30, 1);
+    const frozen = JSON.stringify(r);
+    const before = find(detectIssues(m, r), "capacity:role:strat")!;
+    // Stricter: the strategist's cut-offs lowered to 40/50/60% put her at Operational risk on the average alone.
+    const strict: RatingConfigInput = { escalators: { badMonth: false, bottleneck: false }, rules: { busy: { cutoffs: [0.4, 0.5, 0.6] } } };
+    expect(find(detectIssues(m, r, strict), "capacity:role:strat")?.rating).toBe("risk");
+    // Looser: 90/95/99% leaves her Great, so she's no longer listed.
+    const loose: RatingConfigInput = { rules: { busy: { cutoffs: [0.9, 0.95, 0.99] } }, escalators: { badMonth: false, bottleneck: false } };
+    expect(keys(detectIssues(m, r, loose))).not.toContain("capacity:role:strat");
+    // Switching the rule off removes its findings; the default again gives the first answer.
+    expect(keys(detectIssues(m, r, { rules: { busy: { enabled: false } } })).filter((k) => k.startsWith("capacity:"))).toEqual([]);
+    expect(find(detectIssues(m, r), "capacity:role:strat")).toEqual(before);
+    // The result was only read.
+    expect(JSON.stringify(r)).toBe(frozen);
+  });
+
+  it("an override for a person or role changes only their rating", () => {
+    const m = northbeamWithServicing();
+    const r = simulate(m, 30, 1);
+    const cfg: RatingConfigInput = {
+      escalators: { badMonth: false, bottleneck: false },
+      rules: { busy: { overrides: [{ kind: "role", id: "strat", cutoffs: [0.1, 0.2, 0.3] }] } },
+    };
+    const issues = detectIssues(m, r, cfg);
+    expect(find(issues, "capacity:role:strat")?.rating).toBe("risk");
+    expect(find(issues, "capacity:role:ppc")?.rating).toBe(find(detectIssues(m, r, NO_ESC), "capacity:role:ppc")?.rating);
+  });
+
+  it("an override for a servicing process or service applies to its steps' waits", () => {
+    const m = northbeamWithServicing();
+    const r = simulate(m, 30, 1);
+    const process = Object.keys(m.servicingProcesses!)[0]!;
+    const stepId = m.servicingProcesses![process]!.steps.find((id) => find(detectIssues(m, r, NO_ESC), `wait:step:${id}`))!;
+    expect(stepId).toBeTruthy();
+    const serviceId = Object.keys(m.services!).find((sv) => m.services![sv]!.servicing?.some((l) => l.process === process))!;
+    const lax = { cutoffs: [1000, 2000, 3000] as [number, number, number] };
+    for (const kind of [{ kind: "process" as const, id: process }, { kind: "service" as const, id: serviceId }, { kind: "step" as const, id: stepId }]) {
+      const issues = detectIssues(m, r, { ...NO_ESC, rules: { wait: { overrides: [{ ...kind, ...lax }] } } });
+      expect(keys(issues), JSON.stringify(kind)).not.toContain(`wait:step:${stepId}`);
+    }
+  });
+});
+
+describe("a bad month (P90) and the bottleneck on steps", () => {
+  it("raises a step's wait rating when P90 crosses the next cut-off, and when it is the bottleneck step", () => {
+    const m = line(8, [{ id: "a", work: 4 }]);
+    const r = simulate(m, 12, 1);
+    // Held to a 6 h expected wait (~1.3x): Good. P90 over 1.5x makes it Bad; a single step is the bottleneck step too.
+    const cfg = { expectedWaitDays: { pipeline: 0.75 } };
+    const step = r.steps.a!;
+    const fake = (avgWait: number, p90: number, bn: string | null) => ({ ...r, bnStep: bn, steps: { a: { ...step, avgWait, p90: { ...step.p90!, avgWait: p90 } } } });
+    const wait = (res: typeof r, c: RatingConfigInput = cfg) => find(detectIssues(m, res, c), "wait:step:a")!;
+    expect(wait(fake(7, 8, null)).rating).toBe("good");
+    expect(wait(fake(7, 10, null))).toMatchObject({ rating: "bad", escalation: { base: "good", badMonth: true, bottleneck: false } });
+    expect(wait(fake(7, 8, "a"))).toMatchObject({ rating: "bad", escalation: { base: "good", badMonth: false, bottleneck: true } });
+    expect(wait(fake(7, 10, "a")).rating).toBe("risk");
+  });
+});
+
+describe("overtime (rule 3)", () => {
+  it("is rated on the share of the overtime cap used", () => {
+    const m = northbeamWithServicing();
+    const r = simulate(m, 30, 1);
+    const ot = detectIssues(m, r, NO_ESC).filter((i) => i.key.startsWith("overtime:"));
+    for (const i of ot) {
+      const share = i.metrics.overtime_hours_week! / i.metrics.capacity_hours_week! / i.metrics.overtime_cap!;
+      expect(i.rating, i.key).toBe(share >= 0.95 ? "risk" : "bad");
+    }
   });
 });
 
@@ -257,7 +433,7 @@ describe("stable keys", () => {
   it("keys name the subject, not the numbers: another seed gives the same keys", () => {
     const m = northbeamModel();
     m.leadsPerWeek *= 1.8;
-    expect(keys(detectIssues(m, simulate(m, 30, 99)))).toEqual(keys(detectIssues(m, simulate(m, 30, 1))));
+    expect(keys(detectIssues(m, simulate(m, 30, 99))).sort()).toEqual(keys(detectIssues(m, simulate(m, 30, 1))).sort());
   });
 
   it("is a pure function: the model and result are not changed", () => {
@@ -266,5 +442,22 @@ describe("stable keys", () => {
     const before = JSON.stringify([m, r]);
     detectIssues(m, r);
     expect(JSON.stringify([m, r])).toBe(before);
+  });
+});
+
+describe("StepResult.p90", () => {
+  it("is pct of the per-replication values across the replications", () => {
+    const m = line(8, [{ id: "a", work: 4, rework: 0.3, sla: 8 }]);
+    const reps = 12;
+    const r = simulate(m, reps, 1);
+    // Rebuild the per-replication values from the same seeds, one run at a time.
+    const singles = Array.from({ length: reps }, (_, i) => simulate(m, 1, 1 + i * SEED_STRIDE).steps.a!);
+    const share = (n: number, d: number) => (d > 0 ? Math.min(1, n / d) : 0);
+    expect(r.steps.a!.p90).toEqual({
+      avgWait: pct(singles.map((x) => x.avgWait), 0.9),
+      reworkShare: pct(singles.map((x) => share(x.reworks, x.departures)), 0.9),
+      slaBreachShare: pct(singles.map((x) => share(x.slaBreaches, x.departures)), 0.9),
+    });
+    expect(r.steps.a!.p90!.avgWait).toBeGreaterThan(0);
   });
 });

@@ -2,7 +2,22 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Building2, ChevronsUpDown, CircleAlert, FileChartColumn, FileText, History, Inbox, KeyRound, LogOut, Settings, ShieldCheck, SlidersHorizontal, Users, Workflow, type LucideIcon } from "lucide-react";
+import {
+  ChevronsUpDown,
+  CircleAlert,
+  FileText,
+  KeyRound,
+  Layers,
+  LayoutGrid,
+  Lightbulb,
+  LogOut,
+  Network,
+  Settings2,
+  ShieldCheck,
+  Sparkles,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
@@ -11,6 +26,7 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuBadge,
@@ -19,22 +35,28 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { BOTTOM_KEYS, demoNav, workspaceNav, type NavIcon, type NavItem } from "@/lib/shell/nav";
+import { demoNav, workspaceNav, type CountTone, type NavCounts, type NavIcon, type NavItem } from "@/lib/shell/nav";
+import { cn } from "@/lib/utils";
 import { useMapPanelRequest } from "./map-panel-request";
 import { WorkspaceSwitcher, type SwitcherWorkspace } from "./workspace-switcher";
 
 const ICONS: Record<NavIcon, LucideIcon> = {
-  map: Workflow,
+  overview: LayoutGrid,
+  processes: Network,
   issues: CircleAlert,
-  clients: Building2,
-  people: Users,
-  scenarios: SlidersHorizontal,
-  suggestions: Inbox,
+  solutions: Lightbulb,
+  library: Layers,
+  suggestions: Sparkles,
   sources: FileText,
-  runs: History,
-  report: FileChartColumn,
-  settings: Settings,
+  people: Users,
+  settings: Settings2,
   access: ShieldCheck,
+};
+
+const BADGE: Record<CountTone, string> = {
+  plain: "bg-muted text-fg-2",
+  ai: "bg-accent-soft text-accent",
+  warn: "border border-warn bg-warn-soft text-fg",
 };
 
 export type ShellProps =
@@ -43,37 +65,39 @@ export type ShellProps =
       slug: string;
       workspaceName: string;
       workspaces: SwitcherWorkspace[];
-      canEdit: boolean;
       canManage: boolean;
-      pendingSuggestions: number;
+      counts: NavCounts;
       viewer: { name: string; email: string | null } | null;
     }
-  | { mode: "demo"; pendingSuggestions: number };
+  | { mode: "demo"; counts: NavCounts };
 
 export function AppSidebar(props: ShellProps) {
   const pathname = usePathname();
   const { requestPanel } = useMapPanelRequest();
   const { isMobile, setOpenMobile } = useSidebar();
-  const items =
+  const groups =
     props.mode === "live"
-      ? workspaceNav({ slug: props.slug, pathname, canEdit: props.canEdit, canManage: props.canManage, pendingSuggestions: props.pendingSuggestions })
-      : demoNav({ pathname, pendingSuggestions: props.pendingSuggestions });
-  const main = items.filter((i) => !BOTTOM_KEYS.includes(i.key));
-  const bottom = items.filter((i) => BOTTOM_KEYS.includes(i.key));
+      ? workspaceNav({ slug: props.slug, pathname, canManage: props.canManage, counts: props.counts })
+      : demoNav({ pathname, counts: props.counts });
   const larkspur = props.mode === "demo" && (pathname === "/demo/larkspur" || pathname.startsWith("/demo/larkspur/"));
-  // On a map route the Issues and Scenarios items open the map's panel instead of loading the page again.
-  const onMapRoute = main.find((i) => i.key === "map")?.active ?? false;
 
   const item = (i: NavItem) => {
     const Icon = ICONS[i.icon];
+    const showCount = i.count !== undefined && i.count > 0;
     return (
       <SidebarMenuItem key={i.key}>
-        <SidebarMenuButton asChild isActive={i.active} tooltip={i.count ? `${i.label} · ${i.count} pending` : i.label}>
+        <SidebarMenuButton
+          asChild
+          isActive={i.active}
+          tooltip={showCount ? `${i.label} · ${i.count}` : i.label}
+          className="data-active:bg-panel data-active:shadow-xs data-active:ring-1 data-active:ring-line data-active:[&_svg]:text-accent"
+        >
           <Link
             href={i.href}
             aria-current={i.active ? "page" : undefined}
             onClick={(e) => {
-              if (i.panel && onMapRoute) {
+              // On the read-only Larkspur map, Issues opens the map's own panel instead of loading the page again.
+              if (i.panel && larkspur) {
                 e.preventDefault();
                 requestPanel(i.panel);
               }
@@ -82,10 +106,11 @@ export function AppSidebar(props: ShellProps) {
           >
             <Icon />
             <span>{i.label}</span>
+            {showCount && <span className="sr-only">, {i.count} {i.countNoun ?? ""}</span>}
           </Link>
         </SidebarMenuButton>
-        {i.count !== undefined && i.count > 0 && (
-          <SidebarMenuBadge aria-label={`${i.label}, ${i.count} pending`} className="border border-warn bg-warn-soft text-fg tabular-nums">
+        {showCount && (
+          <SidebarMenuBadge aria-hidden className={cn("rounded-full font-mono text-[11px]", BADGE[i.tone ?? "plain"])}>
             {i.count}
           </SidebarMenuBadge>
         )}
@@ -95,12 +120,17 @@ export function AppSidebar(props: ShellProps) {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader>
+      <SidebarHeader className="gap-3">
+        <div className="flex items-center gap-2.5 px-2 pt-1">
+          <span aria-hidden className="size-[22px] shrink-0 rounded-md bg-[conic-gradient(from_200deg,var(--accent),var(--chart-1),var(--chart-5),var(--accent))]" />
+          <span className="truncate font-display text-base font-bold tracking-tight group-data-[collapsible=icon]:hidden">Transpera Flow</span>
+        </div>
         {props.mode === "live" ? (
-          <WorkspaceSwitcher current={props.workspaceName} workspaces={props.workspaces} />
+          <WorkspaceSwitcher current={props.workspaceName} subtitle="Workspace" workspaces={props.workspaces} />
         ) : (
           <WorkspaceSwitcher
             current={larkspur ? "Larkspur Creative" : "Northbeam Digital"}
+            subtitle="Demo · sample data"
             workspaces={[
               { name: "Northbeam Digital", href: "/demo" },
               { name: "Larkspur Creative", href: "/demo/larkspur" },
@@ -109,18 +139,14 @@ export function AppSidebar(props: ShellProps) {
         )}
       </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>{main.map(item)}</SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-        {bottom.length > 0 && (
-          <SidebarGroup className="mt-auto">
+        {groups.map((g) => (
+          <SidebarGroup key={g.key}>
+            {g.label && <SidebarGroupLabel className="text-2xs font-semibold tracking-wider uppercase">{g.label}</SidebarGroupLabel>}
             <SidebarGroupContent>
-              <SidebarMenu>{bottom.map(item)}</SidebarMenu>
+              <SidebarMenu>{g.items.map(item)}</SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
-        )}
+        ))}
       </SidebarContent>
       <SidebarFooter>
         {props.mode === "live" ? (

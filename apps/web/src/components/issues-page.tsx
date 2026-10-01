@@ -2,17 +2,15 @@
 
 // The full issues register screen: tracked issues from the database plus what
 // a fresh run of the live process detects (in a worker, as on the process
-// page). "Run the fix" goes to the process page, which applies it and opens
-// the compare view.
-
+// page).
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow } from "@transpera-flow/db";
 import { detectBrokenScenarios, detectIssues } from "@transpera-flow/engine";
 import { perceptionGapDetections } from "@/lib/issues/perception";
 import { useIssues } from "@/lib/issues/use-issues";
 import { retiredSteps } from "@/lib/scenarios/broken";
 import { useSimulation } from "@/lib/sim/use-simulation";
+import { Card } from "@/components/ui/card";
 import { IssuesRegister, type Named } from "./issues-register";
 
 export function IssuesPage({
@@ -21,17 +19,13 @@ export function IssuesPage({
   scenarios,
   processes,
   mode,
-  fixHref,
 }: {
   bundle: ProcessBundle;
   issues: IssueRow[];
   scenarios: ScenarioRow[];
   processes: Named[];
-  mode: "live" | "readonly";
-  /** Prefix of the link that runs an issue's fix; the issue id (or detected key) is appended. */
-  fixHref: string;
+  mode: "live" | "demo" | "readonly";
 }) {
-  const router = useRouter();
   const state = useIssues(bundle.workspace.id, issues, mode);
   const [stepFilter, setStepFilter] = useState("");
   const model = useMemo(() => {
@@ -55,7 +49,7 @@ export function IssuesPage({
   const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);
 
   return (
-    <div className="rounded-token border border-line bg-panel p-4 shadow-token">
+    <Card className="px-4">
       <IssuesRegister
         layout="page"
         state={state}
@@ -67,11 +61,10 @@ export function IssuesPage({
         people={bundle.people.filter((p) => p.active).map((p) => ({ id: p.id, name: p.name }))}
         scenarios={scenarios}
         brokenScenarios={brokenScenarios}
-        canEdit={mode === "live"}
+        canEdit={mode !== "readonly"}
         stepFilter={stepFilter}
         onStepFilterChange={setStepFilter}
-        onRunFix={(_fix, id) => router.push(`${fixHref}${encodeURIComponent(id)}`)}
       />
-    </div>
+    </Card>
   );
 }

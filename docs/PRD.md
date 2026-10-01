@@ -4,6 +4,8 @@ Version 0.3 · 29 Sep 2026 · Owner: Austin · Audience: Claude Code (implementa
 
 Changes from v0.2 are the result of a design review ("grill session"). Every decision, with its reasoning, is in §14 (Decision log). Where this document and v0.2 disagree, this document wins.
 
+**Redesign (30 Sep to 1 Oct 2026).** §3 (core concepts), §8 (screens) and decisions D21 onwards in §14 were rewritten after Austin's Milestone A QA. Where an older section (§1, §4, §5, §7, §9, §11) still mentions Reports, the Clients page, Scenarios, the Runs page, Track or Run fix, the redesign wins: those are removed (D22). Rating rules are in `docs/analysis-rules.md`. Terms are in `CONTEXT.md`. The plan and ticket list are in `docs/plans/redesign-plan.md`.
+
 Reference prototype: the "Northbeam Process Simulator" artifact (single-file HTML, to be committed at `prototype/northbeam-process-simulator.html`). It demonstrates the canvas, animated token flow, bottleneck detection, levers, scenario comparison, issues register and a mock of the MCP surface. Its engine (`ProcessSim.simulate`) is the starting point for the v1 engine **but must be ported and fixed, not ported verbatim** (§6.8). Its sample model is the seed for the Northbeam golden model.
 
 ---
@@ -57,21 +59,42 @@ Legal: Transpera Flow processes employee and client data on behalf of the client
 
 ## 3. Core concepts
 
+Terms are defined in `CONTEXT.md`. This is the model behind them.
+
+**The company**
+
 - **Workspace**: one client company. The tenant boundary. Holds everything below.
-- **Company model**: services, people, clients, demand, calendar, finances. The parameters the simulation runs against.
-- **Process**: a directed graph of steps with routing. Two kinds: **pipeline** (e.g. lead-to-cash, entities arrive from demand) and **servicing** (recurring client work: monthly report, check-in call, ad-hoc requests, entities generated per active client). Company map = processes connected by handoffs.
-- **Process revision**: each process has one **live** (published) version and at most one **draft** revision. All edits go into the draft; Publish promotes it.
-- **Step**: a unit of work with a role or named person, hands-on time, wait time, rework rate, tool, cost, SLA, current WIP. End steps carry an **outcome**: `won`, `lost` or `done`.
-- **Entity**: the thing flowing through a process (a lead, a job, a report). Defined per process.
-- **Client**: a named record in the client roster (Acme Ltd), with services, MRR, assigned people and a **health score**. Real clients seed the simulation; new wins during a run are synthetic.
-- **Resource**: a person (v1 dispatches to individuals) grouped into roles.
-- **Scenario**: a named set of parameter patches (`set`, `multiply`, `add`) on top of the baseline. Scenarios can stack.
-- **Run**: the result of simulating a scenario: metrics with averages and ranges, per-step/per-person/per-client stats, a trace for animation.
-- **Robustness check**: an on-demand batch of runs that perturbs every estimated input and reports whether the conclusion holds and which input it is most sensitive to.
-- **Issue**: anything attached to a step, person or client: bottleneck, failure, manual work, single point of failure, delay, idea, capacity, SLA, churn risk, perception gap. Manually logged (audit findings) or auto-detected by the engine.
-- **Source**: a transcript, note set or screenshot from the audit, stored in the workspace, which parameters cite as evidence.
-- **Suggestion**: a pending AI-originated change to the company model (people, clients, services, demand) awaiting human accept/reject.
-- **Parameter provenance**: every numeric parameter carries `source: estimated | entered | measured`, a date, evidence citations and, if measured, the dataset it came from.
+- **Company model**: services, people, client groups, demand, market conditions, calendar, finances. The numbers the simulation runs against.
+- **Service**: something the company sells, with a price, margin, typical stay and normal churn.
+- **Client group**: the clients of one service, counted, not named: how many, the fee, normal churn, typical stay and starting health. The engine simulates unnamed clients from these numbers, so late work still drives churn. Named client records are hidden, but the data is kept (D27).
+- **Churn driver**: a reason clients leave (for example late work or slow replies), with a weight and an on/off switch. The engine measures the drivers it can and reports each one's share of churn (D28).
+- **Market condition**: the outside climate for demand, such as Boom, Stable, Soft or Downturn, or your own. It is a 24-month schedule the engine applies month by month (D29).
+- **Resource**: a person, grouped into roles. The engine gives work to individuals.
+
+**Processes**
+
+- **Process**: a directed graph of steps with routing. Two kinds: **pipeline** (leads arrive from demand) and **servicing** (recurring client work, generated per client). The company map is the root process.
+- **Sub-process**: a step can hold its own steps, as a group or as a child process. The engine always simulates the detailed steps, so the numbers are the same expanded or collapsed (D26).
+- **Step**: a unit of work with a role or named person, hands-on time, wait time, rework rate, tool, cost, SLA and current work in progress. It can also have an expected wait and a "lost per day of waiting". End steps carry an **outcome**: `won`, `lost` or `done`.
+- **Entity**: the thing flowing through a process (a lead, a job, a proposal). Defined per process.
+- **Version**: each process has one **live** (published) version and at most one **draft**. All edits go into the draft. Publishing makes it version N+1 (D18, amended by D25).
+- **History**: the list of published versions. You can view one read-only, restore it as a new draft, or copy it as a new process.
+- **Lever**: a "what if" dial on a setting, such as more leads or faster proposals. Levers change numbers, not steps. A solution can include lever changes.
+- **Block**: a saved group of steps you can insert into a process, or use to replace a selection. Blocks marked AI came from the AI.
+- **Run**: one simulation: 30 replications, with averages and ranges, per-step, per-person and per-client-group results, and a trace for animation.
+- **Robustness check**: an on-demand batch of runs that varies each estimated input and says whether the conclusion holds.
+
+**Analysis**
+
+- **Rating**: every rule turns a simulated number into one of four ratings: Great, Good could improve, Bad not urgent, Operational risk. Rules, cut-offs and escalators are in `docs/analysis-rules.md` (D23).
+- **Insight**: a finding from a rule or from AI, with a rating, a cost per month and the steps it touches. Insights stay off the map until someone acknowledges them.
+- **Issue**: a problem the team has decided to own. It comes from an acknowledged insight or is logged by hand. It links to a whole process or to steps, has owners and a target (measure, now, goal), and a status: Open, Testing solutions, Resolved or Won't fix. It keeps a history log (D24).
+- **Solution**: a separate copy of a process with changed steps, plus optional lever changes. A process can have many. A solution can solve more than one issue. It gets an automatic verdict against each issue's target, and the user adds their own (D25).
+- **AI idea**: a solution or issue the AI proposes, built from blocks. You can Build it or Dismiss it.
+- **First principles**: seven short steps per process that separate hard truths from assumptions and end in goals, which become success measures the analysis can rate (D30).
+- **Source**: a transcript, note set or screenshot. A source must link to a process, step, insight, issue or solution (A53).
+- **Suggestion**: a pending AI-originated change (to the company model, or an AI idea or proposed issue) awaiting a human decision.
+- **Parameter provenance**: every numeric parameter carries `source: estimated | entered | measured`, a date, evidence and, if measured, the dataset.
 
 ---
 
@@ -455,21 +478,34 @@ Input: one or more sources (transcripts, notes). Output: `import_process` JSON w
 
 ## 8. Screens
 
-1. **Workspace list** (agency admin): clients, last run KPIs, open critical issues, clients at risk, last activity.
-2. **Company map**: processes as nodes, handoff edges, aggregate utilisation heat, click to open a process.
-3. **Process canvas**: the prototype layout. Left: canvas with playback and utilisation bars. Right rail: Levers, Compare, Issues, Step, Draft (checklist + diff), AI (v2). KPI strip on top. Swimlane toggle groups steps by role. Live/Draft switch with diff overlay. Presence indicator.
-4. **People**: table of people with roles, FTE, capacity, utilisation (servicing/pipeline/overtime/total), items completed, clients assigned, leave. Person drawer with skills and (if enabled) capacity factors with provenance. No benchmark column.
-5. **Clients** (new): roster with services, MRR, assigned people, health (current and simulated trajectory), churn risk, recent touchpoint performance. Reassign a client as a lever.
-6. **Company settings**: basics, services (incl. servicing processes), demand, historical data (import wizard, calibration diff), integrations placeholder.
-7. **Sources** (new): transcripts and notes, with every parameter that cites each one.
-8. **Suggestions** (new): pending AI suggestions for the company model, accept/reject.
-9. **Issues**: register with filters, kanban by status, detected vs logged, "run the fix" links.
-10. **Scenarios**: library, stacking, compare any two, robustness, pin to report, needs-attention badges. **Proposals** sub-tab: submissions from play links with diff, accept/decline.
-11. **Forecast**: timeline of the next 3–12 months; active clients by service, clients at risk, utilisation per role/person against the 85% line, hire and scenario markers you can drag; crunch alerts; compare two forecasts.
-12. **Reports**: generate PDF, choose sections and scenarios, edit the executive summary, download; export JSON/PNG/SVG/CSV.
-13. **Share**: create links, set mode, toggles, allowed emails and expiry; revoke.
+The reference is the clickable prototype, `apps/web/prototype/app-flow.html` (a throwaway, never shipped). Screens use plain words: "Too busy", not "utilisation"; "Missed deadlines", not "SLA missed". Every setting, lever and rule has an (i) with a plain description and an example.
+
+The sidebar has three groups. **Overview** and **Processes** sit at the top. **Improve** holds Issues, Solutions, Block library and Suggestions. **Company** holds Sources, People and Settings. Counts show beside the items that have them.
+
+1. **Overview**: the landing page. The company map, four headline cards, and a time-horizon picker (1, 3, 6, 12 or 24 months). Below, "What the analysis found" with the AI read, then trend charts.
+2. **Processes**: a list of all processes, sub-processes indented. Each row opens its own map card.
+3. **Process page** (read-only, "Viewing live · version N"): sections in order: first principles card, projection, map, insights, issues, solutions, supporting charts. No tabs and no drawers. A process switcher sits on the title, with breadcrumbs. The map has bigger nodes coloured by rating, zoom (−, Fit, +), expand and collapse for groups, and red badges only for confirmed issues. Hovering an insight or issue highlights the steps it touches.
+4. **Editor**: its own full-screen mode in a different colour, so you can always tell you are editing. Step palette, inspector, draft versus live. Simulate a preview, then "Publish version N?" with a confirm. Three modes: draft, solution and block.
+5. **History**: a timeline of published versions with each one's headline numbers and charts. View a version read-only, restore it as a new draft, or duplicate it as a new process.
+6. **Issues**: a list with Open, Resolved and All, and rating filters.
+7. **Issue page**: where it sits on the map, solutions tested, AI ideas and history. Mark resolved (by a solution, by changing the process, or no longer a problem) and Reopen. "Build solution" opens the Editor in solution mode.
+8. **Solutions**: the list of all solutions, with their verdicts.
+9. **Solution page**: live and solution maps side by side, opening and closing together. Measures, an MRR chart, a market stress test, a verdict per issue, and notes.
+10. **Block library**: save a group of steps as a block. Insert one, or replace a selection with one, in the Editor.
+11. **Suggestions**: AI solution ideas (Build it or Dismiss), AI-proposed issues, and pending changes to the company model (accept or reject). Visitor proposals from play links arrive here too (B4).
+12. **Sources**: transcripts and notes. Each links to the things it supports. Unlinked sources are flagged.
+13. **People**: how full each person's week is, absence-test results, and client health against a benchmark. Person detail with skills and leave. Capacity, not performance: no rankings (D20).
+14. **Settings**: basics, services, demand, client groups, churn drivers, market conditions, **Analysis rules** (switch rules on or off, edit cut-offs with a live preview, overrides, reset), levers (show or hide, with help), AI switches, money and currency, and the import and calibration wizard (Milestone C).
+
+Insights show as rated rows with cost per month, the rule behind each one, and where it sits on the map. A detail pop-up opens from the row. Acknowledging an insight is what puts it on the map and lets it become an issue.
+
+Outside the main nav: the **workspace list** (agency admin), the **Forecast** timeline (B6, B7: drag hire, leave and solution markers; compare two plans) and **Share** (B3: links with modes, toggles, allowed emails and expiry; snapshots cover Overview, a process, an issue and a solution).
+
+What was removed in the redesign is listed in D22 (§14).
 
 ### 8.1 Design system and UI stack
+
+*Amended by D33: the look now comes from the shadcn radix-nova preset (Inter, teal-blue brand, neutral greys). Where the bullets below name other fonts or a single accent, D33 wins.*
 
 UI quality is a primary requirement, not a finish. The stack is chosen so every visual decision is ours rather than a component library's default.
 
@@ -489,6 +525,8 @@ UI quality is a primary requirement, not a finish. The stack is chosen so every 
 ---
 
 ## 9. Exports and sharing
+
+*Amended by D22: the PDF report, report route and `export_report` tool are removed. Share links stay (B3), as do map image export, JSON bundle and issues CSV (B10). The paragraphs below describing the PDF are historical.*
 
 - PDF via server-side headless Chromium (`@sparticuz/chromium` in a Vercel function) rendering a print stylesheet of a report route. Fallback if function limits bite: the same print stylesheet via the browser's "Save as PDF". Sections: cover, executive summary (validated narration), company map, per-process map with bottleneck callouts, client health and retention, issues (grouped by severity, with owner and linked fix), scenario comparisons (before/after tables with ranges, utilisation charts, robustness verdict and sensitive inputs), assumptions/evidence/provenance appendix, methodology page.
 - PNG/SVG: canvas export at 2× with legend.
@@ -591,7 +629,7 @@ Each milestone ends with something usable on its own. There is no fixed date; Mi
 
 ---
 
-## 14. Decision log (grill session, 29 Sep 2026)
+## 14. Decision log (grill session 29 Sep 2026; redesign 30 Sep to 1 Oct 2026)
 
 | # | Question | Decision | Why |
 |---|---|---|---|
@@ -607,11 +645,35 @@ Each milestone ends with something usable on its own. There is no fixed date; Mi
 | D10 | Scenarios vs model changes | Patch ops (`set`/`multiply`/`add`); relative for process params, absolute for facts; stable step IDs with `replaced_by`; broken scenarios flagged loudly, never silently dropped. | Prevents fixes silently becoming worth £0 or drifting as the model is re-measured. |
 | D11 | Robustness compute | On demand (button, and on PDF), browser worker pool, two-stage screen/refine, common random numbers, cached. 10–30 s acceptable. | Thousands of runs per check; keeps levers instant and server cost at zero. |
 | D12 | Share-link leakage | Server builds redacted snapshots; independent People/Financials/Clients toggles, default off; any toggle on requires allowed emails + expiry. MCP acts as the user under RLS, never with the service-role key. | Client-side engine means anything sent is visible; links get forwarded. Toggles allow sharing with authorised people. |
-| D13 | Clients | Named client roster (`clients`), real clients seed the run, synthetic new wins, `upsert_client` MCP tool. | Findings need to name names ("Acme is at risk"); also the target for v2 CRM sync. |
+| D13 | Clients (**amended by D27**: named clients are now hidden, replaced by client groups) | Named client roster (`clients`), real clients seed the run, synthetic new wins, `upsert_client` MCP tool. | Findings need to name names ("Acme is at risk"); also the target for v2 CRM sync. |
 | D14 | Concurrent editing | Per-field saves with version check, keep-mine/keep-theirs on same-field conflict, presence and live refresh via Supabase Realtime. | Avoids silent overwrites without a CRDT project or frustrating locks. |
 | D15 | Narration trust | Templates for banners/headlines; LLM only for PDF summary and "explain"; every number validated against run JSON, retry once, then fall back to template; cached; editable with provenance. | One invented number in a report undermines "the engine produces all numbers". |
 | D16 | Engine verification | Queueing-theory checks, behaviour checks, golden models in CI; port-and-fix six prototype issues; re-baseline Northbeam. | Matching the prototype proves copying, not correctness. |
 | D17 | Conflicting sources | Sources stored; every inferred number cites evidence; disagreements become triangular ranges flagged as conflicts, fed to robustness, and logged as perception-gap issues. | The disagreement is itself a finding, and averaging hides it. |
-| D18 | Draft mode | Every process has a live version and at most one draft; all edits (canvas, MCP, import) go to the draft; draft vs live is runnable; Publish gates on resolved assumptions. | Nothing reaches production without review; the client's numbers don't move mid-week unexplained. |
+| D18 | Draft mode (**amended by D25**: drafts stay single; solutions are separate copies) | Every process has a live version and at most one draft; all edits (canvas, MCP, import) go to the draft; draft vs live is runnable; Publish gates on resolved assumptions. | Nothing reaches production without review; the client's numbers don't move mid-week unexplained. |
 | D19 | Company-model edits | Human edits apply live (facts); MCP edits become suggestions for review; all audit-logged; runs show "model changed since this run". | AI never changes production without review, without making people draft a leave date. |
 | D20 | Per-person data | Capacity, not performance: individual availability/skills/assignments; capacity factor off by default, shown only when measured, visible to the person, never ranked; no role-median benchmark. DPA clause in the retainer. | Raw speed comparisons mislead (task mix), carry GDPR duties, and make staff guarded in interviews. |
+
+### Redesign decisions (30 Sep to 1 Oct 2026)
+
+Source: Austin's Milestone A QA notes (30 Sep), the prototype, `docs/plans/redesign-plan.md`, `docs/analysis-rules.md` and `docs/research/first-principles.md`. The QA found the old screens confusing: jargon, severities nobody could compare, and findings that landed on the map before anyone agreed with them.
+
+| # | Question | Decision | Why |
+|---|---|---|---|
+| D21 | Where does the redesign go? | In Milestone A, as tickets A31 to A58 (#96 to #123). B and C start after it, on rewritten tickets. | Audits need the new screens. The old ones are what Austin found confusing. |
+| D22 | What is removed? | Reports (pages, PDF route, print stylesheet, `export_report` tool, nav item), the Clients page, the Scenarios page, the Runs page, and the Track and Run fix buttons. "Explain this run" stays. The `reports` tables stay, unused. Ticket A32. | Each is replaced: Clients by client groups and People, Scenarios by solutions, Runs by History, Track by Acknowledge, Run fix by Build solution. Reports have no replacement in Milestone A. |
+| D23 | How are findings rated? | One four-level rating: Great, Good could improve, Bad not urgent, Operational risk. It replaces critical, serious, warning and info. Each rule has three cut-offs. The band comes from the average over 30 runs. A bad month (P90 over the next cut-off) or being on the bottleneck each raise it one level, to at most Operational risk. | Four plain levels can be compared across rules. Averages alone hid bad months and the bottleneck. Today's engine missed an 82% busy strategist. |
+| D24 | How do issues come about? | The rules and AI write **insights**. Nothing reaches the map until someone acknowledges it. An **issue** comes only from an acknowledged insight or is logged by hand. Red map badges show confirmed issues only. | The map should show what the team agreed on, not everything the engine noticed. Replaces auto-detected issues and Track. |
+| D25 | What is a solution? (**amends D18**) | A solution is a separate copy of a process with changed steps, plus optional lever changes. A process can have many. One solution can solve several issues, with an automatic verdict against each issue's target and the user's own verdict. **Drafts stay single:** a process still has one live version and at most one draft. | Testing a fix needs a copy that lives beside the live process. Scenario patches could not change steps. |
+| D26 | Can processes hold processes? | Yes. A step can hold its own steps, as a group or a child process. The company map is the root. The engine always simulates the detailed steps. | Collapsing for readability must not change the numbers. Replaces B8. |
+| D27 | What happens to named clients? (**amends D13**) | Named clients are hidden, with the data kept. Clients are modelled as **client groups** per service: number, fee, normal churn, typical stay, starting health. The engine simulates unnamed clients from these. | Named rosters are slow to enter and not needed to show the cause of churn. Keeping the data allows a way back. |
+| D28 | Why do clients leave? | **Churn drivers**: ten, each with a weight and an on/off switch, plus your own. The engine measures the drivers it can and reports each one's share of churn. They feed the client-health and churn-driver rules. | Late work is one cause among several. Showing shares says where to act. |
+| D29 | How does the market affect results? | **Market conditions**: presets (Boom, Stable, Soft, Downturn) and custom ones, with seven factors and a 24-month schedule applied month by month. They feed the stress test on solution pages. | A fix that works only in a boom is not a fix. |
+| D30 | How do we capture the purpose of a process? | **First principles** per process: seven steps (the job, hard truths versus assumptions, requirements with named owners, delete, simplify then speed up then automate, root cause, goals). AI checks sit beside each step. Goals become success measures, rated by rule 11. | Stops us automating a step that should be deleted. Research in `docs/research/first-principles.md`. |
+| D31 | How is money shown? | Every insight shows an estimated cost per month, sorted high to low within each rating. A loss is worth the revenue still to come when it is lost, capped at 12 months. Before signing it is chance-weighted. After signing it is the fee times remaining tenure. The default currency for new workspaces is **AUD**. | One comparable number per insight. The cap keeps one lost client from dominating. |
+| D32 | How do we find single points of failure? | The **absence test**: an extra run with the person away for two weeks, rated on work lost and weeks to catch up. It replaces flagging every one-person step. | A one-person step nobody needs covered is not a risk. Measure the damage instead. |
+| D33 | What does the UI look like? | Austin's shadcn preset (`shadcn init --preset b1s91W1fU`, style radix-nova: Inter, teal-blue brand, neutral greys), applied in commit 6149a6a. "Good, could improve" is lime green so it does not clash with the brand colour. Amends §8.1. | One consistent kit, chosen by the owner. |
+| D34 | How do we word the screens? | Plain words, as in the prototype. Every setting, lever and rule has an (i) help with a plain description and an example. | Austin's QA: anyone should understand a screen without a glossary. |
+| D35 | Can rules be changed? | Yes. Settings, Analysis rules: switch each rule on or off, edit cut-offs with a live preview, add overrides per role, person, step, service or process, and reset. Stored per workspace. Changing a rule re-rates the last run without simulating again. | Agencies differ. Re-rating must be instant. |
+| D36 | What does AI do in analysis? | It reads rule results, first principles and linked sources, then writes insights marked AI and an "AI read" summary. Every number it uses comes from the run and is validated as narration is (D15). AI insights go through the same Acknowledge step. | Keeps D15: the engine produces the numbers. |
+| D37 | What happens to the Milestone B and C plans? | B7 keeps the drag-and-drop timeline. B9's kanban is dropped, with issues CSV moving to B10. B8 and C3 close (done in A37 and A40). B2 becomes the People page. B4's proposals arrive in Suggestions. | Matches the redesign. The owner did not object to dropping the kanban. |

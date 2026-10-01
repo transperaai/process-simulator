@@ -6,11 +6,20 @@
 // checklists save on each change.
 
 import { useId, type KeyboardEvent, type ReactNode } from "react";
+import { Help } from "@/components/help";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Textarea } from "@/components/ui/textarea";
 import { mapOutcome, type FieldValue, type Saver } from "@/lib/fields/field-controller";
 import { useField, type Field } from "@/lib/fields/use-field";
 
-const inputClass =
-  "w-full rounded-token border border-line bg-panel px-2 py-1.5 tabular-nums disabled:bg-panel-2 disabled:text-fg-2";
+/** The plain-English (i) for a field: what it does, and an example. */
+export interface FieldHelp {
+  description: string;
+  example: string;
+}
+
 
 /** The "keep mine / keep theirs" prompt for a same-field conflict. `subject` names the field when it isn't next to it. */
 export function ConflictPrompt({
@@ -30,18 +39,18 @@ export function ConflictPrompt({
   onKeepTheirs: () => void;
 }) {
   return (
-    <div role="alert" className="mt-1 rounded-token border border-warn bg-warn-soft p-2 text-xs">
+    <div role="alert" className="mt-1 rounded-lg border border-warn bg-warn-soft p-2 text-xs text-foreground">
       <p>
         {by ?? "Someone else"} changed {subject ?? "this"} to <strong>{theirs}</strong> while you were editing. Keep yours or
         theirs?
       </p>
       <div className="mt-1.5 flex gap-2">
-        <button type="button" onClick={onKeepMine} className="rounded-token bg-accent px-2 py-0.5 font-semibold text-accent-fg">
+        <Button type="button" size="xs" onClick={onKeepMine}>
           Keep mine ({mine})
-        </button>
-        <button type="button" onClick={onKeepTheirs} className="rounded-token border border-line px-2 py-0.5">
+        </Button>
+        <Button type="button" size="xs" variant="outline" onClick={onKeepTheirs}>
           Keep theirs
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -50,7 +59,7 @@ export function ConflictPrompt({
 function FieldStatus<T extends FieldValue>({ field, display }: { field: Field<T>; display: (v: T) => string }) {
   if (field.phase === "saving") {
     return (
-      <p className="text-xs text-fg-3" aria-live="polite">
+      <p className="text-xs text-muted-foreground" aria-live="polite">
         Saving…
       </p>
     );
@@ -81,6 +90,7 @@ function FieldStatus<T extends FieldValue>({ field, display }: { field: Field<T>
 function Shell<T extends FieldValue>({
   id,
   label,
+  help,
   hint,
   field,
   display,
@@ -88,6 +98,7 @@ function Shell<T extends FieldValue>({
 }: {
   id: string;
   label: string;
+  help?: FieldHelp;
   hint?: ReactNode;
   field: Field<T>;
   display: (v: T) => string;
@@ -95,11 +106,14 @@ function Shell<T extends FieldValue>({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-xs font-medium text-fg-2">
-        {label}
-      </label>
+      <span className="flex items-center">
+        <label htmlFor={id} className="text-xs font-medium text-fg-2">
+          {label}
+        </label>
+        {help && <Help label={label} {...help} />}
+      </span>
       {children}
-      {hint && field.phase === "idle" && <p className="text-xs text-fg-3">{hint}</p>}
+      {hint && field.phase === "idle" && <p className="text-xs text-muted-foreground">{hint}</p>}
       <FieldStatus field={field} display={display} />
     </div>
   );
@@ -116,6 +130,7 @@ export function TextField({
   type = "text",
   disabled,
   hint,
+  help,
 }: {
   label: string;
   value: string | null;
@@ -126,6 +141,7 @@ export function TextField({
   type?: "text" | "email";
   disabled?: boolean;
   hint?: ReactNode;
+  help?: FieldHelp;
 }) {
   const id = useId();
   const field = useField<string | null>(value, async (base, next) => {
@@ -137,7 +153,6 @@ export function TextField({
     id,
     disabled,
     value: field.draft ?? "",
-    className: inputClass,
     onChange: (e: { target: { value: string } }) => field.edit(e.target.value),
     onBlur: () => void field.commit(),
     onKeyDown: (e: KeyboardEvent) => {
@@ -146,8 +161,8 @@ export function TextField({
     },
   };
   return (
-    <Shell id={id} label={label} hint={hint} field={field} display={showText}>
-      {multiline ? <textarea rows={2} {...props} /> : <input type={type} {...props} />}
+    <Shell id={id} label={label} help={help} hint={hint} field={field} display={showText}>
+      {multiline ? <Textarea rows={2} {...props} /> : <Input type={type} {...props} />}
     </Shell>
   );
 }
@@ -158,22 +173,23 @@ export function DateField({
   value,
   save,
   disabled,
+  help,
 }: {
   label: string;
   value: string | null;
   save: Saver<string | null>;
   disabled?: boolean;
+  help?: FieldHelp;
 }) {
   const id = useId();
   const field = useField<string | null>(value, (base, next) => save(base, next || null));
   return (
-    <Shell id={id} label={label} field={field} display={(v) => v || "blank"}>
-      <input
+    <Shell id={id} label={label} help={help} field={field} display={(v) => v || "blank"}>
+      <Input
         id={id}
         type="date"
         disabled={disabled}
         value={field.draft ?? ""}
-        className={inputClass}
         onChange={(e) => void field.commit(e.target.value || null)}
       />
     </Shell>
@@ -193,6 +209,7 @@ export function NumberField({
   placeholder,
   disabled,
   hint,
+  help,
 }: {
   label: string;
   value: number | null;
@@ -208,6 +225,7 @@ export function NumberField({
   placeholder?: string;
   disabled?: boolean;
   hint?: ReactNode;
+  help?: FieldHelp;
 }) {
   const id = useId();
   const toText = (v: number | null) => (v === null ? "" : String(Math.round(Number(v) * scale * 1e6) / 1e6));
@@ -225,9 +243,9 @@ export function NumberField({
   });
   const display = (v: string) => (v === "" ? "blank" : unit ? `${v} ${unit}` : v);
   return (
-    <Shell id={id} label={label} hint={hint} field={field} display={display}>
+    <Shell id={id} label={label} help={help} hint={hint} field={field} display={display}>
       <span className="flex items-center gap-1.5">
-        <input
+        <Input
           id={id}
           type="number"
           inputMode="decimal"
@@ -237,7 +255,7 @@ export function NumberField({
           placeholder={placeholder}
           disabled={disabled}
           value={field.draft}
-          className={inputClass}
+          className="tabular-nums"
           onChange={(e) => field.edit(e.target.value)}
           onBlur={() => void field.commit()}
           onKeyDown={(e) => {
@@ -245,7 +263,7 @@ export function NumberField({
             if (e.key === "Enter") void field.commit();
           }}
         />
-        {unit && <span className="shrink-0 text-fg-3">{unit}</span>}
+        {unit && <span className="shrink-0 text-muted-foreground">{unit}</span>}
       </span>
     </Shell>
   );
@@ -265,6 +283,7 @@ export function SelectField({
   noneLabel,
   disabled,
   hint,
+  help,
 }: {
   label: string;
   value: string | null;
@@ -274,18 +293,18 @@ export function SelectField({
   noneLabel?: string;
   disabled?: boolean;
   hint?: ReactNode;
+  help?: FieldHelp;
 }) {
   const id = useId();
   const field = useField<string | null>(value, (base, next) => save(base, next || null));
   const names = new Map(options.map((o) => [o.value, o.label]));
   const display = (v: string | null) => (v ? (names.get(v) ?? "a removed item") : (noneLabel ?? "none"));
   return (
-    <Shell id={id} label={label} hint={hint} field={field} display={display}>
-      <select
+    <Shell id={id} label={label} help={help} hint={hint} field={field} display={display}>
+      <NativeSelect
         id={id}
         disabled={disabled}
         value={field.draft ?? ""}
-        className={inputClass}
         onChange={(e) => void field.commit(e.target.value || null)}
       >
         {noneLabel !== undefined && <option value="">{noneLabel}</option>}
@@ -296,7 +315,7 @@ export function SelectField({
         ))}
         {/* A stored value that is no longer an option (a removed role) still shows. */}
         {field.draft && !names.has(field.draft) && <option value={field.draft}>A removed item</option>}
-      </select>
+      </NativeSelect>
     </Shell>
   );
 }
@@ -308,6 +327,7 @@ export function ToggleField({
   onLabel,
   offLabel,
   disabled,
+  help,
 }: {
   label: string;
   value: boolean;
@@ -315,11 +335,12 @@ export function ToggleField({
   onLabel: string;
   offLabel: string;
   disabled?: boolean;
+  help?: FieldHelp;
 }) {
   const id = useId();
   const field = useField<boolean>(value, save);
   return (
-    <Shell id={id} label={label} field={field} display={(v) => (v ? onLabel : offLabel)}>
+    <Shell id={id} label={label} help={help} field={field} display={(v) => (v ? onLabel : offLabel)}>
       <span className="flex items-center gap-2 py-1.5">
         <input
           id={id}
@@ -350,6 +371,7 @@ export function ChecklistField({
   hint,
   emptyLabel = "none",
   disabled,
+  help,
 }: {
   label: string;
   value: readonly string[];
@@ -358,6 +380,7 @@ export function ChecklistField({
   hint?: ReactNode;
   emptyLabel?: string;
   disabled?: boolean;
+  help?: FieldHelp;
 }) {
   const id = useId();
   const field = useField<readonly string[]>(value, save);
@@ -370,7 +393,10 @@ export function ChecklistField({
   };
   return (
     <fieldset className="flex flex-col gap-1" id={id}>
-      <legend className="mb-1 text-xs font-medium text-fg-2">{label}</legend>
+      <legend className="mb-1 flex items-center text-xs font-medium text-fg-2">
+        {label}
+        {help && <Help label={label} {...help} />}
+      </legend>
       <ul className="flex flex-wrap gap-x-4 gap-y-1">
         {options.map((o) => (
           <li key={o.id}>
@@ -384,13 +410,13 @@ export function ChecklistField({
               />
               <span>
                 {o.label}
-                {o.sublabel && <span className="text-fg-3"> · {o.sublabel}</span>}
+                {o.sublabel && <span className="text-muted-foreground"> · {o.sublabel}</span>}
               </span>
             </label>
           </li>
         ))}
       </ul>
-      {hint && field.phase === "idle" && <p className="text-xs text-fg-3">{hint}</p>}
+      {hint && field.phase === "idle" && <p className="text-xs text-muted-foreground">{hint}</p>}
       <FieldStatus field={field} display={display} />
     </fieldset>
   );

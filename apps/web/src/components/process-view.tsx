@@ -72,7 +72,6 @@ export function ProcessView({
   mode,
   scenarios = [],
   issues = [],
-  initialFix = null,
   registerHref,
   settingsHref,
   userId = null,
@@ -88,8 +87,6 @@ export function ProcessView({
   scenarios?: ScenarioRow[];
   /** Tracked issues of the workspace (in memory on the demo). */
   issues?: IssueRow[];
-  /** An issue whose fix to run once the first run is in (`?fix=`). */
-  initialFix?: string | null;
   /** The full issues register, if the workspace has one to link to. */
   registerHref?: string;
   /** The workspace settings, where services are linked to servicing processes (issue #19). */
@@ -299,8 +296,8 @@ export function ProcessView({
   // The side panel (issue #93): open state, and which tab is showing. Docked from lg up until told otherwise.
   const panelParam = useSearchParams().get("panel");
   const draftHasContent = !showingLive && (unresolved.length > 0 || diff.list.length > 0);
-  const [panelOpen, setPanelOpen] = useState<PanelOpen>(panelParam === "scenarios" || panelParam === "issues" ? true : "auto");
-  const [panelTab, setPanelTab] = useState<PanelTabId>(panelParam === "scenarios" ? "scenarios" : panelParam === "issues" ? "insights" : draftHasContent ? "draft" : "insights");
+  const [panelOpen, setPanelOpen] = useState<PanelOpen>(panelParam === "issues" ? true : "auto");
+  const [panelTab, setPanelTab] = useState<PanelTabId>(panelParam === "issues" ? "insights" : draftHasContent ? "draft" : "insights");
   const isNarrow = useIsMobile();
   const { request: panelRequest } = useMapPanelRequest();
   const [seenRequest, setSeenRequest] = useState(panelRequest?.nonce ?? null);
@@ -314,7 +311,6 @@ export function ProcessView({
     mode,
     initialIssues: issues,
     initialScenarios: scenarios,
-    initialFix,
     registerHref,
     retired,
     onShowIssues: () => {
@@ -342,23 +338,12 @@ export function ProcessView({
       setPanelTab("step");
     }
   }
-  // 2. a fix runs (`?fix=` or "Run the fix"): show the scenarios it runs in.
-  const [seenFix, setSeenFix] = useState(issuesUi.fix);
-  if (issuesUi.fix !== seenFix) {
-    setSeenFix(issuesUi.fix);
-    if (issuesUi.fix) {
-      setPanelOpen(true);
-      setPanelTab("scenarios");
-    }
-  }
-  // 3. the sidebar asks for a tab (the demo's Issues and Scenarios items).
+  // 2. the sidebar asks for a tab (its Issues item).
   if (panelRequest && panelRequest.nonce !== seenRequest) {
     setSeenRequest(panelRequest.nonce);
     setPanelOpen(true);
-    if (panelRequest.tab === "issues") {
-      setPanelTab("insights");
-      issuesUi.showIssues();
-    } else setPanelTab("scenarios");
+    setPanelTab("insights");
+    issuesUi.showIssues();
   }
   // A tab that no longer exists (the step was deselected, the draft is hidden) gives way to one that does.
   const hasTab: Record<PanelTabId, boolean> = { step: editable && !!inspected, draft: !showingLive, insights: !!shownModel, scenarios: !!shownModel };
@@ -412,7 +397,6 @@ export function ProcessView({
               model={shownModel}
               result={sim.status === "done" ? result : null}
               durationMs={sim.run?.durationMs ?? null}
-              runsHref={registerHref ? registerHref.replace(/\/issues$/, "/runs") : "/demo/runs"}
             />
           )}
           <Button
@@ -467,6 +451,7 @@ export function ProcessView({
           onRestore={editable ? restore : null}
           savedLabel={hasDraft ? "Saved to draft" : "Saved"}
           openIssues={issuesUi.openIssues}
+          rating={issuesUi.rating}
         />
         <MapSidePanel
           open={panelOpen}
@@ -533,7 +518,6 @@ export function ProcessView({
                 workspaceId={bundle.workspace.id}
                 initialScenarios={scenarios}
                 mode={mode}
-                fix={issuesUi.fix}
                 onScenariosChange={issuesUi.onScenariosChange}
                 provenance={provenance}
                 retired={retired}

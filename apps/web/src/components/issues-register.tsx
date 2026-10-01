@@ -4,30 +4,30 @@
 // logged by hand and the issues the latest run detected, in one list with
 // filters. Detected issues are read-only and refresh on every run; tracking
 // one stores it (`source: promoted`) so later runs show it once, as tracked.
-// "Run the fix" applies the linked scenario (or the detection's suggested
-// what-if) and opens the compare view.
 
 import { useState, type FormEvent, type ReactNode } from "react";
 import type { IssueRow, IssueSource, IssueStatus, ScenarioRow } from "@transpera-flow/db";
-import { ISSUE_SEVERITIES, ISSUE_TYPES, type DetectedIssue, type IssueSeverity, type IssueType } from "@transpera-flow/engine";
+import { ISSUE_TYPES, RATING_LABELS, STORED_SEVERITIES, ratingOfStored, type DetectedIssue, type IssueType, type Rating, type StoredSeverity } from "@transpera-flow/engine";
 import type { Saver } from "@/lib/fields/field-controller";
 import {
   NO_FILTERS,
-  SEVERITY_LABELS,
+  RATINGS_WORST_FIRST,
   SOURCE_LABELS,
   STATUS_LABELS,
   TYPE_LABELS,
   entryView,
   filterEntries,
   fixFor,
-  promoteInput,
   registerEntries,
-  type FixRequest,
   type IssueFilters,
   type RegisterEntry,
 } from "@/lib/issues/register";
 import type { IssuesState } from "@/lib/issues/use-issues";
 import { ISSUE_STATUSES, MAX_EVIDENCE, MAX_TITLE, type IssueField } from "@/lib/issues/validate";
+import { buttonVariants } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Textarea } from "@/components/ui/textarea";
 import { SelectField, TextField, type SelectOption } from "./fields";
 
 const NONE: ReadonlySet<string> = new Set();
@@ -37,27 +37,28 @@ export interface Named {
   name: string;
 }
 
-const SEVERITY_STRIPE: Record<IssueSeverity, string> = {
-  critical: "before:bg-crit",
-  serious: "before:bg-serious",
-  warning: "before:bg-warn",
-  info: "before:bg-accent",
+const RATING_STRIPE: Record<Rating, string> = {
+  risk: "before:bg-crit",
+  bad: "before:bg-serious",
+  good: "before:bg-warn",
+  great: "before:bg-accent",
 };
-const SEVERITY_CHIP: Record<IssueSeverity, string> = {
-  critical: "border-crit bg-crit-soft",
-  serious: "border-serious bg-crit-soft/60",
-  warning: "border-warn bg-warn-soft",
-  info: "border-line bg-panel-2",
+const RATING_CHIP: Record<Rating, string> = {
+  risk: "border-crit bg-crit-soft",
+  bad: "border-serious bg-crit-soft/60",
+  good: "border-warn bg-warn-soft",
+  great: "border-line bg-panel-2",
 };
 
-const chip = "rounded-token border border-line px-1.5 py-px text-xs whitespace-nowrap";
-const button = "rounded-token border border-line px-2 py-0.5 text-xs hover:bg-panel-2 disabled:opacity-50";
-const primary = "rounded-token bg-accent px-2 py-0.5 text-xs font-semibold text-accent-fg disabled:opacity-50";
-const input = "w-full rounded-token border border-line bg-panel px-2 py-1 text-sm";
+const chip = "rounded-full border border-border px-2 py-px text-xs whitespace-nowrap";
+const button = buttonVariants({ variant: "outline", size: "xs" });
+const primary = buttonVariants({ size: "xs" });
 
 const options = (list: readonly Named[]): SelectOption[] => list.map((x) => ({ value: x.id, label: x.name }));
 const typeOptions = ISSUE_TYPES.map((t) => ({ value: t, label: TYPE_LABELS[t] }));
-const severityOptions = ISSUE_SEVERITIES.map((s) => ({ value: s, label: SEVERITY_LABELS[s] }));
+// Filters pick a rating. Stored issues keep the database's four values, so the edit and log forms send those, labelled with the rating each stands for.
+const ratingOptions = RATINGS_WORST_FIRST.map((r) => ({ value: r, label: RATING_LABELS[r] }));
+const storedRatingOptions = STORED_SEVERITIES.map((s) => ({ value: s, label: RATING_LABELS[ratingOfStored(s)] }));
 const statusOptions = ISSUE_STATUSES.map((s) => ({ value: s, label: STATUS_LABELS[s] }));
 
 export function IssuesRegister({
@@ -74,7 +75,6 @@ export function IssuesRegister({
   canEdit,
   stepFilter,
   onStepFilterChange,
-  onRunFix,
 }: {
   /** `rail`: narrow, beside the map; `page`: the full register screen. */
   layout: "rail" | "page";
@@ -94,14 +94,13 @@ export function IssuesRegister({
   /** Show only issues on this step (from a badge on the map). */
   stepFilter: string;
   onStepFilterChange: (stepId: string) => void;
-  onRunFix: (fix: Omit<FixRequest, "nonce">, entryId: string) => void;
 }) {
   const [filters, setFilters] = useState<IssueFilters>(NO_FILTERS);
   const [logging, setLogging] = useState(false);
   const entries = registerEntries(state.issues, detected ?? []);
   const shown = filterEntries(entries, { ...filters, step: stepFilter }, processId);
   const active = entries.filter((e) => entryView(e).open);
-  const count = (s: IssueSeverity) => active.filter((e) => entryView(e).severity === s).length;
+  const count = (r: Rating) => active.filter((e) => entryView(e).rating === r).length;
   const names = {
     step: new Map(steps.map((s) => [s.id, s.name])),
     person: new Map(people.map((p) => [p.id, p.name])),
@@ -111,14 +110,14 @@ export function IssuesRegister({
   const filterSelect = (label: string, key: keyof IssueFilters, opts: SelectOption[], all: string) => (
     <label className="flex min-w-0 flex-col gap-0.5">
       <span className="text-xs text-fg-3">{label}</span>
-      <select value={filters[key]} onChange={(e) => set(key, e.target.value as never)} className={input}>
+      <NativeSelect value={filters[key]} onChange={(e) => set(key, e.target.value as never)} className="h-7 text-sm md:text-sm">
         <option value="">{all}</option>
         {opts.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
           </option>
         ))}
-      </select>
+      </NativeSelect>
     </label>
   );
 
@@ -128,15 +127,15 @@ export function IssuesRegister({
         <strong className="text-fg">
           {active.length} open issue{active.length === 1 ? "" : "s"}
         </strong>
-        {count("critical") ? ` · ${count("critical")} critical` : ""}
-        {count("serious") ? ` · ${count("serious")} serious` : ""}.{" "}
+        {count("risk") ? ` · ${count("risk")} operational risk` : ""}
+        {count("bad") ? ` · ${count("bad")} bad` : ""}.{" "}
         {detected === null || running ? "Checking the latest run…" : "Detected issues refresh on every run; tracked ones stay until you close them."}
       </p>
 
       <div className={`grid gap-1.5 ${layout === "page" ? "grid-cols-2 sm:grid-cols-5" : "grid-cols-2"}`}>
         {processes.length > 1 && filterSelect("Process", "process", options(processes), "All processes")}
         {filterSelect("Person", "person", options(people), "Anyone")}
-        {filterSelect("Severity", "severity", severityOptions, "Any severity")}
+        {filterSelect("Rating", "rating", ratingOptions, "Any rating")}
         {filterSelect(
           "Source",
           "source",
@@ -145,7 +144,7 @@ export function IssuesRegister({
         )}
         <label className="flex min-w-0 flex-col gap-0.5">
           <span className="text-xs text-fg-3">Status</span>
-          <select value={filters.status} onChange={(e) => set("status", e.target.value as IssueFilters["status"])} className={input}>
+          <NativeSelect value={filters.status} onChange={(e) => set("status", e.target.value as IssueFilters["status"])} className="h-7 text-sm md:text-sm">
             <option value="active">Open and detected</option>
             <option value="">Any status</option>
             {statusOptions.map((o) => (
@@ -153,7 +152,7 @@ export function IssuesRegister({
                 {o.label}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </label>
       </div>
       {stepFilter && (
@@ -166,7 +165,7 @@ export function IssuesRegister({
       )}
 
       {state.error && (
-        <p role="alert" className="rounded-token border border-crit bg-crit-soft p-2 text-xs">
+        <p role="alert" className="rounded-lg border border-crit bg-crit-soft p-2 text-xs">
           {state.error}{" "}
           <button type="button" className="underline" onClick={state.dismissError}>
             Dismiss
@@ -195,7 +194,7 @@ export function IssuesRegister({
         ))}
 
       {shown.length === 0 ? (
-        <p className="rounded-token border border-dashed border-line p-3 text-xs text-fg-2">
+        <p className="rounded-lg border border-dashed border-line p-3 text-xs text-fg-2">
           {entries.length === 0
             ? detected === null
               ? "Running the simulation…"
@@ -215,9 +214,7 @@ export function IssuesRegister({
               brokenScenarios={brokenScenarios}
               canEdit={canEdit}
               state={state}
-              processId={processId}
               showProcess={processes.length > 1}
-              onRunFix={onRunFix}
             />
           ))}
         </ul>
@@ -235,9 +232,7 @@ function IssueItem({
   brokenScenarios,
   canEdit,
   state,
-  processId,
   showProcess,
-  onRunFix,
 }: {
   entry: RegisterEntry;
   names: { step: Map<string, string>; person: Map<string, string>; process: Map<string, string> };
@@ -247,15 +242,13 @@ function IssueItem({
   brokenScenarios: ReadonlySet<string>;
   canEdit: boolean;
   state: IssuesState;
-  processId: string;
   showProcess: boolean;
-  onRunFix: (fix: Omit<FixRequest, "nonce">, entryId: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const v = entryView(entry);
   const fix = fixFor(entry, scenarios);
-  // A fix that needs attention can't be run until it is re-pointed (issue #16).
+  // A fix that needs attention must be re-pointed (issue #16).
   const fixBroken = Boolean(fix?.scenarioId && brokenScenarios.has(fix.scenarioId));
   const issue = entry.kind === "tracked" ? entry.issue : null;
   const meta: ReactNode[] = [
@@ -265,8 +258,8 @@ function IssueItem({
     <span key="type" className={chip}>
       {TYPE_LABELS[v.type]}
     </span>,
-    <span key="sev" className={`${chip} ${SEVERITY_CHIP[v.severity]}`}>
-      {SEVERITY_LABELS[v.severity]}
+    <span key="sev" className={`${chip} ${RATING_CHIP[v.rating]}`}>
+      {RATING_LABELS[v.rating]}
     </span>,
   ];
   if (v.status) meta.push(<span key="status" className={chip}>{STATUS_LABELS[v.status]}</span>);
@@ -288,7 +281,7 @@ function IssueItem({
     <li
       data-issue={v.id}
       data-source={v.source}
-      className={`relative rounded-token border border-line bg-panel py-2 pr-2 pl-3.5 before:absolute before:inset-y-0 before:left-0 before:w-1 before:rounded-l-token ${SEVERITY_STRIPE[v.severity]}`}
+      className={`relative rounded-lg border border-line bg-panel py-2 pr-2 pl-3.5 before:absolute before:inset-y-0 before:left-0 before:w-1 before:rounded-l-lg ${RATING_STRIPE[v.rating]}`}
     >
       <p className="text-sm font-semibold">{v.title}</p>
       {v.evidence && <p className="mt-0.5 text-xs text-fg-2">{v.evidence}</p>}
@@ -296,25 +289,9 @@ function IssueItem({
       <div className="mt-1.5 flex flex-wrap items-center gap-1">
         {meta}
         <span className="ml-auto flex flex-wrap gap-1">
-          {entry.kind === "detected" && canEdit && (
-            <button
-              type="button"
-              className={button}
-              disabled={state.busy}
-              onClick={() => void state.promote(promoteInput(entry.detection, processId, scenarios))}
-              title="Keep this in the register with an owner and status; later runs will show it once, as tracked."
-            >
-              Track
-            </button>
-          )}
           {issue && canEdit && (
             <button type="button" className={button} aria-expanded={editing} onClick={() => setEditing((x) => !x)}>
               {editing ? "Done editing" : "Edit"}
-            </button>
-          )}
-          {fix && !fixBroken && v.type !== "broken_scenario" && (
-            <button type="button" className={primary} onClick={() => onRunFix(fix, v.id)} title={`Apply “${fix.name}” and compare it with the baseline`}>
-              Run the fix →
             </button>
           )}
         </span>
@@ -323,7 +300,7 @@ function IssueItem({
         <p className="mt-1 text-xs text-fg-3">Re-point its changes under Scenarios; this issue resolves itself once the scenario applies again.</p>
       ) : fixBroken ? (
         <p className="mt-1 text-xs text-crit" data-fix-broken>
-          Fix: {fix!.name} needs attention (a change in it no longer resolves), so it can&apos;t be run until it is re-pointed under Scenarios.
+          Fix: {fix!.name} needs attention (a change in it no longer resolves), so it needs re-pointing under Scenarios.
         </p>
       ) : (
         fix && <p className="mt-1 text-xs text-fg-3">Fix: {fix.name}</p>
@@ -377,7 +354,7 @@ function IssueFields({
       <TextField label="Title" value={issue.title} save={save("title")} />
       <div className="grid grid-cols-2 gap-2">
         <SelectField label="Status" value={issue.status} save={save("status")} options={statusOptions} />
-        <SelectField label="Severity" value={issue.severity} save={save("severity")} options={severityOptions} />
+        <SelectField label="Rating" value={issue.severity} save={save("severity")} options={storedRatingOptions} />
         <SelectField label="Type" value={issue.type} save={save("type")} options={typeOptions} />
         <SelectField label="Owner" value={issue.owner_person_id} save={save("owner_person_id")} options={options(people)} noneLabel="No owner" />
         <SelectField label="Step" value={issue.step_id} save={save("step_id")} options={options(steps)} noneLabel="No step" />
@@ -389,8 +366,7 @@ function IssueFields({
         save={save("scenario_id")}
         options={options(scenarios)}
         noneLabel="No linked scenario"
-        hint={issue.detected_key ? "Without one, “Run the fix” uses the detection's suggestion." : undefined}
-      />
+              />
       <TextField label="Evidence" value={issue.evidence} save={save("evidence")} optional multiline />
     </>
   );
@@ -426,7 +402,7 @@ function LogIssueForm({
     void onSubmit({
       title,
       type: get("type") as IssueType,
-      severity: get("severity") as IssueSeverity,
+      severity: get("severity") as StoredSeverity,
       status: "open" as IssueStatus,
       evidence: get("evidence").trim() || null,
       process_id: processId,
@@ -440,25 +416,25 @@ function LogIssueForm({
   const select = (name: string, label: string, opts: SelectOption[], none?: string, value?: string) => (
     <label className="flex min-w-0 flex-col gap-0.5">
       <span className="text-xs font-medium text-fg-2">{label}</span>
-      <select name={name} defaultValue={value ?? ""} className={input}>
+      <NativeSelect name={name} defaultValue={value ?? ""}>
         {none !== undefined && <option value="">{none}</option>}
         {opts.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
           </option>
         ))}
-      </select>
+      </NativeSelect>
     </label>
   );
   return (
-    <form onSubmit={submit} aria-label="Log an issue" className="grid gap-2 rounded-token border border-line bg-panel-2 p-2">
+    <form onSubmit={submit} aria-label="Log an issue" className="grid gap-2 rounded-lg border border-line bg-panel-2 p-2">
       <label className="flex flex-col gap-0.5">
         <span className="text-xs font-medium text-fg-2">Title</span>
-        <input name="title" required maxLength={MAX_TITLE} className={input} placeholder="What's wrong, in a sentence" />
+        <Input name="title" required maxLength={MAX_TITLE} placeholder="What's wrong, in a sentence" />
       </label>
       <div className="grid grid-cols-2 gap-2">
         {select("type", "Type", typeOptions, undefined, "manual")}
-        {select("severity", "Severity", severityOptions, undefined, "warning")}
+        {select("severity", "Rating", storedRatingOptions, undefined, "warning")}
         {select("step_id", "Step", options(steps), "No step", defaultStep)}
         {select("person_id", "Person", options(people), "Nobody")}
         {select("owner_person_id", "Owner", options(people), "No owner")}
@@ -466,7 +442,7 @@ function LogIssueForm({
       </div>
       <label className="flex flex-col gap-0.5">
         <span className="text-xs font-medium text-fg-2">Evidence</span>
-        <textarea name="evidence" rows={2} maxLength={MAX_EVIDENCE} className={input} placeholder="What you saw or heard, and where" />
+        <Textarea name="evidence" rows={2} maxLength={MAX_EVIDENCE} placeholder="What you saw or heard, and where" />
       </label>
       {error && (
         <p role="alert" className="text-xs text-crit">

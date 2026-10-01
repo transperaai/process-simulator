@@ -134,7 +134,7 @@ function ScenarioItem({
       {broken && (
         <div className="flex flex-col gap-1 rounded-token border border-crit bg-crit-soft/50 p-1.5 text-xs" role="note">
           <p className="font-semibold text-crit">
-            Left out of the comparison and reports until {problems.length === 1 ? "this change is" : "these changes are"} re-pointed:
+            Left out of the comparison until {problems.length === 1 ? "this change is" : "these changes are"} re-pointed:
           </p>
           <ul className="flex flex-col gap-1.5">
             {problems.map((p) => (

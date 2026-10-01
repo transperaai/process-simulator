@@ -3,6 +3,10 @@
 import { useActionState, useState, useTransition } from "react";
 import { seasonalityCurve, type LeadSourceRow, type ProvenanceMap } from "@transpera-flow/db";
 import { NumberField, TextField } from "@/components/fields";
+import { Help } from "@/components/help";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { SettingsSection } from "./section";
 import type { WorkspaceSettingsData } from "@/lib/data";
 import {
   demandSummary,
@@ -34,7 +38,6 @@ const sourceSaver =
   (base, next) =>
     saveLeadSourceField(sourceId, field, base, next) as Promise<SaveOutcome<T>>;
 
-const sectionClass = "mb-8 rounded-token border border-line bg-panel p-4 shadow-token";
 
 const PROVENANCE_LABEL = { estimated: "Estimated", entered: "Entered", measured: "Measured" } as const;
 const PROVENANCE_CLASS = {
@@ -52,7 +55,7 @@ function ProvenanceBadge({ provenance, field }: { provenance: ProvenanceMap | nu
   return (
     <span
       title={title}
-      className={`inline-block rounded-token border px-1.5 text-[11px] leading-4 text-fg-2 ${PROVENANCE_CLASS[source]}`}
+      className={`inline-block rounded-lg border px-1.5 text-[11px] leading-4 text-fg-2 ${PROVENANCE_CLASS[source]}`}
     >
       {PROVENANCE_LABEL[source]}
     </span>
@@ -63,17 +66,9 @@ export function DemandSettings({ data }: { data: WorkspaceSettingsData }) {
   const { leadSources, canEdit } = data;
   const summary = demandSummary(leadSources, data.services, data.workspace.settings.leads_per_week);
   return (
-    <section className={sectionClass} aria-labelledby="demand-heading">
-      <div className="mb-3 flex flex-wrap items-baseline gap-x-3">
-        <h2 id="demand-heading" className="text-base font-bold">
-          Demand
-        </h2>
-        <p className="text-fg-3">
-          Where leads come from and how demand moves through the year. Simulations draw new leads from these.
-        </p>
-      </div>
+    <SettingsSection id="demand" title="Demand" description={<>Where leads come from and how demand moves through the year. Simulations draw new leads from these.</>}>
 
-      <p className="mb-4 rounded-token bg-panel-2 p-2" aria-live="polite">
+      <p className="mb-4 rounded-lg bg-panel-2 p-2" aria-live="polite">
         <strong className="tabular-nums">{formatNumber(summary.perWeek, 2)}</strong> qualified leads a week
         {summary.fromSources === null
           ? " (the workspace's interim figure: add a lead source to replace it)"
@@ -92,7 +87,7 @@ export function DemandSettings({ data }: { data: WorkspaceSettingsData }) {
       <h3 className="mb-2 font-semibold">Lead sources</h3>
       {canEdit && <AddLeadSource workspaceId={data.workspace.id} />}
       {leadSources.length === 0 ? (
-        <p className="mb-6 rounded-token border border-dashed border-line p-4 text-fg-2">
+        <p className="mb-6 rounded-lg border border-dashed border-line p-4 text-fg-2">
           No lead sources yet. Until you add one, simulations use {formatNumber(data.workspace.settings.leads_per_week, 2)}{" "}
           leads a week.
         </p>
@@ -108,26 +103,25 @@ export function DemandSettings({ data }: { data: WorkspaceSettingsData }) {
 
       <Seasonality data={data} />
       <Growth data={data} />
-    </section>
+    </SettingsSection>
   );
 }
 
 function AddLeadSource({ workspaceId }: { workspaceId: string }) {
   const [state, action, pending] = useActionState<ActionResult, FormData>(createLeadSource.bind(null, workspaceId), {});
-  const input = "rounded-token border border-line bg-panel px-2 py-1.5";
   return (
     <form action={action} className="mb-4 flex flex-wrap items-end gap-2">
       <label className="flex min-w-0 flex-col gap-1">
         <span className="text-xs font-medium text-fg-2">Name</span>
-        <input name="name" required maxLength={200} placeholder="e.g. Website enquiries" className={input} />
+        <Input name="name" required maxLength={200} placeholder="e.g. Website enquiries" />
       </label>
       <label className="flex w-32 flex-col gap-1">
         <span className="text-xs font-medium text-fg-2">Leads a week</span>
-        <input name="volume_week" type="number" inputMode="decimal" min={0} max={MAX_VOLUME_WEEK} step="any" required className={`${input} tabular-nums`} />
+        <Input name="volume_week" type="number" inputMode="decimal" min={0} max={MAX_VOLUME_WEEK} step="any" required className="tabular-nums" />
       </label>
       <label className="flex w-32 flex-col gap-1">
         <span className="text-xs font-medium text-fg-2">Qualified (%)</span>
-        <input
+        <Input
           name="conversion_pct"
           type="number"
           inputMode="decimal"
@@ -135,16 +129,15 @@ function AddLeadSource({ workspaceId }: { workspaceId: string }) {
           max={100}
           step="any"
           placeholder="100"
-          className={`${input} tabular-nums`}
+          className="tabular-nums"
         />
       </label>
-      <button
+      <Button
         type="submit"
         disabled={pending}
-        className="rounded-token bg-accent px-3 py-1.5 font-semibold text-accent-fg disabled:opacity-60"
       >
         {pending ? "Adding…" : "Add lead source"}
-      </button>
+      </Button>
       {state.error && (
         <p role="alert" className="w-full text-crit">
           {state.error}
@@ -158,7 +151,7 @@ function LeadSourceItem({ source: src, disabled }: { source: LeadSourceRow; disa
   const qualified = Number(src.volume_week) * Number(src.conversion_to_qualified);
   return (
     <div className="grid items-start gap-4 px-1 py-3 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_auto]">
-      <TextField label="Name" value={src.name} save={sourceSaver(src.id, "name")} disabled={disabled} />
+      <TextField label="Name" value={src.name} save={sourceSaver(src.id, "name")} disabled={disabled} help={{ description: "Where these leads come from.", example: "Website enquiries" }} />
       <NumberField
         label="Leads a week"
         value={Number(src.volume_week)}
@@ -167,8 +160,7 @@ function LeadSourceItem({ source: src, disabled }: { source: LeadSourceRow; disa
         max={MAX_VOLUME_WEEK}
         step={1}
         disabled={disabled}
-        hint={<ProvenanceBadge provenance={src.provenance} field="volume_week" />}
-      />
+        hint={<ProvenanceBadge provenance={src.provenance} field="volume_week" />} help={{ description: "How many new leads this source brings in a typical week. Simulations draw new leads at this rate.", example: "6 means about 6 new leads a week from this source." }} />
       <NumberField
         label="Become qualified"
         value={Number(src.conversion_to_qualified)}
@@ -179,8 +171,7 @@ function LeadSourceItem({ source: src, disabled }: { source: LeadSourceRow; disa
         max={100}
         step={5}
         disabled={disabled}
-        hint={<ProvenanceBadge provenance={src.provenance} field="conversion_to_qualified" />}
-      />
+        hint={<ProvenanceBadge provenance={src.provenance} field="conversion_to_qualified" />} help={{ description: "The share of these leads worth pursuing. Only qualified leads enter the sales process.", example: "At 40%, 10 leads a week give 4 qualified ones." }} />
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-fg-2">Qualified a week</span>
         <span className="py-1.5 tabular-nums">{formatNumber(qualified, 2)}</span>
@@ -196,16 +187,16 @@ function RemoveLeadSource({ sourceId, name }: { sourceId: string; name: string }
   const [error, setError] = useState<string>();
   if (!confirming) {
     return (
-      <button type="button" onClick={() => setConfirming(true)} className="self-start text-xs text-fg-3 underline hover:text-crit">
+      <Button variant="link" size="xs" className="h-auto p-0 text-muted-foreground underline hover:text-destructive self-start" type="button" onClick={() => setConfirming(true)}>
         Remove
-      </button>
+      </Button>
     );
   }
   return (
     <div className="flex flex-col items-start gap-1 text-xs">
       <span>Remove {name}?</span>
       <span className="flex gap-2">
-        <button
+        <Button variant="destructive" size="sm"
           type="button"
           disabled={pending}
           onClick={() =>
@@ -214,13 +205,12 @@ function RemoveLeadSource({ sourceId, name }: { sourceId: string; name: string }
               setError(r.error);
             })
           }
-          className="rounded-token border border-crit px-2 py-0.5 font-medium text-crit disabled:opacity-60"
         >
           {pending ? "Removing…" : "Remove"}
-        </button>
-        <button type="button" onClick={() => setConfirming(false)} className="rounded-token border border-line px-2 py-0.5">
+        </Button>
+        <Button variant="outline" size="sm" type="button" onClick={() => setConfirming(false)}>
           Cancel
-        </button>
+        </Button>
       </span>
       {error && (
         <p role="alert" className="text-crit">
@@ -243,7 +233,14 @@ function Seasonality({ data }: { data: WorkspaceSettingsData }) {
   return (
     <div className="mb-6">
       <div className="mb-2 flex flex-wrap items-baseline gap-x-3">
-        <h3 className="font-semibold">Seasonality</h3>
+        <h3 className="flex items-center font-semibold">
+          Seasonality
+          <Help
+            label="Seasonality"
+            description="A multiplier on leads for each calendar month. 1 is a normal month, 1.3 is 30% busier, 0 means none."
+            example="Set December to 0.5 if you only get half the usual enquiries over the holidays."
+          />
+        </h3>
         <p className="text-fg-3">
           A multiplier on leads for each calendar month: 1 is a normal month, 1.3 is 30% busier, 0 is none.
         </p>
@@ -278,7 +275,7 @@ function Seasonality({ data }: { data: WorkspaceSettingsData }) {
       </div>
       {canEdit && seasonality.length > 0 && (
         <div className="mt-2 flex items-center gap-2">
-          <button
+          <Button variant="link" size="xs" className="h-auto p-0 text-muted-foreground underline hover:text-destructive"
             type="button"
             disabled={pending}
             onClick={() =>
@@ -287,10 +284,9 @@ function Seasonality({ data }: { data: WorkspaceSettingsData }) {
                 setError(r.error);
               })
             }
-            className="text-fg-3 underline hover:text-fg disabled:opacity-60"
           >
             {pending ? "Resetting…" : "Reset to flat (every month 1)"}
-          </button>
+          </Button>
           {error && (
             <p role="alert" className="text-crit">
               {error}
@@ -307,7 +303,7 @@ function Growth({ data }: { data: WorkspaceSettingsData }) {
   const workspaceId = data.workspace.id;
   return (
     <div>
-      <h3 className="mb-2 font-semibold">Growth</h3>
+      <h3 className="mb-2 flex items-center font-semibold">Growth</h3>
       <div className="max-w-sm">
         <NumberField
           label="Monthly growth in leads"
@@ -324,8 +320,7 @@ function Growth({ data }: { data: WorkspaceSettingsData }) {
               <ProvenanceBadge provenance={demand?.provenance} field="growth_monthly" />
               Compounds each calendar month from the start of a run; negative for a decline.
             </span>
-          }
-        />
+          } help={{ description: "How much lead volume grows each month, compounding from the start of a run. Use a negative number for a decline.", example: "At 1% a month, 6 leads a week becomes about 6.8 after a year." }} />
       </div>
     </div>
   );

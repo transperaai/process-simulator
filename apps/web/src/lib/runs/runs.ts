@@ -2,7 +2,6 @@
 // what saving sends, checking it on the server, and the default name.
 
 import type { RunResults } from "@transpera-flow/db";
-import { ENGINE_VERSION } from "@transpera-flow/engine";
 
 /** What the process page sends to save the run it shows. */
 export interface SaveRunInput {
@@ -76,19 +75,5 @@ export function parseSaveRun(input: unknown): { ok: true; value: SaveRunInput } 
       durationMs,
       engineVersion: typeof i.engineVersion === "string" ? i.engineVersion : null,
     },
-  };
-}
-
-/**
- * What to say about the engine a saved run used (issue #22): its version, and
- * whether the engine has changed since, in which case running the same model
- * again can give different numbers.
- */
-export function runEngineNote(version: string | null, current: string = ENGINE_VERSION): { label: string; changed: string | null } {
-  if (!version) return { label: "engine version not recorded", changed: null };
-  if (version === current) return { label: `engine ${version}`, changed: null };
-  return {
-    label: `engine ${version}`,
-    changed: `Saved with engine ${version}; the engine is now ${current}. Its behaviour has changed since, so running the same model again can give different numbers.`,
   };
 }

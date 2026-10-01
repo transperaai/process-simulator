@@ -1,9 +1,11 @@
 // Detected issues (docs/PRD.md §4.1 "Issues register", §6.4; issue #17).
 //
 // After every run the engine lists what looks wrong with the model: a role or
-// person over the utilisation threshold, a queue that keeps growing, work
-// waiting too long for someone to pick it up, a step only one person can do,
-// rework over the threshold, and SLA breaches. Each finding has a stable
+// person that is too busy, a queue that keeps growing, work waiting too long
+// for someone to pick it up, a step only one person can do, rework, and missed
+// deadlines. Each finding is rated Great, Good, Bad or Operational risk by the
+// rating model (ratings.ts, docs/analysis-rules.md); Great ones aren't listed.
+// Each finding has a stable
 // `key` ("capacity:role:<role id>", "spof:step:<step id>"), built from what
 // it is about and never from the numbers, so the same model gives the same
 // keys run after run and a promoted issue can be matched to its detection.
@@ -17,7 +19,23 @@
 import type { EngineModel, EnginePerson, EngineStep, SimulationResult } from "./model";
 import { churnRiskIssues } from "./churn-issues";
 import { overtimeIssues } from "./overtime-issues";
+import {
+  compareRatingsDesc,
+  escalationNote,
+  fixedRating,
+  ratingFields,
+  rateRule,
+  resolveRatingConfig,
+  resolveRule,
+  type Rating,
+  type RatingConfig,
+  type RatingConfigInput,
+  type RatingEscalation,
+  type RatingRuleId,
+  type RatingSubject,
+} from "./ratings";
 import { offeredLoad, type ScenarioPatch } from "./scenario";
+import { servicingLinks, servicingStepIds } from "./servicing";
 
 /** Issue types (docs/PRD.md §5 `issues.type`). Detectors use a subset; the rest are logged by hand. */
 export const ISSUE_TYPES = [
@@ -35,32 +53,6 @@ export const ISSUE_TYPES = [
 ] as const;
 export type IssueType = (typeof ISSUE_TYPES)[number];
 
-/** Most severe first. */
-export const ISSUE_SEVERITIES = ["critical", "serious", "warning", "info"] as const;
-export type IssueSeverity = (typeof ISSUE_SEVERITIES)[number];
-
-/** When a detector fires (docs/PRD.md §6.2 `thresholds`). */
-export interface IssueThresholds {
-  /** Utilisation above which a role or person is flagged (default 0.85, the §13 ceiling). */
-  utilisation: number;
-  /** Average hours an item queues at a step before someone starts it (default 16, two working days). */
-  waitHours: number;
-  /** Rework probability at or above which a step is flagged (default 0.2). */
-  reworkRate: number;
-  /** Queue growth, in items per week, taken as growing without bound (default 0.5). */
-  queueGrowthPerWeek: number;
-  /** Share of a step's visits over its SLA that is flagged (default 0.1). */
-  slaBreachShare: number;
-}
-
-export const DEFAULT_ISSUE_THRESHOLDS: IssueThresholds = {
-  utilisation: 0.85,
-  waitHours: 16,
-  reworkRate: 0.2,
-  queueGrowthPerWeek: 0.5,
-  slaBreachShare: 0.1,
-};
-
 /** A what-if that tests the obvious fix: patches in the scenario grammar (scenario.ts). */
 export interface SuggestedFix {
   name: string;
@@ -71,7 +63,10 @@ export interface DetectedIssue {
   /** Stable across runs of an unchanged model: `<detector>:<subject kind>:<id>`. */
   key: string;
   type: IssueType;
-  severity: IssueSeverity;
+  /** Never Great: a Great finding isn't an issue. */
+  rating: Rating;
+  /** How the rating was reached: the average's band, and what raised it. */
+  escalation: RatingEscalation;
   title: string;
   /** One or two templated sentences with the numbers behind the finding. */
   evidence: string;
@@ -88,16 +83,9 @@ export interface DetectedIssue {
   clientId?: string | null;
 }
 
-/** The detectors, in the order their issues are listed within a severity. */
+/** The detectors, in the order their issues are listed within a rating. */
 export const DETECTORS = ["capacity", "overtime", "queue", "wait", "spof", "rework", "sla", "churn"] as const;
 export type Detector = (typeof DETECTORS)[number];
-
-/**
- * Utilisation above which work doesn't fit, critical. Just over 1: someone
- * working overtime within the cap is at exactly 100% of their extended week,
- * which is serious, not critical (docs/PRD.md §6.3.4).
- */
-const OVER_FULL = 1 + 1e-9;
 
 const LOCALE = "en-GB";
 const num = (v: number, digits = 1) => v.toLocaleString(LOCALE, { maximumFractionDigits: digits, minimumFractionDigits: 0 });
@@ -114,16 +102,25 @@ function eligible(personId: string, p: EnginePerson, s: EngineStep): boolean {
   return s.role !== null && p.roles.includes(s.role);
 }
 
+export interface DetectOptions {
+  /** The process the model is, for overrides set on a process. Servicing steps use their servicing process's id. */
+  processId?: string | null;
+}
+
 /**
  * The issues a run points at, most severe first (then in `DETECTORS` order,
- * then by key). `result` must come from simulating `model`.
+ * then by key). `result` must come from simulating `model`. `ratingConfig` is
+ * the workspace's analysis rules (ratings.ts): any part left out takes the
+ * agreed defaults. Pure, so a stored run can be re-rated with a new config
+ * without simulating again.
  */
 export function detectIssues(
   model: EngineModel,
   result: SimulationResult,
-  thresholds: Partial<IssueThresholds> = {},
+  ratingConfig: RatingConfigInput | RatingConfig = {},
+  options: DetectOptions = {},
 ): DetectedIssue[] {
-  const t = { ...DEFAULT_ISSUE_THRESHOLDS, ...thresholds };
+  const config = resolveRatingConfig(ratingConfig);
   const hoursPerDay = model.hoursPerWeek / 5;
   const people = result.resolvedPeople;
   const named = Boolean(model.people && Object.keys(model.people).length);
@@ -131,6 +128,18 @@ export function detectIssues(
   const staffed = model.steps.filter((s) => s.role || s.person);
   const roleName = (id: string) => model.roles[id]?.name ?? "a role";
   const out: (DetectedIssue & { detector: Detector })[] = [];
+
+  // Which process and services a step belongs to, for overrides.
+  const servicing = servicingStepIds(model);
+  const stepContext = (stepId: string): Pick<RatingSubject, "processId" | "serviceIds"> => {
+    const procs = Object.entries(model.servicingProcesses ?? {}).filter(([, p]) => p.steps.includes(stepId));
+    if (!procs.length) return { processId: options.processId ?? null, serviceIds: [] };
+    const serviceIds = Object.entries(model.services ?? {})
+      .filter(([, sv]) => servicingLinks(model, sv).some((l) => procs.some(([pid]) => pid === l.process)))
+      .map(([id]) => id)
+      .sort();
+    return { processId: procs[0]![0], serviceIds };
+  };
 
   /** The step in `steps` that asks for the most hands-on hours (first by id on a tie). */
   const heaviest = (steps: EngineStep[]): string | null => {
@@ -146,10 +155,15 @@ export function detectIssues(
   });
   /** The role that works a step: its own, or its pinned person's first. */
   const roleOf = (s: EngineStep) => s.role ?? (s.person ? (people[s.person]?.roles[0] ?? null) : null);
+  const rate = (rule: RatingRuleId, subject: RatingSubject, average: number, p90: number | null | undefined, onBottleneck: boolean) => {
+    const resolved = resolveRule(config, rule, subject);
+    return { resolved, outcome: resolved.enabled ? rateRule(config, rule, resolved, { average, p90, onBottleneck }) : null };
+  };
 
-  // --- Capacity: roles, then people whose load isn't already explained by their role.
+  // --- Too busy (rule 1): roles, then people whose load isn't already explained by their role.
   // Client work alone is over capacity when it exceeds even the overtime cap
-  // allows (docs/PRD.md §6.3.4): then the run clamps to the floor, critical.
+  // allows (docs/PRD.md §6.3.4): the run clamps to the floor, so utilisation
+  // alone rates it Operational risk, and the title says why.
   const aloneAt = 1 + Math.max(0, model.overtimeCap ?? 0);
   const overCap = aloneAt > 1 ? " even with overtime" : "";
   const roleCapacity: Record<string, number> = {};
@@ -161,23 +175,28 @@ export function detectIssues(
     const r = result.roles[rid];
     const range = result.kpi.roles[rid]?.util;
     const cap = roleCapacity[rid] ?? 0;
-    if (!r || !(cap > 0) || !(r.util > t.utilisation)) continue;
-    flaggedRoles.add(rid);
+    if (!r || !(cap > 0)) continue;
     const members = Object.keys(people).filter((pid) => people[pid]!.roles.includes(rid));
-    const who = named && members.length === 1 ? ` (${people[members[0]!]!.name})` : "";
+    const only = members.length === 1 ? members[0]! : null;
+    const personId = named && only ? only : null;
+    const { resolved, outcome } = rate("busy", { roleId: rid, personId }, r.util, range?.p90, rid === result.bnRole);
+    if (!outcome || outcome.rating === "great") continue;
+    flaggedRoles.add(rid);
+    const who = named && only ? ` (${people[only]!.name})` : "";
     const clientsAlone = r.ongoing >= aloneAt;
     out.push({
       detector: "capacity",
       key: `capacity:role:${rid}`,
       type: "capacity",
-      severity: clientsAlone || r.util > OVER_FULL ? "critical" : r.util >= 0.95 ? "serious" : "warning",
+      ...ratingFields(outcome),
       title: clientsAlone
         ? `${roleName(rid)}${who}: client work alone exceeds capacity${overCap}`
         : `${roleName(rid)}${who} at ${pct(r.util)} utilisation`,
-      evidence:
+      evidence: (
         `Simulated: ${num(r.ongoingHours + r.servicingHours)} h/wk client work + ${num(r.pipelineHours)} h/wk pipeline work against ` +
         `${num(cap)} h/wk capacity (${pct(r.util)}${range ? `, range ${pct(range.p10)}–${pct(range.p90)}` : ""}). ` +
-        `Queues grow sharply above ${pct(t.utilisation)}.`,
+        `Cut-offs: ${resolved.cutoffs.map(pct).join(" / ")}. ${escalationNote(outcome)}`
+      ).trim(),
       metrics: {
         utilisation: r.util,
         ...(range ? { utilisation_p10: range.p10, utilisation_p90: range.p90 } : {}),
@@ -188,7 +207,7 @@ export function detectIssues(
       },
       stepId: heaviest(staffed.filter((s) => roleOf(s) === rid)),
       roleId: rid,
-      personId: named && members.length === 1 ? members[0]! : null,
+      personId,
       fix: hire(rid),
     });
   }
@@ -196,7 +215,10 @@ export function detectIssues(
     const p = people[pid]!;
     const r = result.people[pid];
     const range = result.kpi.people[pid]?.util;
-    if (!r || !(p.capacity > 0) || !(r.util > t.utilisation)) continue;
+    if (!r || !(p.capacity > 0)) continue;
+    const main = p.roles[0] ?? null;
+    const { resolved, outcome } = rate("busy", { personId: named ? pid : null, roleId: main }, r.util, range?.p90, pid === result.bnPerson);
+    if (!outcome || outcome.rating === "great") continue;
     // Their role is flagged already: that issue names them when they are its
     // only member. Unless their own client work alone is over capacity and
     // the role's isn't (one person's roster can be, while the role's isn't).
@@ -204,18 +226,18 @@ export function detectIssues(
     const roleAlone = p.roles.some((rid) => (result.roles[rid]?.ongoing ?? 0) >= aloneAt);
     if (p.roles.length && p.roles.every((rid) => flaggedRoles.has(rid)) && !(alone && !roleAlone)) continue;
     const mine = staffed.filter((s) => eligible(pid, p, s));
-    const main = p.roles[0] ?? null;
     const who = named ? p.name : `One ${main ? roleName(main) : "person"}`;
     out.push({
       detector: "capacity",
       key: `capacity:person:${pid}`,
       type: "capacity",
-      severity: alone || r.util > OVER_FULL ? "critical" : r.util >= 0.95 ? "serious" : "warning",
+      ...ratingFields(outcome),
       title: alone ? `${who}: client work alone exceeds capacity${overCap}` : `${who} at ${pct(r.util)} utilisation`,
-      evidence:
+      evidence: (
         `Simulated: ${num(r.ongoingHours + r.servicingHours)} h/wk client work + ${num(r.pipelineHours)} h/wk pipeline work against ` +
         `${num(p.capacity)} h/wk capacity (${pct(r.util)}${range ? `, range ${pct(range.p10)}–${pct(range.p90)}` : ""}), ` +
-        `while the rest of their role has room.`,
+        `while the rest of their role has room. Cut-offs: ${resolved.cutoffs.map(pct).join(" / ")}. ${escalationNote(outcome)}`
+      ).trim(),
       metrics: {
         utilisation: r.util,
         ...(range ? { utilisation_p10: range.p10, utilisation_p90: range.p90 } : {}),
@@ -231,10 +253,10 @@ export function detectIssues(
     });
   }
 
-  // --- Overtime worked to keep up with client work (docs/PRD.md §4.1, decision D7).
-  for (const issue of overtimeIssues(model, result)) out.push({ detector: "overtime", ...issue });
+  // --- Overtime worked to keep up with client work (rule 3; docs/PRD.md §4.1, decision D7).
+  for (const issue of overtimeIssues(model, result, config)) out.push({ detector: "overtime", ...issue });
 
-  // --- Per step: queue growth, queue wait, single point of failure, rework, SLA.
+  // --- Per step: work piling up (4), waiting too long (5), single point of failure, rework (6), missed deadlines (7).
   for (const s of [...model.steps].sort((a, b) => cmp(a.id, b.id))) {
     const st = result.steps[s.id];
     if (!st) continue;
@@ -247,14 +269,17 @@ export function detectIssues(
           ? { name: `Cut hands-on time at ${s.name} by 30%`, patch: [{ path: `steps.${s.id}.work_hours`, op: "multiply", value: 0.7 }] }
           : null;
     const base = { stepId: s.id, roleId: rid, personId: s.person && named ? s.person : null };
+    const subject: RatingSubject = { stepId: s.id, roleId: rid, personId: base.personId, ...stepContext(s.id) };
+    const onBn = s.id === result.bnStep;
 
-    const growing = (s.role || s.person) && st.queueGrowth >= t.queueGrowthPerWeek;
-    if (growing) {
+    const growth = rate("queue", subject, st.queueGrowth, null, onBn);
+    const growing = Boolean(s.role || s.person) && growth.outcome !== null && growth.outcome.rating !== "great";
+    if (growing && growth.outcome) {
       out.push({
         detector: "queue",
         key: `queue:step:${s.id}`,
         type: "bottleneck",
-        severity: "critical",
+        ...ratingFields(growth.outcome),
         title: `The queue at ${s.name} keeps growing`,
         evidence:
           `Simulated: the queue grows by ${num(st.queueGrowth)} items a week and ends the run at ${num(st.wip)} ` +
@@ -264,22 +289,46 @@ export function detectIssues(
         ...base,
         fix: capacityFix(),
       });
-    } else if ((s.role || s.person) && st.avgWait > t.waitHours) {
-      // A growing queue's wait is unbounded; that issue covers it.
-      const ratio = st.avgWait / t.waitHours;
-      out.push({
-        detector: "wait",
-        key: `wait:step:${s.id}`,
-        type: "delay",
-        severity: ratio >= 2.5 ? "critical" : ratio >= 1.5 ? "serious" : "warning",
-        title: `Work waits ${days(st.avgWait, hoursPerDay)} for ${s.name}`,
-        evidence:
-          `Simulated: items queue ${num(st.avgWait)} h on average before anyone starts them ` +
-          `(threshold ${num(t.waitHours)} h); average queue ${num(st.avgQueue)}, peak ${num(st.maxQueue)}.`,
-        metrics: { avg_wait_hours: st.avgWait, avg_queue: st.avgQueue, max_queue: st.maxQueue, threshold_hours: t.waitHours },
-        ...base,
-        fix: capacityFix(),
-      });
+    } else if (s.role || s.person) {
+      // A growing queue's wait is unbounded; that issue covers it. Wait means
+      // time queued for a person, not the step's built-in wait.
+      const resolved = resolveRule(config, "wait", subject);
+      // Expected wait, most specific first: a person or step override, the
+      // step's own setting, a role, service or process override, then the
+      // default: 1 working day for pipeline steps, 2 for servicing steps.
+      const specific = resolved.expectedWaitFrom === "person" || resolved.expectedWaitFrom === "step";
+      const defaultDays = servicing.has(s.id) ? config.expectedWaitDays.servicing : config.expectedWaitDays.pipeline;
+      const expected = (specific ? resolved.expectedWaitHours : null) ?? s.expectedWaitHours ?? resolved.expectedWaitHours ?? defaultDays * hoursPerDay;
+      if (resolved.enabled && expected > 0) {
+        const outcome = rateRule(config, "wait", resolved, {
+          average: st.avgWait / expected,
+          p90: st.p90 ? st.p90.avgWait / expected : null,
+          onBottleneck: onBn,
+        });
+        if (outcome.rating !== "great") {
+          out.push({
+            detector: "wait",
+            key: `wait:step:${s.id}`,
+            type: "delay",
+            ...ratingFields(outcome),
+            title: `Work waits ${days(st.avgWait, hoursPerDay)} for ${s.name}`,
+            evidence: (
+              `Simulated: items queue ${num(st.avgWait)} h on average before anyone starts them, ` +
+              `${num(st.avgWait / expected)}× the ${num(expected)} h expected for this step; average queue ${num(st.avgQueue)}, peak ${num(st.maxQueue)}. ${escalationNote(outcome)}`
+            ).trim(),
+            metrics: {
+              avg_wait_hours: st.avgWait,
+              ...(st.p90 ? { avg_wait_hours_p90: st.p90.avgWait } : {}),
+              avg_queue: st.avgQueue,
+              max_queue: st.maxQueue,
+              expected_wait_hours: expected,
+              wait_ratio: st.avgWait / expected,
+            },
+            ...base,
+            fix: capacityFix(),
+          });
+        }
+      }
     }
 
     if ((s.role || s.person) && st.arrivals > 0) {
@@ -287,11 +336,13 @@ export function detectIssues(
       if (who.length === 1) {
         const pid = who[0]!;
         const util = result.people[pid]?.util ?? 0;
+        // Not yet on the rating model (rule 8, the absence test, will replace it): Bad when the person is also past the Bad cut-off for busy, else Good.
+        const busyBad = resolveRule(config, "busy", { personId: named ? pid : null, roleId: rid }).cutoffs[1];
         out.push({
           detector: "spof",
           key: `spof:step:${s.id}`,
           type: "spof",
-          severity: util > t.utilisation ? "serious" : "warning",
+          ...fixedRating(util > busyBad ? "bad" : "good"),
           title: named ? `Only ${people[pid]!.name} can do ${s.name}` : `Only one ${rid ? roleName(rid) : "person"} can do ${s.name}`,
           evidence:
             `Structural: ${num(st.arrivals)} items reach this step over the ${num(model.horizonWeeks, 0)}-week run and nobody else can pick them up when ` +
@@ -305,38 +356,58 @@ export function detectIssues(
       }
     }
 
-    if (s.rework >= t.reworkRate && s.rework > 0) {
-      const observed = st.arrivals > 0 ? st.reworks / st.arrivals : 0;
-      out.push({
-        detector: "rework",
-        key: `rework:step:${s.id}`,
-        type: "failure",
-        severity: s.rework >= 2 * t.reworkRate ? "serious" : "warning",
-        title: `${pct(s.rework)} of ${s.name} is done twice`,
-        evidence:
-          `Model: ${pct(s.rework)} of items repeat ${s.name} (threshold ${pct(t.reworkRate)}). ` +
-          `Simulated: ${num(st.reworks)} repeats over the ${num(model.horizonWeeks, 0)}-week run, ${pct(observed)} of visits.`,
-        metrics: { rework_rate: s.rework, reworks: st.reworks, observed_share: observed, threshold: t.reworkRate },
-        ...base,
-        fix: { name: `Halve rework at ${s.name}`, patch: [{ path: `steps.${s.id}.rework_rate`, op: "multiply", value: 0.5 }] },
-      });
+    // Rework is rated from what the simulation shows, not from the rate typed into the model.
+    if (st.departures > 0) {
+      const observed = Math.min(1, st.reworks / st.departures);
+      const { resolved, outcome } = rate("rework", subject, observed, st.p90?.reworkShare, onBn);
+      if (outcome && outcome.rating !== "great") {
+        out.push({
+          detector: "rework",
+          key: `rework:step:${s.id}`,
+          type: "failure",
+          ...ratingFields(outcome),
+          title: `${pct(observed)} of ${s.name} is done twice`,
+          evidence: (
+            `Simulated: ${num(st.reworks)} repeats over the ${num(model.horizonWeeks, 0)}-week run, ${pct(observed)} of visits ` +
+            `(the model enters ${pct(s.rework)}). Cut-offs: ${resolved.cutoffs.map(pct).join(" / ")}. ${escalationNote(outcome)}`
+          ).trim(),
+          metrics: {
+            rework_rate: s.rework,
+            reworks: st.reworks,
+            observed_share: observed,
+            ...(st.p90 ? { observed_share_p90: st.p90.reworkShare } : {}),
+          },
+          ...base,
+          fix: { name: `Halve rework at ${s.name}`, patch: [{ path: `steps.${s.id}.rework_rate`, op: "multiply", value: 0.5 }] },
+        });
+      }
     }
 
     if (s.sla !== undefined && st.departures > 0) {
       const share = st.slaBreaches / st.departures;
-      if (share > t.slaBreachShare) {
+      const { resolved, outcome } = rate("sla", subject, share, st.p90?.slaBreachShare, onBn);
+      if (outcome && outcome.rating !== "great") {
         // Most of the time spent queueing: more hands help. Most of it an external wait: shorten that.
         const queueing = st.avgWait >= s.wait;
         out.push({
           detector: "sla",
           key: `sla:step:${s.id}`,
           type: "sla",
-          severity: share >= 0.5 ? "critical" : share >= 0.25 ? "serious" : "warning",
+          ...ratingFields(outcome),
           title: `${s.name} misses its ${num(s.sla)} h SLA ${pct(share)} of the time`,
-          evidence:
+          evidence: (
             `Simulated: ${num(st.slaBreaches)} of ${num(st.departures)} visits over the ${num(model.horizonWeeks, 0)}-week run took longer than ${num(s.sla)} h ` +
-            `(queue ${num(st.avgWait)} h + hands-on ${num(s.work)} h + wait ${num(s.wait)} h on average).`,
-          metrics: { breach_share: share, breaches: st.slaBreaches, departures: st.departures, sla_hours: s.sla, avg_wait_hours: st.avgWait },
+            `(queue ${num(st.avgWait)} h + hands-on ${num(s.work)} h + wait ${num(s.wait)} h on average). ` +
+            `Cut-offs: ${resolved.cutoffs.map(pct).join(" / ")}. ${escalationNote(outcome)}`
+          ).trim(),
+          metrics: {
+            breach_share: share,
+            ...(st.p90 ? { breach_share_p90: st.p90.slaBreachShare } : {}),
+            breaches: st.slaBreaches,
+            departures: st.departures,
+            sla_hours: s.sla,
+            avg_wait_hours: st.avgWait,
+          },
           ...base,
           fix:
             queueing || !(s.wait > 0)
@@ -347,17 +418,12 @@ export function detectIssues(
     }
   }
 
-  // --- Clients whose health ends the run below 50 (docs/PRD.md §6.3.5).
+  // --- Clients whose health ends the run below 50 (docs/PRD.md §6.3.5). Not yet on the rating model (rules 9 and 10).
   for (const issue of churnRiskIssues(model, result)) out.push({ detector: "churn", ...issue });
 
-  const rank = (i: { severity: IssueSeverity; detector: Detector; key: string }) =>
-    [ISSUE_SEVERITIES.indexOf(i.severity), DETECTORS.indexOf(i.detector)] as const;
+  const rank = (i: { detector: Detector }) => DETECTORS.indexOf(i.detector);
   return out
-    .sort((a, b) => {
-      const [sa, da] = rank(a);
-      const [sb, db] = rank(b);
-      return sa - sb || da - db || cmp(a.key, b.key);
-    })
+    .sort((a, b) => compareRatingsDesc(a.rating, b.rating) || rank(a) - rank(b) || cmp(a.key, b.key))
     .map(({ detector: _detector, ...issue }) => issue);
 }
 

@@ -12,7 +12,6 @@
 // - A daily cap per workspace bounds the cost.
 
 import type { Db, Json } from "@transpera-flow/db";
-import type { ExecutiveSummary } from "@/lib/report/content";
 import { editCheck, type NarrationInput } from "./facts";
 import { checkText, narrate, type NarrationModel, type NarrationOutcome } from "./narrate";
 
@@ -32,7 +31,7 @@ export interface StoredNarration extends NarrationOutcome {
 
 export interface NarrationRequest {
   workspaceId: string;
-  /** The saved run the text describes (a report's run for its summary). */
+  /** The saved run the text describes. */
   targetId: string;
   input: NarrationInput;
   model: NarrationModel | null;
@@ -166,24 +165,4 @@ export async function cachedNarration(db: Db, req: NarrationRequest): Promise<St
     .select("id")
     .maybeSingle();
   return { ...outcome, id: error ? null : (data?.id ?? null), cached: false, at, editedBy: null, editedAt: null };
-}
-
-/** The executive summary a narration outcome prints. */
-export function summaryFromNarration(n: StoredNarration): ExecutiveSummary {
-  return {
-    source: n.source,
-    paragraphs: n.paragraphs,
-    editedBy: n.editedBy,
-    editedAt: n.editedAt,
-    narration: { id: n.id, model: n.model ?? "no model", at: n.at, checked: n.checked, retried: n.rejected.length > 0, fallbackReason: n.fallback ? n.reason : null },
-  };
-}
-
-/** Record a person's edit of a checked narration on its row, so the next report of the same run reuses it. */
-export async function recordEdit(db: Db, narrationId: string, paragraphs: string[], editor: { id: string; name: string }, at: string): Promise<void> {
-  await db
-    .from("narrations")
-    .update({ text: paragraphs.join("\n\n"), edited_by: editor.id, edited_by_name: editor.name, edited_at: at })
-    .eq("id", narrationId)
-    .eq("validated", true);
 }

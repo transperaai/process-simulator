@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { ShellHeader } from "@/components/shell/shell-header";
+import { Page } from "@/components/shell/page";
 import { IssuesPage } from "@/components/issues-page";
 import { canEditWorkspace } from "@/lib/access-data";
 import { loadLiveProcess, loadProcessNames, loadWorkspaceIssues, loadWorkspaceScenarios } from "@/lib/data";
@@ -17,23 +17,18 @@ export default async function WorkspaceIssuesPage(props: PageProps<"/w/[slug]/is
     loadProcessNames(ws),
   ]);
   return (
-    <div>
-      <ShellHeader title="Issues" />
-      <div className="mx-auto w-full max-w-5xl px-4 pb-12 pt-6">
-        <h1 className="mt-2 mb-1 text-xl font-bold">Issues register</h1>
-        <p className="mb-4 text-fg-2">
-          Audit findings and what the simulation detects on {bundle.process.name}, each linked to its fix. Changes save as
-          you go.
-        </p>
-        <IssuesPage
-          bundle={bundle}
-          issues={issues}
-          scenarios={scenarios}
-          processes={processes}
-          mode={canEdit ? "live" : "readonly"}
-          fixHref={`/w/${slug}?fix=`}
-        />
-      </div>
-    </div>
+    <Page
+      title="Issues"
+      eyebrow="Improve"
+      description={`Audit findings and what the simulation detects on ${bundle.process.name}, each linked to its fix. Changes save as you go.`}
+    >
+      <IssuesPage
+        bundle={bundle}
+        issues={issues}
+        scenarios={scenarios}
+        processes={processes}
+        mode={canEdit ? "live" : "readonly"}
+      />
+    </Page>
   );
 }

@@ -6,6 +6,7 @@
 // no database), and matches the stored row by its key.
 
 import { perceptionGaps, type StepRow } from "@transpera-flow/db";
+import { fixedRating } from "@transpera-flow/engine";
 import type { DetectedIssue } from "@transpera-flow/engine";
 
 export function perceptionGapDetections(steps: readonly StepRow[]): DetectedIssue[] {
@@ -14,7 +15,7 @@ export function perceptionGapDetections(steps: readonly StepRow[]): DetectedIssu
     return {
       key: g.key,
       type: "perception_gap",
-      severity: "warning",
+      ...fixedRating("good"),
       title: g.title,
       evidence: g.evidence,
       metrics: { min: Math.min(...values), max: Math.max(...values), ...(Number.isFinite(g.ratio) ? { ratio: Math.round(g.ratio * 1000) / 1000 } : {}) },

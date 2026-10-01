@@ -52,8 +52,8 @@ function summaryDraft(facts: Json): string[] {
   }
   const issues = obj(facts.openIssues);
   if (typeof issues.total === "number" && issues.total > 0) {
-    const critical = obj(issues.bySeverity).critical;
-    out.push(`The issues register lists ${issues.total} open issues${typeof critical === "number" && critical > 0 ? `, ${critical} of them critical` : ""}.`);
+    const risk = obj(issues.byRating).risk;
+    out.push(`The issues register lists ${issues.total} open issues${typeof risk === "number" && risk > 0 ? `, ${risk} of them operational risks` : ""}.`);
   }
   return out;
 }

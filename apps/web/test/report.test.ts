@@ -126,13 +126,13 @@ describe("report content", () => {
     expect(none.scenarios).toBeNull();
   });
 
-  it("groups issues by severity with their owner and linked fix", () => {
+  it("groups issues by rating with their owner and linked fix", () => {
     const { groups } = full.content.issues!;
-    const order = ["critical", "serious", "warning", "info"];
-    expect(groups.map((g) => order.indexOf(g.severity))).toEqual([...groups.map((g) => order.indexOf(g.severity))].sort((a, b) => a - b));
+    const order = ["risk", "bad", "good", "great"];
+    expect(groups.map((g) => order.indexOf(g.rating))).toEqual([...groups.map((g) => order.indexOf(g.rating))].sort((a, b) => a - b));
     const all = groups.flatMap((g) => g.issues);
     const manual = all.find((i) => i.title === "Every proposal is built by hand")!;
-    expect(manual).toMatchObject({ severity: "serious", owner: "Rosa Diaz", status: "Open", fix: { name: "Automate proposals", inReport: true } });
+    expect(manual).toMatchObject({ rating: "bad", owner: "Rosa Diaz", status: "Open", fix: { name: "Automate proposals", inReport: true } });
     const spof = all.find((i) => i.title.startsWith("Only Maya Collins can do Audit"))!;
     expect(spof).toMatchObject({ source: "promoted", owner: "Rosa Diaz", status: "In progress", fix: { name: "Hire a strategist", inReport: true } });
     // Detections nobody tracks yet are listed as detected, unowned.

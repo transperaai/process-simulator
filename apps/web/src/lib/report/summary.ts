@@ -8,7 +8,7 @@
 // summary may use (what its validator checks each number against), and the
 // templated summary stays the fallback when narration fails validation.
 
-import type { EngineModel, Stat } from "@transpera-flow/engine";
+import type { EngineModel, Rating, Stat } from "@transpera-flow/engine";
 import type { ExecutiveSummary, KpiFigure, MethodologyView, ReportContent } from "./content";
 import { avgWithRange, figureRange, formatDate, formatFigure, type FigureContext } from "./format";
 
@@ -61,13 +61,16 @@ export function buildSummary(c: ReportContent): ExecutiveSummary {
   }
 
   if (c.issues) {
-    const counts = c.issues.groups.map((g) => `${g.issues.length} ${g.severity}`);
+    const counts = c.issues.groups.map((g) => `${g.issues.length} ${RATING_WORDS[g.rating]}`);
     const total = c.issues.groups.reduce((n, g) => n + g.issues.length, 0);
     if (total) paragraphs.push(`The issues register lists ${plural(total, "open issue")}: ${listText(counts)}.`);
   }
 
   return { source: "template", paragraphs, editedBy: null };
 }
+
+/** A rating in a sentence: "3 operational risk, 2 bad and 1 good". */
+const RATING_WORDS: Record<Rating, string> = { risk: "operational risk", bad: "bad", good: "good", great: "great" };
 
 function listText(items: string[]): string {
   if (items.length <= 1) return items.join("");

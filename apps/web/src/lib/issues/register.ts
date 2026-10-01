@@ -4,7 +4,16 @@
 // components render the results.
 
 import type { IssueRow, IssueSource, IssueStatus, ScenarioRow } from "@transpera-flow/db";
-import { ISSUE_SEVERITIES, type DetectedIssue, type IssueSeverity, type IssueType, type ScenarioPatch } from "@transpera-flow/engine";
+import {
+  RATINGS,
+  compareRatingsDesc,
+  ratingOfStored,
+  storedOfRating,
+  type DetectedIssue,
+  type IssueType,
+  type Rating,
+  type ScenarioPatch,
+} from "@transpera-flow/engine";
 import type { PromoteInput } from "./validate";
 
 export type RegisterEntry =
@@ -34,12 +43,8 @@ export const STATUS_LABELS: Record<IssueStatus, string> = {
   dismissed: "Dismissed",
 };
 
-export const SEVERITY_LABELS: Record<IssueSeverity, string> = {
-  critical: "Critical",
-  serious: "Serious",
-  warning: "Warning",
-  info: "Info",
-};
+/** The four ratings, most severe first: the order the register, filters and reports list them in. */
+export const RATINGS_WORST_FIRST: readonly Rating[] = [...RATINGS].reverse();
 
 export const SOURCE_LABELS: Record<IssueSource, string> = {
   manual: "Audit finding",
@@ -58,7 +63,7 @@ export function entryView(e: RegisterEntry) {
       title: d.title,
       evidence: d.evidence,
       type: d.type,
-      severity: d.severity,
+      rating: d.rating,
       source: "detected" as IssueSource,
       status: null,
       stepId: d.stepId,
@@ -73,7 +78,8 @@ export function entryView(e: RegisterEntry) {
     title: i.title,
     evidence: i.evidence,
     type: i.type,
-    severity: i.severity,
+    // Stored issues keep the database's four values; they stand for the four ratings one to one.
+    rating: ratingOfStored(i.severity),
     source: i.source,
     status: i.status,
     stepId: i.step_id,
@@ -96,7 +102,6 @@ export function registerEntries(tracked: readonly IssueRow[], detected: readonly
     ...tracked.map((issue): RegisterEntry => ({ kind: "tracked", issue, detection: issue.detected_key ? (byKey.get(issue.detected_key) ?? null) : null })),
     ...detected.filter((d) => !trackedKeys.has(d.key)).map((detection): RegisterEntry => ({ kind: "detected", detection })),
   ];
-  const sev = (e: RegisterEntry) => ISSUE_SEVERITIES.indexOf(entryView(e).severity);
   const updated = (e: RegisterEntry) => (e.kind === "tracked" ? e.issue.updated_at : "");
   // Stable sort: equal entries keep tracked-then-detected, each in its own order.
   return entries
@@ -106,7 +111,7 @@ export function registerEntries(tracked: readonly IssueRow[], detected: readonly
       const ob = entryView(b.e).open;
       if (oa !== ob) return oa ? -1 : 1;
       if (!oa) return updated(b.e).localeCompare(updated(a.e)) || a.i - b.i;
-      return sev(a.e) - sev(b.e) || a.i - b.i;
+      return compareRatingsDesc(entryView(a.e).rating, entryView(b.e).rating) || a.i - b.i;
     })
     .map(({ e }) => e);
 }
@@ -116,7 +121,7 @@ export interface IssueFilters {
   process: string;
   /** A person id: the issue is about them or they own it. */
   person: string;
-  severity: IssueSeverity | "";
+  rating: Rating | "";
   source: IssueSource | "";
   /** "active": open, in progress, or detected; "" for everything. */
   status: IssueStatus | "active" | "";
@@ -124,7 +129,7 @@ export interface IssueFilters {
   step: string;
 }
 
-export const NO_FILTERS: IssueFilters = { process: "", person: "", severity: "", source: "", status: "active", step: "" };
+export const NO_FILTERS: IssueFilters = { process: "", person: "", rating: "", source: "", status: "active", step: "" };
 
 /** The entries that pass every filter. `processId` is the process the detections came from. */
 export function filterEntries(entries: readonly RegisterEntry[], f: IssueFilters, processId: string | null): RegisterEntry[] {
@@ -132,7 +137,7 @@ export function filterEntries(entries: readonly RegisterEntry[], f: IssueFilters
     const v = entryView(e);
     if (f.process && (e.kind === "detected" ? processId : v.processId) !== f.process) return false;
     if (f.person && v.personId !== f.person && !(e.kind === "tracked" && e.issue.owner_person_id === f.person)) return false;
-    if (f.severity && v.severity !== f.severity) return false;
+    if (f.rating && v.rating !== f.rating) return false;
     if (f.source && v.source !== f.source) return false;
     if (f.status === "active" && !v.open) return false;
     if (f.status && f.status !== "active" && v.status !== f.status) return false;
@@ -178,7 +183,7 @@ export function promoteInput(d: DetectedIssue, processId: string | null, scenari
   return {
     detected_key: d.key,
     type: d.type,
-    severity: d.severity,
+    severity: storedOfRating(d.rating),
     title: d.title,
     evidence: d.evidence,
     evidence_metrics: d.metrics,
@@ -196,8 +201,8 @@ export function promoteInput(d: DetectedIssue, processId: string | null, scenari
 
 export interface StepBadge {
   count: number;
-  /** The most severe of them. */
-  severity: IssueSeverity;
+  /** The worst rating among them. */
+  rating: Rating;
   titles: string[];
 }
 
@@ -207,10 +212,10 @@ export function stepBadges(entries: readonly RegisterEntry[]): Record<string, St
   for (const e of entries) {
     const v = entryView(e);
     if (!v.open || !v.stepId) continue;
-    const b = (out[v.stepId] ??= { count: 0, severity: v.severity, titles: [] });
+    const b = (out[v.stepId] ??= { count: 0, rating: v.rating, titles: [] });
     b.count++;
     b.titles.push(v.title);
-    if (ISSUE_SEVERITIES.indexOf(v.severity) < ISSUE_SEVERITIES.indexOf(b.severity)) b.severity = v.severity;
+    if (compareRatingsDesc(v.rating, b.rating) < 0) b.rating = v.rating;
   }
   return out;
 }

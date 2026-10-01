@@ -4,6 +4,22 @@ Agreed with Austin, 1 Oct 2026, in the analysis rules session. This replaces the
 `packages/engine/src/issues.ts` (`DEFAULT_ISSUE_THRESHOLDS`) and the four engine severities. Nothing here is built yet;
 it is the spec for the tickets that follow.
 
+**Built so far (A41, issue #106):** the rating model and rules 1, 3, 4, 5, 6 and 7 are in
+`packages/engine/src/ratings.ts` and the detectors (`issues.ts`, `overtime-issues.ts`). The rules not listed there still
+run their old logic, mapped onto ratings until their tickets land. Choices the spec left open:
+
+- A value exactly on a cut-off belongs to the higher band ("70%" is Good, "85%" is Bad), except rule 5, where it belongs
+  to the lower one ("within 1×", "up to 1.5×").
+- Overtime is rated on the share of the overtime cap used (any regular overtime is 1% of it; the cap used up is 95%).
+- Rule 4 is rated on the average alone: queue growth is too noisy in a single run to read a bad month from.
+- A band a rule doesn't have (overtime's Good, rule 4's Good and Bad) is skipped when an escalator raises a rating.
+- The bottleneck escalator raises a finding that is already worse than Great (after a bad month, if any); a Great that
+  is merely on the bottleneck stays Great.
+- Overrides: the most specific match wins (person, step, role, service, process); a field it leaves unset falls through.
+  A servicing step belongs to its servicing process and to the services that run it.
+- Stored issues keep the database's four `severity` values, which stand for the ratings one to one (critical = Operational
+  risk, serious = Bad, warning = Good, info = Great).
+
 ## The rating scale
 
 Every rule turns a number from the simulation into one rating:

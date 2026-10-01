@@ -171,8 +171,8 @@ export function reportNarrationInput(c: ReportContent): NarrationInput {
   }
   if (c.excludedScenarios.length) payload.scenariosLeftOut = c.excludedScenarios.map((s) => ({ name: s.name, reason: "needs attention: it refers to something no longer in the model" }));
   if (c.issues) {
-    const bySeverity = Object.fromEntries(c.issues.groups.map((g) => [g.severity, g.issues.length]));
-    payload.openIssues = { total: c.issues.groups.reduce((n, g) => n + g.issues.length, 0), bySeverity };
+    const byRating = Object.fromEntries(c.issues.groups.map((g) => [g.rating, g.issues.length]));
+    payload.openIssues = { total: c.issues.groups.reduce((n, g) => n + g.issues.length, 0), byRating };
   }
   payload.templatedSummary = template;
 

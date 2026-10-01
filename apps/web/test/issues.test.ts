@@ -10,7 +10,7 @@ import {
   toEngineModel,
   type IssueRow,
 } from "@transpera-flow/db";
-import { detectIssues, simulate, type DetectedIssue } from "@transpera-flow/engine";
+import { detectIssues, simulate, storedOfRating, type DetectedIssue } from "@transpera-flow/engine";
 import {
   NO_FILTERS,
   entryView,
@@ -56,12 +56,14 @@ const scenarios = northbeamScenarios();
 /**
  * Northbeam's detections, as the demo computes them, from its pooled client
  * load: the seeded roster (issue #18) adds overload findings about Nina
- * Kowalski, which the engine's tests cover. These tests are about the register.
+ * Kowalski, which the engine's tests cover. These tests are about the register,
+ * so they use the single-point-of-failure detections the seeded issues track;
+ * the rating rules' own findings (strategist, rework, waits) are tested in the engine.
  */
 function northbeamDetections(): DetectedIssue[] {
   const b = northbeamBundle();
   const model = toEngineModel({ ...b, clients: [], clientServices: [], clientAssignments: [] }, START);
-  return detectIssues(model, simulate(model, 30, 1));
+  return detectIssues(model, simulate(model, 30, 1)).filter((d) => d.key.startsWith("spof:"));
 }
 
 const manual: IssueInput = {
@@ -109,7 +111,7 @@ describe("the register merges tracked issues with this run's detections", () => 
     expect(dismissed.at(-1)!.kind).toBe("tracked");
   });
 
-  it("filters by process, person, severity, source, status and step", () => {
+  it("filters by process, person, rating, source, status and step", () => {
     const titles = (f: Partial<typeof NO_FILTERS>) => filterEntries(entries, { ...NO_FILTERS, ...f }, NORTHBEAM_PROCESS_ID).map((e) => entryView(e).title);
     expect(titles({})).toHaveLength(4);
     expect(titles({ process: "c0000000-0000-4000-8000-00000000ffff" })).toEqual([]);
@@ -121,7 +123,7 @@ describe("the register merges tracked issues with this run's detections", () => 
     ]);
     // Rosa owns the two audit issues.
     expect(titles({ person: northbeamPersonIds["Rosa Diaz"]! })).toHaveLength(2);
-    expect(titles({ severity: "info" })).toEqual(["Lead scoring could skip unqualified discovery calls"]);
+    expect(titles({ rating: "great" })).toEqual(["Lead scoring could skip unqualified discovery calls"]);
     expect(titles({ source: "detected" })).toEqual(["Only Maya Collins can do Kickoff & strategy"]);
     expect(titles({ source: "promoted" })).toEqual(["Only Maya Collins can do Audit & proposal"]);
     expect(titles({ source: "manual" })).toHaveLength(2);
@@ -132,8 +134,8 @@ describe("the register merges tracked issues with this run's detections", () => 
   it("puts a badge on each step with open issues, coloured by the most severe", () => {
     const badges = stepBadges(entries);
     expect(Object.keys(badges).sort()).toEqual([northbeamStepIds.qualify, audit, kickoff].sort());
-    expect(badges[audit]).toMatchObject({ count: 2, severity: "serious" });
-    expect(badges[northbeamStepIds.qualify]).toMatchObject({ count: 1, severity: "info" });
+    expect(badges[audit]).toMatchObject({ count: 2, rating: "bad" });
+    expect(badges[northbeamStepIds.qualify]).toMatchObject({ count: 1, rating: "great" });
   });
 });
 
@@ -162,6 +164,8 @@ describe("promoting a detection", () => {
 
   it("stores its fields and key, links the matching saved scenario, and starts open", async () => {
     const input = promoteInput(kickoffSpof, NORTHBEAM_PROCESS_ID, scenarios);
+    // The rating is stored as the database's value for it (good = warning, bad = serious, risk = critical, great = info).
+    expect(input.severity).toBe(storedOfRating(kickoffSpof.rating));
     expect(input).toMatchObject({ detected_key: kickoffSpof.key, step_id: kickoff, role_id: northbeamRoleIds.strat, scenario_id: scenarios[0]!.id });
     const store = new MemoryIssueStore(WS, northbeamIssues());
     const r = await store.promote(input);
@@ -190,7 +194,7 @@ describe("validation", () => {
     [{ title: " " }, "Give the issue a title of up to 200 characters."],
     [{ title: "x".repeat(201) }, "Give the issue a title of up to 200 characters."],
     [{ type: "gremlins" }, "Pick a type."],
-    [{ severity: "urgent" }, "Pick a severity."],
+    [{ severity: "urgent" }, "Pick a rating."],
     [{ status: "closed" }, "Pick a status."],
     [{ evidence: "x".repeat(5001) }, "Keep the evidence to 5000 characters."],
     [{ step_id: "not-a-uuid" }, "That issue links to something that isn't valid."],

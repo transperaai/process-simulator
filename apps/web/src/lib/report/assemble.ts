@@ -29,7 +29,6 @@ import {
 } from "@transpera-flow/db";
 import {
   DEFAULT_HEALTH_RULES,
-  ISSUE_SEVERITIES,
   checkScenario,
   detectBrokenScenarios,
   detectIssues,
@@ -42,7 +41,8 @@ import {
   simulate,
   type DetectedIssue,
   type EngineModel,
-  type IssueSeverity,
+  ratingOfStored,
+  type Rating,
   type RobustnessCache,
   type ScenarioPatch,
   type SimulationResult,
@@ -50,7 +50,7 @@ import {
 } from "@transpera-flow/engine";
 import { bottleneckReport, compareScenarios, robustnessParameters } from "@transpera-flow/mcp";
 import { perceptionGapDetections } from "@/lib/issues/perception";
-import { STATUS_LABELS, registerEntries } from "@/lib/issues/register";
+import { RATINGS_WORST_FIRST, STATUS_LABELS, registerEntries } from "@/lib/issues/register";
 import { retiredSteps } from "@/lib/scenarios/broken";
 import {
   REPORT_CONTENT_VERSION,
@@ -428,7 +428,7 @@ export function buildReportContent(input: ReportInput): BuiltReport {
     };
   }
 
-  // --- Issues: tracked ones and this run's detections, grouped by severity, with owner and linked fix.
+  // --- Issues: tracked ones and this run's detections, grouped by rating, with owner and linked fix.
   const detected: DetectedIssue[] = [
     ...detectBrokenScenarios(model, input.scenarios, retired),
     ...detectIssues(model, baseline),
@@ -454,7 +454,7 @@ export function buildReportContent(input: ReportInput): BuiltReport {
       views.push({
         title: i.title,
         type: i.type,
-        severity: i.severity,
+        rating: ratingOfStored(i.severity),
         status: STATUS_LABELS[i.status],
         source: i.source,
         where: whereOf(i.step_id, i.person_id, i.role_id, i.client_id),
@@ -468,7 +468,7 @@ export function buildReportContent(input: ReportInput): BuiltReport {
       views.push({
         title: d.title,
         type: d.type,
-        severity: d.severity,
+        rating: d.rating,
         status: "Detected",
         source: "detected",
         where: whereOf(d.stepId, d.personId, d.roleId, d.clientId ?? null),
@@ -488,7 +488,7 @@ export function buildReportContent(input: ReportInput): BuiltReport {
     return bits.length ? bits.join(" · ") : null;
   }
   const issues: IssuesView = {
-    groups: ISSUE_SEVERITIES.map((severity: IssueSeverity) => ({ severity, issues: views.filter((v) => v.severity === severity) })).filter((g) => g.issues.length),
+    groups: RATINGS_WORST_FIRST.map((rating: Rating) => ({ rating, issues: views.filter((v) => v.rating === rating) })).filter((g) => g.issues.length),
     closed,
   };
 

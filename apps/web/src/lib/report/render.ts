@@ -6,7 +6,8 @@
 
 import type { Stat } from "@transpera-flow/engine";
 import { formatInitialState, formatPercent } from "@/lib/format";
-import { SEVERITY_LABELS, TYPE_LABELS } from "@/lib/issues/register";
+import { RATING_LABELS } from "@transpera-flow/engine";
+import { TYPE_LABELS } from "@/lib/issues/register";
 import { sectionLabel, type KpiFigure, type ReportContent, type ReportSectionId } from "./content";
 import { figureRange, formatDate, formatDateTime, formatFigure, type FigureContext } from "./format";
 import { esc, safeColor } from "./html";
@@ -73,10 +74,10 @@ figcaption{font-size:8pt;color:var(--fg-2);margin-top:3pt}
 .scenario{break-before:auto}
 .scenario + .scenario{break-before:page;page-break-before:always}
 .pill{display:inline-block;border-radius:99pt;padding:0 6pt;font-size:7.5pt;font-weight:600;border:1pt solid var(--line-2)}
-.sev-critical{background:var(--crit-soft);border-color:var(--crit)}
-.sev-serious{background:#fde6dc;border-color:var(--serious)}
-.sev-warning{background:var(--warn-soft);border-color:var(--warn)}
-.sev-info{background:var(--panel-2)}
+.sev-risk{background:var(--crit-soft);border-color:var(--crit)}
+.sev-bad{background:#fde6dc;border-color:var(--serious)}
+.sev-good{background:var(--warn-soft);border-color:var(--warn)}
+.sev-great{background:var(--panel-2)}
 .callouts{margin:0 0 8pt;padding-left:0;list-style:none}
 .callouts li{margin:0 0 3pt;padding-left:20pt;position:relative}
 .callouts li b{position:absolute;left:0;top:0;display:inline-block;width:14pt;height:14pt;border-radius:50%;background:var(--crit);color:#fff;text-align:center;font-size:8pt;line-height:14pt}
@@ -264,7 +265,7 @@ const issues: Renderer = (c) => {
   const groups = v.groups
     .map(
       (g) =>
-        `<h3><span class="pill sev-${g.severity}">${esc(SEVERITY_LABELS[g.severity])}</span> ${g.issues.length} ${g.issues.length === 1 ? "issue" : "issues"}</h3><table class="long"><thead><tr><th style="width:40%">Issue</th><th>Where</th><th>Owner</th><th>Status</th><th>Linked fix</th></tr></thead><tbody>${g.issues
+        `<h3><span class="pill sev-${g.rating}">${esc(RATING_LABELS[g.rating])}</span> ${g.issues.length} ${g.issues.length === 1 ? "issue" : "issues"}</h3><table class="long"><thead><tr><th style="width:40%">Issue</th><th>Where</th><th>Owner</th><th>Status</th><th>Linked fix</th></tr></thead><tbody>${g.issues
           .map(
             (i) =>
               `<tr><td><b>${esc(i.title)}</b><span class="r">${esc(TYPE_LABELS[i.type])}${i.evidence ? ` · ${esc(i.evidence)}` : ""}</span></td><td>${esc(i.where ?? "–")}</td><td>${esc(i.owner ?? "Unassigned")}</td><td>${esc(i.status)}</td><td>${i.fix ? `${esc(i.fix.name)}<span class="r">${i.fix.inReport ? "compared in this report" : "not compared in this report"}</span>` : "–"}</td></tr>`,

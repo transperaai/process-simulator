@@ -361,7 +361,7 @@ describe.skipIf(!POSTGREST_URL)("MCP over PostgREST (acts as the user under RLS)
     const issue = {
       title: "Proposals wait for the strategist",
       type: "bottleneck",
-      severity: "serious",
+      rating: "bad",
       step: "audit & proposal",
       person: "Maya Collins",
       owner: "Arjun",

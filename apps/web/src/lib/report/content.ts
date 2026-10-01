@@ -8,7 +8,7 @@
 // engine returned them); the renderer formats them. Narration (#29) validates
 // its text against this value and replaces `summary`.
 
-import type { InitialState, IssueSeverity, IssueType, Stat } from "@transpera-flow/engine";
+import type { InitialState, IssueType, Rating, Stat } from "@transpera-flow/engine";
 
 /** Bump when the shape changes, so old reports can still be read (or refused) knowingly. */
 export const REPORT_CONTENT_VERSION = 1;
@@ -20,7 +20,7 @@ export const REPORT_SECTIONS = [
   { id: "company_map", label: "Company map", optional: true },
   { id: "process_maps", label: "Process maps and bottlenecks", optional: true },
   { id: "clients", label: "Client health and retention", optional: true },
-  { id: "issues", label: "Issues by severity", optional: true },
+  { id: "issues", label: "Issues by rating", optional: true },
   { id: "scenarios", label: "Scenario comparisons", optional: true },
   { id: "utilisation", label: "Utilisation", optional: true },
   { id: "robustness", label: "Robustness", optional: true },
@@ -198,7 +198,7 @@ export interface ClientsView {
 export interface IssueView {
   title: string;
   type: IssueType;
-  severity: IssueSeverity;
+  rating: Rating;
   /** "Open", "In progress", or "Detected" for a detection nobody has tracked yet. */
   status: string;
   source: "manual" | "detected" | "promoted";
@@ -210,7 +210,7 @@ export interface IssueView {
 }
 
 export interface IssuesView {
-  groups: { severity: IssueSeverity; issues: IssueView[] }[];
+  groups: { rating: Rating; issues: IssueView[] }[];
   /** Closed issues (done or dismissed) left out. */
   closed: number;
 }

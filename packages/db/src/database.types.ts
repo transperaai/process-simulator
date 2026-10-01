@@ -607,18 +607,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "first_principles_process_id_workspace_id_fkey"
-            columns: ["process_id", "workspace_id"]
-            isOneToOne: false
-            referencedRelation: "processes"
-            referencedColumns: ["id", "workspace_id"]
-          },
-          {
-            foreignKeyName: "first_principles_revision_id_workspace_id_fkey"
-            columns: ["revision_id", "workspace_id"]
+            foreignKeyName: "first_principles_revision_id_process_id_workspace_id_fkey"
+            columns: ["revision_id", "process_id", "workspace_id"]
             isOneToOne: false
             referencedRelation: "process_revisions"
-            referencedColumns: ["id", "workspace_id"]
+            referencedColumns: ["id", "process_id", "workspace_id"]
           },
           {
             foreignKeyName: "first_principles_workspace_id_fkey"

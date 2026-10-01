@@ -233,6 +233,7 @@ export function registerFirstPrinciplesTools(server: McpServer, ctx: ToolContext
           if (outcome.status === "saved") break;
           if (outcome.status === "forbidden") throw new ToolError("forbidden", `You don't have permission to change first principles in '${editing.ws.name}' (editors and owners can).`);
           if (outcome.status === "not_draft") throw writeError({ code: "55000" }, "change first principles");
+          if (outcome.status === "invalid") throw new ToolError("invalid_input", outcome.message);
           if (outcome.status === "error") throw new ToolError("write_failed", outcome.message);
           // Someone saved first: merge onto their answers and try again.
           if (attempt >= MAX_ATTEMPTS) throw new ToolError("conflict", "Someone else keeps changing these first principles; try again in a moment.");

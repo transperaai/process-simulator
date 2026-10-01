@@ -8,7 +8,7 @@ import { Fragment, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { IssueRow, ProcessBundle, ScenarioRow, SourceRow } from "@transpera-flow/db";
-import { RATING_LABELS, successMeasureSource, type AnalysisSettings, type EngineModel, type FirstPrinciples, type Rating } from "@transpera-flow/engine";
+import { RATING_LABELS, type AnalysisSettings, type EngineModel, type FirstPrinciples, type Rating } from "@transpera-flow/engine";
 import { Help } from "@/components/help";
 import { FirstPrinciplesCard } from "@/components/first-principles/first-principles-card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -17,6 +17,7 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { withHorizon } from "@/lib/editor/modes";
 import { useDemoFirstPrinciples } from "@/lib/first-principles/demo-store";
+import { useSuccessMeasures } from "@/lib/first-principles/use-measures";
 import { horizonWeeks, isHorizonMonths, monthsForWeeks } from "@/lib/horizon";
 import { useHiddenLevers } from "@/lib/levers/use-hidden-levers";
 import { headlineCards } from "@/lib/overview/headline";
@@ -151,7 +152,7 @@ export function ProcessPage({
   // First principles (A54): the card shows them, and their success measures feed rule 11 (goals met) in the insights.
   const demoFirstPrinciples = useDemoFirstPrinciples(bundle.process.id);
   const fpDoc = mode === "demo" ? demoFirstPrinciples : (firstPrinciples?.doc ?? null);
-  const successMeasures = useMemo(() => (fpDoc ? successMeasureSource(fpDoc, bundle.process.id) : undefined), [fpDoc, bundle.process.id]);
+  const successMeasures = useSuccessMeasures(bundle.process.id, mode === "demo", firstPrinciples?.doc);
 
   const issuesUi = useProcessIssues({
     bundle,

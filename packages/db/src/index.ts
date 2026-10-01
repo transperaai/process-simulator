@@ -18,6 +18,7 @@ export { loadAnalysisRules, saveAnalysisRules, type AnalysisRules, type SaveAnal
 export { loadLeverSettings, saveLeverSettings, type LeverSettings, type SaveLeverSettingsOutcome } from "./lever-settings";
 export {
   FIRST_PRINCIPLES_COLUMNS,
+  firstPrinciplesDiffer,
   firstPrinciplesFromRow,
   firstPrinciplesToColumns,
   loadFirstPrinciples,

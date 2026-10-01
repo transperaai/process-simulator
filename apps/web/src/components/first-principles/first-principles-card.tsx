@@ -68,7 +68,10 @@ export function FirstPrinciplesCard({
     return (
       <div className="flex flex-col gap-2 rounded-token border border-dashed border-line p-4" data-testid="first-principles">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm font-semibold">Not started</p>
+          <p className="text-sm font-semibold">
+            Not started
+            {draftChanged && <span className="ml-2 rounded-full border border-warn bg-warn-soft px-2 py-0.5 text-xs font-normal text-fg">Draft has changes that aren&apos;t published</span>}
+          </p>
           <Button asChild size="sm" className="bg-edit text-edit-fg hover:bg-edit/90">
             <Link href={href}>{canEdit ? "Work through the 7 steps →" : "Open →"}</Link>
           </Button>

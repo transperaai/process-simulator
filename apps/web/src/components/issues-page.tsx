@@ -11,6 +11,8 @@ import { visibleFindings } from "@/lib/rules/edit";
 import { useDetectedIssues } from "@/lib/issues/use-detected";
 import { useRatingSettings } from "@/lib/rules/use-rating-settings";
 import { useIssues } from "@/lib/issues/use-issues";
+import { useSuccessMeasures } from "@/lib/first-principles/use-measures";
+import type { FirstPrinciples } from "@transpera-flow/engine";
 import { retiredSteps } from "@/lib/scenarios/broken";
 import { useAbsenceTest } from "@/lib/sim/absence";
 import { useSimulation } from "@/lib/sim/use-simulation";
@@ -24,8 +26,11 @@ export function IssuesPage({
   processes,
   mode,
   analysisRules,
+  firstPrinciples,
 }: {
   bundle: ProcessBundle;
+  /** The live version's first principles, whose success measures rule 11 (goals met) rates. */
+  firstPrinciples?: FirstPrinciples | null;
   issues: IssueRow[];
   scenarios: ScenarioRow[];
   processes: Named[];
@@ -53,7 +58,8 @@ export function IssuesPage({
   const rules = useRatingSettings(mode === "demo", analysisRules);
   // The absence test (rule 8) runs in its own worker once the baseline is done; until it returns, that rule raises nothing.
   const absence = useAbsenceTest(model && result && sim.status === "done" ? model : null, result?.seed ?? 1, resolveMoney(rules).absenceWeeks);
-  const found = useDetectedIssues(model, result, rules, bundle.process.id, bundle.workspace.settings.currency, absence);
+  const successMeasures = useSuccessMeasures(bundle.process.id, mode === "demo", firstPrinciples);
+  const found = useDetectedIssues(model, result, rules, bundle.process.id, bundle.workspace.settings.currency, absence, successMeasures);
   const detected = useMemo(
     () => (model && !result ? null : visibleFindings(rules, found ? [...broken, ...found, ...gaps] : gaps)),
     [model, result, found, broken, gaps, rules],

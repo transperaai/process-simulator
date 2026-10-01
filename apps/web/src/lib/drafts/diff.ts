@@ -142,3 +142,9 @@ export function unresolvedSteps(bundle: Pick<ProcessBundle, "steps">): StepRow[]
     .filter((s) => s.assumption || (s as { conflict?: boolean }).conflict === true)
     .sort((a, b) => a.name.localeCompare(b.name));
 }
+
+/**
+ * What Publish and Discard count: the steps and edges that differ from live, plus changes that aren't on the map (the
+ * draft's first principles differ from live's), so answers saved only to first principles can still be published.
+ */
+export const publishableChanges = (diff: Pick<DraftDiff, "list">, hasDraft: boolean, extra = 0): number => diff.list.length + (hasDraft ? extra : 0);

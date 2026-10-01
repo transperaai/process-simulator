@@ -10,6 +10,7 @@ import {
   firstPrinciplesSummary,
   measuresMetToday,
   normalizeFirstPrinciples,
+  oversizedParts,
   northbeamWithServicing,
   ownerProblem,
   simulate,
@@ -119,6 +120,12 @@ describe("the root cause", () => {
   it("flags blaming phrases without a name", () => {
     expect(causeStopsAtPerson("The strategist is too busy", ctx.people)).toMatch(/busy/);
     expect(causeStopsAtPerson("Human error", ctx.people)).toMatch(/human error/i);
+  });
+  it("does not mistake an ordinary word for a first name", () => {
+    const people = [{ name: "Will Park" }, { name: "Mark Lee" }, { name: "Grant Fox" }];
+    expect(causeStopsAtPerson("No one will check the pricing, and the mark-up is a grant of discretion", people)).toBeNull();
+    expect(causeStopsAtPerson("Will is slow to review", people)).toBe("Will Park");
+    expect(causeStopsAtPerson("will park reviews everything", people)).toBe("Will Park");
   });
   it("does not match part of a word", () => {
     expect(causeStopsAtPerson("Thomas Cook pricing rules are not written down", ctx.people)).toBeNull();
@@ -250,5 +257,16 @@ describe("progress and the reader", () => {
       deletes: [del("a"), del("b", true)],
     });
     expect(firstPrinciplesSummary(f)).toMatchObject({ job: "More enquiries", challenged: 1, deleteCandidates: 1 });
+  });
+});
+
+describe("size limits", () => {
+  it("takes the largest list the app allows, in plain text, and refuses one made large with wide characters", () => {
+    const text = "x".repeat(2000);
+    const ascii = fp({ statements: Array.from({ length: 50 }, () => ({ text, kind: "truth" as const, source: text, test: text, linked_parameter: null })) });
+    expect(oversizedParts(normalizeFirstPrinciples(ascii))).toEqual([]);
+    const wide = "😀".repeat(2000);
+    const emoji = fp({ statements: Array.from({ length: 50 }, () => ({ text: wide, kind: "truth" as const, source: wide, test: wide, linked_parameter: null })) });
+    expect(oversizedParts(normalizeFirstPrinciples(emoji))).toEqual(["statements"]);
   });
 });

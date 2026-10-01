@@ -1,4 +1,4 @@
-import { normalizeFirstPrinciples, type FirstPrinciples } from "@transpera-flow/engine";
+import { normalizeFirstPrinciples, oversizedParts, type FirstPrinciples } from "@transpera-flow/engine";
 import type { Json } from "./database.types";
 import type { Db } from "./queries";
 import type { FirstPrinciplesRow } from "./types";
@@ -76,6 +76,11 @@ export function resolveFirstPrinciples(
   return earlier ? { doc: full(earlier), version: null, inheritedFrom: number.get(earlier.revision_id)! } : { doc: null, version: null, inheritedFrom: null };
 }
 
+/** Whether two revisions' resolved answers differ (an empty one counts as none): a change between a draft and live. */
+export function firstPrinciplesDiffer(a: ResolvedFirstPrinciples, b: ResolvedFirstPrinciples): boolean {
+  return JSON.stringify(a.doc) !== JSON.stringify(b.doc);
+}
+
 /** Load the first principles of several revisions of a process (each own or inherited), in one read. */
 export async function loadFirstPrinciplesFor(db: Db, processId: string, revisionIds: readonly string[]): Promise<Record<string, ResolvedFirstPrinciples>> {
   const [revisions, rows] = await Promise.all([
@@ -106,6 +111,8 @@ export type SaveFirstPrinciplesOutcome =
   | { status: "forbidden" }
   /** The revision isn't a draft any more (it was published or discarded). */
   | { status: "not_draft" }
+  /** Too large to store (see `oversizedParts`). */
+  | { status: "invalid"; message: string }
   | { status: "error"; message: string };
 
 /**
@@ -114,6 +121,8 @@ export type SaveFirstPrinciplesOutcome =
  * at once are told instead of one silently undoing the other.
  */
 export async function saveFirstPrinciples(db: Db, owner: FirstPrinciplesOwner, doc: FirstPrinciples, version: string | null): Promise<SaveFirstPrinciplesOutcome> {
+  const big = oversizedParts(normalizeFirstPrinciples(doc));
+  if (big.length) return { status: "invalid", message: "That is too much text to save. Shorten the longer answers." };
   const columns = firstPrinciplesToColumns(doc);
   const fail = (error: { code?: string }): SaveFirstPrinciplesOutcome => {
     if (error.code === "42501") return { status: "forbidden" };

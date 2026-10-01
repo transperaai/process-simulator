@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { NORTHBEAM_PROCESS_ID, NORTHBEAM_REVISION_ID, NORTHBEAM_WORKSPACE_ID, resolveFirstPrinciples, firstPrinciplesFromRow, firstPrinciplesToColumns, type FirstPrinciplesRow } from "../src";
+import { NORTHBEAM_PROCESS_ID, NORTHBEAM_REVISION_ID, NORTHBEAM_WORKSPACE_ID, resolveFirstPrinciples, firstPrinciplesDiffer, firstPrinciplesFromRow, firstPrinciplesToColumns, type FirstPrinciplesRow } from "../src";
 import { emptyFirstPrinciples } from "@transpera-flow/engine";
 import { createTestDb, createUser, type TestDb } from "./harness";
 
@@ -70,6 +70,30 @@ describe("first_principles: shape", () => {
     await expect(
       db.client.query("insert into first_principles (workspace_id, process_id, revision_id) values ($1, $2, $3)", [otherWs, proc, live]),
     ).rejects.toThrow(/violates foreign key/);
+  });
+
+  it("ties a row's revision to its process: another process's revision is refused, even as an editor in the same workspace", async () => {
+    const other = (await db.client.query("select id, live_revision_id from processes where workspace_id = $1 and id <> $2 and live_revision_id is not null limit 1", [ws, proc])).rows[0];
+    expect(other, "the seed has a second process").toBeTruthy();
+    await expect(
+      db.client.query("insert into first_principles (workspace_id, process_id, revision_id) values ($1, $2, $3)", [ws, proc, other.live_revision_id]),
+    ).rejects.toThrow(/first_principles_revision_id_process_id_workspace_id_fkey/);
+    await db.as(users.editor!.claims, async (c) => {
+      const draft = await openDraft(c);
+      await expect(c.query("insert into first_principles (workspace_id, process_id, revision_id) values ($1, $2, $3)", [ws, other.id, draft.revision_id])).rejects.toThrow(/violates foreign key/);
+    });
+  });
+
+  it("caps each JSON part at 512 KB as text, and takes the app's largest allowed list", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      const draft = await openDraft(c);
+      await c.query("savepoint a");
+      // Three 200 KB texts: under the item count, over the byte cap.
+      await expect(insert(c, draft.revision_id, "statements=(select jsonb_build_array(repeat('x', 200000), repeat('x', 200000), repeat('x', 200000)))")).rejects.toThrow(/check/);
+      await c.query("rollback to a");
+      const biggest = firstPrinciplesToColumns({ ...emptyFirstPrinciples(), statements: Array.from({ length: 50 }, () => ({ text: "😀".repeat(500), kind: "truth" as const, source: "😀".repeat(500), test: "😀".repeat(500), linked_parameter: null })) });
+      await c.query("insert into first_principles (workspace_id, process_id, revision_id, statements) values ($1, $2, $3, $4)", [ws, proc, draft.revision_id, JSON.stringify(biggest.statements)]);
+    });
   });
 
   it("keeps updated_at moving", async () => {
@@ -256,6 +280,14 @@ describe("resolving a revision's first principles", () => {
   it("is empty for a revision that is unknown or has nothing before it", () => {
     expect(resolveFirstPrinciples(revisions, [], "r2").doc).toBeNull();
     expect(resolveFirstPrinciples(revisions, [row("r1", "one", "t1")], "nope").doc).toBeNull();
+  });
+  it("sees a draft whose answers differ from live's as a change, and an inherited one as none", () => {
+    const revs = [{ id: "r1", number: 1 }, { id: "r2", number: 2 }];
+    const live = resolveFirstPrinciples(revs, [row("r1", "one", "t1")], "r1");
+    expect(firstPrinciplesDiffer(live, resolveFirstPrinciples(revs, [row("r1", "one", "t1")], "r2"))).toBe(false);
+    expect(firstPrinciplesDiffer(live, resolveFirstPrinciples(revs, [row("r1", "one", "t1"), row("r2", "two", "t2")], "r2"))).toBe(true);
+    // Live has no answers, the draft has some: still a change to publish.
+    expect(firstPrinciplesDiffer(resolveFirstPrinciples(revs, [row("r2", "two", "t2")], "r1"), resolveFirstPrinciples(revs, [row("r2", "two", "t2")], "r2"))).toBe(true);
   });
   it("round-trips through the columns", () => {
     const doc = { ...emptyFirstPrinciples(), why: { problem: "p", chain: ["a", "b"], root: "r" } };

@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { AnalysisRulesSettings } from "@/components/rules/analysis-rules-settings";
 import { canEditWorkspace } from "@/lib/access-data";
+import { loadLiveFirstPrinciples } from "@/lib/first-principles/data";
 import { loadLiveProcess, loadProcessNames, loadWorkspaceHead } from "@/lib/data";
 import { loadWorkspaceAnalysisRules } from "@/lib/rules/data";
 
@@ -18,5 +19,6 @@ export default async function AnalysisRulesPage(props: PageProps<"/w/[slug]/sett
     loadLiveProcess(slug),
     loadProcessNames(head.id),
   ]);
-  return <AnalysisRulesSettings mode={canEdit ? "live" : "readonly"} workspaceId={head.id} initial={rules} bundle={bundle} processes={processes} />;
+  const firstPrinciples = bundle ? await loadLiveFirstPrinciples(bundle.process.id, bundle.revision.id) : null;
+  return <AnalysisRulesSettings mode={canEdit ? "live" : "readonly"} workspaceId={head.id} initial={rules} bundle={bundle} firstPrinciples={firstPrinciples} processes={processes} />;
 }

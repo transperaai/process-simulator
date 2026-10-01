@@ -27,6 +27,8 @@ export type FpStepKey = (typeof FP_STEPS)[number]["key"];
 export const FP_MAX_ITEMS = 50;
 export const FP_MAX_TEXT = 2000;
 export const FP_MAX_CHAIN = 10;
+/** The most bytes (as JSON text) any one list may take; the database checks the same number. */
+export const FP_MAX_JSON_BYTES = 524288;
 
 export const FP_VERDICTS = ["keep", "change", "drop", "challenge"] as const;
 export type FpVerdict = (typeof FP_VERDICTS)[number];
@@ -264,10 +266,11 @@ export function causeStopsAtPerson(cause: string, people: readonly { name: strin
   for (const p of people) {
     const full = p.name.trim();
     const first = full.split(/\s+/)[0] ?? "";
-    for (const name of [full, first]) {
+    // A full name matches in any case; a first name only as written (capitalised), so "will" and "mark" the words don't match Will and Mark.
+    for (const [name, flags] of [[full, "iu"], [first, "u"]] as const) {
       if (name.length < 3) continue;
       const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      if (new RegExp(`(^|[^\\p{L}])${escaped}(?=$|[^\\p{L}])`, "iu").test(t)) return full;
+      if (new RegExp(`(^|[^\\p{L}])${escaped}(?=$|[^\\p{L}])`, flags).test(t)) return full;
     }
   }
   const m = BLAME.exec(t);
@@ -413,4 +416,15 @@ export function firstPrinciplesSummary(fp: FirstPrinciples): { job: string; chal
     root: fp.why.root.trim(),
     filled: countFilled(fp),
   };
+}
+
+/**
+ * The lists (by their stored names) that are too large to store: over `FP_MAX_JSON_BYTES` as JSON text. The counts and
+ * text lengths are bounded by `normalizeFirstPrinciples`, but not their bytes (a 2,000-character text can be 8 KB of
+ * emoji), so a save checks this too.
+ */
+export function oversizedParts(fp: FirstPrinciples): string[] {
+  const parts: Record<string, unknown> = { statements: fp.statements, requirements: fp.requirements, deletes: fp.deletes, improvements: fp.improvements, why_chain: fp.why.chain, measures: fp.measures };
+  const enc = new TextEncoder();
+  return Object.entries(parts).filter(([, v]) => enc.encode(JSON.stringify(v)).length > FP_MAX_JSON_BYTES).map(([k]) => k);
 }

@@ -16,6 +16,9 @@ import { getDemoFirstPrinciples, setDemoFirstPrinciples } from "@/lib/first-prin
 import { demoFirstPrinciples } from "@/lib/first-principles/demo-seed";
 import { rerate } from "@/lib/rules/edit";
 import { demoBundle } from "@/lib/sources/demo";
+import { publishableChanges } from "@/lib/drafts/diff";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 // First principles in the app (issue #119, A54): the demo's worked example, the summary card on the process page, and
 // success measures feeding the "goals met" rule in the insights.
@@ -162,5 +165,60 @@ describe("success measures feed the goals-met rule (rule 11)", () => {
       ],
     };
     expect(rerate(model, result, {}, bundle.process.id, null, { successMeasures: successMeasureSource(d, bundle.process.id) }).filter((i) => i.key.startsWith("success:"))).toEqual([]);
+  });
+});
+
+describe("answers saved only to first principles can be published", () => {
+  it("counts a first-principles difference as a change, beside the steps and edges", () => {
+    const none = { list: [] };
+    expect(publishableChanges(none, true, 0)).toBe(0);
+    expect(publishableChanges(none, true, 1)).toBe(1);
+    expect(publishableChanges({ list: [{}, {}] as never }, true, 1)).toBe(3);
+    // Nothing without a draft.
+    expect(publishableChanges(none, false, 1)).toBe(0);
+  });
+
+  it("says the draft has changes on the card even when the live version has no answers", () => {
+    const html = card(null, { draftChanged: true });
+    expect(html).toContain("Not started");
+    expect(html).toContain("Draft has changes that aren&#x27;t published");
+    expect(card(null)).not.toContain("Draft has changes");
+  });
+
+  it("the Editor passes the count to Publish and Discard", () => {
+    const view = readFileSync(join(__dirname, "..", "src", "components", "editor", "editor-view.tsx"), "utf8");
+    expect(view).toContain("publishableChanges(diff, hasDraft, extraChanges)");
+    const page = readFileSync(join(__dirname, "..", "src", "components", "editor", "workspace-editor-page.tsx"), "utf8");
+    expect(page).toContain("firstPrinciplesDraftChanged(");
+  });
+});
+
+describe("goals met reads the same success measures on every page", () => {
+  const read = (f: string) => readFileSync(join(__dirname, "..", "src", f), "utf8");
+  it("every page that rates a run passes them to the detectors", () => {
+    for (const f of ["components/process-page.tsx", "components/process-view.tsx", "components/issues-page.tsx", "components/overview/overview.tsx", "components/rules/analysis-rules-settings.tsx"]) {
+      expect(read(f), f).toContain("useSuccessMeasures(");
+    }
+    expect(read("components/process-page.tsx")).toContain("successMeasures,");
+    expect(read("components/process-view.tsx")).toContain("successMeasures,");
+    expect(read("components/issues-page.tsx")).toContain("absence, successMeasures)");
+    expect(read("components/overview/overview.tsx")).toContain("{ successMeasures }");
+    expect(read("components/rules/analysis-rules-settings.tsx")).toContain("{ successMeasures }");
+  });
+  it("and the workspace pages load the live version's answers for them", () => {
+    for (const f of ["app/w/[slug]/issues/page.tsx", "app/w/[slug]/settings/rules/page.tsx", "components/overview/workspace-overview.tsx"]) {
+      expect(read(f), f).toContain("loadLiveFirstPrinciples(");
+    }
+    expect(readFileSync(join(__dirname, "..", "..", "..", "packages", "mcp", "src", "analysis-tools.ts"), "utf8")).toContain("successMeasureSource(");
+  });
+  it("find the same goals-met finding wherever the run is rated", () => {
+    const won = result.samples.won;
+    const mean = won.reduce((a, b) => a + b, 0) / won.length;
+    const doc: FirstPrinciples = { ...emptyFirstPrinciples(), measures: [{ id: "m1", text: "Wins", kpi: "won", comparator: "atLeast", target: mean * 50, horizon: "" }] };
+    const source = successMeasureSource(doc, bundle.process.id);
+    const a = rerate(model, result, {}, bundle.process.id, null, { successMeasures: source });
+    const b = rerate(model, result, {}, bundle.process.id, null, { currency: "AUD", successMeasures: source });
+    expect(a.filter((i) => i.key.startsWith("success:")).map((i) => [i.key, i.rating])).toEqual(b.filter((i) => i.key.startsWith("success:")).map((i) => [i.key, i.rating]));
+    expect(a.some((i) => i.key === "success:measure:m1")).toBe(true);
   });
 });

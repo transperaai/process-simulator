@@ -47,6 +47,7 @@ export async function saveFirstPrinciplesAction(
       return { status: "error", message: "Only owners and editors can change first principles." };
     case "not_draft":
       return { status: "stale" };
+    case "invalid":
     case "error":
       return { status: "error", message: outcome.message };
   }

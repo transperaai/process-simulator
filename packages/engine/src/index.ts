@@ -95,6 +95,8 @@ export {
 } from "./absence";
 export {
   FP_MAX_CHAIN,
+  FP_MAX_JSON_BYTES,
+  oversizedParts,
   FP_MAX_ITEMS,
   FP_MAX_TEXT,
   FP_STEPS,

@@ -185,8 +185,8 @@ export function FirstPrinciplesFlow({
           </Alert>
         )}
 
-        <div className="grid items-start gap-5 md:grid-cols-[13rem_minmax(0,1fr)] xl:grid-cols-[14rem_minmax(0,1fr)_18.75rem]">
-          <nav aria-label="Steps" className="md:sticky md:top-16">
+        <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-5 md:grid-cols-[13rem_minmax(0,1fr)] xl:grid-cols-[14rem_minmax(0,1fr)_18.75rem]">
+          <nav aria-label="Steps" className="min-w-0 md:sticky md:top-16">
             <ol className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible">
               {FP_STEPS.map((s, j) => {
                 const n = attention(s.key);
@@ -330,7 +330,7 @@ function EditingNote({ editing, status, message }: { editing: FlowEditing; statu
         {text}
         <Help
           label="Which version this edits"
-          description="First principles belong to a version of the process, like its steps. Changes always go into the draft, so the live version stays as it was published until you publish the draft."
+          description="First principles belong to a version of the process, like its steps. Changes always go into the draft, so the live version stays as it was published until you publish the draft. Restoring an earlier version brings back its steps, not its answers: the draft keeps the answers it has."
           example="Live is version 3. You type an answer; a draft (version 4) opens with it. Publish the draft and version 4 goes live with those answers."
         />
       </span>

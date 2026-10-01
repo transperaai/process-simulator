@@ -4,6 +4,7 @@ import { Overview } from "@/components/overview/overview";
 import { ShellHeader } from "@/components/shell/shell-header";
 import { loadLiveProcess, loadWorkspaceHead, loadWorkspaceIssues, loadWorkspaceOverview } from "@/lib/data";
 import { canEditWorkspace } from "@/lib/access-data";
+import { loadLiveFirstPrinciples } from "@/lib/first-principles/data";
 import { loadLiveParts } from "@/lib/overview/data";
 import { loadWorkspaceAnalysisRules } from "@/lib/rules/data";
 
@@ -17,7 +18,13 @@ export async function WorkspaceOverview({ slug }: { slug: string }) {
     return <EmptyOverview slug={slug} name={head.name} unpublished={overview?.processes ?? []} />;
   }
   const ws = live.workspace.id;
-  const [parts, issues, rules, canEdit] = await Promise.all([loadLiveParts(ws), loadWorkspaceIssues(ws), loadWorkspaceAnalysisRules(ws), canEditWorkspace(ws)]);
+  const [parts, issues, rules, canEdit, firstPrinciples] = await Promise.all([
+    loadLiveParts(ws),
+    loadWorkspaceIssues(ws),
+    loadWorkspaceAnalysisRules(ws),
+    canEditWorkspace(ws),
+    loadLiveFirstPrinciples(live.process.id, live.revision.id),
+  ]);
   const base = `/w/${slug}`;
   return (
     <Overview
@@ -27,6 +34,7 @@ export async function WorkspaceOverview({ slug }: { slug: string }) {
       issues={issues}
       mode={canEdit ? "live" : "readonly"}
       analysisRules={rules.settings}
+      firstPrinciples={firstPrinciples}
       hrefs={Object.fromEntries(parts.map((p) => [p.process.id, `${base}/p/${p.process.id}`]))}
       processesHref={`${base}/processes`}
       issuesHref={`${base}/issues`}

@@ -7,6 +7,7 @@ import {
   parseAnalysisSettings,
   toRatingConfig,
   detectIssues,
+  type AbsenceTest,
   type AnalysisMoney,
   type AnalysisOverride,
   type AnalysisRuleId,
@@ -62,7 +63,7 @@ export const setMoney = (s: AnalysisSettings, patch: Partial<Omit<AnalysisMoney,
   clean({ ...s, money: { ...s.money, ...patch, waitHours: patch.waitHours ? { ...s.money?.waitHours, ...patch.waitHours } : s.money?.waitHours } });
 
 /** The rule an issue's detector belongs to; null for findings that aren't from a rule on the rating model. */
-const RATED = new Set<string>(["busy", "overtime", "queue", "wait", "rework", "sla"]);
+const RATED = new Set<string>(["busy", "overtime", "queue", "wait", "rework", "sla", "spare", "spof", "dropoff", "cycle", "success"]);
 export const ruleOfIssue = (i: Pick<DetectedIssue, "key">): RatingRuleId | null => {
   const rule = ruleOfFinding(i);
   return rule && RATED.has(rule) ? (rule as RatingRuleId) : null;
@@ -80,8 +81,15 @@ export function visibleFindings(settings: AnalysisSettings, findings: readonly D
  * Rate a run again under these settings. No simulation: `result` is the run already made, and the same run serves
  * every settings document. This is what "changing a rule re-rates the latest run straight away" means.
  */
-export function rerate(model: EngineModel, result: SimulationResult, settings: AnalysisSettings, processId?: string | null): DetectedIssue[] {
-  return detectIssues(model, result, toRatingConfig(settings, model.hoursPerWeek), { processId });
+export function rerate(
+  model: EngineModel,
+  result: SimulationResult,
+  settings: AnalysisSettings,
+  processId?: string | null,
+  /** The absence test's result for this model (its own pass, see `useAbsenceTest`); without it "only one person can do it" raises nothing. */
+  absence?: AbsenceTest | null,
+): DetectedIssue[] {
+  return detectIssues(model, result, toRatingConfig(settings, model.hoursPerWeek), { processId, absence });
 }
 
 export interface RatingTally {

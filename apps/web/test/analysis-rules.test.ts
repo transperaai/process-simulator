@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ANALYSIS_RULE_IDS, ANALYSIS_RULE_SPECS, detectIssues, northbeamModel, northbeamWithServicing, simulate, type AnalysisSettings } from "@transpera-flow/engine";
+import { ANALYSIS_RULE_IDS, absenceTest, ANALYSIS_RULE_SPECS, detectIssues, northbeamModel, northbeamWithServicing, simulate, type AnalysisSettings } from "@transpera-flow/engine";
 import { RULES_UI, bandsOf, fromDisplay, toDisplay } from "@/lib/rules/catalogue";
 import { addOverride, removeOverride, rerate, resetAll, resetRule, ruleOfIssue, setEscalator, setMoney, setRuleEnabled, setRuleInputs, tally, visibleFindings } from "@/lib/rules/edit";
 
@@ -110,7 +110,7 @@ describe("re-rating the latest run", () => {
     const base = tally(rerate(model, result, {}));
     // Switch every rating-model rule off: those findings go; the legacy detectors' findings stay.
     let off: AnalysisSettings = {};
-    for (const id of ["busy", "overtime", "queue", "wait", "rework", "sla"] as const) off = setRuleEnabled(off, id, false);
+    for (const id of ["busy", "overtime", "queue", "wait", "rework", "sla", "spare", "spof", "dropoff", "cycle", "success"] as const) off = setRuleEnabled(off, id, false);
     const none = tally(rerate(model, result, off));
     expect(Object.values(none.byRule).reduce((a, b) => a + (b ?? 0), 0)).toBe(0);
     expect(none.total).toBeLessThan(base.total);
@@ -131,7 +131,8 @@ describe("re-rating the latest run", () => {
   it("maps a finding to its rule", () => {
     expect(ruleOfIssue({ key: "capacity:role:r" })).toBe("busy");
     expect(ruleOfIssue({ key: "wait:step:a" })).toBe("wait");
-    expect(ruleOfIssue({ key: "spof:step:a" })).toBeNull();
+    expect(ruleOfIssue({ key: "spof:step:a" })).toBe("spof");
+    expect(ruleOfIssue({ key: "spare:person:a" })).toBe("spare");
   });
 });
 
@@ -139,7 +140,7 @@ describe("switching off a rule whose detector already runs", () => {
   // Northbeam with servicing has one-person steps and client churn risks.
   const model = northbeamWithServicing();
   const result = simulate(model, 8, 1);
-  const all = rerate(model, result, {});
+  const all = rerate(model, result, {}, null, absenceTest(model));
   const keys = (list: { key: string }[], prefix: string) => list.filter((i) => i.key.startsWith(prefix));
 
   it("removes spof findings when Only one person can do it is off, and keeps the rest", () => {

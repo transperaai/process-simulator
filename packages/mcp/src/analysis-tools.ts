@@ -24,7 +24,7 @@ import {
   type ProcessBundle,
   type ScenarioRow,
 } from "@transpera-flow/db";
-import { applyPatches, detectIssues, ENGINE_VERSION, isBlocking, ISSUE_TYPES, MAX_PATCHES, PATCH_OPS, RATINGS, STORED_SEVERITIES, ratingOfStored, simulate, storedOfRating, toRatingConfig, withoutDisabledRules, type EngineModel } from "@transpera-flow/engine";
+import { absenceTest, applyPatches, detectIssues, ENGINE_VERSION, isBlocking, ISSUE_TYPES, MAX_PATCHES, PATCH_OPS, RATINGS, STORED_SEVERITIES, ratingOfStored, simulate, storedOfRating, toRatingConfig, withoutDisabledRules, type EngineModel } from "@transpera-flow/engine";
 import { bottleneckReport, checkScenarioRobustness, compareScenarios, matchNamed, type NamedScenario } from "./analysis";
 import { resolveProcess, resolveWorkspace, revisionIdFor, type ProcessWithDraft, type ToolContext, type WorkspaceRef } from "./context";
 import { runTool, ToolError } from "./result";
@@ -33,6 +33,8 @@ export const ANALYSIS_TOOL_NAMES = ["save_scenario", "compare_scenarios", "check
 
 const DEFAULT_REPS = 30;
 const DEFAULT_SEED = 1;
+/** The most time the absence test (docs/analysis-rules.md rule 8) may take in `list_issues`. */
+const ABSENCE_BUDGET_MS = 5000;
 const MAX_REPS = 200;
 /** Well inside the route's `maxDuration` (apps/web/src/app/api/mcp/route.ts; 300 s). */
 export const DEFAULT_ROBUSTNESS_SECONDS = 20;
@@ -504,7 +506,16 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
           const keys = new Set(issues.map((i) => i.detected_key).filter(Boolean));
           // The workspace's analysis rules, as the app rates with them.
           const rules = await loadAnalysisRules(ctx.db, ws.id).catch(() => ({ settings: {}, version: null }));
-          detected = withoutDisabledRules(rules.settings, detectIssues(loaded.model, run, toRatingConfig(rules.settings, loaded.model.hoursPerWeek), { processId: proc.id }))
+          const config = toRatingConfig(rules.settings, loaded.model.hoursPerWeek);
+          // The absence test (rule 8) is its own pass, a few more replications per person who is the only one for a step.
+          // Skip it when the filters would drop its findings anyway, and cap its time; say so when it didn't finish.
+          const wantsAbsence = config.rules.spof.enabled && !client && (!args.type || args.type === "spof") && (!args.status || args.status === "open");
+          let absence: ReturnType<typeof absenceTest> | null = null;
+          if (wantsAbsence) {
+            absence = absenceTest(loaded.model, { seed: DEFAULT_SEED, weeks: config.absence.weeks, timeBudgetMs: ABSENCE_BUDGET_MS });
+            if (!absence.complete) assumptions.push(`The absence test ran out of time (${ABSENCE_BUDGET_MS / 1000} s) and tested ${absence.people.length} of the people who are the only one for a step; "only one person can do it" lists only those.`);
+          }
+          detected = withoutDisabledRules(rules.settings, detectIssues(loaded.model, run, config, { processId: proc.id, absence }))
             .filter((d) => !keys.has(d.key) && (!args.type || d.type === args.type) && !client)
             .map((d) => ({ ...d, source: "detected", status: null }));
           if (args.status && args.status !== "open") detected = [];

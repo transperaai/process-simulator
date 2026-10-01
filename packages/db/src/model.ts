@@ -54,6 +54,8 @@ interface Graph {
   working: EngineStep[];
   /** End steps, by id. A child process's `done` ends are not here: they are exits of its group. */
   endSteps: StepRow[];
+  /** The process's target time end to end, in working hours, set on its start step (rule 13). */
+  targetCycleHours: number | null;
   /** Its groups, and the child processes its steps hold as groups, by the holder step's id. */
   groups: Record<string, EngineGroup>;
 }
@@ -161,6 +163,10 @@ function resolveGraph(steps: StepRow[], edges: EdgeRow[], tags: boolean, ctx: Gr
         ...(step.current_wip != null ? { currentWip: Number(step.current_wip) } : {}),
         // An SLA only counts breaches (detected issues); it doesn't change the run.
         ...(step.sla_hours != null ? { sla: Number(step.sla_hours) } : {}),
+        // The rules' per-step settings (docs/analysis-rules.md rules 5, 12): they rate the report, not the run.
+        ...(step.expected_wait_hours != null ? { expectedWaitHours: Number(step.expected_wait_hours) } : {}),
+        ...(step.lost_per_day_waiting != null ? { lostPerDayWaiting: Number(step.lost_per_day_waiting) } : {}),
+        ...(step.dropoff_benchmark != null ? { dropoffBenchmark: Number(step.dropoff_benchmark) } : {}),
         ...parentOf(step),
         next,
       };
@@ -172,6 +178,7 @@ function resolveGraph(steps: StepRow[], edges: EdgeRow[], tags: boolean, ctx: Gr
     // The process's own ends first, so its win and loss are the model's sinks.
     endSteps: [...steps.filter((step) => step.kind === "end").sort(byIdAsc), ...heldEnds],
     groups,
+    targetCycleHours: starts[0]!.target_cycle_hours != null ? Number(starts[0]!.target_cycle_hours) : null,
   };
 }
 
@@ -219,7 +226,7 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
   const pipeline = pipelineOf(bundle);
   const baseServices = engineServices(bundle, pipeline.process.id);
   const held = heldProcesses(bundle);
-  const { entry, working: pipelineSteps, endSteps, groups: pipelineGroups } = resolveGraph(pipeline.steps, pipeline.edges, Boolean(baseServices), {
+  const { entry, working: pipelineSteps, endSteps, groups: pipelineGroups, targetCycleHours } = resolveGraph(pipeline.steps, pipeline.edges, Boolean(baseServices), {
     parts: held,
     stack: [pipeline.process.id],
   });
@@ -271,6 +278,7 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
     ...(clients ? { clients } : {}),
     ...(Object.keys(servicing.processes).length ? { servicingProcesses: servicing.processes } : {}),
     ...optional("health", healthRules(s)),
+    ...(targetCycleHours !== null ? { targetCycleHours } : {}),
     ...(Object.keys(groups).length ? { groups } : {}),
     entry,
     sinks,

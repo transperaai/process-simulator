@@ -409,6 +409,11 @@ export function buildNewStep(
     tool: f.tool?.trim() || null,
     notes: f.notes?.trim() || null,
     sla_hours: f.sla_hours ?? null,
+    // The analysis rules' step settings are set in the editor, not by the building tools.
+    expected_wait_hours: null,
+    lost_per_day_waiting: null,
+    dropoff_benchmark: null,
+    target_cycle_hours: null,
     current_wip: f.current_wip ?? null,
     parent_step_id: f.parent_step_id ?? null,
     entry_step_id: f.entry_step_id ?? null,

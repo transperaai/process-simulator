@@ -22,7 +22,7 @@ export const fieldLabel = (field: string): string => FIELD_LABELS[field] ?? fiel
 export function describeValue(field: string, v: Value, names: Map<string, string>): string {
   if (v === null || v === "") return field === "rework_to_step_id" ? "the step itself" : "blank";
   if (typeof v === "object") return v.source;
-  if (field === "probability" || field === "rework_rate") return `${Math.round(Number(v) * 1000) / 10}%`;
+  if (field === "probability" || field === "rework_rate" || field === "lost_per_day_waiting" || field === "dropoff_benchmark") return `${Math.round(Number(v) * 1000) / 10}%`;
   if (field.endsWith("_id")) return names.get(String(v)) ?? "a removed item";
   if (field === "kind") return KIND_LABELS[v as keyof typeof KIND_LABELS] ?? String(v);
   if (field === "outcome") return OUTCOME_LABELS[v as keyof typeof OUTCOME_LABELS] ?? String(v);

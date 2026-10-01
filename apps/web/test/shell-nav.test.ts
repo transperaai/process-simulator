@@ -55,6 +55,7 @@ describe("workspaceNav: the active item", () => {
   it("is Overview on its own page", () => expect(active(nav("/w/s/overview"))).toEqual(["overview"]));
   it("is Settings on exactly /settings", () => expect(active(nav("/w/s/settings"))).toEqual(["settings"]));
   it("is Settings on /settings/rules (Analysis rules)", () => expect(active(nav("/w/s/settings/rules"))).toEqual(["settings"]));
+  it("is Settings on /settings/levers (Levers)", () => expect(active(nav("/w/s/settings/levers"))).toEqual(["settings"]));
   it("is Access, not Settings, on /settings/access", () => expect(active(nav("/w/s/settings/access"))).toEqual(["access"]));
   it("is the matching item on each of the other pages", () => {
     for (const [path, key] of [
@@ -133,12 +134,16 @@ describe("demoNav", () => {
     expect(g.map((x) => x.items.map((i) => i.key))).toEqual([
       ["overview", "processes"],
       ["issues", "solutions", "library", "suggestions"],
-      ["sources", "people", "rules"],
+      ["sources", "people", "rules", "levers"],
     ]);
   });
   it("marks Analysis rules active on its page", () => {
     expect(active(d("/demo/settings/rules"))).toEqual(["rules"]);
     expect(item(d("/demo"), "rules")?.href).toBe("/demo/settings/rules");
+  });
+  it("marks Levers active on its page", () => {
+    expect(active(d("/demo/settings/levers"))).toEqual(["levers"]);
+    expect(item(d("/demo"), "levers")?.href).toBe("/demo/settings/levers");
   });
   it("marks the active page", () => {
     expect(active(d("/demo"))).toEqual(["processes"]);

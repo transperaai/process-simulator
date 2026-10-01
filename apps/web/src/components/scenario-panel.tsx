@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ScenarioRow } from "@transpera-flow/db";
 import { applyPatches, compareHeadline, compareRuns, repointPatch, type EngineModel, type EnginePerson, type ProvenanceRows, type RetiredSteps } from "@transpera-flow/engine";
 import { buildLevers, leverPatches, type LeverValues } from "@/lib/scenarios/levers";
+import { leverKind, visibleLevers } from "@/lib/scenarios/lever-catalogue";
 import { liveScenarioStore } from "@/lib/scenarios/live-store";
 import { resolveRun } from "@/lib/scenarios/broken";
 import { copyName, headlineSubject, scenarioProblems } from "@/lib/scenarios/scenarios";
@@ -25,6 +26,7 @@ import { ScenarioLibrary } from "./scenario-library";
 
 const NO_PROVENANCE: ProvenanceRows = {};
 const NO_RETIRED: RetiredSteps = {};
+const NO_HIDDEN: readonly string[] = [];
 
 export function ScenarioPanel({
   model,
@@ -36,6 +38,8 @@ export function ScenarioPanel({
   onScenariosChange,
   provenance = NO_PROVENANCE,
   retired = NO_RETIRED,
+  hiddenLevers = NO_HIDDEN,
+  leversHref,
 }: {
   /** The baseline model (the process as it is now). */
   model: EngineModel;
@@ -52,6 +56,10 @@ export function ScenarioPanel({
   provenance?: ProvenanceRows;
   /** Steps the model no longer has and what replaced them, to explain broken scenarios (issue #16). */
   retired?: RetiredSteps;
+  /** Lever kinds switched off in Settings -> Levers: their sliders aren't offered, and they change nothing here. */
+  hiddenLevers?: readonly string[];
+  /** The Levers settings page, linked from the panel when some are hidden. */
+  leversHref?: string;
 }) {
   const canEdit = mode !== "readonly";
   const [store] = useState<ScenarioStore>(() => (mode === "live" ? liveScenarioStore(workspaceId) : new MemoryScenarioStore(workspaceId)));
@@ -71,7 +79,10 @@ export function ScenarioPanel({
 
   // Levers act on the model with the applied scenarios in it.
   const stacked = useMemo(() => applyPatches(model, usable.flatMap((s) => s.patch)).model, [model, usable]);
-  const levers = useMemo(() => buildLevers(stacked), [stacked]);
+  const allLevers = useMemo(() => buildLevers(stacked), [stacked]);
+  // A hidden lever isn't offered, and a slider moved before it was hidden no longer changes the run.
+  const levers = useMemo(() => visibleLevers(allLevers, hiddenLevers), [allLevers, hiddenLevers]);
+  const hiddenCount = hiddenLevers.filter((id) => leverKind(id)?.control === "slider").length;
   const moved = useMemo(() => leverPatches(levers, values), [levers, values]);
   const patches = useMemo(() => [...usable.flatMap((s) => s.patch), ...moved], [usable, moved]);
   // Model resolution refuses a broken scenario rather than skipping its patch (issue #16).
@@ -136,6 +147,8 @@ export function ScenarioPanel({
       <div className="grid gap-3 @4xl:grid-cols-[22rem_1fr]">
         <LeverPanel
           levers={levers}
+          hiddenCount={hiddenCount}
+          settingsHref={leversHref}
           values={values}
           currency={currency}
           status={status}

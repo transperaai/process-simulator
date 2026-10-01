@@ -77,3 +77,13 @@ export function Help({ label, description, example, className }: HelpProps) {
     </>
   );
 }
+
+/** A small label with its (i), for a control that is not drawn by one of the field components (an add form, a dialog). */
+export function HelpLabel({ label, description, example, className }: HelpProps) {
+  return (
+    <span className={cn("flex items-center text-xs font-medium text-fg-2", className)}>
+      {label}
+      <Help label={label} description={description} example={example} />
+    </span>
+  );
+}

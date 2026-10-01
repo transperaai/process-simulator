@@ -5,7 +5,7 @@ import { ChurnDriversSettings } from "../../w/[slug]/settings/churn-drivers-sett
 /** Settings, Churn drivers on the demo: Northbeam's clients simulated in this tab, with weights you can move. Nothing is saved. */
 export default function DemoChurnDriversPage() {
   return (
-    <Page title="Churn drivers" eyebrow="Company" description="Demo mode: Northbeam's sample numbers. Your changes stay in this tab, gone when you reload.">
+    <Page title="Churn drivers" eyebrow="Company">
       <ChurnDriversSettings mode="demo" workspaceId={null} bundle={demoBundle()} rows={[]} />
     </Page>
   );

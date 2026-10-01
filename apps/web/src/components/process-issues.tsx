@@ -9,12 +9,13 @@ import { perceptionGapDetections } from "@/lib/issues/perception";
 import { visibleFindings } from "@/lib/rules/edit";
 import { useDetectedIssues } from "@/lib/issues/use-detected";
 import { useRatingSettings } from "@/lib/rules/use-rating-settings";
-import { entryView, promoteInput, registerEntries, stepBadges, stepRatingOf } from "@/lib/issues/register";
+import { confirmedBadges, confirmedRatings, entryView, promoteInput, registerEntries, stepRatingOf } from "@/lib/issues/register";
 import { useIssues } from "@/lib/issues/use-issues";
 import { useAbsenceTest } from "@/lib/sim/absence";
 import { IssuesRegister } from "./issues-register";
 import type { EditMode } from "./process-view";
 import { StepIssueBadges } from "./step-issue-badges";
+import type { StepExtras } from "./map/step-detail";
 
 export interface ProcessIssues {
   /** Badges on the map's steps (portals; render anywhere). */
@@ -27,6 +28,10 @@ export interface ProcessIssues {
   openIssues: Record<string, number>;
   /** A step's worst open-issue rating, which a closed group takes the worst of. */
   rating: (stepId: string) => { rank: number; label: string } | null;
+  /** What the analysis found on a step and the confirmed issues on it, for a step's detail on the map. */
+  stepExtras: (stepId: string) => StepExtras | null;
+  /** The steps to highlight on the map: those of the issue the pointer or focus is on. */
+  highlight: string[] | null;
   /** The scenario panel reports its saved scenarios here, so issues can link and run them. */
   onScenariosChange: (scenarios: ScenarioRow[]) => void;
   /** The saved scenarios as the scenario panel last reported them. */
@@ -68,6 +73,7 @@ export function useProcessIssues({
   const [scenarios, setScenarios] = useState(initialScenarios);
   const [tab, setTab] = useState<"utilisation" | "issues">("utilisation");
   const [stepFilter, setStepFilter] = useState("");
+  const [lit, setLit] = useState<string | null>(null);
 
   // Saved scenarios whose targets no longer resolve raise a broken_scenario issue each (issue #16).
   const broken = useMemo(() => (model ? detectBrokenScenarios(model, scenarios, retired) : []), [model, scenarios, retired]);
@@ -111,7 +117,22 @@ export function useProcessIssues({
     () => entries.filter((e) => e.kind === "detected" || !e.issue.process_id || e.issue.process_id === bundle.process.id),
     [entries, bundle.process.id],
   );
-  const badges = useMemo(() => stepBadges(here), [here]);
+  // Nothing reaches the map until it is acknowledged (D24): badges count, and colours come from, confirmed issues only.
+  const badges = useMemo(() => confirmedBadges(here), [here]);
+  const ratings = useMemo(() => confirmedRatings(here), [here]);
+  // Per step: the titles of what was found and not acknowledged yet (insights), and of the confirmed issues.
+  const extras = useMemo(() => {
+    const out = new Map<string, StepExtras>();
+    for (const e of here) {
+      const v = entryView(e);
+      if (!v.open || !v.stepId) continue;
+      const x = out.get(v.stepId) ?? { insights: [], issues: [] };
+      (e.kind === "tracked" ? x.issues : x.insights).push(v.title);
+      out.set(v.stepId, x);
+    }
+    return out;
+  }, [here]);
+  const highlight = useMemo(() => (lit ? [lit] : null), [lit]);
   const openCount = here.filter((e) => entryView(e).open).length;
 
   const steps = bundle.steps.filter((s) => s.kind !== "start" && s.kind !== "end").map((s) => ({ id: s.id, name: s.name }));
@@ -160,6 +181,7 @@ export function useProcessIssues({
               currency={bundle.workspace.settings.currency}
               stepFilter={stepFilter}
               onStepFilterChange={setStepFilter}
+              onHighlight={setLit}
             />
             {registerHref && (
               <a href={registerHref} className="mt-2 block text-xs text-fg-2 hover:underline">
@@ -184,7 +206,9 @@ export function useProcessIssues({
       />
     ),
     openIssues: Object.fromEntries(Object.entries(badges).map(([id, b]) => [id, b.count])),
-    rating: stepRatingOf(badges),
+    rating: stepRatingOf(ratings),
+    stepExtras: (id) => extras.get(id) ?? null,
+    highlight,
     rail,
     showIssues: () => setTab("issues"),
     onScenariosChange: setScenarios,

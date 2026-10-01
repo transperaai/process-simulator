@@ -301,6 +301,51 @@ export const SETTING_HELP = {
     description: "The numbers that split a result into Great, Good, Bad and Operational risk. The default is shown beside each one.",
     example: "Too busy: Great under 70%, Good up to 85%, Bad up to 95%.",
   },
+  absenceWeeks: {
+    label: "Weeks someone is away",
+    description: "How many weeks to pretend someone is away when testing what happens.",
+    example: "2 means the test takes someone out for a fortnight.",
+  },
+  absenceTimes: {
+    label: "Times a year someone is away",
+    description: "How often that happens in a year, to work out what it costs.",
+    example: "2 means about twice a year.",
+  },
+  waitSales: {
+    label: "Normal wait for sales steps",
+    description: "How many hours work should wait at a sales step where you haven't set your own time.",
+    example: "8 hours is 1 working day.",
+  },
+  waitClient: {
+    label: "Normal wait for client work",
+    description: "How many hours work should wait at a client-work step where you haven't set your own time.",
+    example: "16 hours is 2 working days.",
+  },
+  useRule: {
+    label: "Use this rule",
+    description: "Switch a rule off and the app stops rating things with it. Your numbers for it are kept.",
+    example: "Turn off Spare time if you don't want to look for people with free hours.",
+  },
+  cutoff: {
+    label: "Cut-off",
+    description: "A number where one rating stops and the next starts. The agreed default is shown beside the box.",
+    example: "Too busy, Great up to 70%: anyone busy under 70% of their week is rated Great.",
+  },
+  overrideTarget: {
+    label: "What it applies to",
+    description: "Pick the one role, person, step, service or process that needs different cut-offs from everyone else.",
+    example: "Pick Maya Collins to give her a lower busy limit than the rest of the team.",
+  },
+  overrideWhy: {
+    label: "Why",
+    description: "A note for your team on why this one is different. Optional.",
+    example: "Only strategist; keep her lower.",
+  },
+  overrideOff: {
+    label: "Don't use this rule for it",
+    description: "Skips this rule for just this one subject, so it is never rated by it.",
+    example: "Don't rate rework on the kickoff call, where doing it twice is normal.",
+  },
   expectedWait: {
     label: "Expected wait",
     description: "How long work should sit before someone starts it, for this one subject. It replaces the normal wait.",

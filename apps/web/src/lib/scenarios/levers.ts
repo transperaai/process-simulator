@@ -8,7 +8,7 @@
 
 import { headcount, type EngineModel, type ScenarioPatch } from "@transpera-flow/engine";
 
-export type LeverGroup = "demand" | "people" | "process" | "finances";
+export type LeverGroup = "demand" | "people" | "process" | "clients" | "finances" | "market";
 export type LeverUnit = "per_week" | "clients" | "share" | "money" | "people" | "fte" | "hours";
 
 export interface Lever {
@@ -32,7 +32,9 @@ export const GROUP_LABELS: Record<LeverGroup, string> = {
   demand: "Demand",
   people: "People",
   process: "Process",
+  clients: "Clients and churn",
   finances: "Finances",
+  market: "Market",
 };
 
 /** Relative levers run from −90% to +100%. */
@@ -59,8 +61,8 @@ export function buildLevers(model: EngineModel): Lever[] {
   });
   add({
     path: "demand.active_clients",
-    group: "demand",
-    section: "Demand",
+    group: "clients",
+    section: "Clients",
     label: "Active clients",
     op: "set",
     base: model.activeClients,
@@ -71,8 +73,8 @@ export function buildLevers(model: EngineModel): Lever[] {
   });
   add({
     path: "demand.churn_monthly",
-    group: "demand",
-    section: "Demand",
+    group: "clients",
+    section: "Clients",
     label: "Monthly churn",
     op: "set",
     base: model.churnMonthly,

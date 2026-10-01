@@ -5,10 +5,13 @@
 // simulation hook, stale runs cancelled).
 
 import { useId } from "react";
-import { GROUP_LABELS, leverResult, neutral, type Lever, type LeverGroup, type LeverValues } from "@/lib/scenarios/levers";
+import Link from "next/link";
+import { Help } from "@/components/help";
+import { leverResult, neutral, type Lever, type LeverGroup, type LeverValues } from "@/lib/scenarios/levers";
+import { GROUP_LABELS, LEVER_GROUP_ORDER, leverKind, leverKindId } from "@/lib/scenarios/lever-catalogue";
 import { formatCurrency, formatNumber } from "@/lib/format";
 
-const GROUPS: LeverGroup[] = ["demand", "people", "process", "finances"];
+const GROUPS: readonly LeverGroup[] = LEVER_GROUP_ORDER;
 
 export function formatLeverValue(lever: Lever, value: number, currency: string): string {
   switch (lever.unit) {
@@ -40,6 +43,8 @@ function LeverRow({
   onChange: (value: number | undefined) => void;
 }) {
   const id = useId();
+  const kindId = leverKindId(lever);
+  const kind = kindId ? leverKind(kindId) : undefined;
   const moved = Math.abs(value - neutral(lever)) > 1e-9;
   const pct = Math.round((value - 1) * 100);
   const shown =
@@ -52,9 +57,12 @@ function LeverRow({
         : formatLeverValue(lever, value, currency);
   return (
     <div className="grid grid-cols-[1fr_auto] items-center gap-x-2 gap-y-0.5">
-      <label htmlFor={id} className="truncate text-xs text-fg-2">
-        {lever.label}
-      </label>
+      <span className="flex min-w-0 items-center">
+        <label htmlFor={id} className="truncate text-xs text-fg-2">
+          {lever.label}
+        </label>
+        {kind && <Help label={kind.label} description={kind.description} example={kind.example} />}
+      </span>
       <span className="flex items-center gap-1">
         <output htmlFor={id} className={`text-xs tabular-nums ${moved ? "font-semibold text-accent" : "text-fg-2"}`}>
           {shown}
@@ -88,6 +96,8 @@ export function LeverPanel({
   onChange,
   onReset,
   status,
+  hiddenCount = 0,
+  settingsHref,
 }: {
   levers: Lever[];
   values: LeverValues;
@@ -95,6 +105,10 @@ export function LeverPanel({
   onChange: (path: string, value: number | undefined) => void;
   onReset: () => void;
   status: string;
+  /** How many lever kinds the workspace has switched off in Settings -> Levers. */
+  hiddenCount?: number;
+  /** The Levers settings page, to switch them back on. */
+  settingsHref?: string;
 }) {
   const moved = levers.filter((l) => values[l.path] !== undefined && Math.abs(values[l.path]! - neutral(l)) > 1e-9).length;
   return (
@@ -112,6 +126,16 @@ export function LeverPanel({
       <p className="text-xs text-fg-3" aria-live="polite">
         {status}
       </p>
+      {hiddenCount > 0 && (
+        <p className="text-xs text-fg-3">
+          {hiddenCount} kind{hiddenCount === 1 ? "" : "s"} of lever hidden.{" "}
+          {settingsHref && (
+            <Link href={settingsHref} className="underline">
+              Change in Settings → Levers
+            </Link>
+          )}
+        </p>
+      )}
       <div className="flex max-h-[40rem] flex-col gap-2 overflow-y-auto pr-1">
         {GROUPS.map((group) => {
           const inGroup = levers.filter((l) => l.group === group);

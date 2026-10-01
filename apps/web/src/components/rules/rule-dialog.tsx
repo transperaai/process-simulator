@@ -55,9 +55,12 @@ function CutoffBoxes({
     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 sm:grid-cols-[minmax(0,1fr)_7rem_auto]">
       {ui.inputs.map((input, i) => (
         <div key={input.label} className="contents">
-          <label htmlFor={`${idPrefix}-${i}`} className="text-sm">
-            {input.label}
-          </label>
+          <span className="flex items-center">
+            <label htmlFor={`${idPrefix}-${i}`} className="text-sm">
+              {input.label}
+            </label>
+            <Help {...SETTING_HELP.cutoff} />
+          </span>
           <div className="flex items-center gap-1.5">
             <Input
               id={`${idPrefix}-${i}`}
@@ -152,6 +155,7 @@ export function RuleDialog({
         <label className="flex items-center gap-2 text-sm font-medium">
           <Switch checked={current.enabled} disabled={!canEdit} onCheckedChange={(on) => update(setRuleEnabled(settings, rule, on))} />
           Use this rule
+          <Help {...SETTING_HELP.useRule} />
         </label>
 
         {ui.inputs.length > 0 && (
@@ -294,7 +298,10 @@ function OverridesSection({
         <div className="flex flex-col gap-2 rounded-lg border border-dashed border-border p-3">
           <div className="grid gap-2 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-              Applies to
+              <span className="flex items-center">
+                Applies to
+                <Help {...SETTING_HELP.overrideTarget} />
+              </span>
               <NativeSelect
                 value={activeKind}
                 onChange={(e) => {
@@ -311,7 +318,10 @@ function OverridesSection({
               </NativeSelect>
             </label>
             <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-              Which one
+              <span className="flex items-center">
+                Which one
+                <Help {...SETTING_HELP.overrideTarget} label="Which one" />
+              </span>
               <NativeSelect value={subject || options[0]?.id || ""} onChange={(e) => setSubject(e.target.value)} aria-label="Which one the override applies to">
                 {options.map((o) => (
                   <option key={o.id} value={o.id}>
@@ -331,12 +341,16 @@ function OverridesSection({
             </label>
           )}
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            Why (optional)
+            <span className="flex items-center">
+              Why (optional)
+              <Help {...SETTING_HELP.overrideWhy} />
+            </span>
             <Input value={why} maxLength={200} placeholder="Only strategist; keep her lower" onChange={(e) => setWhy(e.target.value)} />
           </label>
           <label className="flex items-center gap-2 text-xs">
             <Switch checked={off} onCheckedChange={setOff} />
             Don&apos;t use this rule for it
+            <Help {...SETTING_HELP.overrideOff} />
           </label>
           {error && (
             <p role="alert" className="text-xs text-destructive">

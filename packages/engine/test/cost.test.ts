@@ -12,6 +12,8 @@ import {
   larkspurModel,
   lossValueAtStep,
   northbeamModel,
+  northbeamWithClientGroups,
+  withClientGroups,
   northbeamWithServices,
   northbeamWithServicing,
   remainingTenure,
@@ -22,6 +24,7 @@ import {
   type EngineModel,
   type EngineStep,
 } from "../src";
+import { groupServiceOf } from "../src/clients";
 import { servicingStepIds } from "../src/servicing";
 
 // Cost per month (issue #108; docs/analysis-rules.md "Cost per month"): what a
@@ -296,6 +299,31 @@ describe("the cost of each insight", () => {
     const total = [...servicing].reduce((sum, id) => sum + (r.steps[id]?.slaBreaches ?? 0), 0);
     for (const i of client) expect(i.cost.perMonth).toBeCloseTo(excess * (r.steps[i.stepId!]!.slaBreaches / total), 6);
     expect(client.reduce((sum, i) => sum + i.cost.perMonth!, 0)).toBeGreaterThan(0);
+  });
+
+  it("client groups: churn risk and missed deadlines are costed per group of unnamed clients", () => {
+    const base = northbeamWithClientGroups();
+    // Make them unhealthy so a group is a finding, and the servicing steps miss their deadlines.
+    const m: EngineModel = {
+      ...base,
+      clientGroups: Object.fromEntries(Object.entries(base.clientGroups!).map(([id, g]) => [id, { ...g, health: 30 }])),
+      steps: base.steps.map((s) => ({ ...s, sla: 2 })),
+    };
+    const r = simulate(m, 8, 1);
+    const issues = detectIssues(m, r, NO_ESC);
+    const groups = issues.filter((i) => i.key.startsWith("churn_risk:group:"));
+    expect(groups.length).toBeGreaterThan(0);
+    const grouped = withClientGroups(m);
+    for (const i of groups) {
+      const sid = i.key.split(":")[2]!;
+      const members = Object.keys(r.clients!).filter((k) => groupServiceOf(k) === sid);
+      const value = clientLossValue(grouped, grouped.clients![members[0]!]!, 12);
+      expect(i.cost.perMonth).toBeCloseTo(i.metrics.churn_monthly! * members.length * value, 6);
+      expect(i.cost.perMonth).toBeGreaterThan(0);
+    }
+    const servicing = servicingStepIds(m);
+    const sla = issues.filter((i) => i.key.startsWith("sla:") && servicing.has(i.stepId!));
+    expect(sla.some((i) => (i.cost.perMonth ?? 0) > 0)).toBe(true);
   });
 
   it("spare time: idle hours at cost rates; too slow overall: revenue delayed; goals met: no money method", () => {

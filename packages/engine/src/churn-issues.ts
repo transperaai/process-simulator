@@ -9,7 +9,7 @@ import type { EngineModel, EngineStep, SimulationResult } from "./model";
 import { fixedRating } from "./ratings";
 import { DEFAULT_COST_CONFIG, clientLossValue, formatMoney, type CostConfig } from "./cost";
 import { AT_RISK_HEALTH, clientChurnSensitivity, servicingLinks } from "./servicing";
-import { clientChurnMonthly } from "./clients";
+import { clientChurnMonthly, clientHealthSummary, groupServiceOf, withClientGroups } from "./clients";
 
 const LOCALE = "en-GB";
 const num = (v: number, digits = 1) => v.toLocaleString(LOCALE, { maximumFractionDigits: digits, minimumFractionDigits: 0 });
@@ -17,7 +17,8 @@ const pct = (share: number) => `${Math.round(share * 100)}%`;
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /** Churn-risk issues for a run of `model`, by client id. */
-export function churnRiskIssues(model: EngineModel, result: SimulationResult, money: CostConfig = DEFAULT_COST_CONFIG): DetectedIssue[] {
+export function churnRiskIssues(source: EngineModel, result: SimulationResult, money: CostConfig = DEFAULT_COST_CONFIG): DetectedIssue[] {
+  const model = withClientGroups(source);
   const clients = result.clients;
   if (!clients || !model.clients) return [];
   const named = Boolean(model.people && Object.keys(model.people).length);
@@ -28,7 +29,8 @@ export function churnRiskIssues(model: EngineModel, result: SimulationResult, mo
   for (const cid of Object.keys(clients).sort(cmp)) {
     const c = clients[cid]!;
     const client = model.clients[cid];
-    if (!client || !(c.health.mean < AT_RISK_HEALTH)) continue;
+    // Unnamed clients of a group are reported together below, not one by one.
+    if (!client || groupServiceOf(cid) !== null || !(c.health.mean < AT_RISK_HEALTH)) continue;
     const start = c.trajectory[0] ?? c.health.mean;
     const end = c.health.mean;
     const t = c.touchpoints;
@@ -93,6 +95,62 @@ export function churnRiskIssues(model: EngineModel, result: SimulationResult, mo
       fix: roleId && serviced
         ? { name: `Hire another ${model.roles[roleId]?.name ?? "person"}`, patch: [{ path: `roles.${roleId}.headcount`, op: "add", value: 1 }] }
         : null,
+    });
+  }
+
+  // Client groups: one issue per group rated Bad or Operational risk (rule 9), keyed by its service.
+  for (const group of clientHealthSummary(model, result).groups) {
+    // Rule 9: a group rated Bad or Operational risk (health under 65) is a finding; Good and Great are not.
+    if (group.rating === "great" || group.rating === "good") continue;
+    const members = Object.keys(clients).filter((k) => groupServiceOf(k) === group.service);
+    const t = { onTime: 0, late: 0, missed: 0 };
+    let churnMonthly = 0;
+    for (const k of members) {
+      const c = clients[k]!;
+      t.onTime += c.touchpoints.onTime;
+      t.late += c.touchpoints.late;
+      t.missed += c.touchpoints.missed;
+      churnMonthly += c.churnMonthly.mean;
+    }
+    churnMonthly /= members.length;
+    const serviced = t.onTime + t.late + t.missed > 0;
+    const trend = group.health < group.startHealth - 0.5 ? `falls from ${num(group.startHealth, 0)} to ${num(group.health, 0)}` : `stays at ${num(group.health, 0)}`;
+    out.push({
+      key: `churn_risk:group:${group.service}`,
+      type: "churn_risk",
+      ...fixedRating(group.rating),
+      cost: (() => {
+        // Clients expected to leave in a month × what losing one is worth (its fee × the tenure it has left, capped).
+        const value = clientLossValue(model, model.clients![members[0]!]!, money.capMonths);
+        const leaving = churnMonthly * members.length;
+        return {
+          perMonth: leaving * value,
+          hoursPerMonth: null,
+          method: `Through churn: about ${num(leaving)} of the ${num(members.length, 0)} clients leave in a month (${pct(churnMonthly)} each) × ${formatMoney(value, money.currency)}, a client's monthly fee × the tenure it has left (capped at ${num(money.capMonths, 0)} months).`,
+        };
+      })(),
+      title: `${group.name} clients: health ${trend}, ${group.rating === "risk" ? "at risk of churning" : "slipping"}`,
+      evidence:
+        `Simulated: the average health of the ${num(group.clients, 0)} ${group.name} clients ${trend} over the ${num(weeks, 0)}-week run (Bad below 65, Operational risk below ${AT_RISK_HEALTH}). ` +
+        (serviced
+          ? `Servicing touchpoints per run, all of them: ${num(t.onTime)} on time, ${num(t.late)} late, ${num(t.missed)} missed. `
+          : "None of its services has a servicing process, so nothing moves their health. ") +
+        `Monthly churn risk ${pct(churnMonthly)}; about ${num(group.churned)} of them leave in a run.`,
+      metrics: {
+        health: group.health,
+        health_start: group.startHealth,
+        clients: group.clients,
+        touchpoints_on_time: t.onTime,
+        touchpoints_late: t.late,
+        touchpoints_missed: t.missed,
+        churn_monthly: churnMonthly,
+        churned: group.churned,
+      },
+      stepId: null,
+      roleId: null,
+      personId: null,
+      clientId: null,
+      fix: null,
     });
   }
   return out;

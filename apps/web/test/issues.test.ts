@@ -63,7 +63,7 @@ const scenarios = northbeamScenarios();
  */
 function northbeamDetections(): DetectedIssue[] {
   const b = northbeamBundle();
-  const model = toEngineModel({ ...b, clients: [], clientServices: [], clientAssignments: [] }, START);
+  const model = toEngineModel({ ...b, clients: [], clientServices: [], clientAssignments: [], clientGroups: [] }, START);
   return detectIssues(model, simulate(model, 30, 1), {}, { absence: absenceTest(model) }).filter((d) => d.key.startsWith("spof:"));
 }
 

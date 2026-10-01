@@ -9,10 +9,8 @@ import {
   companyOf,
   NORTHBEAM_WORKSPACE_ID,
   northbeamBundle,
-  northbeamClientIds,
   northbeamLeadSourceIds,
   northbeamPersonIds,
-  northbeamRoleIds,
   northbeamServiceIds,
   northbeamSourceIds,
   snapshotModel,
@@ -67,27 +65,12 @@ export function demoSuggestions(): SuggestionRow[] {
       evidence: [{ source_id: strategyInterview, speaker: "Maya Collins", quote: "Arjun moves to four days a week from November.", timestamp: "00:25:30", value: 0.8 }],
       note: "Four days out of five.",
     }),
-    row(
-      3,
-      "clients",
-      null,
-      {
-        set: { name: "Fernbrook Vets", mrr: 3500, start_date: "2026-11-01" },
-        services: [northbeamServiceIds.seo],
-        assignments: {
-          [northbeamRoleIds.strat]: person("Maya Collins"),
-          [northbeamRoleIds.am]: person("Leah Brooks"),
-          [northbeamRoleIds.seo]: person("Chloe Evans"),
-          [northbeamRoleIds.fin]: person("Rosa Diaz"),
-        },
-      },
-      {
-        evidence: [{ source_id: salesNotes, speaker: "Tom Reed", quote: "Fernbrook signed on Friday, SEO at three and a half a month.", timestamp: null, value: 3500 }],
-        note: "A new SEO client starting in November; assigned like the other SEO clients.",
-      },
-    ),
-    row(4, "clients", northbeamClientIds.c01!, { set: { mrr: 3800 } }, {
-      evidence: [{ source_id: salesNotes, speaker: "Tom Reed", quote: "Harbour Lane went up to 3,800 in September.", timestamp: null, value: 3800 }],
+    row(3, "people", person("Leah Brooks"), { set: { fte: 0.9 } }, {
+      evidence: [{ source_id: strategyInterview, speaker: "Maya Collins", quote: "Leah drops a half day a week from November.", timestamp: "00:27:10", value: 0.9 }],
+      note: "Nine tenths of a full-time week.",
+    }),
+    row(4, "services", northbeamServiceIds.seo, { set: { price: 3700 } }, {
+      evidence: [{ source_id: salesNotes, speaker: "Tom Reed", quote: "New SEO clients are on 3,700 now.", timestamp: null, value: 3700 }],
     }),
     row(5, "services", northbeamServiceIds.ppc, { set: { price: 4500 } }, {
       evidence: [{ source_id: salesNotes, speaker: "Tom Reed", quote: "New PPC clients are on 4,500 now.", timestamp: null, value: 4500 }],
@@ -124,7 +107,7 @@ export function demoCompany(): CompanyModel {
 
 /**
  * The snapshot of the demo's saved "Audit baseline" run: the model two days
- * before, when overtime wasn't allowed, Harbour Lane paid 3,200, Google Ads
+ * before, when overtime wasn't allowed, the SEO retainer was 3,300, Google Ads
  * brought 3 leads a week and Chloe Evans hadn't joined.
  */
 export function demoBaselineSnapshot(): ModelSnapshot {
@@ -133,7 +116,7 @@ export function demoBaselineSnapshot(): ModelSnapshot {
   const earlier: CompanyModel = {
     ...m,
     workspace: { ...m.workspace, settings: { ...m.workspace.settings, overtime_cap: 0 } },
-    clients: m.clients.map((c) => (c.id === northbeamClientIds.c01 ? { ...c, mrr: 3200 } : c)),
+    services: m.services.map((s) => (s.id === northbeamServiceIds.seo ? { ...s, price: 3300 } : s)),
     leadSources: m.leadSources.map((l) => (l.id === northbeamLeadSourceIds.ads ? { ...l, volume_week: 3 } : l)),
     people: m.people.filter((p) => p.id !== chloe),
     personRoles: m.personRoles.filter((r) => r.person_id !== chloe),

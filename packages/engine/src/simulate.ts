@@ -12,7 +12,7 @@
 //
 // Time runs from -warmup to H; everything reported is measured over [0, H].
 
-import { carriersFor, clientChurnMonthly, clientRoleLoads, rolePools } from "./clients";
+import { carriersFor, clientChurnMonthly, clientRoleLoads, rolePools, withClientGroups } from "./clients";
 import {
   AT_RISK_HEALTH,
   churnProbability,
@@ -544,7 +544,7 @@ export function runOnce(
   sampleWeekly = false,
 ): ReplicationResult {
   // Groups and child processes are only a view: runs see leaf steps (a no-op for flat models).
-  model = flattenModel(model);
+  model = withClientGroups(flattenModel(model));
   const streams = new Streams(seed);
   let labels = streamLabels.get(model);
   if (!labels) streamLabels.set(model, (labels = new StreamLabels()));
@@ -1769,7 +1769,7 @@ function clientResults(model: EngineModel, runs: ReplicationResult[]): Record<st
 const visitShare = (n: number, visits: number) => (visits > 0 ? Math.min(1, n / visits) : 0);
 
 export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationResult {
-  model = flattenModel(model);
+  model = withClientGroups(flattenModel(model));
   const runs: ReplicationResult[] = [];
   let trace: TraceEntity[] | null = null;
   const start = initialState(model);

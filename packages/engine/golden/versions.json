@@ -26,7 +26,13 @@
   {
     "version": "1.4.0",
     "date": "2026-10-01",
+    "note": "Client groups (A55): clients can be counted per service and are simulated as unnamed clients; groups that count no clients change nothing; adds the northbeam-groups golden model, and the group churn-risk findings join it. The existing golden models do not move.",
+    "digest": "sha256:98ec6a6b6e850ef4d5dfe27ac7b6f35a17ac5ac0c2bec9bc68599349ce48d278"
+  },
+  {
+    "version": "1.5.0",
+    "date": "2026-10-01",
     "note": "Cost per month (issue #108): detected issues carry an estimated cost per month and sort by it within a rating; the golden outputs now lock each issue's cost, and Northbeam's audit step carries a 5% lost-per-day of waiting so its wait insight is costed. The absence test also records wins lost (a weekly won series) for the cost. No simulated number changed.",
-    "digest": "sha256:5697e8079debd1fe493c3499cd30e2bee0f15120cf00da4d24f0c650886d92f5"
+    "digest": "sha256:cf72c19465efdb5e3da025e8f85b0ba490bb6ee430571d0da004a0a3ca8cf974"
   }
 ]

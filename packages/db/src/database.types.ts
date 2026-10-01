@@ -184,6 +184,66 @@ export type Database = {
           },
         ]
       }
+      client_groups: {
+        Row: {
+          client_count: number
+          churn_monthly: number
+          created_at: string
+          created_by: string | null
+          fee: number
+          id: string
+          provenance: Json
+          service_id: string
+          starting_health: number
+          stay_months: number
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          client_count?: number
+          churn_monthly?: number
+          created_at?: string
+          created_by?: string | null
+          fee?: number
+          id?: string
+          provenance?: Json
+          service_id: string
+          starting_health?: number
+          stay_months?: number
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          client_count?: number
+          churn_monthly?: number
+          created_at?: string
+          created_by?: string | null
+          fee?: number
+          id?: string
+          provenance?: Json
+          service_id?: string
+          starting_health?: number
+          stay_months?: number
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_groups_service_id_workspace_id_fkey"
+            columns: ["service_id", "workspace_id"]
+            isOneToOne: true
+            referencedRelation: "services"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "client_groups_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_services: {
         Row: {
           client_id: string

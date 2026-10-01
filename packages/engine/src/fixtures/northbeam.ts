@@ -1,8 +1,8 @@
 import type { EngineModel } from "../model";
-import { NORTHBEAM_FALLBACK_LOAD, NORTHBEAM_ROSTER, NORTHBEAM_TEAM, northbeamClientKey } from "./northbeam-roster";
+import { NORTHBEAM_CLIENT_GROUPS, NORTHBEAM_FALLBACK_LOAD, NORTHBEAM_ROSTER, NORTHBEAM_TEAM, northbeamClientKey } from "./northbeam-roster";
 import { NORTHBEAM_SERVICING } from "./northbeam-servicing";
 
-export { NORTHBEAM_FALLBACK_LOAD, NORTHBEAM_ROSTER, NORTHBEAM_TEAM, northbeamClientKey, type NorthbeamClient } from "./northbeam-roster";
+export { NORTHBEAM_CLIENT_GROUPS, NORTHBEAM_FALLBACK_LOAD, NORTHBEAM_ROSTER, NORTHBEAM_TEAM, northbeamClientKey, type NorthbeamClient } from "./northbeam-roster";
 export { NORTHBEAM_SERVICING, type NorthbeamServicingProcess, type NorthbeamServicingStep } from "./northbeam-servicing";
 
 /**
@@ -162,4 +162,21 @@ export function northbeamWithServicing(): EngineModel {
     Object.entries(base.services!).map(([id, sv]) => [id, { ...sv, churnSensitivity: 3, servicing: servicing.map((l) => ({ ...l })) }]),
   );
   return { ...base, services, ends, servicingProcesses, steps };
+}
+
+/**
+ * Northbeam as the seed loads it since issue #120: its clients are counted per
+ * service (NORTHBEAM_CLIENT_GROUPS) instead of named, and the engine simulates
+ * unnamed clients from those numbers. Everything else is `northbeamWithServicing()`:
+ * the named roster stays in the database, hidden, and is not simulated.
+ */
+export function northbeamWithClientGroups(): EngineModel {
+  const { clients: _named, ...base } = northbeamWithServicing();
+  return {
+    ...base,
+    activeClients: NORTHBEAM_CLIENT_GROUPS.reduce((a, g) => a + g.count, 0),
+    clientGroups: Object.fromEntries(
+      NORTHBEAM_CLIENT_GROUPS.map(({ service, ...g }) => [service, g]),
+    ),
+  };
 }

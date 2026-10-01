@@ -21,7 +21,7 @@ import type { EngineModel, EngineStep, SimulationResult } from "./model";
 import { pct as percentile } from "./simulate";
 import { checkSuccessMeasures, NO_SUCCESS_MEASURES, type SuccessMeasureSource } from "./success";
 import { churnRiskIssues } from "./churn-issues";
-import { clientChurnMonthly } from "./clients";
+import { clientChurnMonthly, withClientGroups } from "./clients";
 import {
   WEEKS_PER_MONTH,
   averageDealValue,
@@ -256,15 +256,17 @@ export function detectIssues(
   };
   /** Rule 7: client work through the churn it drives; nothing for work that isn't for a client. */
   const slaCost = (s: EngineStep): IssueCost => {
-    if (!servicing.has(s.id) || !result.clients || !model.clients) return noCost("Not client work, so no money method.");
+    // Client groups are expanded into their unnamed clients, as the run's results are keyed (clients.ts).
+    const grouped = withClientGroups(model);
+    if (!servicing.has(s.id) || !result.clients || !grouped.clients) return noCost("Not client work, so no money method.");
     let total = 0;
     for (const id of servicing) total += result.steps[id]?.slaBreaches ?? 0;
     const share = total > 0 ? (result.steps[s.id]?.slaBreaches ?? 0) / total : 0;
     let excess = 0;
-    for (const [cid, client] of Object.entries(model.clients)) {
+    for (const [cid, client] of Object.entries(grouped.clients)) {
       const c = result.clients[cid];
       if (!c) continue;
-      excess += Math.max(0, c.churnMonthly.mean - clientChurnMonthly(model, client)) * clientLossValue(model, client, money.capMonths);
+      excess += Math.max(0, c.churnMonthly.mean - clientChurnMonthly(grouped, client)) * clientLossValue(grouped, client, money.capMonths);
     }
     return {
       perMonth: excess * share,

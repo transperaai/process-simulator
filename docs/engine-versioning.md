@@ -18,7 +18,9 @@ Each runs with the app's defaults, 30 replications at seed 1. The outputs kept (
 MRR, billed, LTV added and lost revenue, labour, overtime hours and cost, clients at risk and churned, servicing
 touchpoints, the bottleneck role, step and person, utilisation per role (total with its 10–90% range, and its
 pipeline, client, servicing and overtime shares) and per person, each step's arrivals, departures, queue, wait,
-WIP and SLA breaches, and each roster client's final health, churn and at-risk shares.
+WIP and SLA breaches, each roster client's final health, churn and at-risk shares, and the rating of every detected
+issue with how it was reached (the average's band, a bad month, the bottleneck), so a moved cut-off or escalator shows
+as a baseline change.
 
 The baselines are `packages/engine/golden/<model>.json`, one metric per line so a diff reads as a list of what
 moved. `golden/versions.json` is the ledger: every approved version, the date, why the numbers moved, and a sha256

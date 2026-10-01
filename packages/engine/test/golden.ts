@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { larkspurModel, northbeamModel, northbeamWithServicing, simulate, type EngineModel, type SimulationResult, type Stat } from "../src";
+import { detectIssues, larkspurModel, northbeamModel, northbeamWithServicing, simulate, type EngineModel, type SimulationResult, type Stat } from "../src";
 
 export const GOLDEN_DIR = new URL("../golden/", import.meta.url);
 export const VERSION_FILE = new URL("../src/version.ts", import.meta.url);
@@ -53,8 +53,8 @@ const stat = (s: Stat) => ({ mean: s.mean, p10: s.p10, p90: s.p90 });
 /**
  * The outputs a baseline locks (issue #22's list and a little more):
  * throughput, cycle time, revenue, utilisation per role and person, overtime,
- * clients at risk and churned, touchpoints, per-step flow, per-client health
- * and the bottleneck. Numbers are kept exactly: the engine is deterministic
+ * clients at risk and churned, touchpoints, per-step flow, per-client health,
+ * the rating of every detected issue and the bottleneck. Numbers are kept exactly: the engine is deterministic
  * (Node and a browser agree byte for byte), so no tolerance is needed.
  */
 export function keyOutputs(model: EngineModel, r: SimulationResult) {
@@ -81,6 +81,10 @@ export function keyOutputs(model: EngineModel, r: SimulationResult) {
         id,
         { arrivals: s.arrivals, departures: s.departures, avgQueue: s.avgQueue, avgWait: s.avgWait, wip: s.wip, slaBreaches: s.slaBreaches },
       ]),
+    ),
+    // The rating of every detected issue and how it was reached (ratings.ts), so a moved cut-off or escalator shows here.
+    ratings: Object.fromEntries(
+      detectIssues(model, r).map((i) => [i.key, { rating: i.rating, base: i.escalation.base, badMonth: i.escalation.badMonth, bottleneck: i.escalation.bottleneck }]),
     ),
     rosterClients: r.clients
       ? Object.fromEntries(Object.entries(r.clients).map(([id, c]) => [id, { health: c.health.mean, churned: c.churned, atRisk: c.atRisk }]))

@@ -73,7 +73,7 @@ export function SimulationSettings({ data }: { data: WorkspaceSettingsData }) {
           disabled={!canManage}
           hint={
             canManage
-              ? "When someone's client work is more than their week, they work up to this much overtime to keep up; the simulation reports its hours and cost. Beyond it, utilisation shows above 100% and a critical issue is raised."
+              ? "When someone's client work is more than their week, they work up to this much overtime to keep up; the simulation reports its hours and cost. Beyond it, utilisation shows above 100% and an Operational risk is raised."
               : "Only workspace owners can change this."
           }
         />

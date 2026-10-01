@@ -148,7 +148,7 @@ Settings save as you type and change live data. Note each old value and restore 
 - [ ] Change one lead source's volume and check the tiles. (#13) **Expected:** Wins and Lost move in the same direction. Restore the value.
 - [ ] Demand: open **Seasonality** and change one month. (#13) **Expected:** each month has a multiplier, and **Reset to flat (every month 1)** restores it.
 - [ ] Demand: set **Monthly growth in leads**. (#13) **Expected:** it saves; results shift slightly if the horizon covers the growth. Set it back.
-- [ ] Compare Overtime and utilisation before and after setting **Overtime cap** to 0 (then restore it). (#18) **Expected:** with no cap, the **Overtime** tile reads "none allowed (cap 0%)", people over their week show utilisation above 100%, and a critical capacity issue may appear in Issues.
+- [ ] Compare Overtime and utilisation before and after setting **Overtime cap** to 0 (then restore it). (#18) **Expected:** with no cap, the **Overtime** tile reads "none allowed (cap 0%)", people over their week show utilisation above 100%, and an Operational risk capacity issue may appear in Issues.
 - [ ] Read the **Overtime** and **Overtime cost** tiles with the cap restored. (#18) **Expected:** hours and money with ranges.
 
 ## 9. Servicing and health
@@ -172,12 +172,12 @@ Settings save as you type and change live data. Note each old value and restore 
 
 ## 11. Issues register
 
-- [ ] Open **Issues**. (#17) **Expected:** **Issues register** with a count line ("N open issues · N critical · N serious") and filters for Process, Person, Severity, Source and Status.
-- [ ] Look at the three seeded items. (#17) **Expected:** "Every proposal is built by hand", "Only Maya Collins can do Audit & proposal" (Promoted) and "Lead scoring could skip unqualified discovery calls", each with severity, evidence and where it applies.
+- [ ] Open **Issues**. (#17) **Expected:** **Issues register** with a count line ("N open issues · N operational risk · N bad") and filters for Process, Person, Rating, Source and Status.
+- [ ] Look at the three seeded items. (#17) **Expected:** "Every proposal is built by hand", "Only Maya Collins can do Audit & proposal" (Promoted) and "Lead scoring could skip unqualified discovery calls", each with a rating, evidence and where it applies.
 - [ ] Look for detected issues (source: Detected). (#17) **Expected:** items the latest run found, such as a role over 85%, a queue growing without bound, a long wait or a rework or SLA problem; "Checking the latest run…" shows briefly first.
-- [ ] Log a new issue: fill **Title**, Severity, Step, Person, Owner, Fix (scenario), Evidence, and submit. (#17) **Expected:** it appears in the register with all those fields.
-- [ ] Open **Edit** on it, change Status, Severity, Type, Owner and Evidence. (#17) **Expected:** each saves as you go; **Done editing** closes the form.
-- [ ] Use each filter (Process, Person, Severity, Source, Status). (#17) **Expected:** the list narrows to match; "No issues match these filters." appears when nothing does.
+- [ ] Log a new issue: fill **Title**, Rating, Step, Person, Owner, Fix (scenario), Evidence, and submit. (#17) **Expected:** it appears in the register with all those fields.
+- [ ] Open **Edit** on it, change Status, Rating, Type, Owner and Evidence. (#17) **Expected:** each saves as you go; **Done editing** closes the form.
+- [ ] Use each filter (Process, Person, Rating, Source, Status). (#17) **Expected:** the list narrows to match; "No issues match these filters." appears when nothing does.
 - [ ] On the process page, open the panel beside the map (the panel button at the right of the top bar), then **Insights → Issues**. (#17, #93) **Expected:** the tab shows the open count ("Issues · N") and the same list; **Open the full register →** goes to the full page.
 - [ ] Look at Audit & proposal on the map. (#17) **Expected:** a small badge for its issues; clicking it opens that step's issues in the tab.
 - [ ] Delete or close your test issue. (#17) **Expected:** it disappears or moves to closed.
@@ -302,7 +302,7 @@ Left out of the steps above because only a developer can check them, or because 
 - #15: patches stored as `{path, op, value}`; a multiply patch survives re-measurement; headline text comes from templates only; new workspaces get four seeded scenarios; re-run performance targets.
 - #16: deleting or splitting a target marks the scenario `needs_attention`; running a broken scenario returns an error; the broken-scenario issue resolves on re-pointing.
 - #17: detected keys stable across runs; each detector has a triggering test model; promotion isn't duplicated on the next run.
-- #18: tables and RLS; fallback load recomputed as clients are won or churn; overtime, cap and critical capacity issue; reported ongoing utilisation matches the availability used.
+- #18: tables and RLS; fallback load recomputed as clients are won or churn; overtime, cap and Operational risk capacity issue; reported ongoing utilisation matches the availability used.
 - #19: `processes.kind` and `service_servicing`; servicing entities per recurrence; assignment with leave fallback; health and churn formulas; the behaviour test.
 - #20: benchmark for a 40-step, 25-person model; verdict maths; cache reuse test; the time-capped Node variant.
 - #21: conflicted values use triangular ranges in the engine and robustness; "conclusion flips" reporting; the perception-gap trigger at 2× or more.

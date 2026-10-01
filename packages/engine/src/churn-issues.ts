@@ -6,6 +6,7 @@
 
 import type { DetectedIssue } from "./issues";
 import type { EngineModel, EngineStep, SimulationResult } from "./model";
+import { fixedRating } from "./ratings";
 import { AT_RISK_HEALTH, clientChurnSensitivity, servicingLinks } from "./servicing";
 import { clientChurnMonthly } from "./clients";
 
@@ -54,7 +55,8 @@ export function churnRiskIssues(model: EngineModel, result: SimulationResult): D
     out.push({
       key: `churn_risk:client:${cid}`,
       type: "churn_risk",
-      severity: end < 30 || c.churned >= 0.5 ? "critical" : end < 40 ? "serious" : "warning",
+      // Not yet on the rating model (rules 9 and 10 replace it): the old bands, as ratings.
+      ...fixedRating(end < 30 || c.churned >= 0.5 ? "risk" : end < 40 ? "bad" : "good"),
       title: `${client.name}: health ${trend}, at risk of churning`,
       evidence:
         `Simulated: health ${trend} over the ${num(weeks, 0)}-week run (range ${num(c.health.p10, 0)}–${num(c.health.p90, 0)}; below ${AT_RISK_HEALTH} is at risk). ` +

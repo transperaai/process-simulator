@@ -1,8 +1,33 @@
 # Analysis rules
 
 Agreed with Austin, 1 Oct 2026, in the analysis rules session. This replaces the detector thresholds in
-`packages/engine/src/issues.ts` (`DEFAULT_ISSUE_THRESHOLDS`) and the four engine severities. Nothing here is built yet;
-it is the spec for the tickets that follow.
+`packages/engine/src/issues.ts` (`DEFAULT_ISSUE_THRESHOLDS`) and the four engine severities. It is the spec for the tickets that follow.
+
+**Built so far (A41, issue #106):** the rating model and rules 1, 3, 4, 5, 6 and 7 are in
+`packages/engine/src/ratings.ts` and the detectors (`issues.ts`, `overtime-issues.ts`). The rules not listed there still
+run their old logic, mapped onto ratings until their tickets land. Choices the spec left open:
+
+- Overrides: the most specific match wins (person, step, role, service, process); a field it leaves unset falls through.
+  A servicing step belongs to its servicing process and to the services that run it.
+- Expected wait for rule 5, most specific first: a person or step override, the step's own setting, a role, service or
+  process override, then the default of 1 working day (pipeline) or 2 (servicing), in the model's working day
+  (`hoursPerWeek / 5`).
+- A band a rule doesn't have (overtime's Good, rule 4's Good and Bad) is skipped when an escalator raises a rating.
+- Stored issues keep the database's four `severity` values, which stand for the ratings one to one (critical = Operational
+  risk, serious = Bad, warning = Good, info = Great).
+
+### To confirm with Austin
+
+Choices made while building A41 that the spec didn't settle:
+
+- (a) A value exactly on a cut-off goes to the higher band, so exactly 70% busy is Good and exactly 95%, 20% or 25% is
+  Operational risk. Rule 5 is the exception ("within 1x", "up to 1.5x"): a value on a cut-off stays in the lower band.
+- (b) Overtime is rated on the share of the overtime cap used: "regular" overtime is over 1% of the cap, "used up" is 95%
+  of it.
+- (c) Rule 4 (work piling up) is rated on the average only; a bad month isn't read from queue growth, which is noisy per run.
+- (d) The bottleneck bump only raises findings already worse than Great, so a Great that is merely on the bottleneck stays
+  Great.
+- (e) Stored `info` issues now read as "Great", and the log-an-issue form offers Great for an open issue.
 
 ## The rating scale
 

@@ -18,6 +18,7 @@ import {
   entryView,
   filterEntries,
   fixFor,
+  formatIssueCost,
   registerEntries,
   type IssueFilters,
   type RegisterEntry,
@@ -70,9 +71,12 @@ export function IssuesRegister({
   scenarios,
   brokenScenarios = NONE,
   canEdit,
+  currency,
   stepFilter,
   onStepFilterChange,
 }: {
+  /** The workspace currency, for each issue's cost per month. */
+  currency: string;
   /** `rail`: narrow, beside the map; `page`: the full register screen. */
   layout: "rail" | "page";
   state: IssuesState;
@@ -210,6 +214,7 @@ export function IssuesRegister({
               scenarios={scenarios}
               brokenScenarios={brokenScenarios}
               canEdit={canEdit}
+              currency={currency}
               state={state}
               showProcess={processes.length > 1}
             />
@@ -228,9 +233,11 @@ function IssueItem({
   scenarios,
   brokenScenarios,
   canEdit,
+  currency,
   state,
   showProcess,
 }: {
+  currency: string;
   entry: RegisterEntry;
   names: { step: Map<string, string>; person: Map<string, string>; process: Map<string, string> };
   steps: Named[];
@@ -282,6 +289,12 @@ function IssueItem({
     >
       <p className="text-sm font-semibold">{v.title}</p>
       {v.evidence && <p className="mt-0.5 text-xs text-fg-2">{v.evidence}</p>}
+      {entry.kind === "detected" || entry.detection ? (
+        <p className="mt-0.5 text-xs text-fg-2" data-cost title={v.cost?.method}>
+          <span className="font-medium">{formatIssueCost(v.cost, currency)}</span>
+          {v.cost?.method ? <span className="text-fg-3"> · {v.cost.method}</span> : null}
+        </p>
+      ) : null}
       {where.length > 0 && <p className="mt-0.5 text-xs text-fg-3">{where.join(" · ")}</p>}
       <div className="mt-1.5 flex flex-wrap items-center gap-1">
         {meta}

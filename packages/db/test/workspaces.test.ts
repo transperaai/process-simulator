@@ -53,6 +53,15 @@ describe("create_workspace", () => {
     });
   });
 
+  it("a new workspace is in AUD unless it says otherwise, and existing workspaces keep their currency (issue #108)", async () => {
+    await db.client.query("insert into workspaces (name, slug, settings) values ('Old', 'old-gbp', '{\"currency\":\"GBP\"}')");
+    await db.as(users.agency!.claims, async (c) => {
+      const id = (await create(c, "Fresh", "fresh-aud")).rows[0].id as string;
+      expect((await c.query("select settings ->> 'currency' as currency from workspaces where id = $1", [id])).rows[0].currency).toBe("AUD");
+      expect((await c.query("select settings ->> 'currency' as currency from workspaces where slug = 'old-gbp'")).rows[0].currency).toBe("GBP");
+    });
+  });
+
   it("an agency admin reads every workspace; a stranger reads none of them", async () => {
     await db.client.query("insert into workspaces (name, slug) values ('Visible', 'visible')");
     const seen = async (claims: Record<string, unknown>) =>

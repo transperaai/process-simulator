@@ -50,7 +50,7 @@ export function NewWorkspaceForm() {
       </label>
       <label className="flex w-24 flex-col gap-1">
         <span className="text-xs font-medium text-fg-2">Currency</span>
-        <input name="currency" maxLength={3} placeholder="GBP" className={`${input} uppercase`} />
+        <input name="currency" maxLength={3} placeholder="AUD" className={`${input} uppercase`} />
       </label>
       <label className="flex w-28 flex-col gap-1">
         <span className="text-xs font-medium text-fg-2">Horizon (weeks)</span>

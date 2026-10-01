@@ -105,6 +105,7 @@ function part(process: ProcessRow, revisionId: string, steps: LarkspurStep[], ed
         notes: null,
         sla_hours: s.sla ?? null,
         current_wip: s.currentWip ?? null,
+        lost_per_day: null,
         x: s.x,
         y: s.y,
         assumption: false,

@@ -1490,6 +1490,7 @@ export type Database = {
           current_wip: number | null
           id: string
           kind: string
+          lost_per_day: number | null
           name: string
           notes: string | null
           outcome: string | null
@@ -1523,6 +1524,7 @@ export type Database = {
           current_wip?: number | null
           id?: string
           kind?: string
+          lost_per_day?: number | null
           name: string
           notes?: string | null
           outcome?: string | null
@@ -1556,6 +1558,7 @@ export type Database = {
           current_wip?: number | null
           id?: string
           kind?: string
+          lost_per_day?: number | null
           name?: string
           notes?: string | null
           outcome?: string | null

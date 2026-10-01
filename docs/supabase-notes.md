@@ -111,3 +111,7 @@ Estimate for a typical agency (1 consultant plus a few client staff, ~10 workspa
 So one agency uses well under a tenth of the included messages, and the connection quota is 15× the likely peak.
 Watch the Realtime usage page after launch; the first thing to cut, if ever needed, is the notes (names only) and
 the unfiltered deletes.
+
+## Cost per month (issue #108, migration 20261103000000)
+
+Verified only against plain Postgres (the db test harness), not against Supabase: `public.create_workspace` now defaults new workspaces to `AUD` (it is `security invoker`, as before, and was redefined with `create or replace` from the 20261021000000 copy, so its grants are re-applied in the migration), and `steps.lost_per_day` is a plain nullable numeric with a 0-to-1 check. `database.types.ts` was edited by hand for the new column (the `gen:types` command needs the linked Supabase project); regenerate it after applying to production and check the diff.

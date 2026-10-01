@@ -16,6 +16,7 @@ import {
   entryView,
   filterEntries,
   fixFor,
+  formatIssueCost,
   matchingScenario,
   promoteInput,
   registerEntries,
@@ -136,6 +137,35 @@ describe("the register merges tracked issues with this run's detections", () => 
     expect(Object.keys(badges).sort()).toEqual([northbeamStepIds.qualify, audit, kickoff].sort());
     expect(badges[audit]).toMatchObject({ count: 2, rating: "bad" });
     expect(badges[northbeamStepIds.qualify]).toMatchObject({ count: 1, rating: "great" });
+  });
+});
+
+describe("cost per month (issue #108)", () => {
+  const cheap: DetectedIssue = { ...northbeamDetections()[0]!, key: "wait:step:cheap", cost: { perMonth: 800, hoursPerMonth: null, method: "x" } };
+  const dear: DetectedIssue = { ...cheap, key: "wait:step:dear", cost: { perMonth: 9000, hoursPerMonth: null, method: "y" } };
+  const timeOnly: DetectedIssue = { ...cheap, key: "wait:step:time", cost: { perMonth: null, hoursPerMonth: 12, method: "z" } };
+  const none: DetectedIssue = { ...cheap, key: "wait:step:none", cost: { perMonth: null, hoursPerMonth: null, method: "n" } };
+  const worse: DetectedIssue = { ...cheap, key: "wait:step:worse", rating: "risk", cost: { perMonth: 5, hoursPerMonth: null, method: "w" } };
+
+  it("lists open issues by rating, then cost, highest first", () => {
+    const entries = registerEntries([], [none, cheap, timeOnly, dear, worse]);
+    expect(entries.map((e) => entryView(e).id)).toEqual(["wait:step:worse", "wait:step:dear", "wait:step:cheap", "wait:step:time", "wait:step:none"]);
+  });
+
+  it("prints costs in the workspace currency, labelled as estimates; no money method shows time or n/a", () => {
+    expect(formatIssueCost(dear.cost, "AUD")).toBe("About A$9,000 a month (estimate)");
+    expect(formatIssueCost(dear.cost, "GBP")).toBe("About £9,000 a month (estimate)");
+    expect(formatIssueCost(timeOnly.cost, "AUD")).toBe("About 12 h a month (estimate, time only)");
+    expect(formatIssueCost(none.cost, "AUD")).toBe("Cost per month: n/a");
+    expect(formatIssueCost(null, "AUD")).toBe("Cost per month: n/a");
+  });
+
+  it("costs a tracked issue by what the latest run detects for it", () => {
+    const [, promoted] = northbeamIssues();
+    const key = promoted!.detected_key!;
+    const entries = registerEntries([promoted!], [{ ...dear, key }]);
+    expect(entryView(entries[0]!).cost).toEqual(dear.cost);
+    expect(entryView(registerEntries([promoted!], [])[0]!).cost).toBeNull();
   });
 });
 

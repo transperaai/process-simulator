@@ -148,6 +148,8 @@ export interface StepRow {
   sla_hours: number | null;
   /** Items sitting at this step now; null when not entered (docs/PRD.md §6.3.1). */
   current_wip: number | null;
+  /** The share of items (0 to 1) that go cold for each working day they wait here; null when not set. It costs the waiting insight money (issue #108). */
+  lost_per_day: number | null;
   x: number;
   y: number;
   /**

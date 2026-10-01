@@ -16,7 +16,7 @@ export type RemoteChange =
 type Json = Record<string, unknown>;
 
 const STEP_NUMBERS = ["work_hours", "wait_hours", "rework_rate", "x", "y"] as const;
-const STEP_OPTIONAL_NUMBERS = ["sla_hours", "current_wip"] as const;
+const STEP_OPTIONAL_NUMBERS = ["sla_hours", "current_wip", "lost_per_day"] as const;
 const STEP_TEXT = ["name", "kind", "work_dist", "wait_dist"] as const;
 const STEP_OPTIONAL_TEXT = ["outcome", "role_id", "person_id", "rework_to_step_id", "tool", "notes"] as const;
 

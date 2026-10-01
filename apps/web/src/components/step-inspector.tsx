@@ -226,6 +226,23 @@ export function StepInspector({
                 hint={step.current_wip !== null && <ProvenanceBadge step={step} column="current_wip" />}
               />
             </div>
+            <NumberField
+              label="Lost per day of waiting"
+              value={nullableNumber(step.lost_per_day)}
+              optional
+              scale={100}
+              unit="%"
+              min={0}
+              max={100}
+              step={1}
+              placeholder="Not set"
+              save={field("lost_per_day")}
+            />
+            <p className="text-xs text-fg-3">
+              Lost per day of waiting is the share of items that go cold for each working day they wait here (for
+              example, 5% of leads a day). It puts a cost on the waiting insight; leave it empty and that insight shows
+              time instead of money.
+            </p>
             <p className="text-xs text-fg-3">
               Current WIP is what sits at this step now; entering it on any step starts the run from it instead of a
               warm-up. Rework targets and SLAs are saved but not simulated yet.

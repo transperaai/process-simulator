@@ -10095,6 +10095,344 @@ revoke all on function public.create_workspace(text, text, jsonb) from public, a
 grant execute on function public.create_workspace(text, text, jsonb) to authenticated;
 ']);
 
+-- 20261103000000_cost_per_month.sql
+-- Cost per month (docs/analysis-rules.md "Cost per month"; issue #108).
+--
+-- Two small changes:
+--   * New workspaces default to AUD. `public.create_workspace` is redefined as
+--     a copy of the 20261021000000 version whose default settings carry
+--     "currency":"AUD" instead of "GBP". Existing workspaces keep their
+--     currency (nothing here touches `workspaces` rows), and a caller can still
+--     pass any three-letter code.
+--   * Each step gets an optional `lost_per_day`: the share of items that go cold
+--     for each working day they wait there (0.05 is 5% of leads a day). The
+--     "waiting too long" insight costs money through it (items lost × what a
+--     loss is worth at that step); with none set the insight shows time instead.
+--     `save_fields` accepts any column the stored row has, so it needs nothing.
+--
+-- Strictly additive: one nullable column with a check, and a function
+-- replaced by a copy that differs only in the default currency.
+--
+-- Preflight (run each with `bash packages/db/scripts/prod-sql.sh -c "..."`):
+--
+--   1. The column must not exist yet. Expect 0 rows:
+--        select column_name from information_schema.columns
+--        where table_schema='public' and table_name='steps' and column_name='lost_per_day';
+--   2. The function is the 20261021000000 one (it has the 'GBP' default). Expect 1 row:
+--        select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+--        where n.nspname='public' and p.proname='create_workspace' and pg_get_functiondef(p.oid) like '%"currency":"GBP"%';
+--   3. Nothing of ours is applied past roles_and_workspaces. Expect only `20261021000000`:
+--        select version from supabase_migrations.schema_migrations where version >= '20261021000000';
+--
+-- Rollback (run as one transaction):
+--
+--   begin;
+--   alter table public.steps drop constraint if exists steps_lost_per_day;
+--   alter table public.steps drop column if exists lost_per_day;
+--   -- Restore the GBP default: the same function with "currency":"GBP".
+--   create or replace function public.create_workspace(ws_name text, ws_slug text, ws_settings jsonb default '{}')
+--   returns uuid
+--   language plpgsql
+--   security invoker
+--   set search_path = ''
+--   as $$
+--   declare
+--     ws uuid;
+--     k text;
+--     defaults constant jsonb := '{"hours_per_week":40,"horizon_weeks":13,"currency":"GBP","leads_per_week":0,"active_clients":0,"churn_monthly":0,"retainer":0}';
+--   begin
+--     if coalesce(auth.jwt(), '{}') ? 'api_token_id' then
+--       raise exception 'Workspaces are created in the app' using errcode = '42501';
+--     end if;
+--     if auth.uid() is null or not public.is_agency_admin() then
+--       raise exception 'Only agency admins can create workspaces' using errcode = '42501';
+--     end if;
+--     if ws_name is null or char_length(btrim(ws_name)) not between 1 and 200 then
+--       raise exception 'The name must be 1 to 200 characters' using errcode = '22023';
+--     end if;
+--     ws_settings := coalesce(ws_settings, '{}');
+--     if jsonb_typeof(ws_settings) <> 'object' then
+--       raise exception 'settings must be an object' using errcode = '22023';
+--     end if;
+--     for k in select jsonb_object_keys(ws_settings) loop
+--       if k not in ('hours_per_week', 'horizon_weeks', 'currency') then
+--         raise exception '% can''t be set when creating a workspace', k using errcode = '22023';
+--       end if;
+--     end loop;
+--     if ws_settings ? 'hours_per_week' and not (
+--       jsonb_typeof(ws_settings -> 'hours_per_week') = 'number'
+--       and (ws_settings ->> 'hours_per_week')::numeric > 0 and (ws_settings ->> 'hours_per_week')::numeric <= 168) then
+--       raise exception 'hours_per_week must be a number above 0 and at most 168' using errcode = '22023';
+--     end if;
+--     if ws_settings ? 'horizon_weeks' and not (
+--       jsonb_typeof(ws_settings -> 'horizon_weeks') = 'number'
+--       and (ws_settings ->> 'horizon_weeks')::numeric = trunc((ws_settings ->> 'horizon_weeks')::numeric)
+--       and (ws_settings ->> 'horizon_weeks')::numeric between 1 and 104) then
+--       raise exception 'horizon_weeks must be a whole number from 1 to 104' using errcode = '22023';
+--     end if;
+--     if ws_settings ? 'currency' and not (
+--       jsonb_typeof(ws_settings -> 'currency') = 'string' and (ws_settings ->> 'currency') ~ '^[A-Z]{3}$') then
+--       raise exception 'currency must be a three-letter code such as GBP' using errcode = '22023';
+--     end if;
+--
+--     insert into public.workspaces (name, slug, settings)
+--     values (btrim(ws_name), ws_slug, defaults || ws_settings)
+--     returning id into ws;
+--
+--     insert into public.memberships (workspace_id, user_id, role, source)
+--     values (ws, auth.uid(), 'agency_admin', 'manual');
+--
+--     return ws;
+--   end;
+--   $$;
+--   delete from supabase_migrations.schema_migrations where version = '20261103000000';
+--   commit;
+--
+-- Production data: none needed. Workspaces already created keep their currency.
+
+-- ---------------------------------------------------------------------------
+-- Steps: lost per day of waiting
+-- ---------------------------------------------------------------------------
+
+alter table public.steps
+  -- The share of items that go cold for each working day they wait at this step (0 to 1); null: not set.
+  add column lost_per_day numeric,
+  add constraint steps_lost_per_day check (lost_per_day is null or (lost_per_day >= 0 and lost_per_day <= 1));
+
+-- ---------------------------------------------------------------------------
+-- Creating a workspace: AUD by default
+-- ---------------------------------------------------------------------------
+
+-- Agency admins only, and not over an API token. Runs as the caller, so RLS
+-- checks both inserts; `returning` passes the select policy for an admin.
+create or replace function public.create_workspace(ws_name text, ws_slug text, ws_settings jsonb default '{}')
+returns uuid
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  ws uuid;
+  k text;
+  defaults constant jsonb := '{"hours_per_week":40,"horizon_weeks":13,"currency":"AUD","leads_per_week":0,"active_clients":0,"churn_monthly":0,"retainer":0}';
+begin
+  if coalesce(auth.jwt(), '{}') ? 'api_token_id' then
+    raise exception 'Workspaces are created in the app' using errcode = '42501';
+  end if;
+  if auth.uid() is null or not public.is_agency_admin() then
+    raise exception 'Only agency admins can create workspaces' using errcode = '42501';
+  end if;
+  if ws_name is null or char_length(btrim(ws_name)) not between 1 and 200 then
+    raise exception 'The name must be 1 to 200 characters' using errcode = '22023';
+  end if;
+  ws_settings := coalesce(ws_settings, '{}');
+  if jsonb_typeof(ws_settings) <> 'object' then
+    raise exception 'settings must be an object' using errcode = '22023';
+  end if;
+  for k in select jsonb_object_keys(ws_settings) loop
+    if k not in ('hours_per_week', 'horizon_weeks', 'currency') then
+      raise exception '% can''t be set when creating a workspace', k using errcode = '22023';
+    end if;
+  end loop;
+  if ws_settings ? 'hours_per_week' and not (
+    jsonb_typeof(ws_settings -> 'hours_per_week') = 'number'
+    and (ws_settings ->> 'hours_per_week')::numeric > 0 and (ws_settings ->> 'hours_per_week')::numeric <= 168) then
+    raise exception 'hours_per_week must be a number above 0 and at most 168' using errcode = '22023';
+  end if;
+  if ws_settings ? 'horizon_weeks' and not (
+    jsonb_typeof(ws_settings -> 'horizon_weeks') = 'number'
+    and (ws_settings ->> 'horizon_weeks')::numeric = trunc((ws_settings ->> 'horizon_weeks')::numeric)
+    and (ws_settings ->> 'horizon_weeks')::numeric between 1 and 104) then
+    raise exception 'horizon_weeks must be a whole number from 1 to 104' using errcode = '22023';
+  end if;
+  if ws_settings ? 'currency' and not (
+    jsonb_typeof(ws_settings -> 'currency') = 'string' and (ws_settings ->> 'currency') ~ '^[A-Z]{3}$') then
+    raise exception 'currency must be a three-letter code such as AUD' using errcode = '22023';
+  end if;
+
+  insert into public.workspaces (name, slug, settings)
+  values (btrim(ws_name), ws_slug, defaults || ws_settings)
+  returning id into ws;
+
+  insert into public.memberships (workspace_id, user_id, role, source)
+  values (ws, auth.uid(), 'agency_admin', 'manual');
+
+  return ws;
+end;
+$$;
+
+revoke all on function public.create_workspace(text, text, jsonb) from public, anon;
+grant execute on function public.create_workspace(text, text, jsonb) to authenticated;
+
+insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261103000000', 'cost_per_month', array['-- Cost per month (docs/analysis-rules.md "Cost per month"; issue #108).
+--
+-- Two small changes:
+--   * New workspaces default to AUD. `public.create_workspace` is redefined as
+--     a copy of the 20261021000000 version whose default settings carry
+--     "currency":"AUD" instead of "GBP". Existing workspaces keep their
+--     currency (nothing here touches `workspaces` rows), and a caller can still
+--     pass any three-letter code.
+--   * Each step gets an optional `lost_per_day`: the share of items that go cold
+--     for each working day they wait there (0.05 is 5% of leads a day). The
+--     "waiting too long" insight costs money through it (items lost × what a
+--     loss is worth at that step); with none set the insight shows time instead.
+--     `save_fields` accepts any column the stored row has, so it needs nothing.
+--
+-- Strictly additive: one nullable column with a check, and a function
+-- replaced by a copy that differs only in the default currency.
+--
+-- Preflight (run each with `bash packages/db/scripts/prod-sql.sh -c "..."`):
+--
+--   1. The column must not exist yet. Expect 0 rows:
+--        select column_name from information_schema.columns
+--        where table_schema=''public'' and table_name=''steps'' and column_name=''lost_per_day'';
+--   2. The function is the 20261021000000 one (it has the ''GBP'' default). Expect 1 row:
+--        select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+--        where n.nspname=''public'' and p.proname=''create_workspace'' and pg_get_functiondef(p.oid) like ''%"currency":"GBP"%'';
+--   3. Nothing of ours is applied past roles_and_workspaces. Expect only `20261021000000`:
+--        select version from supabase_migrations.schema_migrations where version >= ''20261021000000'';
+--
+-- Rollback (run as one transaction):
+--
+--   begin;
+--   alter table public.steps drop constraint if exists steps_lost_per_day;
+--   alter table public.steps drop column if exists lost_per_day;
+--   -- Restore the GBP default: the same function with "currency":"GBP".
+--   create or replace function public.create_workspace(ws_name text, ws_slug text, ws_settings jsonb default ''{}'')
+--   returns uuid
+--   language plpgsql
+--   security invoker
+--   set search_path = ''''
+--   as $$
+--   declare
+--     ws uuid;
+--     k text;
+--     defaults constant jsonb := ''{"hours_per_week":40,"horizon_weeks":13,"currency":"GBP","leads_per_week":0,"active_clients":0,"churn_monthly":0,"retainer":0}'';
+--   begin
+--     if coalesce(auth.jwt(), ''{}'') ? ''api_token_id'' then
+--       raise exception ''Workspaces are created in the app'' using errcode = ''42501'';
+--     end if;
+--     if auth.uid() is null or not public.is_agency_admin() then
+--       raise exception ''Only agency admins can create workspaces'' using errcode = ''42501'';
+--     end if;
+--     if ws_name is null or char_length(btrim(ws_name)) not between 1 and 200 then
+--       raise exception ''The name must be 1 to 200 characters'' using errcode = ''22023'';
+--     end if;
+--     ws_settings := coalesce(ws_settings, ''{}'');
+--     if jsonb_typeof(ws_settings) <> ''object'' then
+--       raise exception ''settings must be an object'' using errcode = ''22023'';
+--     end if;
+--     for k in select jsonb_object_keys(ws_settings) loop
+--       if k not in (''hours_per_week'', ''horizon_weeks'', ''currency'') then
+--         raise exception ''% can''''t be set when creating a workspace'', k using errcode = ''22023'';
+--       end if;
+--     end loop;
+--     if ws_settings ? ''hours_per_week'' and not (
+--       jsonb_typeof(ws_settings -> ''hours_per_week'') = ''number''
+--       and (ws_settings ->> ''hours_per_week'')::numeric > 0 and (ws_settings ->> ''hours_per_week'')::numeric <= 168) then
+--       raise exception ''hours_per_week must be a number above 0 and at most 168'' using errcode = ''22023'';
+--     end if;
+--     if ws_settings ? ''horizon_weeks'' and not (
+--       jsonb_typeof(ws_settings -> ''horizon_weeks'') = ''number''
+--       and (ws_settings ->> ''horizon_weeks'')::numeric = trunc((ws_settings ->> ''horizon_weeks'')::numeric)
+--       and (ws_settings ->> ''horizon_weeks'')::numeric between 1 and 104) then
+--       raise exception ''horizon_weeks must be a whole number from 1 to 104'' using errcode = ''22023'';
+--     end if;
+--     if ws_settings ? ''currency'' and not (
+--       jsonb_typeof(ws_settings -> ''currency'') = ''string'' and (ws_settings ->> ''currency'') ~ ''^[A-Z]{3}$'') then
+--       raise exception ''currency must be a three-letter code such as GBP'' using errcode = ''22023'';
+--     end if;
+--
+--     insert into public.workspaces (name, slug, settings)
+--     values (btrim(ws_name), ws_slug, defaults || ws_settings)
+--     returning id into ws;
+--
+--     insert into public.memberships (workspace_id, user_id, role, source)
+--     values (ws, auth.uid(), ''agency_admin'', ''manual'');
+--
+--     return ws;
+--   end;
+--   $$;
+--   delete from supabase_migrations.schema_migrations where version = ''20261103000000'';
+--   commit;
+--
+-- Production data: none needed. Workspaces already created keep their currency.
+
+-- ---------------------------------------------------------------------------
+-- Steps: lost per day of waiting
+-- ---------------------------------------------------------------------------
+
+alter table public.steps
+  -- The share of items that go cold for each working day they wait at this step (0 to 1); null: not set.
+  add column lost_per_day numeric,
+  add constraint steps_lost_per_day check (lost_per_day is null or (lost_per_day >= 0 and lost_per_day <= 1));
+
+-- ---------------------------------------------------------------------------
+-- Creating a workspace: AUD by default
+-- ---------------------------------------------------------------------------
+
+-- Agency admins only, and not over an API token. Runs as the caller, so RLS
+-- checks both inserts; `returning` passes the select policy for an admin.
+create or replace function public.create_workspace(ws_name text, ws_slug text, ws_settings jsonb default ''{}'')
+returns uuid
+language plpgsql
+security invoker
+set search_path = ''''
+as $$
+declare
+  ws uuid;
+  k text;
+  defaults constant jsonb := ''{"hours_per_week":40,"horizon_weeks":13,"currency":"AUD","leads_per_week":0,"active_clients":0,"churn_monthly":0,"retainer":0}'';
+begin
+  if coalesce(auth.jwt(), ''{}'') ? ''api_token_id'' then
+    raise exception ''Workspaces are created in the app'' using errcode = ''42501'';
+  end if;
+  if auth.uid() is null or not public.is_agency_admin() then
+    raise exception ''Only agency admins can create workspaces'' using errcode = ''42501'';
+  end if;
+  if ws_name is null or char_length(btrim(ws_name)) not between 1 and 200 then
+    raise exception ''The name must be 1 to 200 characters'' using errcode = ''22023'';
+  end if;
+  ws_settings := coalesce(ws_settings, ''{}'');
+  if jsonb_typeof(ws_settings) <> ''object'' then
+    raise exception ''settings must be an object'' using errcode = ''22023'';
+  end if;
+  for k in select jsonb_object_keys(ws_settings) loop
+    if k not in (''hours_per_week'', ''horizon_weeks'', ''currency'') then
+      raise exception ''% can''''t be set when creating a workspace'', k using errcode = ''22023'';
+    end if;
+  end loop;
+  if ws_settings ? ''hours_per_week'' and not (
+    jsonb_typeof(ws_settings -> ''hours_per_week'') = ''number''
+    and (ws_settings ->> ''hours_per_week'')::numeric > 0 and (ws_settings ->> ''hours_per_week'')::numeric <= 168) then
+    raise exception ''hours_per_week must be a number above 0 and at most 168'' using errcode = ''22023'';
+  end if;
+  if ws_settings ? ''horizon_weeks'' and not (
+    jsonb_typeof(ws_settings -> ''horizon_weeks'') = ''number''
+    and (ws_settings ->> ''horizon_weeks'')::numeric = trunc((ws_settings ->> ''horizon_weeks'')::numeric)
+    and (ws_settings ->> ''horizon_weeks'')::numeric between 1 and 104) then
+    raise exception ''horizon_weeks must be a whole number from 1 to 104'' using errcode = ''22023'';
+  end if;
+  if ws_settings ? ''currency'' and not (
+    jsonb_typeof(ws_settings -> ''currency'') = ''string'' and (ws_settings ->> ''currency'') ~ ''^[A-Z]{3}$'') then
+    raise exception ''currency must be a three-letter code such as AUD'' using errcode = ''22023'';
+  end if;
+
+  insert into public.workspaces (name, slug, settings)
+  values (btrim(ws_name), ws_slug, defaults || ws_settings)
+  returning id into ws;
+
+  insert into public.memberships (workspace_id, user_id, role, source)
+  values (ws, auth.uid(), ''agency_admin'', ''manual'');
+
+  return ws;
+end;
+$$;
+
+revoke all on function public.create_workspace(text, text, jsonb) from public, anon;
+grant execute on function public.create_workspace(text, text, jsonb) to authenticated;
+']);
+
 -- seed.sql
 -- Generated by `pnpm --filter @transpera-flow/db gen:seed`. Do not edit by hand.
 
@@ -10158,19 +10496,19 @@ insert into public.demand_settings (workspace_id, growth_monthly, provenance) va
 insert into public.process_revisions (id, workspace_id, process_id, number, status, published_at) values
   ('d0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 1, 'published', '2026-09-29T00:00:00Z');
 
-insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, current_wip, x, y, assumption, conflict, provenance) values
-  ('e0000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Qualify lead', 'task', null, 'b0000000-0000-4000-8000-000000000001', null, 0.5, 'lognormal', '{}', 4, 'lognormal', '{}', 0, null, 'HubSpot', null, null, null, 60, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8000-000000000002', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Discovery call', 'task', null, 'b0000000-0000-4000-8000-000000000001', null, 1.5, 'lognormal', '{}', 24, 'lognormal', '{}', 0, null, 'Zoom + HubSpot', null, null, null, 290, 50, false, false, '{"wait_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Priya Shah","quote":"Discovery calls get booked within three working days of qualifying.","timestamp":null,"value":24}]}}'),
-  ('e0000000-0000-4000-8000-000000000003', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Audit & proposal', 'task', null, 'b0000000-0000-4000-8000-000000000002', null, 6, 'lognormal', '{}', 0, 'lognormal', '{}', 0.15, null, 'SEMrush, Google Docs', null, null, null, 520, 50, false, false, '{"work_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000001","speaker":"Maya Collins","quote":"A proper audit and proposal is a day''s work, call it six hours.","timestamp":"00:14:05","value":6}]},"rework_rate":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Priya Shah","quote":"About one proposal in seven comes back from sales review for changes.","timestamp":null,"value":0.15}]}}'),
-  ('e0000000-0000-4000-8000-000000000004', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Client decision', 'decision', null, null, null, 0, 'lognormal', '{}', 40, 'lognormal', '{}', 0, null, 'Email', null, null, null, 750, 50, false, false, '{"wait_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Tom Reed","quote":"Clients take a week to decide, sometimes longer.","timestamp":null,"value":40}]}}'),
-  ('e0000000-0000-4000-8000-000000000005', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Contract & onboarding', 'task', null, 'b0000000-0000-4000-8000-000000000003', null, 3, 'lognormal', '{}', 16, 'lognormal', '{}', 0.1, null, 'PandaDoc, Notion', null, null, null, 60, 290, false, false, '{}'),
-  ('e0000000-0000-4000-8000-000000000006', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Kickoff & strategy', 'task', null, 'b0000000-0000-4000-8000-000000000002', null, 4, 'lognormal', '{}', 8, 'lognormal', '{}', 0, null, 'Notion', null, null, null, 290, 290, false, false, '{}'),
-  ('e0000000-0000-4000-8000-000000000007', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'SEO campaign setup', 'task', null, 'b0000000-0000-4000-8000-000000000004', null, 10, 'lognormal', '{}', 8, 'lognormal', '{}', 0.1, null, 'Ahrefs, WordPress', null, null, null, 520, 230, false, false, '{}'),
-  ('e0000000-0000-4000-8000-000000000008', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'PPC campaign setup', 'task', null, 'b0000000-0000-4000-8000-000000000005', null, 8, 'lognormal', '{}', 8, 'lognormal', '{}', 0.1, null, 'Google Ads', null, null, null, 520, 340, false, false, '{}'),
-  ('e0000000-0000-4000-8000-000000000009', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Go live & first report', 'task', null, 'b0000000-0000-4000-8000-000000000003', null, 2, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Looker Studio', null, null, null, 750, 290, false, false, '{}'),
-  ('e0000000-0000-4000-8000-00000000000a', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Lead arrives', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, -150, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8000-00000000000b', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Won', 'end', 'won', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, 980, 290, false, false, '{}'),
-  ('e0000000-0000-4000-8000-00000000000c', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Lost', 'end', 'lost', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, 640, 170, false, false, '{}');
+insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, current_wip, lost_per_day, x, y, assumption, conflict, provenance) values
+  ('e0000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Qualify lead', 'task', null, 'b0000000-0000-4000-8000-000000000001', null, 0.5, 'lognormal', '{}', 4, 'lognormal', '{}', 0, null, 'HubSpot', null, null, null, null, 60, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8000-000000000002', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Discovery call', 'task', null, 'b0000000-0000-4000-8000-000000000001', null, 1.5, 'lognormal', '{}', 24, 'lognormal', '{}', 0, null, 'Zoom + HubSpot', null, null, null, null, 290, 50, false, false, '{"wait_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Priya Shah","quote":"Discovery calls get booked within three working days of qualifying.","timestamp":null,"value":24}]}}'),
+  ('e0000000-0000-4000-8000-000000000003', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Audit & proposal', 'task', null, 'b0000000-0000-4000-8000-000000000002', null, 6, 'lognormal', '{}', 0, 'lognormal', '{}', 0.15, null, 'SEMrush, Google Docs', null, null, null, null, 520, 50, false, false, '{"work_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000001","speaker":"Maya Collins","quote":"A proper audit and proposal is a day''s work, call it six hours.","timestamp":"00:14:05","value":6}]},"rework_rate":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Priya Shah","quote":"About one proposal in seven comes back from sales review for changes.","timestamp":null,"value":0.15}]}}'),
+  ('e0000000-0000-4000-8000-000000000004', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Client decision', 'decision', null, null, null, 0, 'lognormal', '{}', 40, 'lognormal', '{}', 0, null, 'Email', null, null, null, null, 750, 50, false, false, '{"wait_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Tom Reed","quote":"Clients take a week to decide, sometimes longer.","timestamp":null,"value":40}]}}'),
+  ('e0000000-0000-4000-8000-000000000005', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Contract & onboarding', 'task', null, 'b0000000-0000-4000-8000-000000000003', null, 3, 'lognormal', '{}', 16, 'lognormal', '{}', 0.1, null, 'PandaDoc, Notion', null, null, null, null, 60, 290, false, false, '{}'),
+  ('e0000000-0000-4000-8000-000000000006', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Kickoff & strategy', 'task', null, 'b0000000-0000-4000-8000-000000000002', null, 4, 'lognormal', '{}', 8, 'lognormal', '{}', 0, null, 'Notion', null, null, null, null, 290, 290, false, false, '{}'),
+  ('e0000000-0000-4000-8000-000000000007', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'SEO campaign setup', 'task', null, 'b0000000-0000-4000-8000-000000000004', null, 10, 'lognormal', '{}', 8, 'lognormal', '{}', 0.1, null, 'Ahrefs, WordPress', null, null, null, null, 520, 230, false, false, '{}'),
+  ('e0000000-0000-4000-8000-000000000008', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'PPC campaign setup', 'task', null, 'b0000000-0000-4000-8000-000000000005', null, 8, 'lognormal', '{}', 8, 'lognormal', '{}', 0.1, null, 'Google Ads', null, null, null, null, 520, 340, false, false, '{}'),
+  ('e0000000-0000-4000-8000-000000000009', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Go live & first report', 'task', null, 'b0000000-0000-4000-8000-000000000003', null, 2, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Looker Studio', null, null, null, null, 750, 290, false, false, '{}'),
+  ('e0000000-0000-4000-8000-00000000000a', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Lead arrives', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, -150, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8000-00000000000b', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Won', 'end', 'won', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, 980, 290, false, false, '{}'),
+  ('e0000000-0000-4000-8000-00000000000c', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Lost', 'end', 'lost', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, 640, 170, false, false, '{}');
 
 insert into public.edges (id, revision_id, workspace_id, process_id, from_step_id, to_step_id, probability, condition_tag, label) values
   ('f0000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-00000000000a', 'e0000000-0000-4000-8000-000000000001', 1, null, null),
@@ -10191,14 +10529,14 @@ insert into public.edges (id, revision_id, workspace_id, process_id, from_step_i
 insert into public.process_revisions (id, workspace_id, process_id, number, status, published_at) values
   ('d0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 1, 'published', '2026-09-29T00:00:00Z');
 
-insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, current_wip, x, y, assumption, conflict, provenance) values
-  ('e0000000-0000-4000-8000-00000000000d', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'Set the month''s priorities', 'task', null, 'b0000000-0000-4000-8000-000000000002', null, 1.5, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Notion', null, null, null, 60, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8000-00000000000e', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'SEO work & report data', 'task', null, 'b0000000-0000-4000-8000-000000000004', null, 16, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Ahrefs, Looker Studio', null, null, null, 290, -10, false, false, '{}'),
-  ('e0000000-0000-4000-8000-00000000000f', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'PPC optimisation & report data', 'task', null, 'b0000000-0000-4000-8000-000000000005', null, 19, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Google Ads, Looker Studio', null, null, null, 290, 110, false, false, '{}'),
-  ('e0000000-0000-4000-8000-000000000010', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'Write & send the report', 'task', null, 'b0000000-0000-4000-8000-000000000003', null, 3, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Google Docs', null, null, null, 520, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8000-000000000011', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'Invoice', 'task', null, 'b0000000-0000-4000-8000-000000000006', null, 1.2, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Xero', null, null, null, 750, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8000-000000000012', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'Month starts', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, -150, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8000-000000000013', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'Report sent', 'end', 'done', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, 980, 50, false, false, '{}');
+insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, current_wip, lost_per_day, x, y, assumption, conflict, provenance) values
+  ('e0000000-0000-4000-8000-00000000000d', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'Set the month''s priorities', 'task', null, 'b0000000-0000-4000-8000-000000000002', null, 1.5, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Notion', null, null, null, null, 60, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8000-00000000000e', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'SEO work & report data', 'task', null, 'b0000000-0000-4000-8000-000000000004', null, 16, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Ahrefs, Looker Studio', null, null, null, null, 290, -10, false, false, '{}'),
+  ('e0000000-0000-4000-8000-00000000000f', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'PPC optimisation & report data', 'task', null, 'b0000000-0000-4000-8000-000000000005', null, 19, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Google Ads, Looker Studio', null, null, null, null, 290, 110, false, false, '{}'),
+  ('e0000000-0000-4000-8000-000000000010', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'Write & send the report', 'task', null, 'b0000000-0000-4000-8000-000000000003', null, 3, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Google Docs', null, null, null, null, 520, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8000-000000000011', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'Invoice', 'task', null, 'b0000000-0000-4000-8000-000000000006', null, 1.2, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Xero', null, null, null, null, 750, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8000-000000000012', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'Month starts', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, -150, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8000-000000000013', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'Report sent', 'end', 'done', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, 980, 50, false, false, '{}');
 
 insert into public.edges (id, revision_id, workspace_id, process_id, from_step_id, to_step_id, probability, condition_tag, label) values
   ('f0000000-0000-4000-8000-00000000000f', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'e0000000-0000-4000-8000-000000000012', 'e0000000-0000-4000-8000-00000000000d', 1, null, null),
@@ -10212,10 +10550,10 @@ insert into public.edges (id, revision_id, workspace_id, process_id, from_step_i
 insert into public.process_revisions (id, workspace_id, process_id, number, status, published_at) values
   ('d0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000003', 1, 'published', '2026-09-29T00:00:00Z');
 
-insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, current_wip, x, y, assumption, conflict, provenance) values
-  ('e0000000-0000-4000-8000-000000000014', 'd0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000003', 'Check-in call', 'task', null, 'b0000000-0000-4000-8000-000000000003', null, 1.5, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Zoom', null, null, null, 290, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8000-000000000015', 'd0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000003', 'Check-in due', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, 60, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8000-000000000016', 'd0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000003', 'Done', 'end', 'done', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, 520, 50, false, false, '{}');
+insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, current_wip, lost_per_day, x, y, assumption, conflict, provenance) values
+  ('e0000000-0000-4000-8000-000000000014', 'd0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000003', 'Check-in call', 'task', null, 'b0000000-0000-4000-8000-000000000003', null, 1.5, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Zoom', null, null, null, null, 290, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8000-000000000015', 'd0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000003', 'Check-in due', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, 60, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8000-000000000016', 'd0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000003', 'Done', 'end', 'done', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, 520, 50, false, false, '{}');
 
 insert into public.edges (id, revision_id, workspace_id, process_id, from_step_id, to_step_id, probability, condition_tag, label) values
   ('f0000000-0000-4000-8000-000000000016', 'd0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000003', 'e0000000-0000-4000-8000-000000000015', 'e0000000-0000-4000-8000-000000000014', 1, null, null),
@@ -10477,22 +10815,22 @@ insert into public.demand_settings (workspace_id, growth_monthly, provenance) va
 insert into public.process_revisions (id, workspace_id, process_id, number, status, published_at) values
   ('d0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 1, 'published', '2026-09-29T00:00:00Z');
 
-insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, current_wip, x, y, assumption, conflict, provenance) values
-  ('e0000000-0000-4000-8001-000000000001', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Triage enquiry', 'task', null, 'b0000000-0000-4000-8001-000000000002', null, 0.5, 'lognormal', '{}', 8, 'lognormal', '{}', 0, null, 'Instagram, HubSpot', null, null, null, 60, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000002', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Pitch call', 'task', null, 'b0000000-0000-4000-8001-000000000001', '90000000-0000-4000-8001-000000000001', 1.5, 'triangular', '{"min":1,"mode":1.25,"max":2.25}', 16, 'lognormal', '{}', 0, null, 'Google Meet', null, null, null, 290, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000003', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Creative concepts', 'task', null, 'b0000000-0000-4000-8001-000000000003', null, 5, 'lognormal', '{"cv":0.6}', 0, 'lognormal', '{}', 0.25, null, 'Figma', null, 80, null, 520, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000004', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Client decision', 'decision', null, null, null, 0, 'lognormal', '{}', 60, 'triangular', '{"min":15,"mode":45,"max":120}', 0, null, 'Email', null, null, 6, 750, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000005', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Contract & onboarding', 'task', null, 'b0000000-0000-4000-8001-000000000007', null, 2, 'lognormal', '{}', 24, 'constant', '{}', 0, null, 'PandaDoc, Xero', null, null, null, 60, 290, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000006', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Brand workshop', 'task', null, 'b0000000-0000-4000-8001-000000000001', null, 4, 'lognormal', '{}', 8, 'lognormal', '{}', 0, null, 'Miro', null, null, null, 290, 290, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000007', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Social set-up & first calendar', 'task', null, 'b0000000-0000-4000-8001-000000000005', null, 6, 'lognormal', '{}', 8, 'lognormal', '{}', 0.1, null, 'Later, Canva', null, null, null, 520, 180, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000008', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Content plan & first articles', 'task', null, 'b0000000-0000-4000-8001-000000000004', null, 12, 'lognormal', '{}', 16, 'lognormal', '{}', 0.2, null, 'Google Docs', null, null, null, 520, 290, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000009', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Website design', 'task', null, 'b0000000-0000-4000-8001-000000000003', null, 30, 'lognormal', '{"cv":0.5}', 24, 'lognormal', '{}', 0.3, null, 'Figma', null, null, null, 520, 400, false, false, '{}'),
-  ('e0000000-0000-4000-8001-00000000000a', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Website build', 'task', null, 'b0000000-0000-4000-8001-000000000006', null, 45, 'lognormal', '{}', 40, 'lognormal', '{}', 0.15, null, 'Webflow', null, 200, 2, 750, 400, false, false, '{}'),
-  ('e0000000-0000-4000-8001-00000000000b', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Launch & handover', 'task', null, 'b0000000-0000-4000-8001-000000000002', null, 2, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Loom', null, null, null, 750, 290, false, false, '{}'),
-  ('e0000000-0000-4000-8001-00000000000c', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Enquiry arrives', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, -150, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-00000000000d', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Won', 'end', 'won', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, 980, 290, false, false, '{}'),
-  ('e0000000-0000-4000-8001-00000000000e', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Lost: not a fit', 'end', 'lost', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, 290, -80, false, false, '{}'),
-  ('e0000000-0000-4000-8001-00000000000f', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Lost: price or timing', 'end', 'lost', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, 980, 50, false, false, '{}');
+insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, current_wip, lost_per_day, x, y, assumption, conflict, provenance) values
+  ('e0000000-0000-4000-8001-000000000001', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Triage enquiry', 'task', null, 'b0000000-0000-4000-8001-000000000002', null, 0.5, 'lognormal', '{}', 8, 'lognormal', '{}', 0, null, 'Instagram, HubSpot', null, null, null, null, 60, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000002', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Pitch call', 'task', null, 'b0000000-0000-4000-8001-000000000001', '90000000-0000-4000-8001-000000000001', 1.5, 'triangular', '{"min":1,"mode":1.25,"max":2.25}', 16, 'lognormal', '{}', 0, null, 'Google Meet', null, null, null, null, 290, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000003', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Creative concepts', 'task', null, 'b0000000-0000-4000-8001-000000000003', null, 5, 'lognormal', '{"cv":0.6}', 0, 'lognormal', '{}', 0.25, null, 'Figma', null, 80, null, null, 520, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000004', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Client decision', 'decision', null, null, null, 0, 'lognormal', '{}', 60, 'triangular', '{"min":15,"mode":45,"max":120}', 0, null, 'Email', null, null, 6, null, 750, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000005', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Contract & onboarding', 'task', null, 'b0000000-0000-4000-8001-000000000007', null, 2, 'lognormal', '{}', 24, 'constant', '{}', 0, null, 'PandaDoc, Xero', null, null, null, null, 60, 290, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000006', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Brand workshop', 'task', null, 'b0000000-0000-4000-8001-000000000001', null, 4, 'lognormal', '{}', 8, 'lognormal', '{}', 0, null, 'Miro', null, null, null, null, 290, 290, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000007', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Social set-up & first calendar', 'task', null, 'b0000000-0000-4000-8001-000000000005', null, 6, 'lognormal', '{}', 8, 'lognormal', '{}', 0.1, null, 'Later, Canva', null, null, null, null, 520, 180, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000008', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Content plan & first articles', 'task', null, 'b0000000-0000-4000-8001-000000000004', null, 12, 'lognormal', '{}', 16, 'lognormal', '{}', 0.2, null, 'Google Docs', null, null, null, null, 520, 290, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000009', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Website design', 'task', null, 'b0000000-0000-4000-8001-000000000003', null, 30, 'lognormal', '{"cv":0.5}', 24, 'lognormal', '{}', 0.3, null, 'Figma', null, null, null, null, 520, 400, false, false, '{}'),
+  ('e0000000-0000-4000-8001-00000000000a', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Website build', 'task', null, 'b0000000-0000-4000-8001-000000000006', null, 45, 'lognormal', '{}', 40, 'lognormal', '{}', 0.15, null, 'Webflow', null, 200, 2, null, 750, 400, false, false, '{}'),
+  ('e0000000-0000-4000-8001-00000000000b', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Launch & handover', 'task', null, 'b0000000-0000-4000-8001-000000000002', null, 2, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Loom', null, null, null, null, 750, 290, false, false, '{}'),
+  ('e0000000-0000-4000-8001-00000000000c', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Enquiry arrives', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, -150, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-00000000000d', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Won', 'end', 'won', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, 980, 290, false, false, '{}'),
+  ('e0000000-0000-4000-8001-00000000000e', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Lost: not a fit', 'end', 'lost', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, 290, -80, false, false, '{}'),
+  ('e0000000-0000-4000-8001-00000000000f', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Lost: price or timing', 'end', 'lost', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, 980, 50, false, false, '{}');
 
 insert into public.edges (id, revision_id, workspace_id, process_id, from_step_id, to_step_id, probability, condition_tag, label) values
   ('f0000000-0000-4000-8001-000000000001', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'e0000000-0000-4000-8001-00000000000c', 'e0000000-0000-4000-8001-000000000001', 1, null, null),
@@ -10516,13 +10854,13 @@ insert into public.edges (id, revision_id, workspace_id, process_id, from_step_i
 insert into public.process_revisions (id, workspace_id, process_id, number, status, published_at) values
   ('d0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 1, 'published', '2026-09-29T00:00:00Z');
 
-insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, current_wip, x, y, assumption, conflict, provenance) values
-  ('e0000000-0000-4000-8001-000000000010', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Plan the month', 'task', null, 'b0000000-0000-4000-8001-000000000002', null, 1.5, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Notion', null, null, null, 60, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000011', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Write the posts', 'task', null, 'b0000000-0000-4000-8001-000000000005', null, 10, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Later', null, null, null, 290, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000012', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Design the assets', 'task', null, 'b0000000-0000-4000-8001-000000000003', null, 5, 'lognormal', '{}', 0, 'lognormal', '{}', 0.2, null, 'Figma, Canva', null, null, null, 520, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000013', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Client approval', 'task', null, 'b0000000-0000-4000-8001-000000000002', null, 1, 'lognormal', '{}', 16, 'lognormal', '{}', 0, null, 'Email', null, null, null, 750, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000014', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Month due', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, -150, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000015', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Calendar approved', 'end', 'done', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, 980, 50, false, false, '{}');
+insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, current_wip, lost_per_day, x, y, assumption, conflict, provenance) values
+  ('e0000000-0000-4000-8001-000000000010', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Plan the month', 'task', null, 'b0000000-0000-4000-8001-000000000002', null, 1.5, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Notion', null, null, null, null, 60, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000011', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Write the posts', 'task', null, 'b0000000-0000-4000-8001-000000000005', null, 10, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Later', null, null, null, null, 290, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000012', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Design the assets', 'task', null, 'b0000000-0000-4000-8001-000000000003', null, 5, 'lognormal', '{}', 0, 'lognormal', '{}', 0.2, null, 'Figma, Canva', null, null, null, null, 520, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000013', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Client approval', 'task', null, 'b0000000-0000-4000-8001-000000000002', null, 1, 'lognormal', '{}', 16, 'lognormal', '{}', 0, null, 'Email', null, null, null, null, 750, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000014', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Month due', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, -150, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000015', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Calendar approved', 'end', 'done', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, 980, 50, false, false, '{}');
 
 insert into public.edges (id, revision_id, workspace_id, process_id, from_step_id, to_step_id, probability, condition_tag, label) values
   ('f0000000-0000-4000-8001-000000000012', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'e0000000-0000-4000-8001-000000000014', 'e0000000-0000-4000-8001-000000000010', 1, null, null),
@@ -10534,10 +10872,10 @@ insert into public.edges (id, revision_id, workspace_id, process_id, from_step_i
 insert into public.process_revisions (id, workspace_id, process_id, number, status, published_at) values
   ('d0000000-0000-4000-8001-000000000003', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000003', 1, 'published', '2026-09-29T00:00:00Z');
 
-insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, current_wip, x, y, assumption, conflict, provenance) values
-  ('e0000000-0000-4000-8001-000000000016', 'd0000000-0000-4000-8001-000000000003', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000003', 'Turn the request round', 'task', null, 'b0000000-0000-4000-8001-000000000003', null, 2, 'triangular', '{"min":0.5,"mode":1.5,"max":4}', 0, 'lognormal', '{}', 0, null, 'Canva', null, null, null, 290, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000017', 'd0000000-0000-4000-8001-000000000003', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000003', 'Request in', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, 60, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000018', 'd0000000-0000-4000-8001-000000000003', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000003', 'Sent', 'end', 'done', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, 520, 50, false, false, '{}');
+insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, current_wip, lost_per_day, x, y, assumption, conflict, provenance) values
+  ('e0000000-0000-4000-8001-000000000016', 'd0000000-0000-4000-8001-000000000003', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000003', 'Turn the request round', 'task', null, 'b0000000-0000-4000-8001-000000000003', null, 2, 'triangular', '{"min":0.5,"mode":1.5,"max":4}', 0, 'lognormal', '{}', 0, null, 'Canva', null, null, null, null, 290, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000017', 'd0000000-0000-4000-8001-000000000003', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000003', 'Request in', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, 60, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000018', 'd0000000-0000-4000-8001-000000000003', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000003', 'Sent', 'end', 'done', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, 520, 50, false, false, '{}');
 
 insert into public.edges (id, revision_id, workspace_id, process_id, from_step_id, to_step_id, probability, condition_tag, label) values
   ('f0000000-0000-4000-8001-000000000017', 'd0000000-0000-4000-8001-000000000003', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000003', 'e0000000-0000-4000-8001-000000000017', 'e0000000-0000-4000-8001-000000000016', 1, null, null),

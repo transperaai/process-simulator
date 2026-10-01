@@ -4,9 +4,10 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { IssueRow, ProcessBundle, ScenarioRow } from "@transpera-flow/db";
-import { detectBrokenScenarios, detectIssues, type EngineModel, type RetiredSteps, type SimulationResult } from "@transpera-flow/engine";
+import { detectBrokenScenarios, type EngineModel, type RetiredSteps, type SimulationResult } from "@transpera-flow/engine";
 import { perceptionGapDetections } from "@/lib/issues/perception";
 import { entryView, promoteInput, registerEntries, stepBadges } from "@/lib/issues/register";
+import { useDetectedIssues } from "@/lib/issues/use-detected";
 import { useIssues } from "@/lib/issues/use-issues";
 import { IssuesRegister } from "./issues-register";
 import type { EditMode } from "./process-view";
@@ -62,7 +63,8 @@ export function useProcessIssues({
   const broken = useMemo(() => (model ? detectBrokenScenarios(model, scenarios, retired) : []), [model, scenarios, retired]);
   // Perception gaps from the steps' evidence (issue #21).
   const gaps = useMemo(() => perceptionGapDetections(bundle.steps), [bundle.steps]);
-  const detected = useMemo(() => (model && result ? [...broken, ...detectIssues(model, result), ...gaps] : null), [model, result, broken, gaps]);
+  const found = useDetectedIssues(model, result);
+  const detected = useMemo(() => (found ? [...broken, ...found, ...gaps] : null), [found, broken, gaps]);
   const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);
 
   // A tracked broken-scenario issue resolves itself once its scenario is fixed (re-pointed or deleted).
@@ -141,6 +143,7 @@ export function useProcessIssues({
               scenarios={scenarios}
               brokenScenarios={brokenScenarios}
               canEdit={mode !== "readonly"}
+              currency={bundle.workspace.settings.currency}
               stepFilter={stepFilter}
               onStepFilterChange={setStepFilter}
             />

@@ -5,8 +5,9 @@
 // page).
 import { useMemo, useState } from "react";
 import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow } from "@transpera-flow/db";
-import { detectBrokenScenarios, detectIssues } from "@transpera-flow/engine";
+import { detectBrokenScenarios } from "@transpera-flow/engine";
 import { perceptionGapDetections } from "@/lib/issues/perception";
+import { useDetectedIssues } from "@/lib/issues/use-detected";
 import { useIssues } from "@/lib/issues/use-issues";
 import { retiredSteps } from "@/lib/scenarios/broken";
 import { useSimulation } from "@/lib/sim/use-simulation";
@@ -41,10 +42,8 @@ export function IssuesPage({
   const broken = useMemo(() => (model ? detectBrokenScenarios(model, scenarios, retiredSteps(bundle)) : []), [model, scenarios, bundle]);
   // Perception gaps come from the steps' evidence, not the run (issue #21).
   const gaps = useMemo(() => perceptionGapDetections(bundle.steps), [bundle.steps]);
-  const detected = useMemo(
-    () => (model && result ? [...broken, ...detectIssues(model, result), ...gaps] : model ? null : gaps),
-    [model, result, broken, gaps],
-  );
+  const found = useDetectedIssues(model, result);
+  const detected = useMemo(() => (found ? [...broken, ...found, ...gaps] : model ? null : gaps), [found, model, broken, gaps]);
   const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);
 
   return (
@@ -61,6 +60,7 @@ export function IssuesPage({
         scenarios={scenarios}
         brokenScenarios={brokenScenarios}
         canEdit={mode === "live"}
+        currency={bundle.workspace.settings.currency}
         stepFilter={stepFilter}
         onStepFilterChange={setStepFilter}
       />

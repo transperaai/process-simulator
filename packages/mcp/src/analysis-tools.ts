@@ -23,7 +23,7 @@ import {
   type ProcessBundle,
   type ScenarioRow,
 } from "@transpera-flow/db";
-import { applyPatches, detectIssues, ENGINE_VERSION, isBlocking, ISSUE_TYPES, MAX_PATCHES, PATCH_OPS, RATINGS, STORED_SEVERITIES, ratingOfStored, simulate, storedOfRating, type EngineModel } from "@transpera-flow/engine";
+import { applyPatches, detectIssues, ENGINE_VERSION, isBlocking, ISSUE_TYPES, MAX_PATCHES, PATCH_OPS, RATINGS, STORED_SEVERITIES, ratingOfStored, shadowPricesFor, simulate, storedOfRating, type EngineModel } from "@transpera-flow/engine";
 import { bottleneckReport, checkScenarioRobustness, compareScenarios, matchNamed, type NamedScenario } from "./analysis";
 import { resolveProcess, resolveWorkspace, revisionIdFor, type ProcessWithDraft, type ToolContext, type WorkspaceRef } from "./context";
 import { runTool, ToolError } from "./result";
@@ -501,9 +501,14 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
           assumptions.push(`Detections come from a run of the live model at ${DEFAULT_REPS} replications, seed ${DEFAULT_SEED}.`);
           const run = simulate(loaded.model, DEFAULT_REPS, DEFAULT_SEED);
           const keys = new Set(issues.map((i) => i.detected_key).filter(Boolean));
-          detected = detectIssues(loaded.model, run)
+          // The "too busy" cost needs the extra run of one more person in each flagged role (issue #108).
+          const roleIds = detectIssues(loaded.model, run).flatMap((d) => (d.key.startsWith("capacity:") && d.roleId ? [d.roleId] : []));
+          const shadowPrices = shadowPricesFor(loaded.model, roleIds, { reps: DEFAULT_REPS, seed: DEFAULT_SEED, timeBudgetMs: 5000 });
+          const currency = loaded.bundle.workspace.settings.currency;
+          assumptions.push(`Costs per month are estimates in ${currency}: what a loss is worth is the revenue still to come, capped at 12 months.`);
+          detected = detectIssues(loaded.model, run, {}, { shadowPrices })
             .filter((d) => !keys.has(d.key) && (!args.type || d.type === args.type) && !client)
-            .map((d) => ({ ...d, source: "detected", status: null }));
+            .map((d) => ({ ...d, cost: { ...d.cost, currency, estimate: true }, source: "detected", status: null }));
           if (args.status && args.status !== "open") detected = [];
         }
         return {

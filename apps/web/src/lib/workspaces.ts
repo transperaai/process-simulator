@@ -28,7 +28,7 @@ export interface NewWorkspace {
   settings: { hours_per_week: number; currency: string; horizon_weeks: number };
 }
 
-/** The new-workspace form's fields, or the sentence to show. Blank settings take the defaults (40 hours, GBP, 13 weeks). */
+/** The new-workspace form's fields, or the sentence to show. Blank settings take the defaults (40 hours, AUD, 13 weeks). */
 export function parseNewWorkspace(form: { get(name: string): FormDataEntryValue | null }): NewWorkspace | { error: string } {
   const name = String(form.get("name") ?? "").trim();
   if (name.length < 1 || name.length > MAX_NAME) return { error: "Enter a name (up to 200 characters)." };
@@ -37,8 +37,8 @@ export function parseNewWorkspace(form: { get(name: string): FormDataEntryValue 
   const hoursText = String(form.get("hours_per_week") ?? "").trim();
   const hours = hoursText === "" ? 40 : Number(hoursText);
   if (!Number.isFinite(hours) || hours <= 0 || hours > 168) return { error: "Hours a week must be more than 0 and at most 168." };
-  const currency = String(form.get("currency") ?? "").trim().toUpperCase() || "GBP";
-  if (!/^[A-Z]{3}$/.test(currency)) return { error: "Enter a three-letter currency code, such as GBP." };
+  const currency = String(form.get("currency") ?? "").trim().toUpperCase() || "AUD";
+  if (!/^[A-Z]{3}$/.test(currency)) return { error: "Enter a three-letter currency code, such as AUD." };
   const horizonText = String(form.get("horizon_weeks") ?? "").trim();
   const horizon = horizonText === "" ? 13 : Number(horizonText);
   if (!Number.isInteger(horizon) || horizon < 1 || horizon > 104) return { error: "The horizon must be a whole number of weeks from 1 to 104." };

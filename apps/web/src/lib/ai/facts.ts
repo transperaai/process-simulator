@@ -118,6 +118,22 @@ export function wordsGiven(payload: unknown): string[] {
 /** A text with its quoted passages (“…” or "…", the team's own words in the rule checks) left out. */
 export const stripQuoted = (s: string): string => s.replace(/“[^”]*”/g, "“…”").replace(/"[^"]*"/g, '"…"');
 
+/**
+ * The text a ratio phrase ("1 in 10") may be exempt by, because the engine printed it: the rule checks, the measures'
+ * target and pass rate, the results and the findings' evidence, with every name (process, step, role) cut out, since a
+ * team can name a step "1 in 3 escalation flow".
+ */
+export function exemptPhrases(checkPayload: Record<string, unknown>, names: readonly string[]): string[] {
+  const source = {
+    checks: (checkPayload.firstPrinciplesChecks as { text: string }[]).map((c) => c.text),
+    measures: checkPayload.successMeasures,
+    results: checkPayload.results,
+    evidence: (checkPayload.findings as { evidence: string }[]).map((f) => f.evidence),
+  };
+  const byLength = [...names].filter((n) => n.trim()).sort((a, b) => b.length - a.length);
+  return wordsGiven(source).map((p) => byLength.reduce((text, n) => text.split(squeeze(n)).join(" "), p));
+}
+
 const MAX_QUOTES = 12;
 const MAX_QUOTE_CHARS = 220;
 
@@ -188,7 +204,7 @@ export function buildAiInput(args: AiInputArgs): AiInput {
     {
       ...factPayload,
       findings: findingsPayload.map((f, i) => (findings[i]!.key.startsWith("success:") ? { ...f, title: "Goal not reliably met" } : f)),
-      firstPrinciplesChecks: checks.map((c) => ({ ...c, text: stripQuoted(c.text).replace(/ is owned by .*?, which is a team\./, " is owned by a team, which is a team.") })),
+      firstPrinciplesChecks: checks.map((c) => ({ ...c, text: stripQuoted(c.text).replace(/ is owned by [\s\S]*?, which is a team\./, " is owned by a team, which is a team.") })),
       successMeasures: measuresPayload.map(({ target, today }) => ({ target, today })),
     },
     (s) => applyAliases(s, aliases),
@@ -197,7 +213,7 @@ export function buildAiInput(args: AiInputArgs): AiInput {
   const names = [args.processName, ...steps.map((s) => s.name), ...args.roles.map((x) => x.name), ...aliases.map((a) => a.label)];
   return {
     payload,
-    check: { ...context(checkPayload, raw, [], names, r.currency, r.hours_per_week), phrases: wordsGiven(checkPayload) },
+    check: { ...context(checkPayload, raw, [], names, r.currency, r.hours_per_week), phrases: exemptPhrases(checkPayload, names) },
     aliases,
     steps: steps.map((s) => ({ id: s.id, name: s.name })),
     quotes: wordsGiven(payload),

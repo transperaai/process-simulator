@@ -100,7 +100,17 @@ const QUARTER = /\b(?:Q[1-4]|H[12]|FY\s?\d{2,4})\b/g;
 // like "half" and "twice", they state a ratio nobody computed, and the digits or number words in them would otherwise
 // pass for figures.
 /** Slash phrases that are idioms, not fractions: "24/7" (always on) and "50/50" (an even split no run computed, and no figure is claimed). */
-const IDIOMS = /^(?:24\s?\/\s?7|50\s?\/\s?50)$/;
+/** `said` occurs in `phrase` on word and number boundaries: "1 in 1" is not in "add back about 1 in 10". */
+function said_in(phrase: string, said: string): boolean {
+  for (let at = phrase.indexOf(said); at !== -1; at = phrase.indexOf(said, at + 1)) {
+    const before = phrase[at - 1];
+    const after = phrase[at + said.length];
+    if (!(before && /[\p{L}\p{N}]/u.test(before)) && !(after && /[\p{L}\p{N}]/u.test(after))) return true;
+  }
+  return false;
+}
+
+const IDIOMS =/^(?:24\s?\/\s?7|50\s?\/\s?50)$/;
 const FRACTION_WORD =String.raw`(?:thirds?|fourths?|quarters?|fifths?|sixths?|sevenths?|eighths?|ninths?|tenths?)`;
 const RATIOS = new RegExp(
   [
@@ -278,7 +288,7 @@ export function scanNumbers(input: string, names: readonly string[] = [], phrase
   text = blank(text, RATIOS, (m) => {
     const said = m[0].toLowerCase().replace(/\s+/g, " ");
     // Idioms that are not fractions, and a ratio the facts themselves print (the engine's "add back about 1 in 10"), are not refused.
-    if (IDIOMS.test(said) || phrases.some((p) => p.includes(said))) return;
+    if (IDIOMS.test(said) || phrases.some((p) => said_in(p, said))) return;
     multiples.push(m[0]);
   });
   text = blank(text, MULTIPLES, (m) => void multiples.push(m[0]));

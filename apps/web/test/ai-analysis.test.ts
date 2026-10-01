@@ -261,6 +261,20 @@ describe("what the team wrote isn't a fact (the probes)", () => {
     expect(refused(i, "A team of 417 owns the sign-off.")).toBe(true);
   });
 
+  it("an owner written over several lines is still cut", () => {
+    const i = withFp((f) => f.requirements.push({ text: "Sign-off before any contract", owner_person_id: null, owner_text: "Team\nof 3731", why: "Legal", verdict: "keep", step_id: null }));
+    expect(refused(i, "A group of 3731 owns the sign-off.")).toBe(true);
+  });
+
+  it("a ratio exemption needs the whole phrase, and only engine text can grant it", () => {
+    expect(refused(input, "The rule of thumb is to add back about 1 in 10.")).toBe(false);
+    expect(refused(input, "The rule of thumb is to add back about 1 in 1.")).toBe(true);
+    // A step a team named "1 in 3 escalation flow" (the order check prints step names) can't exempt "1 in 3".
+    const renamed = aiInputForRun({ ...run, bundle: { ...bundle, steps: bundle.steps.map((s) => (s.id === AUDIT || s.name === "Qualify lead" ? { ...s, name: "1 in 3 escalation flow" } : s)) } })!.input;
+    expect(JSON.stringify(renamed.payload)).toContain("1 in 3 escalation flow");
+    expect(refused(renamed, "1 in 3 leads is lost.")).toBe(true);
+  });
+
   it("a success measure's name doesn't carry figures either, in the measures or in the rule's title", () => {
     const i = withFp((f) => f.measures.push({ id: "m9", text: "Revenue up 412% by spring", kpi: "newMrr", comparator: "atLeast", target: 50000, horizon: "" }));
     expect(JSON.stringify(i.payload)).toContain("Revenue up 412% by spring");

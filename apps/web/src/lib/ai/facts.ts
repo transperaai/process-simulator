@@ -52,7 +52,7 @@ export interface AiInput {
   aliases: { name: string; label: string }[];
   /** The step ids it may point at, with their names. */
   steps: { id: string; name: string }[];
-  /** Quotes the model was given, lower-cased and squeezed, so a quotation in its text can be matched. */
+  /** Every string the model was given, lower-cased and squeezed, so a quotation in its text can be matched to what it was given. */
   quotes: string[];
   /** SHA-256 of the payload and prompt version: the same hash means the stored analysis is current. */
   hash: string;
@@ -102,6 +102,18 @@ export const squeeze = (s: string): string =>
     .replace(/[“”]/g, '"')
     .replace(/\s+/g, " ")
     .trim();
+
+/** Every string the model was given, squeezed: a quotation in its answer must be a passage of these (a step, a first-principles answer, a source's quote), or it is made up. */
+export function wordsGiven(payload: unknown): string[] {
+  const out: string[] = [];
+  const walk = (v: unknown) => {
+    if (typeof v === "string") out.push(squeeze(v));
+    else if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === "object") Object.values(v).forEach(walk);
+  };
+  walk(payload);
+  return out;
+}
 
 const MAX_QUOTES = 12;
 const MAX_QUOTE_CHARS = 220;
@@ -174,7 +186,7 @@ export function buildAiInput(args: AiInputArgs): AiInput {
     check: context(checkPayload, raw, [], names, r.currency, r.hours_per_week),
     aliases,
     steps: steps.map((s) => ({ id: s.id, name: s.name })),
-    quotes: quotes.map((q) => squeeze(q.quote)),
+    quotes: wordsGiven(payload),
     hash: createHash("sha256").update(JSON.stringify({ v: AI_PROMPT_VERSION, payload })).digest("hex"),
   };
 }

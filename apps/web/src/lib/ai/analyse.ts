@@ -78,7 +78,7 @@ export function quotationProblems(text: string, quotes: readonly string[]): Numb
   for (const m of found) {
     const said = m[1]!.trim().replace(/[.,!?;:]+$/, "");
     if (said.split(" ").length < 3) continue;
-    if (!quotes.some((q) => q.includes(said))) out.push({ text: `“${said}”`, reason: "a quotation that isn't in the sources it was given" });
+    if (!quotes.some((q) => q.includes(said))) out.push({ text: `“${said}”`, reason: "a quotation that isn't in the words it was given" });
   }
   return out;
 }

@@ -306,7 +306,7 @@ svg.chart { width: 100%; height: auto; display: block; }
 
 <div id="app"></div>
 <div id="modal"></div>
-<div id="toast" hidden></div>
+<div id="toast" class="toast" role="status" hidden></div>
 
 <script>
 /* ---------------- Sample data (Northbeam Digital) ---------------- */
@@ -560,7 +560,7 @@ function renderMap(key) {
   const hlSet = new Set((S.hl[key] || o.hl || []).map(vis).filter(Boolean));
   const regSet = new Set((o.region || []).map(vis).filter(Boolean));
   const fit = S.fit[ok] !== false;
-  let s = `<svg class="map" viewBox="0 0 ${W} ${H}" style="width:${fit ? "100%" : W + "px"};min-width:${fit ? Math.min(W, 640) : W}px" role="img" aria-label="Process map: ${esc(root.name)}">
+  let s = `<svg class="map" viewBox="0 0 ${W} ${H}" style="width:${fit ? "100%" : W + "px"};min-width:${fit ? Math.min(W, 520) : W}px" role="img" aria-label="Process map: ${esc(root.name)}">
   <defs><marker id="ar-${key}" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="arrow" d="M0,0 L8,4 L0,8 z"/></marker></defs>`;
   for (const [a, b] of c.edges) { const x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x - 2, y2 = b.y + b.h / 2, mx = (x1 + x2) / 2; s += `<path class="edge" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" marker-end="url(#ar-${key})"/>`; }
   for (const it of c.items) {
@@ -746,7 +746,7 @@ const SCREENS = {
     <section><div class="sechead"><h2>Company map</h2><p>Each box is a process. Use + to open one in place, Expand all to see every step, or click a box to go to its page.</p></div>
       ${mapBlock("ov", { root: "company", issues: true })}</section>
     <div class="grid2">
-      <div class="card chartcard"><div class="spread"><h3>Monthly recurring revenue</h3><div class="legend"><span style="--pc:var(--accent)"><i></i>Average</span><span style="--pc:color-mix(in srgb,var(--accent) 25%,transparent)"><i></i>10–90% range</span></div></div>${lineBand(mrrSeries(S.h), v => "£" + Math.round(v / 1000) + "k", xlab(S.h))}<span class="small muted">The dip after month 6 is the Soft market from your market schedule.</span></div>
+      <div class="card chartcard"><div class="spread"><h3>Monthly recurring revenue</h3><div class="legend"><span style="--pc:var(--accent)"><i></i>Average</span><span style="--pc:color-mix(in srgb,var(--accent) 25%,transparent)"><i></i>10–90% range</span></div></div>${lineBand(mrrSeries(S.h), v => "£" + Math.round(v / 1000) + "k", xlab(S.h))}${S.h > 6 ? `<span class="small muted">Growth slows after month 6 because of the Soft market in your market schedule.</span>` : ""}</div>
       <div class="card chartcard"><div class="spread"><h3>How busy each role is</h3><div class="legend"><span style="--pc:var(--accent)"><i></i>Average</span><span>— Bad month (P90)</span></div></div>${hbars(ROLEU)}</div>
     </div>
     <div class="card ai-card stack"><div class="spread"><span class="eyebrow">AI analysis · reads results, principles and sources</span><button class="btn sm" data-act="aireview" data-p="company">Run AI review again</button></div><p style="max-width:80ch">${AISUM.company}</p><span class="small muted">Every number in this summary comes from the simulation. AI explains them; it doesn't make them up.</span></div>
@@ -799,7 +799,7 @@ const SCREENS = {
       </div></div>`;
   },
   compare() {
-    const s = SOL.find(x => x.id === S.p), i = ISS.find(x => x.id === s.issue), groups = Object.keys(s.replace);
+    const s = SOL.find(x => x.id === S.p), i = ISS.find(x => x.id === s.issue), groups = [...new Set(Object.keys(s.replace).flatMap(g => [...ancestors(g), g]).filter(g => g !== s.proc && desc(BASE, s.proc).has(g)))];
     const okey = "cmp-" + s.id;
     return `<div class="head"><div class="t"><div class="crumbs"><button data-go="issues">Issues</button><span>›</span><button data-go="issue:${i.id}">#${i.id}</button><span>›</span><span>Compare</span></div>
       <h1>${esc(s.name)}</h1><div class="row"><span class="src ${s.type === "AI block" ? "ai" : ""}">${esc(s.type)}</span><span class="small muted">For #${i.id} · ${esc(i.title)}</span></div></div>
@@ -919,7 +919,7 @@ SETTINGS.company = SETTINGS.placeholder; SETTINGS.roles = SETTINGS.placeholder;
 function startEditor(o) {
   const tree = clone(o.tree || BASE);
   S.ed = { mode: o.mode, root: o.root, issue: o.issue || null, tree, sel: null, replaced: o.replaced || {}, sim: null, name: o.name || "", n: 0, back: [S.screen, S.p] };
-  S.open.ed = new Set(o.open || []); S.all.ed = false;
+  S.open.ed = new Set(o.open || []); S.all.ed = false; S.fit.ed = o.root === "company" ? false : true;
   go("editor");
 }
 function editorScreen() {
@@ -1118,7 +1118,7 @@ const ACTIONS = {
     const e = S.ed, name = ($("#ed-name")?.value || "").trim(); if (!name) { toast("Name the solution first (top bar)."); $("#ed-name")?.focus(); return; }
     const sim = e.sim || simFor(e); const id = "s" + (S.nextSol++);
     const replace = {}; for (const [g, b] of Object.entries(e.replaced)) if (BASE[g]) replace[g] = b;
-    SOL.push({ id, issue: e.issue, name, type: Object.values(e.replaced).some(b => BLK[b].type === "AI") ? "AI block" : "Redesign", date: "1 Oct", proc: e.root, replace, auto: sim.auto, autoText: sim.autoText, robust: sim.robust, yours: null, note: "", rows: sim.rows, deltas: sim.deltas, stress: sim.stress });
+    SOL.push({ id, issue: e.issue, name, type: Object.values(e.replaced).some(b => BLK[b].type === "AI") ? "AI block" : "Redesign", date: "1 Oct", proc: Object.keys(replace).length ? procOf(Object.keys(replace)[0]) : e.root, replace, auto: sim.auto, autoText: sim.autoText, robust: sim.robust, yours: null, note: "", rows: sim.rows, deltas: sim.deltas, stress: sim.stress });
     const iss = ISS.find(i => i.id === e.issue); iss.status = "Testing solutions";
     S.ed = null; delete MAPS.ed; go("compare", id); toast("Solution saved. Here it is next to live.");
   },

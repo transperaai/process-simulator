@@ -11863,6 +11863,310 @@ grant select, insert, update, delete on public.lever_settings to authenticated;
 revoke all on public.lever_settings from anon;
 ']);
 
+-- 20261113000000_cost_per_month.sql
+-- Cost per month (docs/analysis-rules.md "Cost per month"; issue #108).
+--
+-- New workspaces default to AUD. `public.create_workspace` is redefined as a
+-- copy of the 20261021000000 version whose default settings carry
+-- "currency":"AUD" instead of "GBP". Existing workspaces keep their currency
+-- (nothing here touches `workspaces` rows), and a caller can still pass any
+-- three-letter code.
+--
+-- (The step setting "lost per day of waiting" that costs the waiting insight is
+-- A42's column, `steps.lost_per_day_waiting`, in 20261110000000.)
+--
+-- Strictly additive: a function replaced by a copy that differs only in the
+-- default currency.
+--
+-- Preflight (run each with `bash packages/db/scripts/prod-sql.sh -c "..."`):
+--
+--   1. The function is the 20261021000000 one (it has the 'GBP' default). Expect 1 row:
+--        select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+--        where n.nspname='public' and p.proname='create_workspace' and pg_get_functiondef(p.oid) like '%"currency":"GBP"%';
+--   2. This migration is not applied yet. Expect 0 rows:
+--        select version from supabase_migrations.schema_migrations where version >= '20261113000000';
+--
+-- Rollback (run as one transaction):
+--
+--   begin;
+--   -- Restore the GBP default: the same function with "currency":"GBP".
+--   create or replace function public.create_workspace(ws_name text, ws_slug text, ws_settings jsonb default '{}')
+--   returns uuid
+--   language plpgsql
+--   security invoker
+--   set search_path = ''
+--   as $$
+--   declare
+--     ws uuid;
+--     k text;
+--     defaults constant jsonb := '{"hours_per_week":40,"horizon_weeks":13,"currency":"GBP","leads_per_week":0,"active_clients":0,"churn_monthly":0,"retainer":0}';
+--   begin
+--     if coalesce(auth.jwt(), '{}') ? 'api_token_id' then
+--       raise exception 'Workspaces are created in the app' using errcode = '42501';
+--     end if;
+--     if auth.uid() is null or not public.is_agency_admin() then
+--       raise exception 'Only agency admins can create workspaces' using errcode = '42501';
+--     end if;
+--     if ws_name is null or char_length(btrim(ws_name)) not between 1 and 200 then
+--       raise exception 'The name must be 1 to 200 characters' using errcode = '22023';
+--     end if;
+--     ws_settings := coalesce(ws_settings, '{}');
+--     if jsonb_typeof(ws_settings) <> 'object' then
+--       raise exception 'settings must be an object' using errcode = '22023';
+--     end if;
+--     for k in select jsonb_object_keys(ws_settings) loop
+--       if k not in ('hours_per_week', 'horizon_weeks', 'currency') then
+--         raise exception '% can''t be set when creating a workspace', k using errcode = '22023';
+--       end if;
+--     end loop;
+--     if ws_settings ? 'hours_per_week' and not (
+--       jsonb_typeof(ws_settings -> 'hours_per_week') = 'number'
+--       and (ws_settings ->> 'hours_per_week')::numeric > 0 and (ws_settings ->> 'hours_per_week')::numeric <= 168) then
+--       raise exception 'hours_per_week must be a number above 0 and at most 168' using errcode = '22023';
+--     end if;
+--     if ws_settings ? 'horizon_weeks' and not (
+--       jsonb_typeof(ws_settings -> 'horizon_weeks') = 'number'
+--       and (ws_settings ->> 'horizon_weeks')::numeric = trunc((ws_settings ->> 'horizon_weeks')::numeric)
+--       and (ws_settings ->> 'horizon_weeks')::numeric between 1 and 104) then
+--       raise exception 'horizon_weeks must be a whole number from 1 to 104' using errcode = '22023';
+--     end if;
+--     if ws_settings ? 'currency' and not (
+--       jsonb_typeof(ws_settings -> 'currency') = 'string' and (ws_settings ->> 'currency') ~ '^[A-Z]{3}$') then
+--       raise exception 'currency must be a three-letter code such as GBP' using errcode = '22023';
+--     end if;
+--
+--     insert into public.workspaces (name, slug, settings)
+--     values (btrim(ws_name), ws_slug, defaults || ws_settings)
+--     returning id into ws;
+--
+--     insert into public.memberships (workspace_id, user_id, role, source)
+--     values (ws, auth.uid(), 'agency_admin', 'manual');
+--
+--     return ws;
+--   end;
+--   $$;
+--   delete from supabase_migrations.schema_migrations where version = '20261113000000';
+--   commit;
+--
+-- Production data: none needed. Workspaces already created keep their currency.
+
+-- ---------------------------------------------------------------------------
+-- Creating a workspace: AUD by default
+-- ---------------------------------------------------------------------------
+
+-- Agency admins only, and not over an API token. Runs as the caller, so RLS
+-- checks both inserts; `returning` passes the select policy for an admin.
+create or replace function public.create_workspace(ws_name text, ws_slug text, ws_settings jsonb default '{}')
+returns uuid
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  ws uuid;
+  k text;
+  defaults constant jsonb := '{"hours_per_week":40,"horizon_weeks":13,"currency":"AUD","leads_per_week":0,"active_clients":0,"churn_monthly":0,"retainer":0}';
+begin
+  if coalesce(auth.jwt(), '{}') ? 'api_token_id' then
+    raise exception 'Workspaces are created in the app' using errcode = '42501';
+  end if;
+  if auth.uid() is null or not public.is_agency_admin() then
+    raise exception 'Only agency admins can create workspaces' using errcode = '42501';
+  end if;
+  if ws_name is null or char_length(btrim(ws_name)) not between 1 and 200 then
+    raise exception 'The name must be 1 to 200 characters' using errcode = '22023';
+  end if;
+  ws_settings := coalesce(ws_settings, '{}');
+  if jsonb_typeof(ws_settings) <> 'object' then
+    raise exception 'settings must be an object' using errcode = '22023';
+  end if;
+  for k in select jsonb_object_keys(ws_settings) loop
+    if k not in ('hours_per_week', 'horizon_weeks', 'currency') then
+      raise exception '% can''t be set when creating a workspace', k using errcode = '22023';
+    end if;
+  end loop;
+  if ws_settings ? 'hours_per_week' and not (
+    jsonb_typeof(ws_settings -> 'hours_per_week') = 'number'
+    and (ws_settings ->> 'hours_per_week')::numeric > 0 and (ws_settings ->> 'hours_per_week')::numeric <= 168) then
+    raise exception 'hours_per_week must be a number above 0 and at most 168' using errcode = '22023';
+  end if;
+  if ws_settings ? 'horizon_weeks' and not (
+    jsonb_typeof(ws_settings -> 'horizon_weeks') = 'number'
+    and (ws_settings ->> 'horizon_weeks')::numeric = trunc((ws_settings ->> 'horizon_weeks')::numeric)
+    and (ws_settings ->> 'horizon_weeks')::numeric between 1 and 104) then
+    raise exception 'horizon_weeks must be a whole number from 1 to 104' using errcode = '22023';
+  end if;
+  if ws_settings ? 'currency' and not (
+    jsonb_typeof(ws_settings -> 'currency') = 'string' and (ws_settings ->> 'currency') ~ '^[A-Z]{3}$') then
+    raise exception 'currency must be a three-letter code such as AUD' using errcode = '22023';
+  end if;
+
+  insert into public.workspaces (name, slug, settings)
+  values (btrim(ws_name), ws_slug, defaults || ws_settings)
+  returning id into ws;
+
+  insert into public.memberships (workspace_id, user_id, role, source)
+  values (ws, auth.uid(), 'agency_admin', 'manual');
+
+  return ws;
+end;
+$$;
+
+revoke all on function public.create_workspace(text, text, jsonb) from public, anon;
+grant execute on function public.create_workspace(text, text, jsonb) to authenticated;
+
+insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261113000000', 'cost_per_month', array['-- Cost per month (docs/analysis-rules.md "Cost per month"; issue #108).
+--
+-- New workspaces default to AUD. `public.create_workspace` is redefined as a
+-- copy of the 20261021000000 version whose default settings carry
+-- "currency":"AUD" instead of "GBP". Existing workspaces keep their currency
+-- (nothing here touches `workspaces` rows), and a caller can still pass any
+-- three-letter code.
+--
+-- (The step setting "lost per day of waiting" that costs the waiting insight is
+-- A42''s column, `steps.lost_per_day_waiting`, in 20261110000000.)
+--
+-- Strictly additive: a function replaced by a copy that differs only in the
+-- default currency.
+--
+-- Preflight (run each with `bash packages/db/scripts/prod-sql.sh -c "..."`):
+--
+--   1. The function is the 20261021000000 one (it has the ''GBP'' default). Expect 1 row:
+--        select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+--        where n.nspname=''public'' and p.proname=''create_workspace'' and pg_get_functiondef(p.oid) like ''%"currency":"GBP"%'';
+--   2. This migration is not applied yet. Expect 0 rows:
+--        select version from supabase_migrations.schema_migrations where version >= ''20261113000000'';
+--
+-- Rollback (run as one transaction):
+--
+--   begin;
+--   -- Restore the GBP default: the same function with "currency":"GBP".
+--   create or replace function public.create_workspace(ws_name text, ws_slug text, ws_settings jsonb default ''{}'')
+--   returns uuid
+--   language plpgsql
+--   security invoker
+--   set search_path = ''''
+--   as $$
+--   declare
+--     ws uuid;
+--     k text;
+--     defaults constant jsonb := ''{"hours_per_week":40,"horizon_weeks":13,"currency":"GBP","leads_per_week":0,"active_clients":0,"churn_monthly":0,"retainer":0}'';
+--   begin
+--     if coalesce(auth.jwt(), ''{}'') ? ''api_token_id'' then
+--       raise exception ''Workspaces are created in the app'' using errcode = ''42501'';
+--     end if;
+--     if auth.uid() is null or not public.is_agency_admin() then
+--       raise exception ''Only agency admins can create workspaces'' using errcode = ''42501'';
+--     end if;
+--     if ws_name is null or char_length(btrim(ws_name)) not between 1 and 200 then
+--       raise exception ''The name must be 1 to 200 characters'' using errcode = ''22023'';
+--     end if;
+--     ws_settings := coalesce(ws_settings, ''{}'');
+--     if jsonb_typeof(ws_settings) <> ''object'' then
+--       raise exception ''settings must be an object'' using errcode = ''22023'';
+--     end if;
+--     for k in select jsonb_object_keys(ws_settings) loop
+--       if k not in (''hours_per_week'', ''horizon_weeks'', ''currency'') then
+--         raise exception ''% can''''t be set when creating a workspace'', k using errcode = ''22023'';
+--       end if;
+--     end loop;
+--     if ws_settings ? ''hours_per_week'' and not (
+--       jsonb_typeof(ws_settings -> ''hours_per_week'') = ''number''
+--       and (ws_settings ->> ''hours_per_week'')::numeric > 0 and (ws_settings ->> ''hours_per_week'')::numeric <= 168) then
+--       raise exception ''hours_per_week must be a number above 0 and at most 168'' using errcode = ''22023'';
+--     end if;
+--     if ws_settings ? ''horizon_weeks'' and not (
+--       jsonb_typeof(ws_settings -> ''horizon_weeks'') = ''number''
+--       and (ws_settings ->> ''horizon_weeks'')::numeric = trunc((ws_settings ->> ''horizon_weeks'')::numeric)
+--       and (ws_settings ->> ''horizon_weeks'')::numeric between 1 and 104) then
+--       raise exception ''horizon_weeks must be a whole number from 1 to 104'' using errcode = ''22023'';
+--     end if;
+--     if ws_settings ? ''currency'' and not (
+--       jsonb_typeof(ws_settings -> ''currency'') = ''string'' and (ws_settings ->> ''currency'') ~ ''^[A-Z]{3}$'') then
+--       raise exception ''currency must be a three-letter code such as GBP'' using errcode = ''22023'';
+--     end if;
+--
+--     insert into public.workspaces (name, slug, settings)
+--     values (btrim(ws_name), ws_slug, defaults || ws_settings)
+--     returning id into ws;
+--
+--     insert into public.memberships (workspace_id, user_id, role, source)
+--     values (ws, auth.uid(), ''agency_admin'', ''manual'');
+--
+--     return ws;
+--   end;
+--   $$;
+--   delete from supabase_migrations.schema_migrations where version = ''20261113000000'';
+--   commit;
+--
+-- Production data: none needed. Workspaces already created keep their currency.
+
+-- ---------------------------------------------------------------------------
+-- Creating a workspace: AUD by default
+-- ---------------------------------------------------------------------------
+
+-- Agency admins only, and not over an API token. Runs as the caller, so RLS
+-- checks both inserts; `returning` passes the select policy for an admin.
+create or replace function public.create_workspace(ws_name text, ws_slug text, ws_settings jsonb default ''{}'')
+returns uuid
+language plpgsql
+security invoker
+set search_path = ''''
+as $$
+declare
+  ws uuid;
+  k text;
+  defaults constant jsonb := ''{"hours_per_week":40,"horizon_weeks":13,"currency":"AUD","leads_per_week":0,"active_clients":0,"churn_monthly":0,"retainer":0}'';
+begin
+  if coalesce(auth.jwt(), ''{}'') ? ''api_token_id'' then
+    raise exception ''Workspaces are created in the app'' using errcode = ''42501'';
+  end if;
+  if auth.uid() is null or not public.is_agency_admin() then
+    raise exception ''Only agency admins can create workspaces'' using errcode = ''42501'';
+  end if;
+  if ws_name is null or char_length(btrim(ws_name)) not between 1 and 200 then
+    raise exception ''The name must be 1 to 200 characters'' using errcode = ''22023'';
+  end if;
+  ws_settings := coalesce(ws_settings, ''{}'');
+  if jsonb_typeof(ws_settings) <> ''object'' then
+    raise exception ''settings must be an object'' using errcode = ''22023'';
+  end if;
+  for k in select jsonb_object_keys(ws_settings) loop
+    if k not in (''hours_per_week'', ''horizon_weeks'', ''currency'') then
+      raise exception ''% can''''t be set when creating a workspace'', k using errcode = ''22023'';
+    end if;
+  end loop;
+  if ws_settings ? ''hours_per_week'' and not (
+    jsonb_typeof(ws_settings -> ''hours_per_week'') = ''number''
+    and (ws_settings ->> ''hours_per_week'')::numeric > 0 and (ws_settings ->> ''hours_per_week'')::numeric <= 168) then
+    raise exception ''hours_per_week must be a number above 0 and at most 168'' using errcode = ''22023'';
+  end if;
+  if ws_settings ? ''horizon_weeks'' and not (
+    jsonb_typeof(ws_settings -> ''horizon_weeks'') = ''number''
+    and (ws_settings ->> ''horizon_weeks'')::numeric = trunc((ws_settings ->> ''horizon_weeks'')::numeric)
+    and (ws_settings ->> ''horizon_weeks'')::numeric between 1 and 104) then
+    raise exception ''horizon_weeks must be a whole number from 1 to 104'' using errcode = ''22023'';
+  end if;
+  if ws_settings ? ''currency'' and not (
+    jsonb_typeof(ws_settings -> ''currency'') = ''string'' and (ws_settings ->> ''currency'') ~ ''^[A-Z]{3}$'') then
+    raise exception ''currency must be a three-letter code such as AUD'' using errcode = ''22023'';
+  end if;
+
+  insert into public.workspaces (name, slug, settings)
+  values (btrim(ws_name), ws_slug, defaults || ws_settings)
+  returning id into ws;
+
+  insert into public.memberships (workspace_id, user_id, role, source)
+  values (ws, auth.uid(), ''agency_admin'', ''manual'');
+
+  return ws;
+end;
+$$;
+
+revoke all on function public.create_workspace(text, text, jsonb) from public, anon;
+grant execute on function public.create_workspace(text, text, jsonb) to authenticated;
+']);
+
 -- seed.sql
 -- Generated by `pnpm --filter @transpera-flow/db gen:seed`. Do not edit by hand.
 
@@ -11929,7 +12233,7 @@ insert into public.process_revisions (id, workspace_id, process_id, number, stat
 insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, expected_wait_hours, lost_per_day_waiting, dropoff_benchmark, target_cycle_hours, current_wip, parent_step_id, entry_step_id, child_process_id, x, y, assumption, conflict, provenance) values
   ('e0000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Qualify lead', 'task', null, 'b0000000-0000-4000-8000-000000000001', null, 0.5, 'lognormal', '{}', 4, 'lognormal', '{}', 0, null, 'HubSpot', null, null, null, null, null, null, null, null, null, null, 60, 50, false, false, '{}'),
   ('e0000000-0000-4000-8000-000000000002', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Discovery call', 'task', null, 'b0000000-0000-4000-8000-000000000001', null, 1.5, 'lognormal', '{}', 24, 'lognormal', '{}', 0, null, 'Zoom + HubSpot', null, null, null, null, null, null, null, null, null, null, 290, 50, false, false, '{"wait_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Priya Shah","quote":"Discovery calls get booked within three working days of qualifying.","timestamp":null,"value":24}]}}'),
-  ('e0000000-0000-4000-8000-000000000003', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Audit & proposal', 'task', null, 'b0000000-0000-4000-8000-000000000002', null, 6, 'lognormal', '{}', 0, 'lognormal', '{}', 0.15, null, 'SEMrush, Google Docs', null, null, null, null, null, null, null, null, null, null, 520, 50, false, false, '{"work_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000001","speaker":"Maya Collins","quote":"A proper audit and proposal is a day''s work, call it six hours.","timestamp":"00:14:05","value":6}]},"rework_rate":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Priya Shah","quote":"About one proposal in seven comes back from sales review for changes.","timestamp":null,"value":0.15}]}}'),
+  ('e0000000-0000-4000-8000-000000000003', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Audit & proposal', 'task', null, 'b0000000-0000-4000-8000-000000000002', null, 6, 'lognormal', '{}', 0, 'lognormal', '{}', 0.15, null, 'SEMrush, Google Docs', null, null, null, 0.05, null, null, null, null, null, null, 520, 50, false, false, '{"work_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000001","speaker":"Maya Collins","quote":"A proper audit and proposal is a day''s work, call it six hours.","timestamp":"00:14:05","value":6}]},"rework_rate":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Priya Shah","quote":"About one proposal in seven comes back from sales review for changes.","timestamp":null,"value":0.15}]}}'),
   ('e0000000-0000-4000-8000-000000000004', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Client decision', 'decision', null, null, null, 0, 'lognormal', '{}', 40, 'lognormal', '{}', 0, null, 'Email', null, null, null, null, null, null, null, null, null, null, 750, 50, false, false, '{"wait_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Tom Reed","quote":"Clients take a week to decide, sometimes longer.","timestamp":null,"value":40}]}}'),
   ('e0000000-0000-4000-8000-000000000005', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Contract & onboarding', 'task', null, 'b0000000-0000-4000-8000-000000000003', null, 3, 'lognormal', '{}', 16, 'lognormal', '{}', 0.1, null, 'PandaDoc, Notion', null, null, null, null, null, null, null, null, null, null, 60, 290, false, false, '{}'),
   ('e0000000-0000-4000-8000-000000000006', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Kickoff & strategy', 'task', null, 'b0000000-0000-4000-8000-000000000002', null, 4, 'lognormal', '{}', 8, 'lognormal', '{}', 0, null, 'Notion', null, null, null, null, null, null, null, null, null, null, 290, 290, false, false, '{}'),

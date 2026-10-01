@@ -1,0 +1,111 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+
+// Every field on the Editor screen has an (i) with a plain-English description and an example (issue #104, D34).
+// The step inspector's fields take a `help` prop and the other panels use <Help>; this reads the source so a new
+// control without one, or one worded in jargon, fails here.
+
+const read = (path: string) => readFileSync(new URL(`../src/${path}`, import.meta.url), "utf8");
+
+/** The opening tags of the fields in a source file, as written. */
+function fieldTags(source: string): string[] {
+  const out: string[] = [];
+  const open = /<(TextField|NumberField|SelectField)\b/g;
+  for (let m = open.exec(source); m; m = open.exec(source)) {
+    // The tag ends at the first `>` that isn't part of `=>` or inside braces.
+    let depth = 0;
+    let i = m.index;
+    for (; i < source.length; i++) {
+      const c = source[i]!;
+      if (c === "{") depth++;
+      else if (c === "}") depth--;
+      else if (c === ">" && depth === 0 && source[i - 1] !== "=") break;
+    }
+    out.push(source.slice(m.index, i + 1));
+  }
+  return out;
+}
+
+/** Every `<Help ... />` in a source file, as written (its tag runs to the `/>`). */
+function helpTags(source: string): string[] {
+  return source.match(/<Help\b[\s\S]*?\/>/g) ?? [];
+}
+
+/** The words a person reads: a field's label and its (i) text, not the code around them. */
+const words = (tag: string) =>
+  [...tag.matchAll(/(?:label|description|example):\s*"([^"]*)"|(?:label|description|example)="([^"]*)"/g)].map((m) => m[1] ?? m[2]).join(" ");
+
+const JARGON = /\b(SLA|WIP|CV|Mean|lognormal|triangular|constant|distribution|warm-up|replications?)\b/i;
+
+describe("the Editor's inspector", () => {
+  const source = read("components/step-inspector.tsx");
+  const tags = fieldTags(source);
+
+  it("finds the inspector's fields", () => {
+    expect(tags.length).toBeGreaterThanOrEqual(15);
+  });
+
+  it("gives every field an (i) with a description and an example", () => {
+    const missing = tags
+      .filter((t) => !/help=\{\{/.test(t) || !/description:\s*[^,\s]/.test(t) || !/example:\s*[^,\s]/.test(t))
+      .map((t) => /label="([^"]+)"/.exec(t)?.[1] ?? t.slice(0, 60));
+    expect(missing).toEqual([]);
+  });
+
+  it("uses plain words, not jargon, in its labels, options and (i) text", () => {
+    for (const tag of tags) expect(words(tag), words(tag)).not.toMatch(JARGON);
+    const options = /const DIST_OPTIONS[\s\S]*?\];/.exec(source)![0];
+    const optionLabels = [...options.matchAll(/label: "([^"]*)"/g)].map((m) => m[1]);
+    expect(optionLabels).toHaveLength(3);
+    expect(optionLabels.join(" | ")).not.toMatch(JARGON);
+    // The note under the fields too.
+    expect(source).not.toMatch(/warm-up/i);
+  });
+});
+
+describe("every (i) on the Editor screen", () => {
+  const files = [
+    "components/editor/palette.tsx",
+    "components/editor/inspector.tsx",
+    "components/editor/simulate-footer.tsx",
+    "components/editor/editor-bar.tsx",
+    "components/evidence.tsx",
+  ];
+
+  it("has a label, a description and an example, each on its own", () => {
+    for (const file of files) {
+      const tags = helpTags(read(file));
+      expect(tags.length, file).toBeGreaterThan(0);
+      for (const tag of tags) {
+        const where = `${file}: ${tag.slice(0, 60)}`;
+        expect(tag, where).toMatch(/label=/);
+        expect(tag, where).toMatch(/description=\{?"[^"]{15,}"/);
+        expect(tag, where).toMatch(/example=\{?"[^"]{8,}"/);
+      }
+    }
+  });
+
+  it("keeps each named (i), so deleting one is caught", () => {
+    const expected: Record<string, string[]> = {
+      "components/editor/inspector.tsx": ["Loose ends", "First principles", "First step"],
+      "components/editor/palette.tsx": ["Add", "Groups", "Blocks"],
+      "components/editor/editor-bar.tsx": ["Simulate"],
+      "components/editor/simulate-footer.tsx": ["Compared with live"],
+    };
+    for (const [file, labels] of Object.entries(expected)) {
+      const tags = helpTags(read(file));
+      expect(tags.map((t) => /label="([^"]+)"/.exec(t)?.[1]), file).toEqual(labels);
+    }
+  });
+
+  it("puts one beside each heading of the palette, as the prototype has them", () => {
+    expect(helpTags(read("components/editor/palette.tsx"))).toHaveLength(3);
+  });
+
+  it("cites a source with an (i) on every field of the form", () => {
+    const form = helpTags(read("components/evidence.tsx"));
+    for (const label of ["Evidence", "Value", "Source", "Speaker", "Where", "Quote", "The value they stated"]) {
+      expect(form.some((t) => t.includes(`label="${label}"`)), label).toBe(true);
+    }
+  });
+});

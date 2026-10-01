@@ -28,6 +28,9 @@
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
   --color-accent-fg: var(--accent-fg);
+  --color-edit: var(--edit);
+  --color-edit-soft: var(--edit-soft);
+  --color-edit-fg: var(--edit-fg);
   --color-good: var(--good);
   --color-warn: var(--warn);
   --color-serious: var(--serious);

@@ -34,14 +34,14 @@ export const OUTCOME_LABELS: Record<StepOutcome, string> = { won: "Won", lost: "
 /** Probabilities within this of 100% count as 100%. */
 const TOLERANCE = 1e-6;
 
-const newId = (): string => crypto.randomUUID();
+export const newId = (): string => crypto.randomUUID();
 
 const round = (v: number) => Math.round(v * 1000) / 1000;
 
 const stepName = (bundle: ProcessBundle, id: string) => bundle.steps.find((s) => s.id === id)?.name ?? "step";
 
 /** Defaults for a new step of each kind. */
-function newStepRow(bundle: ProcessBundle, kind: NewStepKind, outcome: StepOutcome | null, x: number, y: number): StepRow {
+export function newStepRow(bundle: ProcessBundle, kind: NewStepKind, outcome: StepOutcome | null, x: number, y: number): StepRow {
   const { revision } = bundle;
   const names: Record<NewStepKind, string> = {
     task: "New task",

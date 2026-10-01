@@ -57,7 +57,7 @@ describe("parseNewWorkspace", () => {
     expect(parseNewWorkspace(form({ name: "  Acme Dental " }))).toEqual({
       name: "Acme Dental",
       slug: "acme-dental",
-      settings: { hours_per_week: 40, currency: "GBP", horizon_weeks: 13 },
+      settings: { hours_per_week: 40, currency: "AUD", horizon_weeks: 13 },
     });
   });
   it("uses the values given, the slug trimmed and lower-cased and the currency upper-cased", () => {

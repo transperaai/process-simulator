@@ -50,5 +50,5 @@ export async function createServicingProcess(workspaceId: string, slug: string, 
   if (!stepError) {
     await supabase.from("edges").insert({ ...base, from_step_id: start, to_step_id: end, probability: 1 });
   }
-  redirect(`/w/${encodeURIComponent(slug)}/p/${proc.id}`);
+  redirect(`/w/${encodeURIComponent(slug)}/p/${proc.id}/edit`);
 }

@@ -19,6 +19,7 @@ import {
   type SimulationResult,
   ruleOfFinding,
   withoutDisabledRules,
+  resolveMoney,
 } from "@transpera-flow/engine";
 
 const clean = (s: AnalysisSettings): AnalysisSettings => parseAnalysisSettings(s).value;
@@ -88,8 +89,16 @@ export function rerate(
   processId?: string | null,
   /** The absence test's result for this model (its own pass, see `useAbsenceTest`); without it "only one person can do it" raises nothing. */
   absence?: AbsenceTest | null,
+  /** The workspace currency for the cost descriptions, and the shadow prices the too-busy cost needs (issue #108). */
+  costs: { currency?: string; shadowPrices?: Record<string, number> } = {},
 ): DetectedIssue[] {
-  return detectIssues(model, result, toRatingConfig(settings, model.hoursPerWeek), { processId, absence });
+  return detectIssues(model, result, toRatingConfig(settings, model.hoursPerWeek), {
+    processId,
+    absence,
+    // The money settings (12-month cap, absences a year) are the workspace's.
+    cost: { ...resolveMoney(settings), ...(costs.currency ? { currency: costs.currency } : {}) },
+    ...(costs.shadowPrices ? { shadowPrices: costs.shadowPrices } : {}),
+  });
 }
 
 export interface RatingTally {

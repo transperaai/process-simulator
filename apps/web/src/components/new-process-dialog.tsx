@@ -1,7 +1,6 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Plus } from "lucide-react";
 import { Help } from "@/components/help";
 import type { CreateProcessResult } from "@/app/w/[slug]/process-actions";
 import { Button } from "@/components/ui/button";
@@ -15,8 +14,8 @@ export function NewProcessButton({ create }: { create: CreateProcess }) {
   const [open, setOpen] = useState(false);
   return (
     <span className="inline-flex items-center">
-      <Button onClick={() => setOpen(true)}>
-        <Plus /> New process
+      <Button className="bg-edit text-edit-fg hover:bg-edit/90" onClick={() => setOpen(true)}>
+        ✎ New process
       </Button>
       <Help
         label="New process"

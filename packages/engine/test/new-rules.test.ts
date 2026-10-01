@@ -151,7 +151,7 @@ describe("the absence test (rule 8)", () => {
   });
 
   describe("rating", () => {
-    const person: AbsenceFinding = { personId: "solo#1", stepIds: ["a"], workLost: 0, itemsLost: 0, recoveryWeeks: 0, recovered: true, extraMissed: 0, clientDeadlineMissed: false };
+    const person: AbsenceFinding = { personId: "solo#1", stepIds: ["a"], workLost: 0, itemsLost: 0, winsLost: 0, recoveryWeeks: 0, recovered: true, extraMissed: 0, clientDeadlineMissed: false };
     const rate = (over: Partial<AbsenceFinding>, config: RatingConfigInput = {}) => {
       const test: AbsenceTest = { reps: 10, seed: 1, weeksAway: 2, startWeek: 2, complete: true, people: [{ ...person, ...over }] };
       return find(detectIssues(solo, simulate(solo, 6, 1), config, { absence: test }), "spof:step:a")?.rating ?? "great";

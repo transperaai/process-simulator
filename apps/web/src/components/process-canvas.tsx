@@ -227,7 +227,7 @@ function Badges({ change, estimate, conflict = false, quote = null }: { change: 
       {label && (
         <span
           aria-hidden
-          className={`${badgeClass} ${change === "removed" ? "border-crit bg-crit-soft text-crit" : "border-accent bg-accent-soft text-fg"}`}
+          className={`${badgeClass} ${change === "removed" ? "border-crit bg-crit-soft text-crit" : "border-edit bg-edit-soft text-fg"}`}
         >
           {label}
         </span>
@@ -287,7 +287,7 @@ function RestoreButton({ table, id, what }: { table: Table; id: string; what: st
 
 /** Card classes for a step's place in the draft. */
 const changeClass = (d: { ghost?: boolean; change: ChangeKind | null }) =>
-  d.ghost ? "opacity-70 !border-dashed !border-crit" : d.change === "added" ? "!border-dashed !border-2 !border-accent" : "";
+  d.ghost ? "opacity-70 !border-dashed !border-crit" : d.change === "added" ? "!border-dashed !border-2 !border-edit" : d.change === "changed" ? "!border-edit" : "";
 
 const handleClass = (editable: boolean) =>
   editable ? "!size-2.5 !border-2 !border-panel !bg-fg-3 hover:!bg-accent" : "!bg-line-2";
@@ -305,7 +305,7 @@ function Warning({ text }: { text: string }) {
   );
 }
 
-const selectedRing = "outline-2 outline-offset-2 outline-accent";
+const selectedRing = "outline-2 outline-offset-2 outline-edit";
 
 /** Highlighted cards get a heavy outline; the rest fade (issue #99). */
 const litClass = (lit: boolean | null) => (lit === true ? "!border-accent outline-2 outline-offset-1 outline-accent" : lit === false ? "opacity-40" : "");
@@ -580,7 +580,10 @@ function BranchEdge(props: EdgeProps<BranchFlowEdge>) {
             className="nodrag nopan absolute"
             style={{
               // The editor stays readable at any zoom and sits above the nodes.
-              transform: `translate(${labelX}px, ${labelY}px) ${editing ? `scale(${1 / zoom})` : ""} translate(-50%, -50%)`,
+              // Read-only, the label sits just above the line at its start, in the gap beside the card, not on one at the middle of a short link.
+              transform: editing
+                ? `translate(${labelX}px, ${labelY}px) scale(${1 / zoom}) translate(-50%, -50%)`
+                : `translate(${props.sourceX + 4}px, ${props.sourceY - 2}px) translate(0, -100%)`,
               transformOrigin: "0 0",
               zIndex: editing ? 1002 : undefined,
               pointerEvents: "all",
@@ -589,7 +592,7 @@ function BranchEdge(props: EdgeProps<BranchFlowEdge>) {
             {editing ? (
               <BranchEditor key={id} editor={editor} edgeId={id} probability={p} tag={tag} />
             ) : (
-              <span className="rounded-token bg-panel px-1 font-mono text-[11px] text-fg-2 tabular-nums">{text}</span>
+              <span title={text} className="block max-w-[5.5rem] truncate rounded-token bg-panel px-1 font-mono text-[11px] text-fg-2 tabular-nums">{text}</span>
             )}
           </div>
         </EdgeLabelRenderer>
@@ -765,6 +768,8 @@ interface CanvasProps {
   openIssues?: Record<string, number>;
   /** A step's rating (a rank, higher is worse, with its label), which a closed group takes the worst of. Absent until the workspace has ratings. */
   rating?: (stepId: string) => { rank: number; label: string } | null;
+  /** The Editor has its own palette (issue #104): leave "Add step" out of the toolbar. */
+  hideAdd?: boolean;
   /**
    * Which groups are open. Pass it with `onExpandedChange` to share open state between maps (the Solution page shows two);
    * left out, the map keeps its own (closed when read-only, open when editable).
@@ -820,6 +825,7 @@ function Canvas({
   savedLabel = "Saved",
   openIssues,
   rating,
+  hideAdd = false,
   expanded: expandedProp,
   onExpandedChange,
   highlight = null,
@@ -867,6 +873,15 @@ function Canvas({
   const transient = highlightKey === startKey ? null : highlight;
   const drawn = useMemo(() => withHighlightOpen(bundle.steps, expanded, transient), [bundle.steps, expanded, transient]);
   const lit = useMemo(() => (highlight?.length ? litIds(bundle.steps, drawn, highlight) : null), [bundle.steps, drawn, highlight]);
+  // In the Editor a group that appears (just added, grouped, or brought back by undo) opens, so its steps can be edited.
+  const knownGroups = useRef<ReadonlySet<string>>(new Set(groupIds(bundle.steps)));
+  useEffect(() => {
+    if (!editor) return;
+    const ids = groupIds(bundle.steps);
+    const fresh = ids.filter((id) => !knownGroups.current.has(id));
+    knownGroups.current = new Set(ids);
+    if (fresh.length) setExpanded((prev) => new Set([...prev, ...fresh]));
+  }, [bundle.steps, editor, setExpanded]);
   const hasGroups = useMemo(() => bundle.steps.some((st) => isGroup(st) || st.child_process_id), [bundle.steps]);
   const allGroups = useMemo(() => groupIds(bundle.steps), [bundle.steps]);
   const toggleGroup = useCallback(
@@ -1084,7 +1099,7 @@ function Canvas({
         const change = e.rolled ? undefined : diff?.edges.get(e.id);
         const relabelled = change?.kind === "changed" && change.fields.some((f) => f.field === "probability" || f.field === "condition_tag");
         const was = relabelled ? labelOf(Number(change.live!.probability), change.live!.condition_tag) : null;
-        const tone = selected.has(e.id) || change ? "var(--accent)" : "var(--line-2)";
+        const tone = selected.has(e.id) || change ? "var(--edit)" : "var(--line-2)";
         return {
           id: e.id,
           source: e.from_step_id,
@@ -1457,7 +1472,7 @@ function Canvas({
           tabIndex={-1}
           onDoubleClick={onDoubleClick}
           onKeyDownCapture={onKeyDownCapture}
-          className={`relative isolate flex min-w-0 flex-col rounded-lg border bg-card ${heightMode === "fill" ? "min-h-[24rem] flex-1" : ""}`}
+          className={`relative isolate flex min-w-0 flex-col rounded-lg border bg-card ${heightMode === "fill" ? "min-h-[24rem] flex-1" : "self-start"}`}
           role="region"
           aria-label={`${bundle.process.name} process map`}
         >
@@ -1485,7 +1500,7 @@ function Canvas({
           {/* Before the map in the page, so Tab reaches the toolbar first. */}
           {editable && editorState && (
             <div className="absolute top-2.5 left-2.5 z-10 max-w-[calc(100%-1.25rem)]">
-              <Toolbar bundle={bundle} editor={editor} state={editorState} onAdd={addFromToolbar} savedLabel={savedLabel} />
+              <Toolbar bundle={bundle} editor={editor} state={editorState} onAdd={addFromToolbar} hideAdd={hideAdd} savedLabel={savedLabel} />
             </div>
           )}
           {diff && diff.list.length > 0 && (
@@ -1493,7 +1508,7 @@ function Canvas({
               aria-hidden
               className="absolute top-12 right-2.5 z-10 hidden rounded-token border border-line bg-panel/95 px-2 py-1 text-[11px] text-fg-2 shadow-token md:block"
             >
-              <span className="mr-1 inline-block h-2.5 w-4 border border-dashed border-accent align-middle" /> new ·{" "}
+              <span className="mr-1 inline-block h-2.5 w-4 border border-dashed border-edit align-middle" /> new ·{" "}
               <s>removed</s> · <s className="text-fg-3">was</s> → now
             </p>
           )}
@@ -1697,12 +1712,14 @@ function Toolbar({
   editor,
   state,
   onAdd,
+  hideAdd,
   savedLabel,
 }: {
   bundle: ProcessBundle;
   editor: ProcessEditor;
   state: EditorState;
   onAdd: (kind: NewStepKind, outcome: StepOutcome | null) => void;
+  hideAdd: boolean;
   savedLabel: string;
 }) {
   const [kind, setKind] = useState<NewStepKind>("task");
@@ -1715,6 +1732,8 @@ function Toolbar({
       aria-label="Edit the process"
       className="flex flex-wrap items-center gap-1.5 rounded-token border border-line bg-panel/95 p-1.5 text-xs shadow-token"
     >
+      {!hideAdd && (
+<>
       <label className="sr-only" htmlFor="new-step-kind">
         Kind of step to add
       </label>
@@ -1758,6 +1777,8 @@ function Toolbar({
         Add step
       </button>
       <span aria-hidden className="mx-0.5 h-5 w-px bg-line" />
+</>
+)}
       <button
         type="button"
         onClick={() => editor.undo()}

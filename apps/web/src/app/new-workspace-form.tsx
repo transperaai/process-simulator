@@ -85,9 +85,9 @@ export function NewWorkspaceForm() {
       <Field
         label="Currency"
         className="w-28"
-        help={{ description: "The three-letter code for the currency your prices and costs are in.", example: "GBP for pounds, USD for dollars, AUD for Australian dollars." }}
+        help={{ description: "The three-letter code for the currency your prices and costs are in.", example: "Leave blank for AUD (Australian dollars). GBP is pounds, USD is dollars." }}
       >
-        {(id) => <Input id={id} name="currency" maxLength={3} placeholder="GBP" className="uppercase" />}
+        {(id) => <Input id={id} name="currency" maxLength={3} placeholder="AUD" className="uppercase" />}
       </Field>
       <Field
         label="Horizon (weeks)"

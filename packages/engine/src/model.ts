@@ -173,6 +173,12 @@ export interface EngineClient {
   services: string[];
   /** Monthly recurring revenue: what it bills a month while active. */
   mrr: number;
+  /**
+   * Months it has been a client when the run starts, for what losing it is
+   * worth (the tenure it has left, docs/analysis-rules.md "Cost per month").
+   * Omitted: counted as new. It doesn't change the simulation.
+   */
+  monthsActive?: number;
   /** Health 0–100 at the start of the run. Omitted: `EngineHealthRules.initial` (80). */
   health?: number;
   /**
@@ -542,6 +548,8 @@ export interface WeeklySamples {
   queue: Record<string, number[]>;
   /** Cumulative completed items (won, done, and servicing tasks on time or late) at the end of each week. */
   completed: number[];
+  /** Cumulative wins (entities reaching their first `won` end) at the end of each week. */
+  won: number[];
 }
 
 export interface ReplicationResult {

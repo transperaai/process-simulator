@@ -7,6 +7,7 @@
 
 import type { DetectedIssue } from "./issues";
 import type { EngineModel, SimulationResult } from "./model";
+import { DEFAULT_COST_CONFIG, WEEKS_PER_MONTH, formatMoney, type CostConfig } from "./cost";
 import { escalationNote, ratingFields, rateRule, resolveRatingConfig, resolveRule, type RatingConfig, type RatingConfigInput } from "./ratings";
 
 const LOCALE = "en-GB";
@@ -19,7 +20,12 @@ const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
  * the overtime cap used: any regular overtime is Bad, the cap used up is
  * Operational risk (docs/analysis-rules.md).
  */
-export function overtimeIssues(model: EngineModel, result: SimulationResult, ratingConfig: RatingConfigInput | RatingConfig = {}): DetectedIssue[] {
+export function overtimeIssues(
+  model: EngineModel,
+  result: SimulationResult,
+  ratingConfig: RatingConfigInput | RatingConfig = {},
+  money: CostConfig = DEFAULT_COST_CONFIG,
+): DetectedIssue[] {
   const config = resolveRatingConfig(ratingConfig);
   const cap = Math.max(0, model.overtimeCap ?? 0);
   if (!(cap > 0)) return [];
@@ -44,11 +50,16 @@ export function overtimeIssues(model: EngineModel, result: SimulationResult, rat
       key: subject.key,
       type: "capacity",
       ...ratingFields(outcome),
+      cost: {
+        perMonth: r.overtimeHours * subject.rate * WEEKS_PER_MONTH,
+        hoursPerMonth: r.overtimeHours * WEEKS_PER_MONTH,
+        method: `Overtime hours × cost rate: ${num(r.overtimeHours * WEEKS_PER_MONTH)} h a month at ${formatMoney(subject.rate, money.currency)} an hour.`,
+      },
       title: `${subject.name} works ${num(r.overtimeHours)} h/wk overtime`,
       evidence:
         `Simulated: ${num(r.ongoingHours)} h/wk of client work against ${num(subject.capacity)} h/wk capacity, so ` +
         `${num(r.overtimeHours)} h/wk overtime on average${band ? ` (range ${num(band.p10 * subject.capacity)}–${num(band.p90 * subject.capacity)})` : ""}` +
-        ` within the ${pct(cap)} cap, costing about ${num(r.overtimeHours * weeks * subject.rate, 0)} at cost rates over the ${num(weeks, 0)}-week run.` +
+        ` within the ${pct(cap)} cap, costing about ${formatMoney(r.overtimeHours * weeks * subject.rate, money.currency)} at cost rates over the ${num(weeks, 0)}-week run.` +
         (atCap ? " The cap is used up: more client work pushes utilisation past 100%." : "") +
       ` ${escalationNote(outcome)}`.trimEnd(),
       metrics: {

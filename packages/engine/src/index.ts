@@ -146,6 +146,27 @@ export {
   type ScenarioCheck,
   type ScenarioStatus,
 } from "./broken";
+export {
+  DEFAULT_COST_CONFIG,
+  WEEKS_PER_MONTH,
+  averageDealValue,
+  chanceToSign,
+  chanceToSignByStep,
+  churnLossValue,
+  clientLossValue,
+  compareCostsDesc,
+  dealValue,
+  formatMoney,
+  lossValueAtStep,
+  noCost,
+  remainingTenure,
+  resolveCostConfig,
+  serviceMix,
+  shadowPricesFor,
+  type CostConfig,
+  type CostConfigInput,
+  type IssueCost,
+} from "./cost";
 export { compareHeadline, compareRuns, type Comparison, type Delta, type Headline, type HeadlineInput } from "./compare";
 export {
   DETECTORS,

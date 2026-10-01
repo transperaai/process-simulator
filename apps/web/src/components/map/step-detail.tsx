@@ -105,7 +105,7 @@ export function StepDetail({
               {RATING_LABELS[rating]}
             </>
           ) : (
-            "No confirmed issues"
+            "Nothing to fix"
           )}
         </dd>
       </dl>

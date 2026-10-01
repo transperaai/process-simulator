@@ -48,6 +48,8 @@ export interface PromoteInput extends Links {
   evidence_metrics: Record<string, number>;
   /** The client it is about: a churn risk (issue #19). */
   client_id?: string | null;
+  /** Tracked as dismissed in one write (an insight someone dismissed); omitted means open. */
+  status?: "open" | "dismissed";
 }
 
 const object = (input: unknown): Record<string, unknown> | null =>
@@ -93,7 +95,8 @@ export function parsePromoteInput(input: unknown): Parsed<PromoteInput> {
     return { ok: false, error: "That detected issue isn't valid." };
   }
   if (!optionalId(o.client_id)) return { ok: false, error: "That detected issue isn't valid." };
-  // A tracked detection always starts open.
+  // A tracked detection starts open, or dismissed when that is what the person chose; nothing else.
+  if (o.status !== undefined && o.status !== "open" && o.status !== "dismissed") return { ok: false, error: "That detected issue isn't valid." };
   const rest: Partial<IssueInput> = { ...base.value };
   delete rest.status;
   return {
@@ -101,6 +104,7 @@ export function parsePromoteInput(input: unknown): Parsed<PromoteInput> {
     value: {
       ...(rest as Omit<IssueInput, "status">),
       detected_key: o.detected_key,
+      status: o.status === "dismissed" ? "dismissed" : "open",
       evidence_metrics: metrics as Record<string, number>,
       ...(o.client_id ? { client_id: o.client_id as string } : {}),
     },

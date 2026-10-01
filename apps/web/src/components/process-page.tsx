@@ -162,6 +162,7 @@ export function ProcessPage({
     initialIssues: issues,
     initialScenarios: scenarios,
     registerHref,
+    rulesHref: settingsHref ? `${settingsHref}/rules` : mode === "demo" ? "/demo/settings/rules" : undefined,
     analysisRules,
     successMeasures,
     // A badge on the map takes you down to the issues on that step.

@@ -8,7 +8,7 @@ import { detectBrokenScenarios, resolveMoney, type AnalysisSettings, type Engine
 import { perceptionGapDetections } from "@/lib/issues/perception";
 import { rerate, visibleFindings } from "@/lib/rules/edit";
 import { useRatingSettings } from "@/lib/rules/use-rating-settings";
-import { entryView, promoteInput, registerEntries, stepBadges } from "@/lib/issues/register";
+import { entryView, promoteInput, registerEntries, stepBadges, stepRatingOf } from "@/lib/issues/register";
 import { useIssues } from "@/lib/issues/use-issues";
 import { useAbsenceTest } from "@/lib/sim/absence";
 import { IssuesRegister } from "./issues-register";
@@ -22,6 +22,10 @@ export interface ProcessIssues {
   rail: (utilisation: ReactNode) => ReactNode;
   /** Switch the rail to its Issues tab (the sidebar's Issues item, on the demo). */
   showIssues: () => void;
+  /** Open issues per step, which a closed group on the map adds up. */
+  openIssues: Record<string, number>;
+  /** A step's worst open-issue rating, which a closed group takes the worst of. */
+  rating: (stepId: string) => { rank: number; label: string } | null;
   /** The scenario panel reports its saved scenarios here, so issues can link and run them. */
   onScenariosChange: (scenarios: ScenarioRow[]) => void;
   /** The saved scenarios as the scenario panel last reported them. */
@@ -179,6 +183,8 @@ export function useProcessIssues({
         }}
       />
     ),
+    openIssues: Object.fromEntries(Object.entries(badges).map(([id, b]) => [id, b.count])),
+    rating: stepRatingOf(badges),
     rail,
     showIssues: () => setTab("issues"),
     onScenariosChange: setScenarios,

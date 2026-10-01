@@ -1,4 +1,5 @@
 export * from "./model";
+export { flattenModel, isNested, NestingError } from "./flatten";
 export { ENGINE_VERSION } from "./version";
 export { DEFAULT_AVAILABILITY_FLOOR, initialState, pct, resolvePeople, runOnce, simulate, stat } from "./simulate";
 export { checkDemand, demandFactor, isFlatDemand, WEEKS_PER_CALENDAR_MONTH } from "./demand";

@@ -27,6 +27,7 @@ import {
 import { arrivalTimes as drawArrivals } from "./demand";
 import { activeMarket, type MarketFactors } from "./market";
 import { EventQueue } from "./event-queue";
+import { flattenModel } from "./flatten";
 import type {
   ClientReplication,
   ClientResult,
@@ -516,6 +517,7 @@ function hasWip(model: EngineModel): boolean {
  * weeks; the cap too when nothing completes in the pilot).
  */
 export function initialState(model: EngineModel): InitialState {
+  model = flattenModel(model);
   if (hasWip(model)) {
     return { kind: "wip", items: model.steps.reduce((a, s) => a + wipCount(s), 0) };
   }
@@ -541,6 +543,8 @@ export function runOnce(
   start: InitialState = initialState(model),
   sampleWeekly = false,
 ): ReplicationResult {
+  // Groups and child processes are only a view: runs see leaf steps (a no-op for flat models).
+  model = flattenModel(model);
   const streams = new Streams(seed);
   let labels = streamLabels.get(model);
   if (!labels) streamLabels.set(model, (labels = new StreamLabels()));
@@ -1764,6 +1768,7 @@ function clientResults(model: EngineModel, runs: ReplicationResult[]): Record<st
 const visitShare = (n: number, visits: number) => (visits > 0 ? Math.min(1, n / visits) : 0);
 
 export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationResult {
+  model = flattenModel(model);
   const runs: ReplicationResult[] = [];
   let trace: TraceEntity[] | null = null;
   const start = initialState(model);

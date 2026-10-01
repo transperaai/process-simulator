@@ -4,6 +4,7 @@ export {
   ModelError,
   engineMarket,
   engineDistribution,
+  isHolderStep,
   isWorkingStep,
   qualifiedLeadsPerWeek,
   seasonalityCurve,
@@ -14,6 +15,25 @@ export {
 } from "./model";
 export { loadAnalysisRules, saveAnalysisRules, type AnalysisRules, type SaveAnalysisRulesOutcome } from "./analysis-rules";
 export { isRetiredStep, partitionSteps } from "./retired";
+export {
+  absolutePositions,
+  ancestorsOf,
+  childrenOf,
+  companyMap,
+  flattenCompanyMap,
+  groupHasExit,
+  groupsLetOut,
+  isGroup,
+  leavesIn,
+  rollUp,
+  visibleEdges,
+  visibleEndpoint,
+  visibleSteps,
+  type Expanded,
+  type MapEdge,
+  type ProcessNode,
+  type RollUp,
+} from "./nesting";
 export {
   MAX_POISSON_PER_MONTH,
   MAX_RECURRENCE_TIMES,

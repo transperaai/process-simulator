@@ -17,6 +17,9 @@ export {
   absolutePositions,
   ancestorsOf,
   childrenOf,
+  companyMap,
+  flattenCompanyMap,
+  groupHasExit,
   isGroup,
   leavesIn,
   rollUp,
@@ -25,6 +28,7 @@ export {
   visibleSteps,
   type Expanded,
   type MapEdge,
+  type ProcessNode,
   type RollUp,
 } from "./nesting";
 export {

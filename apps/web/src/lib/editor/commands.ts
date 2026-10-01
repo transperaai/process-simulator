@@ -3,6 +3,8 @@
 // Step and edge ids are made here, once, and never change afterwards.
 
 import {
+  ancestorsOf,
+  groupHasExit,
   triangularRange,
   type EdgeRow,
   type ProcessBundle,
@@ -97,6 +99,9 @@ export function addStep(
 /** Delete steps with every edge into or out of them; rework targets pointing at them are cleared. */
 export function deleteSteps(bundle: ProcessBundle, ids: readonly string[]): Edit | null {
   const gone = new Set(ids);
+  // A group takes the steps inside it with it (as the database does), at any depth.
+  const byId = new Map(bundle.steps.map((s) => [s.id, s]));
+  for (const s of bundle.steps) if (ancestorsOf(s.id, byId).some((g) => gone.has(g))) gone.add(s.id);
   const steps = bundle.steps.filter((s) => gone.has(s.id));
   if (!steps.length) return null;
   const edges = bundle.edges.filter((e) => gone.has(e.from_step_id) || gone.has(e.to_step_id));
@@ -169,6 +174,9 @@ export function updateStep(bundle: ProcessBundle, id: string, patch: Patch): Edi
 
 /** Why a step can't become `kind`, or null if it can. */
 export function kindProblem(bundle: ProcessBundle, id: string, kind: StepKind): string | null {
+  const step = bundle.steps.find((s) => s.id === id);
+  if (step?.kind === "group" && kind !== "group" && bundle.steps.some((s) => s.parent_step_id === id)) return "A group holds steps; move or delete them first.";
+  if (step?.child_process_id && kind !== "subprocess") return "This step holds a child process.";
   if (kind === "start" && bundle.steps.some((s) => s.kind === "start" && s.id !== id)) {
     return "The process already has a start step.";
   }
@@ -466,7 +474,11 @@ export function stepWarnings(bundle: ProcessBundle): Map<string, string> {
     if (step.kind === "end") continue;
     const outgoing = bundle.edges.filter((e) => e.from_step_id === step.id);
     if (!outgoing.length) {
-      out.set(step.id, "Nothing leaves this step yet. Drag from its right edge to connect it.");
+      // Inside a group, the step the group ends at leaves through the group's own connections.
+      if (step.parent_step_id) continue;
+      // A group can be left from a step inside it, so it needs no connection of its own then.
+      if (step.kind === "group" && groupHasExit(bundle.steps, bundle.edges, step.id)) continue;
+      out.set(step.id, step.kind === "group" ? "Nothing leaves this group yet. Drag from its right edge to connect it." : "Nothing leaves this step yet. Drag from its right edge to connect it.");
       continue;
     }
     if (step.kind === "start") continue;

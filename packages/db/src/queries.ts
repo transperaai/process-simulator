@@ -232,6 +232,8 @@ export interface ProcessListing {
   live: boolean;
   /** Has an open draft. */
   draft: boolean;
+  /** The process it sits inside, or null (or absent) for a top-level process: the company map's steps (issue #102). */
+  parentId?: string | null;
 }
 
 /**
@@ -272,9 +274,10 @@ export async function loadProcessBySlug(
   if (error) throw error;
   if (!workspace) return null;
   const all = await listProcesses(db, workspace.id);
-  const process = processId ? all.find((p) => p.id === processId) : all.find((p) => p.live_revision_id);
+  // The default is a top-level process: a child process opens from the step that holds it, or from the list.
+  const process = processId ? all.find((p) => p.id === processId) : (all.find((p) => p.live_revision_id && !p.parent_process_id) ?? all.find((p) => p.live_revision_id));
   if (!process) return null;
-  const processes = all.map((p) => ({ id: p.id, name: p.name, kind: p.kind, live: Boolean(p.live_revision_id), draft: Boolean(p.draft_revision_id) }));
+  const processes = all.map((p) => ({ id: p.id, name: p.name, kind: p.kind, live: Boolean(p.live_revision_id), draft: Boolean(p.draft_revision_id), parentId: p.parent_process_id }));
   const { draft_revision_id: draftId, ...row } = process;
   if (!process.live_revision_id) {
     // Never published: only its draft exists.

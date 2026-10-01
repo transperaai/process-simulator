@@ -24,6 +24,7 @@ import {
   EVIDENCE_COLUMNS,
   EVIDENCE_LABELS,
   formatParameter,
+  groupHasExit,
   isOpenAssumption,
   isRetiredStep,
   openConflict,
@@ -649,6 +650,7 @@ export function graphWarnings(g: Graph): { step_id: string | null; step: string 
     if (!outgoing.length) {
       // Inside a group, a step with nothing leaving it is where the group ends: it leaves through the group's own edges.
       if (step.parent_step_id) continue;
+      if (step.kind === "group" && groupHasExit(g.steps, g.edges, step.id)) continue;
       out.push({ step_id: step.id, step: step.name, warning: step.kind === "group" ? "Nothing leaves this group yet." : "Nothing leaves this step yet." });
       continue;
     }

@@ -20,6 +20,8 @@ export interface ProcessIssues {
   rail: (utilisation: ReactNode) => ReactNode;
   /** Switch the rail to its Issues tab (the sidebar's Issues item, on the demo). */
   showIssues: () => void;
+  /** Open issues per step, which a closed group on the map adds up. */
+  openIssues: Record<string, number>;
   /** The latest "Run the fix" request, for the scenario panel. */
   fix: FixRequest | null;
   /** The scenario panel reports its saved scenarios here, so issues can link and run them. */
@@ -185,6 +187,7 @@ export function useProcessIssues({
         }}
       />
     ),
+    openIssues: Object.fromEntries(Object.entries(badges).map(([id, b]) => [id, b.count])),
     rail,
     showIssues: () => setTab("issues"),
     fix,

@@ -125,6 +125,17 @@ export function absolutePositions(steps: readonly (Nested & Pick<StepRow, "x" | 
   return out;
 }
 
+/**
+ * Whether anything leaves a group: a connection from the group itself, or from
+ * a step inside it (at any depth) to something outside it. A group with none is
+ * a dead end the process can't get out of.
+ */
+export function groupHasExit(steps: readonly Nested[], edges: readonly Pick<EdgeRow, "from_step_id" | "to_step_id">[], groupId: string): boolean {
+  const byId = new Map(steps.map((s) => [s.id, s]));
+  const within = (id: string) => id === groupId || ancestorsOf(id, byId).includes(groupId);
+  return edges.some((e) => within(e.from_step_id) && !within(e.to_step_id));
+}
+
 /** The steps that do work inside a group, at any depth (child processes' steps through `childLeaves`). */
 export function leavesIn<T extends Nested & Pick<StepRow, "child_process_id">>(
   steps: readonly T[],
@@ -182,4 +193,45 @@ export function rollUp<T extends Nested & Pick<StepRow, "child_process_id" | "wo
     openIssues: leaves.reduce((sum, s) => sum + (opts.issues?.(s.id) ?? 0), 0),
     worstRating: worst,
   };
+}
+
+// ---------------------------------------------------------------------------
+// The company map: the process tree
+// ---------------------------------------------------------------------------
+
+/** A process in the company map's tree. */
+export interface ProcessNode<P> {
+  process: P;
+  /** 1 for a top-level process (a step of the company map), 2 for its children, and so on. */
+  depth: number;
+  children: ProcessNode<P>[];
+}
+
+type Parented = { id: string; parent_process_id?: string | null; parentId?: string | null };
+
+const parentOfProcess = (p: Parented): string | null => p.parent_process_id ?? p.parentId ?? null;
+
+/**
+ * The company map as a tree: the map itself is the root and holds no row, its
+ * steps are the processes with no parent, and each process holds its child
+ * processes, to any depth. Order within a level is the order given. A process
+ * whose parent isn't in the list (hidden, or deleted) counts as top level, and
+ * a loop (the database refuses them) is cut at the process that closes it.
+ */
+export function companyMap<P extends Parented>(processes: readonly P[]): ProcessNode<P>[] {
+  const ids = new Set(processes.map((p) => p.id));
+  const kids = new Map<string | null, P[]>();
+  for (const p of processes) {
+    const parent = parentOfProcess(p);
+    const key = parent !== null && ids.has(parent) && parent !== p.id ? parent : null;
+    kids.set(key, [...(kids.get(key) ?? []), p]);
+  }
+  const build = (key: string | null, depth: number, seen: ReadonlySet<string>): ProcessNode<P>[] =>
+    (kids.get(key) ?? []).filter((p) => !seen.has(p.id)).map((p) => ({ process: p, depth, children: build(p.id, depth + 1, new Set([...seen, p.id])) }));
+  return build(null, 1, new Set());
+}
+
+/** The company map as one list, each process followed by its children (for a picker or an indented list). */
+export function flattenCompanyMap<P extends Parented>(nodes: readonly ProcessNode<P>[]): { process: P; depth: number }[] {
+  return nodes.flatMap((n) => [{ process: n.process, depth: n.depth }, ...flattenCompanyMap(n.children)]);
 }

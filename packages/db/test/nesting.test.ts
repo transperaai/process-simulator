@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { absolutePositions, leavesIn, rollUp, visibleEdges, visibleEndpoint, visibleSteps, type EdgeRow, type StepRow } from "../src";
+import { absolutePositions, companyMap, flattenCompanyMap, leavesIn, rollUp, visibleEdges, visibleEndpoint, visibleSteps, type EdgeRow, type StepRow } from "../src";
 
 // What a map shows of nested steps (issue #102): groups open or closed, edges
 // rolled up to the closed group that hides their end, and a closed group's roll-up.
@@ -97,6 +97,29 @@ describe("absolutePositions", () => {
     expect(at.get("A")).toEqual({ x: 0, y: 0 });
     expect(at.get("b1")).toEqual({ x: 110, y: 60 });
     expect(at.get("i2")).toEqual({ x: 115, y: 190 });
+  });
+});
+
+describe("companyMap", () => {
+  const p = (id: string, parent: string | null = null) => ({ id, parent_process_id: parent });
+
+  it("makes the top-level processes the map's steps, with children under them to any depth", () => {
+    const tree = companyMap([p("sales"), p("onboarding"), p("qualify", "sales"), p("check", "qualify"), p("report", "onboarding"), p("finance")]);
+    expect(tree.map((n) => n.process.id)).toEqual(["sales", "onboarding", "finance"]);
+    expect(tree.every((n) => n.depth === 1)).toBe(true);
+    expect(tree[0]!.children[0]!.children[0]).toMatchObject({ process: { id: "check" }, depth: 3 });
+    expect(flattenCompanyMap(tree).map((x) => `${x.depth}:${x.process.id}`)).toEqual(["1:sales", "2:qualify", "3:check", "1:onboarding", "2:report", "1:finance"]);
+  });
+
+  it("treats a process whose parent isn't listed as top level, and cuts a loop", () => {
+    expect(companyMap([p("orphan", "gone")]).map((n) => n.process.id)).toEqual(["orphan"]);
+    // Not possible in the database; the picker must still not hang.
+    expect(flattenCompanyMap(companyMap([p("a", "b"), p("b", "a")]))).toEqual([]);
+  });
+
+  it("reads the picker's parentId too", () => {
+    const tree = companyMap([{ id: "a", parentId: null }, { id: "b", parentId: "a" }]);
+    expect(flattenCompanyMap(tree).map((x) => x.process.id)).toEqual(["a", "b"]);
   });
 });
 

@@ -19,6 +19,7 @@ import {
   EdgeLabelRenderer,
   Handle,
   MarkerType,
+  Panel,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -49,7 +50,25 @@ import {
   type SetStateAction,
 } from "react";
 import type { SimulationResult } from "@transpera-flow/engine";
-import { EVIDENCE_COLUMNS, badgeQuote, isOpenAssumption, openConflict, type PersonRow, type ProcessBundle, type RoleRow, type StepOutcome, type StepRow } from "@transpera-flow/db";
+import {
+  EVIDENCE_COLUMNS,
+  ancestorsOf,
+  badgeQuote,
+  isGroup,
+  isOpenAssumption,
+  leavesIn,
+  isWorkingStep,
+  openConflict,
+  rollUp,
+  visibleEdges,
+  visibleSteps,
+  type PersonRow,
+  type ProcessBundle,
+  type RoleRow,
+  type RollUp,
+  type StepOutcome,
+  type StepRow,
+} from "@transpera-flow/db";
 import {
   KIND_LABELS,
   OUTCOME_LABELS,
@@ -71,6 +90,7 @@ import type { EditorState, ProcessEditor } from "@/lib/editor/editor";
 import type { InlineField } from "@/lib/editor/inline-edit";
 import type { Table } from "@/lib/editor/ops";
 import { laneLayout, type Lane } from "@/lib/editor/lanes";
+import { groupIds, openGroupSize } from "@/lib/map/groups";
 import { formatHours, formatNumber } from "@/lib/format";
 import { usePlayback } from "@/lib/playback/use-playback";
 import { InlineEditContext, NodeInlineEditor, type InlineEditing } from "./node-inline-editor";
@@ -124,12 +144,31 @@ type StepNodeData = {
 /** Removed steps and connections are drawn under ids of their own, next to the draft's rows. */
 const ghostId = (id: string) => `ghost:${id}`;
 
+/**
+ * A group of steps, or a step holding a child process (issue #102). Closed it is
+ * one card with a roll-up of the steps inside it; open (groups only) it is a box
+ * around them. Either way the engine simulates the steps inside, never this.
+ */
+type GroupNodeData = {
+  step: StepRow;
+  open: boolean;
+  /** Only a group opens in place; a child process has a page of its own. */
+  expandable: boolean;
+  roll: RollUp;
+  /** The label of the worst rating among the steps inside, when the workspace has ratings. */
+  worstRating: string | null;
+  warning: string | null;
+  editable: boolean;
+  change: ChangeKind | null;
+};
+
 type StepFlowNode = Node<StepNodeData, "step">;
 type TerminalFlowNode = Node<StepNodeData, "terminal">;
-type FlowNode = StepFlowNode | TerminalFlowNode;
+type GroupFlowNode = Node<GroupNodeData, "group">;
+type FlowNode = StepFlowNode | TerminalFlowNode | GroupFlowNode;
 
 /** Whether two node objects for a step would draw the same. */
-function sameNode(a: FlowNode, b: FlowNode): boolean {
+function sameNode(a: StepFlowNode | TerminalFlowNode, b: StepFlowNode | TerminalFlowNode): boolean {
   if (a.type !== b.type || a.selected !== b.selected || a.ariaLabel !== b.ariaLabel || a.zIndex !== b.zIndex) return false;
   if (a.position.x !== b.position.x || a.position.y !== b.position.y) return false;
   if (a.measured?.width !== b.measured?.width || a.measured?.height !== b.measured?.height) return false;
@@ -148,13 +187,16 @@ type BranchData = {
   was: string | null;
   ghost: boolean;
   restorable: boolean;
+  /** Drawn to or from a closed group in place of the steps inside it: no share, not editable. */
+  rolled?: boolean;
 };
 type BranchFlowEdge = Edge<BranchData, "branch">;
 
 /** Lets custom nodes and edges reach the editor without threading it through React Flow's data. */
-const CanvasContext = createContext<{ editor: ProcessEditor | null; restore: ((table: Table, id: string) => void) | null }>({
+const CanvasContext = createContext<{ editor: ProcessEditor | null; restore: ((table: Table, id: string) => void) | null; toggleGroup: (id: string) => void }>({
   editor: null,
   restore: null,
+  toggleGroup: () => undefined,
 });
 
 const badgeClass = "pointer-events-none absolute -top-2 left-2 rounded-full border px-1.5 text-[10px] leading-4 font-semibold";
@@ -231,7 +273,7 @@ function RestoreButton({ table, id, what }: { table: Table; id: string; what: st
 }
 
 /** Card classes for a step's place in the draft. */
-const changeClass = (d: StepNodeData) =>
+const changeClass = (d: { ghost?: boolean; change: ChangeKind | null }) =>
   d.ghost ? "opacity-70 !border-dashed !border-crit" : d.change === "added" ? "!border-dashed !border-2 !border-accent" : "";
 
 const handleClass = (editable: boolean) =>
@@ -344,6 +386,84 @@ function StepNode({ data, selected }: NodeProps<StepFlowNode>) {
   );
 }
 
+function GroupNode({ data, selected }: NodeProps<GroupFlowNode>) {
+  const { step, open, expandable, roll, worstRating, warning, editable } = data;
+  const { toggleGroup } = useContext(CanvasContext);
+  const toggle = expandable && (
+    <button
+      type="button"
+      aria-expanded={open}
+      aria-label={`${open ? "Collapse" : "Expand"} ${step.name}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        toggleGroup(step.id);
+      }}
+      onDoubleClick={(e) => e.stopPropagation()}
+      className="nodrag nopan rounded-full border border-line bg-panel px-2 py-0.5 text-[11px] font-semibold text-fg hover:bg-panel-2"
+    >
+      {open ? "Collapse" : "Expand"}
+    </button>
+  );
+  if (open) {
+    return (
+      <div
+        className={`relative h-full w-full rounded-token border-2 border-dashed bg-panel-2/40 ${changeClass(data)} ${selected ? selectedRing : "border-line-2"}`}
+        data-group="open"
+      >
+        <Handle type="target" position={Position.Left} className={handleClass(editable)} />
+        <div className="flex items-start justify-between gap-2 px-3 py-2">
+          <div className="min-w-0">
+            <p data-field="name" className="truncate font-semibold leading-tight">
+              {step.name}
+            </p>
+            <p className="text-[11px] text-fg-3">
+              Group · {roll.steps} {roll.steps === 1 ? "step" : "steps"}
+            </p>
+          </div>
+          {toggle}
+        </div>
+        {warning && <Warning text={warning} />}
+        <Handle type="source" position={Position.Right} className={handleClass(editable)} />
+      </div>
+    );
+  }
+  return (
+    <div
+      className={`relative w-52 rounded-token border bg-panel shadow-token ${changeClass(data)} ${selected ? selectedRing : "border-line-2"}`}
+      data-group="closed"
+    >
+      <Handle type="target" position={Position.Left} className={handleClass(editable)} />
+      <div className="h-1 rounded-t-token bg-line-2" />
+      <div className="px-2.5 py-2">
+        <div className="flex items-start justify-between gap-2">
+          <p data-field="name" className="font-semibold leading-tight">
+            {step.name}
+          </p>
+          {toggle}
+        </div>
+        <p className="mt-0.5 text-xs text-fg-2">
+          {expandable ? "Group" : "Child process"} · {roll.steps} {roll.steps === 1 ? "step" : "steps"}
+        </p>
+        <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[11px] text-fg-3 tabular-nums">
+          <span title="Hands-on time of every step inside, added up">{roll.handsOnHours ? `${formatHours(roll.handsOnHours)} work` : "no work entered"}</span>
+          {worstRating && (
+            <span className="rounded-full border border-line bg-panel-2 px-1.5 font-sans text-[10px] font-semibold text-fg" title="The worst rating of the steps inside">
+              {worstRating}
+            </span>
+          )}
+          {roll.openIssues > 0 && (
+            <span className="rounded-full bg-crit px-1.5 font-sans text-[10px] font-semibold text-white" title="Open issues on the steps inside">
+              {roll.openIssues} open {roll.openIssues === 1 ? "issue" : "issues"}
+            </span>
+          )}
+        </p>
+      </div>
+      {warning && <Warning text={warning} />}
+      <Handle type="source" position={Position.Right} className={handleClass(editable)} />
+    </div>
+  );
+}
+
 function TerminalNode({ data, selected }: NodeProps<TerminalFlowNode>) {
   const { step, warning, editing, ghost } = data;
   const editable = data.editable && !ghost;
@@ -385,6 +505,7 @@ function BranchEdge(props: EdgeProps<BranchFlowEdge>) {
   const text = [p < 1 ? percent(p) : null, tag].filter(Boolean).join(" · ");
   const ghost = data?.ghost ?? false;
   const was = data?.was ?? null;
+  if (data?.rolled) return <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} interactionWidth={0} />;
   if (ghost || was !== null) {
     return (
       <>
@@ -551,7 +672,7 @@ function BranchEditor({ editor, edgeId, probability, tag }: { editor: ProcessEdi
   );
 }
 
-const nodeTypes = { step: StepNode, terminal: TerminalNode };
+const nodeTypes = { step: StepNode, terminal: TerminalNode, group: GroupNode };
 const edgeTypes = { branch: BranchEdge };
 
 /** Room around the steps when framing them: the toolbar sits top left, playback along the foot, lane names on the left. */
@@ -605,6 +726,10 @@ interface CanvasProps {
   onRestore?: ((table: Table, id: string) => void) | null;
   /** What the toolbar says once edits are saved ("Saved", "Saved to draft"). */
   savedLabel?: string;
+  /** Open issues per step, which a closed group adds up. */
+  openIssues?: Record<string, number>;
+  /** A step's rating (a rank, higher is worse, with its label), which a closed group takes the worst of. Absent until the workspace has ratings. */
+  rating?: (stepId: string) => { rank: number; label: string } | null;
 }
 
 export function ProcessCanvas(props: CanvasProps) {
@@ -626,9 +751,24 @@ function Canvas({
   diff = null,
   onRestore = null,
   savedLabel = "Saved",
+  openIssues,
+  rating,
 }: CanvasProps) {
   const editable = editor !== null;
-  const canvasContext = useMemo(() => ({ editor, restore: editor ? onRestore : null }), [editor, onRestore]);
+  // Groups open in place (issue #102): to edit inside one, open it; to read the map, close it for the roll-up.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => (editor ? new Set(groupIds(bundle.steps)) : new Set()));
+  const hasGroups = useMemo(() => bundle.steps.some((st) => isGroup(st) || st.child_process_id), [bundle.steps]);
+  const allGroups = useMemo(() => groupIds(bundle.steps), [bundle.steps]);
+  const toggleGroup = useCallback(
+    (id: string) =>
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        if (!next.delete(id)) next.add(id);
+        return next;
+      }),
+    [],
+  );
+  const canvasContext = useMemo(() => ({ editor, restore: editor ? onRestore : null, toggleGroup }), [editor, onRestore, toggleGroup]);
   const flow = useReactFlow();
   const wrapper = useRef<HTMLDivElement>(null);
   // Positions of nodes mid-drag, and sizes React Flow measured; the rest comes from the bundle.
@@ -645,14 +785,15 @@ function Canvas({
   const order = useMemo(() => flowOrder(bundle), [bundle]);
   const editingId = editing && bundle.steps.some((s) => s.id === editing.id) ? editing.id : null;
   const layout = useMemo(() => {
-    if (!lanes) return null;
+    // Lanes place every step by its role; a group's steps sit inside its box instead.
+    if (!lanes || hasGroups) return null;
     // The card being edited grows; its lane keeps its size meanwhile.
     const sizes = new Map([...measured].filter(([id]) => id !== editingId));
     return laneLayout(bundle, sizes);
-  }, [lanes, bundle, measured, editingId]);
+  }, [lanes, hasGroups, bundle, measured, editingId]);
 
   // The last node object made for each step (see sameNode).
-  const [nodeCache] = useState(() => new Map<string, FlowNode>());
+  const [nodeCache] = useState(() => new Map<string, StepFlowNode | TerminalFlowNode>());
   const nodes = useMemo(() => {
     const roles = new Map(bundle.roles.map((r) => [r.id, r]));
     const people = new Map(bundle.people.map((p) => [p.id, p]));
@@ -663,10 +804,55 @@ function Canvas({
     /** What the card shows for a live value the draft changed, or null. */
     const was = (change: StepChange | undefined, fields: string[], show: (live: StepRow) => string): string | null =>
       change?.kind === "changed" && change.fields.some((f) => fields.includes(f.field)) ? show(change.live!) : null;
-    const drafted = [...bundle.steps]
-      .sort((a, b) => order.get(a.id)! - order.get(b.id)!)
+    const stepsById = new Map(bundle.steps.map((st) => [st.id, st]));
+    const depth = (id: string) => ancestorsOf(id, stepsById).length;
+    // The steps held by child processes (live), which a closed holder adds up like a group's own.
+    const childLeaves = (processId: string) => (bundle.otherProcesses ?? []).find((pt) => pt.process.id === processId)?.steps.filter(isWorkingStep) ?? [];
+    const sizes = measured as ReadonlyMap<string, { width: number; height: number }>;
+    const drafted = [...visibleSteps(bundle.steps, expanded)]
+      // A group comes before the steps inside it (React Flow needs a parent first), then the order a lead flows through.
+      .sort((a, b) => depth(a.id) - depth(b.id) || order.get(a.id)! - order.get(b.id)!)
       .map((step): FlowNode => {
         const change = diff?.steps.get(step.id);
+        if (isGroup(step) || step.child_process_id) {
+          const open = isGroup(step) && expanded.has(step.id);
+          // A group adds up the steps inside it; a holder of a child process, the child's live steps.
+          const leaves = isGroup(step) ? leavesIn(bundle.steps, step.id, childLeaves) : childLeaves(step.child_process_id!);
+          const roll = isGroup(step)
+            ? rollUp(bundle.steps, step.id, { childLeaves, issues: (id) => openIssues?.[id] ?? 0 })
+            : {
+                steps: leaves.length,
+                handsOnHours: leaves.reduce((sum, st) => sum + Number(st.work_hours), 0),
+                openIssues: leaves.reduce((sum, st) => sum + (openIssues?.[st.id] ?? 0), 0),
+                worstRating: null,
+              };
+          const worst = leaves.reduce<{ rank: number; label: string } | null>((w, st) => {
+            const r = rating?.(st.id) ?? null;
+            return r && (!w || r.rank > w.rank) ? r : w;
+          }, null);
+          const box = open ? openGroupSize(bundle.steps, step.id, expanded, sizes) : null;
+          const gdata: GroupNodeData = {
+            step,
+            open,
+            expandable: isGroup(step),
+            roll,
+            worstRating: worst?.label ?? null,
+            warning: warnings.get(step.id) ?? null,
+            editable,
+            change: change && (change.kind !== "changed" || change.fields.length) ? change.kind : null,
+          };
+          return {
+            id: step.id,
+            type: "group",
+            position: dragging.get(step.id) ?? { x: Number(step.x), y: Number(step.y) },
+            selected: selected.has(step.id),
+            ariaLabel: `${step.name}, ${isGroup(step) ? "group" : "child process"} of ${roll.steps} ${roll.steps === 1 ? "step" : "steps"}${isGroup(step) ? (open ? ", open" : ", closed") : ""}`,
+            ...(step.parent_step_id ? { parentId: step.parent_step_id } : {}),
+            ...(box ? { style: { width: box.width, height: box.height }, zIndex: -1 } : {}),
+            ...(measured.has(step.id) && !box ? { measured: measured.get(step.id) } : {}),
+            data: gdata,
+          };
+        }
         const data: StepNodeData = {
           step,
           role: step.role_id ? (roles.get(step.role_id) ?? null) : null,
@@ -690,10 +876,12 @@ function Canvas({
           wasWork: was(change, ["work_hours"], (l) => `${formatHours(l.work_hours)} work`),
           wasWait: was(change, ["wait_hours"], (l) => `${formatHours(l.wait_hours)} wait`),
         };
-        const node: FlowNode = {
+        const node: StepFlowNode | TerminalFlowNode = {
           id: step.id,
           type: step.kind === "start" || step.kind === "end" ? "terminal" : "step",
           position: dragging.get(step.id) ?? layout?.positions.get(step.id) ?? { x: Number(step.x), y: Number(step.y) },
+          // A step in a group sits at a position relative to the group's box.
+          ...(step.parent_step_id ? { parentId: step.parent_step_id } : {}),
           selected: selected.has(step.id),
           ariaLabel: stepLabel(data),
           // The card being edited sits above its neighbours.
@@ -750,7 +938,7 @@ function Canvas({
         };
       });
     return [...ghosts, ...drafted];
-  }, [bundle, result, selection.steps, dragging, measured, warnings, editable, order, layout, editing, editingId, nodeCache, playback.pulsing, diff]);
+  }, [bundle, result, selection.steps, dragging, measured, warnings, editable, order, layout, editing, editingId, nodeCache, playback.pulsing, diff, expanded, openIssues, rating]);
 
   const edges = useMemo(() => {
     const selected = new Set(selection.edges);
@@ -759,10 +947,18 @@ function Canvas({
     const present = new Set(bundle.steps.map((s) => s.id));
     const rank = (e: { from_step_id: string; to_step_id: string }) => (order.get(e.from_step_id) ?? 0) * 1e4 + (order.get(e.to_step_id) ?? 0);
     const labelOf = (p: number, tag: string | null) => [p < 1 ? percent(p) : null, tag].filter(Boolean).join(" · ") || "100%";
-    const drafted = [...bundle.edges]
+    // Connections that cross a closed group's border are drawn to the group; those inside it are hidden.
+    const edgeRows = new Map(bundle.edges.map((row) => [row.id, row]));
+    const shown = visibleEdges(bundle.steps, bundle.edges, expanded).map((me) => ({
+      ...edgeRows.get(me.id)!,
+      from_step_id: me.from,
+      to_step_id: me.to,
+      rolled: me.rolled,
+    }));
+    const drafted = shown
       .sort((a, b) => rank(a) - rank(b))
       .map((e): BranchFlowEdge => {
-        const change = diff?.edges.get(e.id);
+        const change = e.rolled ? undefined : diff?.edges.get(e.id);
         const relabelled = change?.kind === "changed" && change.fields.some((f) => f.field === "probability" || f.field === "condition_tag");
         const was = relabelled ? labelOf(Number(change.live!.probability), change.live!.condition_tag) : null;
         const tone = selected.has(e.id) || change ? "var(--accent)" : "var(--line-2)";
@@ -772,6 +968,7 @@ function Canvas({
           target: e.to_step_id,
           type: "branch",
           selected: selected.has(e.id),
+          ...(e.rolled ? { selectable: false, focusable: false, deletable: false, reconnectable: false } : {}),
           data: {
             probability: Number(e.probability),
             tag: e.condition_tag,
@@ -780,11 +977,12 @@ function Canvas({
             was,
             ghost: false,
             restorable: false,
+            rolled: e.rolled,
           },
           style: {
             stroke: tone,
             strokeWidth: selected.has(e.id) ? 2.5 : change ? 2 : 1.5,
-            ...(change?.kind === "added" ? { strokeDasharray: "6 4" } : {}),
+            ...(change?.kind === "added" ? { strokeDasharray: "6 4" } : e.rolled ? { strokeDasharray: "2 4" } : {}),
           },
           markerEnd: { type: MarkerType.ArrowClosed, color: tone },
           ariaLabel: `Connection from ${names.get(e.from_step_id)} to ${names.get(e.to_step_id)}, ${percent(Number(e.probability))}${e.condition_tag ? `, tag ${e.condition_tag}` : ""}${
@@ -821,9 +1019,9 @@ function Canvas({
         };
       });
     return [...ghosts, ...drafted];
-  }, [bundle, selection.edges, selection.steps.length, order, diff, editable]);
+  }, [bundle, selection.edges, selection.steps.length, order, diff, editable, expanded]);
 
-  const onNodesChange = (changes: NodeChange<StepFlowNode | TerminalFlowNode>[]) => {
+  const onNodesChange = (changes: NodeChange<FlowNode>[]) => {
     const moves: { id: string; x: number; y: number }[] = [];
     const drags = new Map(dragging);
     const sizes = new Map(measured);
@@ -1015,7 +1213,7 @@ function Canvas({
           {/* Before the map in the page, so Tab reaches the toolbar first. */}
           {editable && editorState && (
             <div className="absolute top-2.5 left-2.5 z-10 max-w-[calc(100%-1.25rem)]">
-              <Toolbar bundle={bundle} editor={editor} state={editorState} onAdd={addFromToolbar} lanes={lanes} onToggleLanes={toggleLanes} savedLabel={savedLabel} />
+              <Toolbar bundle={bundle} editor={editor} state={editorState} onAdd={addFromToolbar} lanes={lanes} onToggleLanes={toggleLanes} lanesAvailable={!hasGroups} savedLabel={savedLabel} />
             </div>
           )}
           {diff && diff.list.length > 0 && (
@@ -1027,7 +1225,7 @@ function Canvas({
               <s>removed</s> · <s className="text-fg-3">was</s> → now
             </p>
           )}
-          {!editable && (
+          {!editable && !hasGroups && (
             <div className="absolute top-2.5 left-2.5 z-10">
               <LaneToggle lanes={lanes} onToggle={toggleLanes} />
             </div>
@@ -1098,6 +1296,17 @@ function Canvas({
             proOptions={{ hideAttribution: true }}
           >
             <Background color="var(--line)" gap={24} />
+            {allGroups.length > 0 && (
+              <Panel position="top-right" style={{ marginTop: diff && diff.list.length > 0 ? 36 : undefined }}>
+                <GroupControls
+                  allOpen={allGroups.every((id) => expanded.has(id))}
+                  onToggle={() => {
+                    setExpanded(allGroups.every((id) => expanded.has(id)) ? new Set() : new Set(allGroups));
+                    setTimeout(() => void flow.fitView({ padding: fitPadding(false), duration: 200 }), 50);
+                  }}
+                />
+              </Panel>
+            )}
             {layout && <LaneLayer lanes={layout.lanes} />}
             {playback.index && (
               <PlaybackLayer
@@ -1169,6 +1378,20 @@ function applyPicks(ids: string[], picks: { id: string; selected: boolean }[]): 
 const toolButton =
   "rounded-token border border-line bg-panel px-2 py-1 text-fg hover:bg-panel-2 disabled:cursor-not-allowed disabled:text-fg-3 disabled:hover:bg-panel";
 
+/** Open or close every group on the map at once (the numbers don't change; only what is drawn). */
+function GroupControls({ allOpen, onToggle }: { allOpen: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      title={allOpen ? "Close every group to see each as one step with a roll-up" : "Open every group to see the steps inside"}
+      className={`${toolButton} text-xs`}
+    >
+      {allOpen ? "Collapse all" : "Expand all"}
+    </button>
+  );
+}
+
 function LaneToggle({ lanes, onToggle }: { lanes: boolean; onToggle: () => void }) {
   return (
     <button
@@ -1191,6 +1414,7 @@ function Toolbar({
   onAdd,
   lanes,
   onToggleLanes,
+  lanesAvailable,
   savedLabel,
 }: {
   bundle: ProcessBundle;
@@ -1199,6 +1423,8 @@ function Toolbar({
   onAdd: (kind: NewStepKind, outcome: StepOutcome | null) => void;
   lanes: boolean;
   onToggleLanes: () => void;
+  /** Swimlanes need every step in its own lane, so they are off while the process has groups. */
+  lanesAvailable: boolean;
   savedLabel: string;
 }) {
   const [kind, setKind] = useState<NewStepKind>("task");
@@ -1273,7 +1499,7 @@ function Toolbar({
         Redo
       </button>
       <span aria-hidden className="mx-0.5 h-5 w-px bg-line" />
-      <LaneToggle lanes={lanes} onToggle={onToggleLanes} />
+      {lanesAvailable && <LaneToggle lanes={lanes} onToggle={onToggleLanes} />}
       <KeysHelp mod={mod} />
       <span className="px-1 text-fg-3" aria-live="polite">
         {state.saving ? "Saving…" : savedLabel}

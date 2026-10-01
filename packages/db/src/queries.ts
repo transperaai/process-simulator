@@ -7,6 +7,8 @@ import { partitionSteps } from "./retired";
 import type { RunRow } from "./runs";
 import type {
   BlockRow,
+  SolutionIssueRow,
+  SolutionRow,
   ChurnDriverRow,
   ClientAssignmentRow,
   ClientGroupRow,
@@ -614,4 +616,22 @@ export async function loadRuns(db: Db, workspaceId: string): Promise<RunRow[]> {
 export async function loadRun(db: Db, id: string): Promise<RunRow | null> {
   const r = await db.from("runs").select(RUN_COLUMNS).eq("id", id).maybeSingle();
   return rows(r) as unknown as RunRow | null;
+}
+
+export const SOLUTION_COLUMNS = "id, workspace_id, process_id, base_revision_id, name, notes, steps, changed_step_ids, lever_changes, created_at, updated_at, created_by" as const;
+export const SOLUTION_ISSUE_COLUMNS = "solution_id, issue_id, workspace_id, auto_verdict, holds_pct, auto_note, user_verdict, user_notes, created_at, updated_at, created_by" as const;
+
+/** A workspace's solutions, newest first: optionally only those that change one process. */
+export async function loadSolutions(db: Db, workspaceId: string, processId?: string): Promise<SolutionRow[]> {
+  let q = db.from("solutions").select(SOLUTION_COLUMNS).eq("workspace_id", workspaceId);
+  if (processId) q = q.eq("process_id", processId);
+  const r = await q.order("created_at", { ascending: false }).order("id");
+  // The database checks the shapes of steps, changed_step_ids and lever_changes.
+  return (rows(r) ?? []) as unknown as SolutionRow[];
+}
+
+/** The issues each of a workspace's solutions solves, with their verdicts. */
+export async function loadSolutionIssues(db: Db, workspaceId: string): Promise<SolutionIssueRow[]> {
+  const r = await db.from("solution_issues").select(SOLUTION_ISSUE_COLUMNS).eq("workspace_id", workspaceId).order("created_at").order("issue_id");
+  return (rows(r) ?? []) as unknown as SolutionIssueRow[];
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NORTHBEAM_TEAM, northbeamModel, northbeamWithClients, northbeamWithServicing, simulate, type EngineModel } from "@transpera-flow/engine";
+import { NORTHBEAM_TEAM, northbeamModel, northbeamWithClientGroups, northbeamWithClients, northbeamWithServicing, simulate, type EngineModel } from "@transpera-flow/engine";
 import {
   ModelError,
   northbeamBundle,
@@ -52,6 +52,7 @@ function withKeys(model: EngineModel): EngineModel {
           })),
         }
       : {}),
+    ...(model.clientGroups ? { clientGroups: keyed(model.clientGroups) } : {}),
     ...(model.servicingProcesses
       ? {
           servicingProcesses: keyed(model.servicingProcesses, (p) => ({ ...p, entry: key(p.entry), steps: p.steps.map(key) })),
@@ -91,12 +92,32 @@ function beforeServicesAndClients(): ProcessBundle {
 }
 
 describe("toEngineModel", () => {
-  it("resolves the Northbeam rows into exactly the engine's Northbeam with services, people, its client roster and servicing", () => {
-    expect(withKeys(toEngineModel(northbeamBundle(), { startDate: START }))).toEqual(northbeamWithServicing());
+  it("resolves the Northbeam rows into exactly the engine's Northbeam with services, people, its client groups and servicing", () => {
+    expect(withKeys(toEngineModel(northbeamBundle(), { startDate: START }))).toEqual(northbeamWithClientGroups());
+  });
+
+  it("without its client groups, the named roster applies: exactly the engine's Northbeam with its roster and servicing", () => {
+    expect(withKeys(toEngineModel({ ...northbeamBundle(), clientGroups: [] }, { startDate: START }))).toEqual(northbeamWithServicing());
+  });
+
+  it("client groups replace the named roster, which stays stored but is not simulated", () => {
+    const b = northbeamBundle();
+    expect(b.clients).toHaveLength(26);
+    const m = toEngineModel(b, { startDate: START });
+    expect(m).not.toHaveProperty("clients");
+    expect(m.activeClients).toBe(29);
+    expect(Object.keys(m.clientGroups!)).toEqual([northbeamServiceIds.seo, northbeamServiceIds.ppc].sort());
+  });
+
+  it("ignores a group for a service the process doesn't use, and falls back to the roster when none applies", () => {
+    const b = northbeamBundle();
+    const m = toEngineModel({ ...b, clientGroups: [{ ...b.clientGroups![0]!, service_id: "ffffffff-0000-4000-8000-000000000000" }] }, { startDate: START });
+    expect(m).not.toHaveProperty("clientGroups");
+    expect(Object.keys(m.clients!)).toHaveLength(26);
   });
 
   it("without its servicing links, Northbeam resolves as before servicing: fallback load, no health-driven churn", () => {
-    const b = northbeamBundle();
+    const b = { ...northbeamBundle(), clientGroups: [] };
     const model = withKeys(toEngineModel({ ...b, servicingLinks: [], services: b.services.map((sv) => ({ ...sv, churn_health_sensitivity: 0 })) }, { startDate: START }));
     const expected = northbeamWithClients();
     expected.services = Object.fromEntries(Object.entries(expected.services!).map(([id, sv]) => [id, { ...sv, churnSensitivity: 0 }]));

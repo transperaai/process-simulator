@@ -1,7 +1,8 @@
-import { NORTHBEAM_FALLBACK_LOAD, NORTHBEAM_ROSTER, NORTHBEAM_TEAM, northbeamClientKey } from "@transpera-flow/engine/northbeam-roster";
+import { NORTHBEAM_CLIENT_GROUPS, NORTHBEAM_FALLBACK_LOAD, NORTHBEAM_ROSTER, NORTHBEAM_TEAM, northbeamClientKey } from "@transpera-flow/engine/northbeam-roster";
 import { NORTHBEAM_SERVICING } from "@transpera-flow/engine/northbeam-servicing";
 import type {
   ClientAssignmentRow,
+  ClientGroupRow,
   ClientRow,
   ClientServiceRow,
   DemandSettingsRow,
@@ -265,6 +266,24 @@ function roster(): { clients: ClientRow[]; clientServices: ClientServiceRow[]; c
     assign("fin", "rosa");
   });
   return { clients, clientServices, clientAssignments };
+}
+
+/**
+ * Northbeam's clients counted per service (issue #120): what the audit would
+ * enter, from the engine's NORTHBEAM_CLIENT_GROUPS. The 26 named clients above
+ * stay in the database, hidden, and are not simulated while these exist.
+ */
+function clientGroups(): ClientGroupRow[] {
+  return NORTHBEAM_CLIENT_GROUPS.map((g, i) => ({
+    id: id("0", i + 1),
+    workspace_id: ws,
+    service_id: northbeamServiceIds[g.service],
+    client_count: g.count,
+    fee: g.fee,
+    churn_monthly: g.churnMonthly,
+    stay_months: g.stayMonths,
+    starting_health: g.health,
+  }));
 }
 
 function demandSettings(): DemandSettingsRow {
@@ -540,6 +559,7 @@ export function northbeamBundle(): ProcessBundle {
     seasonality: [],
     demand: demandSettings(),
     ...roster(),
+    clientGroups: clientGroups(),
     servicingLinks: servicing.links,
     otherProcesses: servicing.parts,
   };

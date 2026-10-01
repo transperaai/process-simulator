@@ -72,6 +72,7 @@ async function loadSeeded(claims: Record<string, unknown>, wsId: string): Promis
       ),
       clientServices: await many("select * from client_services where workspace_id = $1", [wsId]),
       clientAssignments: await many("select * from client_assignments where workspace_id = $1", [wsId]),
+      clientGroups: await many("select id, workspace_id, service_id, client_count, fee, churn_monthly, stay_months, starting_health from client_groups where workspace_id = $1", [wsId]),
       servicingLinks: await many("select * from service_servicing where workspace_id = $1", [wsId]),
       otherProcesses,
     } as ProcessBundle;

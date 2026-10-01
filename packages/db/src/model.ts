@@ -9,6 +9,7 @@ import {
   type EngineDemand,
   type Distribution as EngineDistribution,
   type EngineClient,
+  type EngineChurnDriver,
   type EngineClientGroup,
   type EngineEnd,
   type EngineHealthRules,
@@ -265,6 +266,7 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
   const clientGroups = engineClientGroups(bundle, services);
   const clients = clientGroups ? undefined : engineClients(bundle, services, startDate);
   const market = engineMarket(bundle);
+  const churnDrivers = engineChurnDrivers(bundle);
 
   const model: EngineModel = {
     horizonWeeks: s.horizon_weeks,
@@ -272,6 +274,7 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
     leadsPerWeek: arrivalsPerWeek(bundle, services),
     ...(demand ? { demand } : {}),
     ...(market ? { market } : {}),
+    ...(churnDrivers ? { churnDrivers } : {}),
     activeClients: clientGroups
       ? Object.values(clientGroups).reduce((a, g) => a + Math.round(g.count), 0)
       : clients
@@ -485,6 +488,26 @@ function engineClients(
     };
   }
   return clients;
+}
+
+/**
+ * The churn drivers you have set, for the engine (A56): a built-in's row by its
+ * key, your own as `custom:<id>`, in creation order. Undefined with no rows, so
+ * such a workspace simulates exactly as before churn drivers existed.
+ */
+export function engineChurnDrivers(bundle: ProcessBundle): EngineChurnDriver[] | undefined {
+  const out: EngineChurnDriver[] = [];
+  for (const d of bundle.churnDrivers ?? []) {
+    out.push({
+      id: d.driver ?? `custom:${d.id}`,
+      weight: Number(d.weight),
+      enabled: d.enabled,
+      ...(d.value !== null && d.value !== undefined ? { value: Number(d.value) } : {}),
+      ...(d.month !== null && d.month !== undefined ? { month: Number(d.month) } : {}),
+      ...(d.driver === null ? { name: d.name ?? "" } : {}),
+    });
+  }
+  return out.length ? out : undefined;
 }
 
 /**

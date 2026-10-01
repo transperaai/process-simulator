@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { EngineModel, SimulationResult, Stat } from "@transpera-flow/engine";
+import { Help } from "@/components/help";
 import { formatNumber, formatPercent, formatRange } from "@/lib/format";
 
 const THRESHOLD = 0.85;
@@ -90,9 +91,15 @@ export function UtilisationBars({ model, result }: { model: EngineModel; result:
   return (
     <section aria-labelledby="util-heading" className="rounded-token border border-line bg-panel p-3 shadow-token">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h2 id="util-heading" className="text-sm font-bold">
-          Utilisation
-        </h2>
+        <h3 id="util-heading" className="flex items-center text-sm font-bold">
+          How busy each role is
+          <Help
+            label="How busy each role is"
+            description="The share of each role's working week that is taken up by work in the simulation. Above the 85% tick, work starts to queue; over 100% means more work than the week holds."
+            example="Designer at 92% means designers are booked almost every hour, so new work waits for them."
+          />
+        </h3>
+        <div className="flex items-center">
         <div role="group" aria-label="Show utilisation by" className="flex rounded-token border border-line-2 p-0.5 text-xs">
           {(["roles", "people"] as const).map((v) => (
             <button
@@ -105,6 +112,12 @@ export function UtilisationBars({ model, result }: { model: EngineModel; result:
               {v}
             </button>
           ))}
+        </div>
+        <Help
+          label="Roles or people"
+          description="Roles adds up everyone who does the same kind of work. People shows each person on their own, so you can see who carries the load."
+          example="Roles: Designer × 3 at 70%. People: Priya at 95%, Tom at 60%, Rosa at 55%."
+        />
         </div>
       </div>
       <ul className="flex flex-col gap-2">

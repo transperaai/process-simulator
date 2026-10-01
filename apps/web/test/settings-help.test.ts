@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 const SRC = join(__dirname, "..", "src");
 
 /** The screens that hold settings, as paths under src/ (directories are read recursively). */
-const SETTINGS_SOURCES = ["app/w/[slug]/settings", "components/rules", "components/levers", "app/new-workspace-form.tsx", "app/settings", "components/sources-page.tsx", "components/issues-register.tsx", "components/step-inspector.tsx", "components/editor", "components/evidence.tsx"];
+const SETTINGS_SOURCES = ["app/w/[slug]/settings", "components/rules", "components/levers", "app/new-workspace-form.tsx", "app/settings", "components/sources-page.tsx", "components/issues-register.tsx", "components/step-inspector.tsx", "components/editor", "components/evidence.tsx", "components/process-page.tsx", "components/wait-by-step.tsx", "components/utilisation-bars.tsx", "components/overview/headline-cards.tsx", "components/lever-panel.tsx", "components/horizon-picker.tsx"];
 
 /** Components that draw a label, a control and (when given `help`) its (i). */
 const FIELD_COMPONENTS = new Set(["TextField", "DateField", "NumberField", "SelectField", "ToggleField", "ChecklistField", "Field", "Setting"]);
@@ -19,6 +19,8 @@ const FIELD_COMPONENTS = new Set(["TextField", "DateField", "NumberField", "Sele
 const CONTROLS = new Set(["MoneyBox", "Input", "Textarea", "Switch", "Select", "Checkbox", "Slider", "NativeSelect", "input", "textarea", "select"]);
 /** Components that draw an (i) inside themselves (a rule's name carries its own). */
 const HELP_BEARERS = new Set(["RuleName"]);
+/** Screens where each switch must carry its own (i) in its own cell (the rows of other screens share the (i) of their name). */
+const STRICT_SWITCH_FILES = ["churn-drivers-settings.tsx"];
 /** Controls that are not settings: hidden form fields, buttons, file pickers. */
 const NOT_SETTINGS_TYPES = new Set(["hidden", "submit", "button", "file"]);
 
@@ -85,7 +87,9 @@ export function problemsIn(text: string, name: string): string[] {
         // Its own (i): within two JSX levels (its label, then its row or form), a container that holds at least as many (i)s as bare controls, so one
         // (i) elsewhere in the same form can't stand in for a missing one.
         let p: ts.Node | undefined = n.parent;
-        for (let levels = 0; p && levels < 2 && !ok; p = p.parent) {
+        // A switch needs its (i) beside it (its own row cell), not merely somewhere in the row.
+        const reach = tag === "Switch" && STRICT_SWITCH_FILES.some((f) => name.endsWith(f)) ? 1 : 2;
+        for (let levels = 0; p && levels < reach && !ok; p = p.parent) {
           if (!ts.isJsxElement(p) && !ts.isJsxFragment(p)) continue;
           levels++;
           const po = ts.isJsxElement(p) ? p.openingElement : null;
@@ -142,5 +146,21 @@ describe("the checker catches a missing (i)", () => {
   it("fails on a field component with no help, and on a labelled custom component with none", () => {
     const bad = `export const X = () => (<div><NumberField label="A" value={1} save={f} /><Widget label="B" /></div>);`;
     expect(problemsIn(bad, "x.tsx")).toEqual(["x.tsx:1: <NumberField> has no help", "x.tsx:1: <Widget> has a label but no help"]);
+  });
+});
+
+describe("each churn driver switch has its own (i)", () => {
+  const churn = readFileSync(join(SRC, "app/w/[slug]/settings/churn-drivers-settings.tsx"), "utf8");
+
+  it("passes the real source", () => {
+    expect(problemsIn(churn, "churn-drivers-settings.tsx")).toEqual([]);
+  });
+
+  it("fails when a switch's (i) is deleted, though the row's other (i)s remain", () => {
+    const line = churn.split("\n").find((l) => l.includes("CONTROL_HELP.switch"))!;
+    expect(line).toBeTruthy();
+    const found = problemsIn(churn.replace(line, ""), "churn-drivers-settings.tsx");
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatch(/<Switch> has no \(i\)/);
   });
 });

@@ -465,6 +465,34 @@ export interface MarketConditionRow {
 
 export type MarketPreset = "boom" | "stable" | "soft" | "downturn";
 
+/** The ten built-in churn drivers (docs/PRD.md decision D28; A56). The engine's `BUILTIN_CHURN_DRIVER_IDS`. */
+export type ChurnDriverKey = "late" | "resp" | "onb" | "rework" | "load" | "handoff" | "results" | "tenure" | "price" | "market";
+
+/**
+ * A churn driver you have set (A56): a built-in's weight and switch, or one of
+ * your own with a name, description and example. A built-in with no row is at
+ * its default. One row per built-in per workspace.
+ */
+export interface ChurnDriverRow {
+  id: string;
+  workspace_id: string;
+  /** The built-in it sets; null for your own. */
+  driver: ChurnDriverKey | null;
+  /** Your own drivers only. */
+  name: string | null;
+  description: string | null;
+  example: string | null;
+  /** 0 to 3: 1 is normal, 0 ignores the cause. */
+  weight: number;
+  enabled: boolean;
+  /** What you enter, where the driver takes a number (the engine's `ChurnDriverSpec.valueLabel`). */
+  value: number | null;
+  /** Price changes: the month of the run the rise takes effect. */
+  month: number | null;
+  /** Provenance of weight, enabled, value and month. */
+  provenance: ProvenanceMap;
+}
+
 /** One change on the 24-month schedule: a condition from month `from_month` to `to_month` (1-based, inclusive). */
 export interface MarketScheduleRow {
   id: string;
@@ -542,6 +570,11 @@ export interface ProcessBundle {
    */
   marketConditions?: MarketConditionRow[];
   marketSchedule?: MarketScheduleRow[];
+  /**
+   * Churn drivers you have set (A56). With none, drivers are at their
+   * defaults, which is how clients churned before drivers existed.
+   */
+  churnDrivers?: ChurnDriverRow[];
   /**
    * The client roster (issue #18). With any clients, ongoing load is per
    * client and assigned person; with none (or omitted), the interim
@@ -763,6 +796,8 @@ export type _SchemaDriftChecks = [
   // preset is check-constrained to MarketPreset.
   Assert<Matches<Omit<MarketConditionRow, "preset">, "market_conditions">>,
   Assert<Matches<MarketScheduleRow, "market_schedule">>,
+  // driver is check-constrained to ChurnDriverKey; provenance is jsonb.
+  Assert<Matches<Omit<ChurnDriverRow, "driver" | "provenance">, "churn_drivers">>,
   Assert<Matches<WorkspaceDomainRow, "workspace_domains">>,
   Assert<Matches<AccessEmailRow, "workspace_access_emails">>,
   // patch is jsonb; ScenarioPatch[] is its checked shape.

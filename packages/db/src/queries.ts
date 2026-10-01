@@ -6,6 +6,7 @@ import { partitionSteps } from "./retired";
 import type { RunRow } from "./runs";
 import type {
   BlockRow,
+  ChurnDriverRow,
   ClientAssignmentRow,
   ClientGroupRow,
   ClientRow,
@@ -149,6 +150,16 @@ export async function loadClientGroups(db: Db, workspaceId: string): Promise<Cli
   return (rows(r) ?? []) as ClientGroupRow[];
 }
 
+/** The `ChurnDriverRow` columns. */
+export const CHURN_DRIVER_COLUMNS = "id, workspace_id, driver, name, description, example, weight, enabled, value, month, provenance" as const;
+
+/** The churn drivers a workspace has set, built-ins first (by creation order), then its own by name. */
+export async function loadChurnDrivers(db: Db, workspaceId: string): Promise<ChurnDriverRow[]> {
+  const r = await db.from("churn_drivers").select(CHURN_DRIVER_COLUMNS).eq("workspace_id", workspaceId).order("created_at").order("id");
+  // driver is check-constrained to ChurnDriverKey; provenance is jsonb.
+  return (rows(r) ?? []) as ChurnDriverRow[];
+}
+
 /** The `LeadSourceRow`, `SeasonalityRow` and `DemandSettingsRow` columns. */
 export const LEAD_SOURCE_COLUMNS = "id, workspace_id, name, volume_week, conversion_to_qualified, provenance" as const;
 export const SEASONALITY_COLUMNS = "id, workspace_id, month, multiplier, provenance" as const;
@@ -179,7 +190,7 @@ export async function loadProcessBundle(
   revisionId: string,
 ): Promise<ProcessBundle> {
   const ws = workspace.id;
-  const [revision, roles, steps, edges, people, personRoles, personSkills, personLeave, services, leadSources, seasonality, demand, roster, clientGroups, servicing, market, settingsProvenance] =
+  const [revision, roles, steps, edges, people, personRoles, personSkills, personLeave, services, leadSources, seasonality, demand, roster, clientGroups, churnDrivers, servicing, market, settingsProvenance] =
     await Promise.all([
       db.from("process_revisions").select("id, workspace_id, process_id, number, status").eq("id", revisionId).single(),
       db.from("roles").select("*").eq("workspace_id", ws),
@@ -196,6 +207,7 @@ export async function loadProcessBundle(
       db.from("demand_settings").select(DEMAND_SETTINGS_COLUMNS).eq("workspace_id", ws).maybeSingle(),
       loadClients(db, ws),
       loadClientGroups(db, ws),
+      loadChurnDrivers(db, ws),
       loadServicingContext(db, ws, process),
       loadMarket(db, ws),
       db.from("workspaces").select("provenance").eq("id", ws).maybeSingle(),
@@ -232,6 +244,7 @@ export async function loadProcessBundle(
     demand: rows(demand) as DemandSettingsRow | null,
     ...roster,
     clientGroups,
+    churnDrivers,
     ...servicing,
     ...market,
   };

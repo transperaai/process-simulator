@@ -186,6 +186,15 @@ Notes:
   - **Operational risk:** over 20% lost, not recovered within 4 weeks, or any client-facing SLA missed.
 - **Rules 9 and 10:** replace today's per-client rule. They use client groups per service and the churn drivers in
   Settings.
+  - **Rule 10** (built, A56): each client's chance of leaving is its service's normal churn × (1 + the weighted pressure
+    of every switched-on driver) × the market. The engine measures late work, slow replies, slow onboarding, rework and
+    team overload, and takes the weights and numbers you enter for the rest (results, early tenure, price changes,
+    account manager changes and your own drivers). A driver's share of a group's churn is its part of that product
+    across the clients who leave; what no driver explains is normal churn. A driver at **30% or more** of a group's
+    churn is Bad, not urgent; it is Operational risk when that group's health is also **under 50**. Both numbers are
+    editable in Settings → Analysis rules. The rule is rated per client group and driver, so one finding reads "Late
+    or missed servicing work causes 53% of PPC clients leaving". The cost per month is the clients that driver
+    loses in a month × what a loss is worth after signing. See `docs/engine-versioning.md` ("Churn drivers").
 - **Rule 11:** reads the success measures from the process's first principles (`docs/research/first-principles.md`).
   A measure the simulation can't compute is not rated.
 

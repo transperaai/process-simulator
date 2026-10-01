@@ -21,6 +21,6 @@ export function sortFindings(findings: readonly DetectedIssue[]): DetectedIssue[
 }
 
 /** How many findings sit at each rating, worst first. */
-export function ratingCounts(findings: readonly DetectedIssue[]): { rating: Rating; count: number }[] {
+export function ratingCounts(findings: readonly Pick<DetectedIssue, "rating">[]): { rating: Rating; count: number }[] {
   return [...RATINGS].reverse().map((rating) => ({ rating, count: findings.filter((f) => f.rating === rating).length }));
 }

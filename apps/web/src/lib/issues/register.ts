@@ -269,6 +269,14 @@ export function confirmedRatings(entries: readonly RegisterEntry[]): Record<stri
   return stepBadges(entries.filter((e) => e.kind === "tracked" && entryView(e).rating !== "great"));
 }
 
+/**
+ * Everything the map is fed from a page's register entries (D24): the badges and the colours. Both the process page
+ * and the Overview take it from here, so what reaches the map is decided in one place: confirmed issues only.
+ */
+export function mapFeed(entries: readonly RegisterEntry[]): { badges: Record<string, StepBadge>; ratings: Record<string, StepBadge> } {
+  return { badges: confirmedBadges(entries), ratings: confirmedRatings(entries) };
+}
+
 /** Open findings per step: each step's count and worst rating, whether tracked or only detected. */
 export function stepBadges(entries: readonly RegisterEntry[]): Record<string, StepBadge> {
   const out: Record<string, StepBadge> = {};

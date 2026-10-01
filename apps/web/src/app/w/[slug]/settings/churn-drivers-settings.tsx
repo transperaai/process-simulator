@@ -241,7 +241,7 @@ export function ChurnDriversSettings({
               onRemove={() => void remove(d)}
             />
           ))}
-          <li className="grid items-center gap-3 border-t border-line px-4 py-3 md:grid-cols-[2rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)]">
+          <li className="grid items-center gap-3 border-t border-line px-4 py-3 md:grid-cols-[3.5rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)]">
             <span />
             <span className="flex items-center text-sm font-medium">
               Normal churn
@@ -291,9 +291,10 @@ function DriverRow({
   const range = d.builtin ? CHURN_DRIVER_SPECS[d.builtin].valueRange : { min: CUSTOM_DRIVER_VALUE.min, max: CUSTOM_DRIVER_VALUE.max };
   const help = d.builtin ? DRIVER_HELP[d.builtin] : { description: d.description || "Your own cause of clients leaving.", example: d.example || "Add an example below." };
   return (
-    <li className={cn("grid gap-3 border-t border-line px-4 py-3 first:border-t-0 md:grid-cols-[2rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)] md:items-center", !d.enabled && "opacity-60")}>
-      <span className="flex items-start pt-0.5 md:items-center md:pt-0">
+    <li className={cn("grid gap-3 border-t border-line px-4 py-3 first:border-t-0 md:grid-cols-[3.5rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)] md:items-center", !d.enabled && "opacity-60")}>
+      <span className="flex items-center">
         <Switch checked={d.enabled} disabled={!canEdit} onCheckedChange={(on) => onChange({ enabled: on })} aria-label={`Use ${d.name}`} />
+        <Help label={`Use ${d.name}`} {...CONTROL_HELP.switch} />
       </span>
 
       <div className="flex min-w-0 flex-col gap-1.5">

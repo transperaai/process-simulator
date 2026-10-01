@@ -177,6 +177,23 @@ describe("what the engine measures", () => {
     expect(resp.share + rework.share).toBeGreaterThan(0);
   });
 
+  it("team overload on a short run agrees with how busy people are (jobs in progress aren't counted before they are done)", () => {
+    for (const weeks of [2, 3]) {
+      const r = simulate({ ...groups(), horizonWeeks: weeks, warmupWeeks: 4 }, 20, 1);
+      const load = r.churnCauses!.causes.find((c) => c.id === "load")!;
+      const busiest = Math.max(...Object.values(r.people).map((p) => p.util));
+      expect(Math.abs(load.value! - busiest), `${weeks} weeks`).toBeLessThan(0.1);
+    }
+  });
+
+  it("onboarding puts no pressure on clients whose services have no servicing, and none before a first delivery is due (Larkspur)", () => {
+    const m = withDrivers(larkspurModel(), [{ id: "onb", weight: 1, enabled: true }]);
+    const r = simulate(m, 10, 1).churnCauses!;
+    // `content` retainers have no servicing process: nothing to wait for.
+    expect(r.byService.content!.shares.onb).toBe(0);
+    for (const sid of Object.keys(r.byService)) expect(r.byService[sid]!.shares.onb).toBeLessThan(0.3);
+  });
+
   it("the market's value is its average factor", () => {
     const down = simulate(withMarketCondition(groups(), MARKET_PRESETS.downturn.factors), 5, 1).churnCauses!;
     expect(down.causes.find((c) => c.id === "market")!.value).toBeCloseTo(1.35, 10);

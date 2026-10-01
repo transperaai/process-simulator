@@ -532,6 +532,8 @@ interface RosterClient {
   /** At the last weekly tick: the churn drivers' pressure other than late work, and the market's multiplier. */
   extraA: number;
   lastB: number;
+  /** Whether any of its services has a servicing process: only then is there a first delivery to wait for. */
+  serviced: boolean;
 }
 
 /** True when any step has current WIP entered (0 counts: "nothing here right now"). */
@@ -930,6 +932,7 @@ export function runOnce(
       firstDone: -1,
       extraA: 0,
       lastB: 1,
+      serviced: client.services.some((sid) => (linksBySvc[serviceIndex.get(sid) ?? -1]?.length ?? 0) > 0),
     };
     if (isRoster) {
       rc.trajectory = [rc.health];
@@ -1061,8 +1064,11 @@ export function runOnce(
     busiestPerson = null;
     for (const p of people) {
       const pending = (p.load * Math.max(0, Math.min(t, H) - Math.max(p.lastT, 0))) / hpw;
+      // A job in progress is booked in full when it starts (`startService`): leave out the part not yet done, as the reset at time 0 does.
+      const cur = p.cur;
+      const unfinished = p.busy && cur && cur.end > t && cur.end > cur.start ? (cur.handsOn * (cur.end - t)) / (cur.end - cur.start) : 0;
       const capacity = p.person.capacity * weeksSoFar;
-      const u = capacity > 0 ? (p.busyHours + p.svcHours + p.ongoingHours + pending) / capacity : 0;
+      const u = capacity > 0 ? Math.max(0, p.busyHours + p.svcHours + p.ongoingHours + pending - unfinished) / capacity : 0;
       personUtil.set(p, u);
       if (u > busiest) {
         busiest = u;
@@ -1089,7 +1095,7 @@ export function runOnce(
         if (age <= EARLY_TENURE_WEEKS * hpw) early = 1;
         delay = (rc.firstDone >= 0 ? rc.firstDone : t) - rc.since;
       }
-      ev[SONB] = early ? onboardingPressure(delay, onbNormalHours) : 0;
+      ev[SONB] = early && rc.serviced ? onboardingPressure(delay, onbNormalHours) : 0;
       ev[STENURE] = early ? tenureExtra : 0;
       ev[SREWORK] = rc.visits > 0 ? reworkPressure(rc.reworks / rc.visits) : 0;
       let util = 0;
@@ -1267,17 +1273,15 @@ export function runOnce(
     task.state = "done";
     if (open) touchpoint(c, t <= task.due ? "onTime" : "late", t, task.adhoc);
     // The churn drivers' measures: how long an ad-hoc request took, and how long a client won in the run waited for its first delivery.
-    if (t >= 0) {
-      if (task.adhoc) {
-        respSum += t - t0;
-        respN++;
-      }
-      if (c.firstDone < 0 && c.active) {
-        c.firstDone = t;
-        if (!c.roster) {
-          onbSum += t - c.since;
-          onbN++;
-        }
+    if (t >= 0 && task.adhoc) {
+      respSum += t - t0;
+      respN++;
+    }
+    if (c.firstDone < 0 && c.active) {
+      c.firstDone = t;
+      if (t >= 0 && !c.roster) {
+        onbSum += t - c.since;
+        onbN++;
       }
     }
   }

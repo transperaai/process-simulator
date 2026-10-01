@@ -32,7 +32,7 @@ export const DRIVER_HELP: Record<BuiltinChurnDriverId, HelpCopy> = {
   resp: { description: "How long clients wait for a reply when they ask for something.", example: "Clients wait 20 hours for an answer." },
   onb: { description: "How long a new client waits for their first piece of work.", example: "19 days from signing to the first delivery." },
   rework: { description: "Work you had to fix after the client saw it.", example: "1 in 10 reports needs fixing after it's sent." },
-  load: { description: "The team looking after the client is too busy to give them proper attention.", example: "The strategist is busy 82% of the time." },
+  load: { description: "The team looking after the client is too busy to give them proper attention.", example: "The strategist is busy 92% of the time, above the 85% line." },
   handoff: { description: "A client gets a new account manager.", example: "About 1 in 3 clients changes account manager each year." },
   results: { description: "Whether clients are happy with their results. You enter this.", example: "Clients rate their results 7 out of 10." },
   tenure: { description: "New clients leave more easily than long-standing ones.", example: "In their first 6 months, clients are 1.6 times as likely to leave." },
@@ -83,9 +83,9 @@ export const VALUE_HELP: Partial<Record<BuiltinChurnDriverId, HelpCopy & { label
   },
   handoff: {
     label: "Account manager changes",
-    unit: "per client a year",
+    unit: "of clients a year (0 to 1)",
     step: 0.05,
-    description: "How often a client gets a new account manager, on average. The simulation also counts the weeks the people looking after them are away.",
+    description: "The share of clients who get a new account manager in a year, from 0 (nobody) to 1 (every client). The simulation also counts the weeks the people looking after them are away.",
     example: "0.3 means about 1 in 3 clients changes account manager each year.",
   },
   results: {
@@ -218,7 +218,7 @@ export function valueNow(d: DriverState, cause: ChurnCause | undefined, model: P
       return `${who ? `${who}, ` : "busiest person "}${pct(v)} busy`;
     }
     case "handoff":
-      return `${num(d.value ?? 0, 2)} changes per client a year`;
+      return `${pct(d.value ?? 0)} of clients change account manager a year`;
     case "results":
       return `${num(d.value ?? 0)} / 10 average`;
     case "tenure":

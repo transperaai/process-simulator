@@ -146,7 +146,7 @@ describe("the value now", () => {
     expect(now("results")).toBe("7 / 10 average");
     expect(now("tenure")).toBe("×1.6 in months 1 to 6");
     expect(now("price")).toBe("no change planned");
-    expect(now("handoff")).toBe("0.3 changes per client a year");
+    expect(now("handoff")).toBe("30% of clients change account manager a year");
     expect(now("market")).toBe("Stable: no change to churn");
   });
 
@@ -204,6 +204,7 @@ describe("the screen", () => {
       expect(html, d.name).toContain(`aria-label="Use ${d.name}"`);
       expect(html, d.name).toContain(`aria-label="Weight for ${d.name}"`);
       expect(html, d.name).toContain(`aria-label="About ${d.name}"`);
+      expect(html, d.name).toContain(`aria-label="About Use ${d.name}"`);
       expect(html, d.name).toContain(`aria-label="About Weight for ${d.name}"`);
     }
     expect(html).toContain("Churn drivers");

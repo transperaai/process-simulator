@@ -89,8 +89,8 @@ export const CHURN_DRIVER_SPECS: Record<BuiltinChurnDriverId, ChurnDriverSpec> =
     source: "partly",
     defaultEnabled: false,
     defaultValue: 0.3,
-    valueRange: { min: 0, max: 5 },
-    valueLabel: "Account manager changes per client a year",
+    valueRange: { min: 0, max: 1 },
+    valueLabel: "Share of clients whose account manager changes in a year",
   },
   results: {
     id: "results",
@@ -395,7 +395,10 @@ export interface ChurnProjection {
 /**
  * Churn per month with the weights as chosen, from the pressures a run
  * measured: base × (1 + Σ weight × pressure) × (1 + market weight × (factor − 1)).
- * It moves as the weights move, with no new simulation. A projection, not a
+ * It moves as the weights move, with no new simulation. Each driver's pressure is
+ * the run's average over all client-weeks, not weighted by each client's base churn,
+ * so it can differ a little from the run's own shares when clients with high base
+ * churn carry different pressure from the rest. A projection, not a
  * run: it holds the measured pressures fixed, so it ignores how churn itself
  * changes who is left.
  */

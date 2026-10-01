@@ -123,7 +123,8 @@ $$;
 
 revoke all on function private.check_churn_driver_limit() from public, anon;
 
-create trigger check_churn_driver_limit before insert on public.churn_drivers
+-- On update too, so a built-in's row can't be turned into one of your own (driver set to null) past the cap.
+create trigger check_churn_driver_limit before insert or update of driver on public.churn_drivers
   for each row execute function private.check_churn_driver_limit();
 
 -- Row-level security: members read, owners and editors write (as for client groups).
@@ -252,7 +253,8 @@ $$;
 
 revoke all on function private.check_churn_driver_limit() from public, anon;
 
-create trigger check_churn_driver_limit before insert on public.churn_drivers
+-- On update too, so a built-in's row can't be turned into one of your own (driver set to null) past the cap.
+create trigger check_churn_driver_limit before insert or update of driver on public.churn_drivers
   for each row execute function private.check_churn_driver_limit();
 
 -- Row-level security: members read, owners and editors write (as for client groups).

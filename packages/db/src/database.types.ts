@@ -2364,6 +2364,10 @@ export type Database = {
         Returns: string
       }
       discard_draft: { Args: { target_process: string }; Returns: Json }
+      duplicate_version: {
+        Args: { new_name: string; source_revision: string }
+        Returns: Json
+      }
       is_agency_admin: { Args: never; Returns: boolean }
       is_free_mail_domain: { Args: { domain: string }; Returns: boolean }
       open_draft: { Args: { target_process: string }; Returns: Json }
@@ -2395,9 +2399,29 @@ export type Database = {
           workspace_id: string
         }[]
       }
+      restore_version: {
+        Args: {
+          replace_draft?: boolean
+          source_revision: string
+          target_process: string
+        }
+        Returns: Json
+      }
       review_suggestions: {
         Args: { decision: string; ids: string[]; note?: string }
         Returns: Json
+      }
+      revision_history: {
+        Args: { target_process: string }
+        Returns: {
+          author_kind: string | null
+          author_name: string | null
+          changes: Json | null
+          number: number
+          published_at: string | null
+          revision_id: string
+          status: string
+        }[]
       }
       save_fields: {
         Args: { base: Json; changes: Json; key: Json; target: string }

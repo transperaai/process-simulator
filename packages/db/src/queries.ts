@@ -11,6 +11,8 @@ import type {
   DemandSettingsRow,
   IssueRow,
   LeadSourceRow,
+  MarketConditionRow,
+  MarketScheduleRow,
   EdgeRow,
   PersonRow,
   ProcessBundle,
@@ -125,6 +127,23 @@ export const LEAD_SOURCE_COLUMNS = "id, workspace_id, name, volume_week, convers
 export const SEASONALITY_COLUMNS = "id, workspace_id, month, multiplier, provenance" as const;
 export const DEMAND_SETTINGS_COLUMNS = "workspace_id, growth_monthly, provenance" as const;
 
+/** The `MarketConditionRow` and `MarketScheduleRow` columns. */
+export const MARKET_CONDITION_COLUMNS = "id, workspace_id, name, preset, leads, conv, cycle, price, churn, hire, pay" as const;
+export const MARKET_SCHEDULE_COLUMNS = "id, workspace_id, from_month, to_month, condition_id" as const;
+
+/** A workspace's market conditions (presets first, then its own by name) and its 24-month schedule in month order. */
+export async function loadMarket(db: Db, workspaceId: string): Promise<{ marketConditions: MarketConditionRow[]; marketSchedule: MarketScheduleRow[] }> {
+  const [conditions, schedule] = await Promise.all([
+    db.from("market_conditions").select(MARKET_CONDITION_COLUMNS).eq("workspace_id", workspaceId).order("created_at").order("id"),
+    db.from("market_schedule").select(MARKET_SCHEDULE_COLUMNS).eq("workspace_id", workspaceId).order("from_month").order("id"),
+  ]);
+  return {
+    // preset is check-constrained to MarketPreset.
+    marketConditions: (rows(conditions) ?? []) as MarketConditionRow[],
+    marketSchedule: rows(schedule) ?? [],
+  };
+}
+
 /** Load one process revision with everything needed to render and simulate it. */
 export async function loadProcessBundle(
   db: Db,
@@ -133,7 +152,7 @@ export async function loadProcessBundle(
   revisionId: string,
 ): Promise<ProcessBundle> {
   const ws = workspace.id;
-  const [revision, roles, steps, edges, people, personRoles, personSkills, personLeave, services, leadSources, seasonality, demand, roster, servicing, settingsProvenance] =
+  const [revision, roles, steps, edges, people, personRoles, personSkills, personLeave, services, leadSources, seasonality, demand, roster, servicing, market, settingsProvenance] =
     await Promise.all([
       db.from("process_revisions").select("id, workspace_id, process_id, number, status").eq("id", revisionId).single(),
       db.from("roles").select("*").eq("workspace_id", ws),
@@ -150,6 +169,7 @@ export async function loadProcessBundle(
       db.from("demand_settings").select(DEMAND_SETTINGS_COLUMNS).eq("workspace_id", ws).maybeSingle(),
       loadClients(db, ws),
       loadServicingContext(db, ws, process),
+      loadMarket(db, ws),
       db.from("workspaces").select("provenance").eq("id", ws).maybeSingle(),
     ]);
   const wsProvenance = rows(settingsProvenance)?.provenance;
@@ -184,6 +204,7 @@ export async function loadProcessBundle(
     demand: rows(demand) as DemandSettingsRow | null,
     ...roster,
     ...servicing,
+    ...market,
   };
 }
 

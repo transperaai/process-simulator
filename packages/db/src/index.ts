@@ -2,6 +2,7 @@ export * from "./types";
 export type { Database, Json } from "./database.types";
 export {
   ModelError,
+  engineMarket,
   engineDistribution,
   isWorkingStep,
   qualifiedLeadsPerWeek,
@@ -95,6 +96,9 @@ export {
   LEAD_SOURCE_COLUMNS,
   listProcesses,
   loadClients,
+  loadMarket,
+  MARKET_CONDITION_COLUMNS,
+  MARKET_SCHEDULE_COLUMNS,
   loadIssues,
   loadLiveProcessBySlug,
   loadProcessBundle,

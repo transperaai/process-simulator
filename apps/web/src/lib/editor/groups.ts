@@ -18,7 +18,7 @@ const SLOT = { x: 240 };
 
 const stepOf = (bundle: ProcessBundle, id: string) => bundle.steps.find((s) => s.id === id);
 
-function edgeRow(bundle: ProcessBundle, from: string, to: string, probability: number): EdgeRow {
+export function edgeRow(bundle: ProcessBundle, from: string, to: string, probability: number): EdgeRow {
   const { revision } = bundle;
   return {
     id: newId(),
@@ -34,7 +34,7 @@ function edgeRow(bundle: ProcessBundle, from: string, to: string, probability: n
 }
 
 /** A group: a box with no work of its own (the database refuses a role, hours or rework on one). */
-function groupRow(bundle: ProcessBundle, x: number, y: number, parent: string | null): StepRow {
+export function groupRow(bundle: ProcessBundle, x: number, y: number, parent: string | null): StepRow {
   return {
     ...newStepRow(bundle, "task", null, x, y),
     name: "New group",
@@ -46,7 +46,7 @@ function groupRow(bundle: ProcessBundle, x: number, y: number, parent: string | 
 }
 
 /** The first spot at or below (x, y) with no step of the same group on it. */
-function freeSpot(bundle: ProcessBundle, parent: string | null, x: number, y: number): { x: number; y: number } {
+export function freeSpot(bundle: ProcessBundle, parent: string | null, x: number, y: number): { x: number; y: number } {
   const taken = (py: number) =>
     bundle.steps.some((s) => (s.parent_step_id ?? null) === parent && Math.abs(Number(s.x) - x) < 180 && Math.abs(Number(s.y) - py) < 90);
   for (let i = 0; i < 20 && taken(y); i++) y += 60;

@@ -14,6 +14,7 @@ import { confirmedBadges, confirmedRatings, entryView, promoteInput, registerEnt
 import { useIssues } from "@/lib/issues/use-issues";
 import { useAbsenceTest } from "@/lib/sim/absence";
 import { IssuesRegister } from "./issues-register";
+import { InsightsSection } from "./insights";
 import type { EditMode } from "./process-view";
 import { StepIssueBadges } from "./step-issue-badges";
 import type { StepExtras } from "./map/step-detail";
@@ -54,6 +55,7 @@ export function useProcessIssues({
   initialIssues,
   initialScenarios,
   registerHref,
+  rulesHref,
   retired = NO_RETIRED,
   analysisRules,
   onShowIssues,
@@ -67,6 +69,8 @@ export function useProcessIssues({
   initialScenarios: ScenarioRow[];
   /** Link to the full register page, if there is one. */
   registerHref?: string;
+  /** Settings → Analysis rules, which an insight links to for how it was worked out. */
+  rulesHref?: string;
   /** Steps the model no longer has and what replaced them, for broken-scenario issues (issue #16). */
   retired?: RetiredSteps;
   /** The workspace's analysis rules (Settings → Analysis rules); omitted means the defaults. On the demo, the ones edited in this tab. */
@@ -78,7 +82,7 @@ export function useProcessIssues({
   const [scenarios, setScenarios] = useState(initialScenarios);
   const [tab, setTab] = useState<"utilisation" | "issues">("utilisation");
   const [stepFilter, setStepFilter] = useState("");
-  const [lit, setLit] = useState<string | null>(null);
+  const [lit, setLit] = useState<string[] | null>(null);
 
   // Saved scenarios whose targets no longer resolve raise a broken_scenario issue each (issue #16).
   const broken = useMemo(() => (model ? detectBrokenScenarios(model, scenarios, retired) : []), [model, scenarios, retired]);
@@ -137,7 +141,7 @@ export function useProcessIssues({
     }
     return out;
   }, [here]);
-  const highlight = useMemo(() => (lit ? [lit] : null), [lit]);
+  const highlight = lit;
   const openCount = here.filter((e) => entryView(e).open).length;
 
   // Steps of this process and of those inside it, named for the register; the page's sections keep to them.
@@ -148,7 +152,9 @@ export function useProcessIssues({
   );
   const people = bundle.people.filter((p) => p.active).map((p) => ({ id: p.id, name: p.name }));
 
-  const section = (view: "insights" | "issues") => (
+  const stepNames = useMemo(() => new Map(processSteps(bundle).map((s) => [s.id, s.name])), [bundle]);
+
+  const section = (view: "issues") => (
     <IssuesRegister
       layout="page"
       view={view}
@@ -164,9 +170,26 @@ export function useProcessIssues({
       brokenScenarios={brokenScenarios}
       canEdit={mode !== "readonly"}
       currency={bundle.workspace.settings.currency}
-      stepFilter={view === "issues" ? stepFilter : ""}
+      stepFilter={stepFilter}
       onStepFilterChange={setStepFilter}
-      onHighlight={setLit}
+      onHighlight={(id) => setLit(id ? [id] : null)}
+    />
+  );
+
+  const insights = (
+    <InsightsSection
+      state={state}
+      detected={detected}
+      running={running}
+      processId={bundle.process.id}
+      stepIds={stepIds}
+      scenarios={scenarios}
+      currency={bundle.workspace.settings.currency}
+      stepName={(id) => stepNames.get(id) ?? null}
+      onLight={setLit}
+      rulesHref={rulesHref}
+      registerHref={registerHref}
+      canEdit={mode !== "readonly"}
     />
   );
 
@@ -213,7 +236,7 @@ export function useProcessIssues({
               currency={bundle.workspace.settings.currency}
               stepFilter={stepFilter}
               onStepFilterChange={setStepFilter}
-              onHighlight={setLit}
+              onHighlight={(id) => setLit(id ? [id] : null)}
             />
             {registerHref && (
               <a href={registerHref} className="mt-2 block text-xs text-fg-2 hover:underline">
@@ -242,7 +265,7 @@ export function useProcessIssues({
     stepExtras: (id) => extras.get(id) ?? null,
     highlight,
     rail,
-    insightsList: section("insights"),
+    insightsList: insights,
     issuesList: section("issues"),
     showIssues: () => setTab("issues"),
     onScenariosChange: setScenarios,

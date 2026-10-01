@@ -336,6 +336,7 @@ function IssueItem({
 
   return (
     <li
+      id={`issue-${v.id}`}
       data-issue={v.id}
       data-source={v.source}
       onMouseEnter={onHighlight && v.stepId ? () => onHighlight(v.stepId) : undefined}

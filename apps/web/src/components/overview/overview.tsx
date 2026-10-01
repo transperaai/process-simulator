@@ -35,9 +35,11 @@ import { rerate, visibleFindings } from "@/lib/rules/edit";
 import { useRatingSettings } from "@/lib/rules/use-rating-settings";
 import { useAbsenceTest } from "@/lib/sim/absence";
 import { useSimulation } from "@/lib/sim/use-simulation";
-import { AiReadPlaceholder, FindingRows, RatingCounts, type FindingPlace } from "./analysis-found";
+import { AiReadPlaceholder, RatingCounts } from "./analysis-found";
 import { LegendItem, MrrChart, RoleBusyChart } from "./charts";
 import { HeadlineCards } from "./headline-cards";
+import { InsightsSection } from "@/components/insights";
+import { useIssues } from "@/lib/issues/use-issues";
 
 export interface OverviewProps {
   /** The workspace's name, as the page's title. */
@@ -131,7 +133,9 @@ export function Overview({ workspaceName, live, parts, issues, mode, analysisRul
     () => (base && baseResult ? sortFindings(visibleFindings(rules, [...rerate(base, baseResult, rules, live.process.id, absence), ...gaps])) : null),
     [base, baseResult, rules, live.process.id, absence, gaps],
   );
-  const entries = useMemo(() => registerEntries(issues, findings ?? []), [issues, findings]);
+  // Acknowledging an insight tracks it here, so it badges the map straight away.
+  const state = useIssues(live.workspace.id, issues, mode);
+  const entries = useMemo(() => registerEntries(state.issues, findings ?? []), [state.issues, findings]);
   const openIssues = useMemo(() => Object.fromEntries(Object.entries(confirmedBadges(entries)).map(([id, b]) => [id, b.count])), [entries]);
   const rating = useMemo(() => stepRatingOf(confirmedRatings(entries)), [entries]);
 
@@ -146,10 +150,10 @@ export function Overview({ workspaceName, live, parts, issues, mode, analysisRul
     const href = process ? hrefs[process] : undefined;
     if (href) router.push(href);
   };
-  const placeOf = (f: { stepId: string | null }): FindingPlace | null => {
-    const process = f.stepId ? map.processOfStep.get(f.stepId) : undefined;
-    if (!f.stepId || !process || !stepNames.has(f.stepId)) return null;
-    return { step: stepNames.get(f.stepId)!, process: processNames.get(process) ?? "", href: hrefs[process] ?? issuesHref };
+  const processOfStep = (stepId: string) => map.processOfStep.get(stepId) ?? null;
+  const processNameOfStep = (stepId: string) => {
+    const process = processOfStep(stepId);
+    return process ? (processNames.get(process) ?? null) : null;
   };
 
   // The numbers for the horizon picked.
@@ -248,7 +252,21 @@ export function Overview({ workspaceName, live, parts, issues, mode, analysisRul
           }
         >
           <AiReadPlaceholder />
-          <FindingRows findings={findings ? findings.slice(0, 5) : null} total={findings?.length ?? 0} places={placeOf} currency={currency} fallbackHref={issuesHref} onLight={setLit} />
+          <InsightsSection
+            state={state}
+            detected={findings}
+            processId={live.process.id}
+            scenarios={[]}
+            currency={currency}
+            stepName={(id) => stepNames.get(id) ?? null}
+            processName={processNameOfStep}
+            processOfStep={processOfStep}
+            onLight={setLit}
+            rulesHref={rulesHref}
+            registerHref={issuesHref}
+            canEdit={mode !== "readonly"}
+            initialLimit={5}
+          />
         </Section>
 
         <Section

@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { MARKET_PRESETS, absenceTest, detectIssues, larkspurModel, northbeamModel, northbeamWithClientGroups, northbeamWithServicing, simulate, withMarketCondition, type EngineModel, type SimulationResult, type Stat } from "../src";
+import { MARKET_PRESETS, absenceTest, detectIssues, larkspurModel, northbeamModel, northbeamWithChurnDrivers, northbeamWithClientGroups, northbeamWithServicing, simulate, withMarketCondition, type EngineModel, type SimulationResult, type Stat } from "../src";
 
 export const GOLDEN_DIR = new URL("../golden/", import.meta.url);
 export const VERSION_FILE = new URL("../src/version.ts", import.meta.url);
@@ -50,6 +50,13 @@ export const GOLDEN_MODELS: GoldenModel[] = [
     name: "northbeam-groups",
     description: "Northbeam as the seed loads it since client groups: its clients counted per service (17 SEO clients at health 83, 12 PPC clients at health 52) and simulated as unnamed clients, with the same servicing: a healthy group and one at risk.",
     model: northbeamWithClientGroups,
+    seed: 1,
+    reps: 30,
+  },
+  {
+    name: "northbeam-drivers",
+    description: "Northbeam as seeded with all ten churn drivers on at the prototype's weights, and one of its own (churn-drivers.ts): who the churn is blamed on, and what each cause measured.",
+    model: northbeamWithChurnDrivers,
     seed: 1,
     reps: 30,
   },
@@ -106,6 +113,15 @@ export function keyOutputs(model: EngineModel, r: SimulationResult) {
     ratings: Object.fromEntries(
       detectIssues(model, r, {}, { absence }).map((i) => [i.key, { rating: i.rating, base: i.escalation.base, badMonth: i.escalation.badMonth, bottleneck: i.escalation.bottleneck }]),
     ),
+    // Who the churn is blamed on (churn-drivers.ts): each cause's share of the clients lost, its average pressure and what was measured.
+    churnCauses: r.churnCauses
+      ? {
+          clients: r.churnCauses.clients,
+          normalShare: r.churnCauses.normal.share,
+          causes: Object.fromEntries(r.churnCauses.causes.map((c) => [c.id, { share: c.share, mrr: c.mrr, pressure: c.pressure, value: c.value }])),
+          byService: r.churnCauses.byService,
+        }
+      : null,
     rosterClients: r.clients
       ? Object.fromEntries(Object.entries(r.clients).map(([id, c]) => [id, { health: c.health.mean, churned: c.churned, atRisk: c.atRisk }]))
       : null,

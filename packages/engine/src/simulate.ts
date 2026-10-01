@@ -12,10 +12,23 @@
 //
 // Time runs from -warmup to H; everything reported is measured over [0, H].
 
+import {
+  AWAY_PRESSURE,
+  EARLY_TENURE_WEEKS,
+  loadPressure,
+  onboardingPressure,
+  pricePressure,
+  PRICE_WEIGHT_WEEKS,
+  resolveChurnDrivers,
+  responsePressure,
+  resultsPressure,
+  reworkPressure,
+  summariseChurn,
+  type ChurnReplication,
+} from "./churn-drivers";
 import { carriersFor, clientChurnMonthly, clientRoleLoads, rolePools, withClientGroups } from "./clients";
 import {
   AT_RISK_HEALTH,
-  churnProbability,
   clampHealth,
   clientChurnSensitivity,
   healthRules,
@@ -93,6 +106,8 @@ interface Task {
   /** Not done by then: missed. */
   deadline: number;
   state: "open" | "done" | "missed";
+  /** An ad-hoc request (a Poisson link) rather than scheduled work: it feeds the response-time driver. */
+  adhoc: boolean;
 }
 
 /** One recurring servicing process of one client. */
@@ -503,6 +518,20 @@ interface RosterClient {
    */
   open: Task[];
   openHead: number;
+  /** The service whose group or roster entry it is (the first it takes), "" for none. */
+  svcKey: string;
+  /** People who look after it: its carriers and the people of its servicing processes' roles. */
+  team: PersonState[];
+  /** Churn drivers' measures: ad-hoc requests and those late or missed, servicing visits and those repeated. */
+  adhocN: number;
+  adhocBad: number;
+  visits: number;
+  reworks: number;
+  /** When its first servicing task was done (hours; -1 until then). */
+  firstDone: number;
+  /** At the last weekly tick: the churn drivers' pressure other than late work, and the market's multiplier. */
+  extraA: number;
+  lastB: number;
 }
 
 /** True when any step has current WIP entered (0 counts: "nothing here right now"). */
@@ -810,6 +839,56 @@ export function runOnce(
   const nextAssignee: Record<string, number> = {};
   let wonClients = 0;
   let churned = 0;
+  // Churn drivers (churn-drivers.ts): who the churn is blamed on. Slot 0 is normal churn, then each driver in order.
+  const drivers = resolveChurnDrivers(model);
+  const nSlots = drivers.length + 1;
+  const slotOf = (id: string) => drivers.findIndex((d) => d.id === id) + 1;
+  const SLATE = slotOf("late");
+  const SRESP = slotOf("resp");
+  const SONB = slotOf("onb");
+  const SREWORK = slotOf("rework");
+  const SLOAD = slotOf("load");
+  const SHAND = slotOf("handoff");
+  const SRESULTS = slotOf("results");
+  const STENURE = slotOf("tenure");
+  const SPRICE = slotOf("price");
+  const SMARKET = slotOf("market");
+  const dw = new Float64Array(nSlots);
+  const don = new Uint8Array(nSlots);
+  drivers.forEach((d, i) => {
+    dw[i + 1] = d.weight;
+    don[i + 1] = d.enabled ? 1 : 0;
+  });
+  /** Measured value of the driver's cause, per slot, when the run has something to read. */
+  const causeClients = new Float64Array(nSlots);
+  const causeMrr = new Float64Array(nSlots);
+  const pressSum = new Float64Array(nSlots);
+  let pressN = 0;
+  const causeByService = new Map<string, Float64Array>();
+  /** This tick's pressure for the client in hand, per slot. */
+  const ev = new Float64Array(nSlots);
+  let respSum = 0;
+  let respN = 0;
+  let visitsAll = 0;
+  let reworksAll = 0;
+  let onbSum = 0;
+  let onbN = 0;
+  /** Normal first delivery for the onboarding driver, in hours (its entered target is in working days). */
+  const onbNormalHours = (drivers[SONB - 1]!.value ?? 10) * (model.hoursPerWeek / 5);
+  /** The market's churn factor, weighted by its driver (1 with no market or the driver off). Bit-for-bit the plain factor at weight 1. */
+  const churnMarket = (t: number): number => {
+    if (!market || !don[SMARKET]) return 1;
+    const f = mkt(t).churn;
+    return dw[SMARKET] === 1 ? f : 1 + dw[SMARKET]! * (f - 1);
+  };
+  /** People's busy share so far in the measured window, refreshed at each weekly tick; and the busiest of the last tick. */
+  const personUtil = new Map<PersonState, number>();
+  let busiest = 0;
+  let busiestPerson: string | null = null;
+  const awayAt = (p: PersonState, t: number) => {
+    if (p.leave) for (const [a, b] of p.leave) if (t >= a && t < b) return true;
+    return false;
+  };
   const serviceIndex = new Map(services.map((sv, i) => [sv.id, i]));
   /** Roles that work each servicing process's steps, in id order. */
   const processRoles = new Map<string, string[]>();
@@ -842,6 +921,15 @@ export function runOnce(
       since: t,
       open: [],
       openHead: 0,
+      svcKey: client.services[0] ?? "",
+      team: [],
+      adhocN: 0,
+      adhocBad: 0,
+      visits: 0,
+      reworks: 0,
+      firstDone: -1,
+      extraA: 0,
+      lastB: 1,
     };
     if (isRoster) {
       rc.trajectory = [rc.health];
@@ -880,6 +968,22 @@ export function runOnce(
         }
       }
     }
+    // Who looks after it (for the churn drivers): its carriers and assignees, and the people of the roles that work its servicing processes.
+    const team = new Set<PersonState>(rc.assigned);
+    for (const [p] of rc.carriers) team.add(p);
+    for (const sid of client.services) {
+      const svc = serviceIndex.get(sid);
+      if (svc === undefined) continue;
+      for (const link of linksBySvc[svc]!) {
+        for (const rid of processRoles.get(link.process) ?? []) {
+          for (const c of pools[rid] ?? []) {
+            const p = personById.get(c.person);
+            if (p) team.add(p);
+          }
+        }
+      }
+    }
+    rc.team = [...team];
     const touched = new Set<PersonState>();
     for (const [p, rid, hours] of rc.carriers) {
       let parts = p.contrib.get(rc);
@@ -941,18 +1045,98 @@ export function runOnce(
    */
   const churnTick = (t: number) => {
     if (!roster) {
-      active = Math.max(0, active - active * ((model.churnMonthly * (market ? mkt(t).churn : 1)) / WEEKS_PER_MONTH));
+      active = Math.max(0, active - active * ((model.churnMonthly * churnMarket(t)) / WEEKS_PER_MONTH));
       setPooledLoads(t);
       return;
     }
     // Tasks whose deadline passed before this tick count as missed first (one at the tick itself comes after it).
     if (servicing) for (const rc of rosterClients) settleMisses(rc, t, false);
     const staying: RosterClient[] = [];
-    const churnFactor = market ? mkt(t).churn : 1;
+    // The market's churn factor this week, and the weighted multiplier it gives the whole chance of leaving.
+    const marketF = market ? mkt(t).churn : 1;
+    const multiplier = churnMarket(t);
+    // How busy each person has been so far (for the team-overload driver): read, not advanced, so the run's sums are untouched.
+    const weeksSoFar = t / hpw;
+    busiest = 0;
+    busiestPerson = null;
+    for (const p of people) {
+      const pending = (p.load * Math.max(0, Math.min(t, H) - Math.max(p.lastT, 0))) / hpw;
+      const capacity = p.person.capacity * weeksSoFar;
+      const u = capacity > 0 ? (p.busyHours + p.svcHours + p.ongoingHours + pending) / capacity : 0;
+      personUtil.set(p, u);
+      if (u > busiest) {
+        busiest = u;
+        busiestPerson = p.id;
+      }
+    }
+    // Constant pressures this week: entered numbers, and a planned price rise in the weeks after it takes effect.
+    ev[SRESULTS] = resultsPressure(drivers[SRESULTS - 1]!.value ?? 8);
+    const priceFrom = (drivers[SPRICE - 1]!.month - 1) * (52 / 12) * hpw;
+    ev[SPRICE] = t >= priceFrom && t < priceFrom + PRICE_WEIGHT_WEEKS * hpw ? pricePressure(drivers[SPRICE - 1]!.value ?? 0) : 0;
+    const handoffRate = Math.min(1, drivers[SHAND - 1]!.value ?? 0);
+    const tenureExtra = Math.max(0, (drivers[STENURE - 1]!.value ?? 1) - 1);
+    for (let s = SMARKET + 1; s < nSlots; s++) ev[s] = (drivers[s - 1]!.value ?? 0) / 100;
+    ev[SMARKET] = marketF - 1;
     for (const rc of rosterClients) {
       rc.trajectory?.push(rc.health);
+      // The pressure each driver puts on this client: 0 when nothing is wrong, 1 doubles its churn at weight 1.
+      ev[SLATE] = rc.sensitivity * ((100 - rc.health) / 100);
+      ev[SRESP] = rc.adhocN > 0 ? responsePressure(rc.adhocBad / rc.adhocN) : 0;
+      let early = 0;
+      let delay = 0;
+      if (!rc.roster) {
+        const age = t - rc.since;
+        if (age <= EARLY_TENURE_WEEKS * hpw) early = 1;
+        delay = (rc.firstDone >= 0 ? rc.firstDone : t) - rc.since;
+      }
+      ev[SONB] = early ? onboardingPressure(delay, onbNormalHours) : 0;
+      ev[STENURE] = early ? tenureExtra : 0;
+      ev[SREWORK] = rc.visits > 0 ? reworkPressure(rc.reworks / rc.visits) : 0;
+      let util = 0;
+      let away = false;
+      for (const p of rc.team) {
+        const u = personUtil.get(p) ?? 0;
+        if (u > util) util = u;
+        if (!away && awayAt(p, t)) away = true;
+      }
+      ev[SLOAD] = loadPressure(util);
+      ev[SHAND] = handoffRate + (away ? AWAY_PRESSURE : 0);
+      // The chance of leaving: base × (1 + the drivers' pressure at their weights) × the market.
+      let a = 1;
+      let extra = 0;
+      for (let s = 1; s < nSlots; s++) {
+        if (s === SMARKET || !don[s]) continue;
+        const term = dw[s]! * ev[s]!;
+        a += term;
+        if (s !== SLATE) extra += term;
+      }
       // Not clamped: a monthly rate above 1 means certain churn at the first tick.
-      const weekly = (rc.churnBase * (1 + rc.sensitivity * ((100 - rc.health) / 100)) * churnFactor) / WEEKS_PER_MONTH;
+      const weekly = (rc.churnBase * a * multiplier) / WEEKS_PER_MONTH;
+      rc.extraA = extra;
+      rc.lastB = multiplier;
+      // Who this week's chance of leaving is blamed on: the shares of 1 (normal) plus each switched-on driver's pressure, and the market's stretch.
+      {
+        const marketPart = don[SMARKET] && multiplier > 1 ? a * (multiplier - 1) : 0;
+        const total = a + marketPart;
+        const hazard = weekly < 1 ? (weekly > 0 ? weekly : 0) : 1;
+        const k = hazard / total;
+        const mrr = rc.weeklyBill * WEEKS_PER_MONTH;
+        let row = causeByService.get(rc.svcKey);
+        if (!row) causeByService.set(rc.svcKey, (row = new Float64Array(nSlots)));
+        causeClients[0]! += k;
+        causeMrr[0]! += k * mrr;
+        row[0]! += k;
+        pressN++;
+        for (let s = 1; s < nSlots; s++) {
+          pressSum[s]! += ev[s]!;
+          const part = s === SMARKET ? marketPart : don[s] ? dw[s]! * ev[s]! : 0;
+          if (part > 0) {
+            causeClients[s]! += k * part;
+            causeMrr[s]! += k * part * mrr;
+            row[s]! += k * part;
+          }
+        }
+      }
       if (rc.rng() < weekly) {
         removeClient(rc, t);
         rc.churned = true;
@@ -1009,7 +1193,7 @@ export function runOnce(
     if (e.task) {
       // A servicing task ends at its process's end, whatever the end's outcome: it books nothing.
       e.done = t;
-      finishTask(e.task, t);
+      finishTask(e.task, t, e.t0);
       return;
     }
     if (!end.handoff) e.done = t;
@@ -1027,7 +1211,7 @@ export function runOnce(
     if (!c.active) return;
     scheduleTask(c, l, t + (l.interval ?? expo(l.rng, l.gap)));
     const sla = l.link.sla;
-    const task: Task = { client: c, due: t + sla, deadline: t + 2 * sla, state: "open" };
+    const task: Task = { client: c, due: t + sla, deadline: t + 2 * sla, state: "open", adhoc: l.interval === null };
     const e: SimEntity = { id: eid++, t0: t, trace: NO_TRACE, seg: null, svc: l.svc, task };
     if (keepTrace) {
       e.trace = [];
@@ -1060,7 +1244,7 @@ export function runOnce(
       n++;
       if (task.state === "open") {
         task.state = "missed";
-        touchpoint(c, "missed", task.deadline);
+        touchpoint(c, "missed", task.deadline, task.adhoc);
       }
     }
     // Drop the settled ones once they are all settled, or are most of the list.
@@ -1075,12 +1259,27 @@ export function runOnce(
   }
 
   /** A task reached its process's end: on time or late, unless it was already missed. */
-  function finishTask(task: Task, t: number) {
+  function finishTask(task: Task, t: number, t0: number) {
+    const c = task.client;
     // Any of the client's deadlines up to now pass first, this task's included.
-    settleMisses(task.client, t, true);
+    settleMisses(c, t, true);
     const open = task.state === "open";
     task.state = "done";
-    if (open) touchpoint(task.client, t <= task.due ? "onTime" : "late", t);
+    if (open) touchpoint(c, t <= task.due ? "onTime" : "late", t, task.adhoc);
+    // The churn drivers' measures: how long an ad-hoc request took, and how long a client won in the run waited for its first delivery.
+    if (t >= 0) {
+      if (task.adhoc) {
+        respSum += t - t0;
+        respN++;
+      }
+      if (c.firstDone < 0 && c.active) {
+        c.firstDone = t;
+        if (!c.roster) {
+          onbSum += t - c.since;
+          onbN++;
+        }
+      }
+    }
   }
 
   /**
@@ -1088,8 +1287,12 @@ export function runOnce(
    * +recover (up to 100), late −late penalty, missed −missed penalty (down to
    * 0). Only in the measured window, and only while the client is active.
    */
-  function touchpoint(c: RosterClient, kind: keyof Touchpoints, t: number) {
+  function touchpoint(c: RosterClient, kind: keyof Touchpoints, t: number, adhoc: boolean) {
     if (t < 0 || !c.active) return;
+    if (adhoc) {
+      c.adhocN++;
+      if (kind !== "onTime") c.adhocBad++;
+    }
     c.touch[kind]++;
     allTouch[kind]++;
     const delta = kind === "onTime" ? rules.recover : kind === "late" ? -rules.latePenalty : -rules.missedPenalty;
@@ -1124,7 +1327,7 @@ export function runOnce(
       }
       // With a roster, the new client bills week by week until it churns (see `bill`).
       if (sv.s.pricingModel === "retainer" && !roster) {
-        billed += ((sv.s.price * (market ? mkt(t).price : 1)) / WEEKS_PER_MONTH) * weeksBilled(t, sv.s.churnMonthly * (market ? mkt(t).churn : 1));
+        billed += ((sv.s.price * (market ? mkt(t).price : 1)) / WEEKS_PER_MONTH) * weeksBilled(t, sv.s.churnMonthly * churnMarket(t));
       } else if (sv.s.pricingModel === "one_off") {
         billed += sv.s.price * (market ? mkt(t).price : 1);
       }
@@ -1312,7 +1515,16 @@ export function runOnce(
     const s = st.s;
     st.stat.departures++;
     if (s.sla !== undefined && t - e.seg!.tQ > s.sla) st.stat.slaBreaches++;
-    if (s.rework && st.rework() < s.rework) {
+    const redo = Boolean(s.rework && st.rework() < s.rework);
+    if (e.task && t >= 0) {
+      e.task.client.visits++;
+      visitsAll++;
+      if (redo) {
+        e.task.client.reworks++;
+        reworksAll++;
+      }
+    }
+    if (redo) {
       st.stat.reworks++;
       st.stat.arrivals++;
       queueAt(e, st, t, t);
@@ -1588,10 +1800,43 @@ export function runOnce(
         health,
         touchpoints: rc.touch,
         churned: rc.churned,
-        churnMonthly: churnProbability(rc.churnBase, rc.sensitivity, rc.health),
+        // Its chance at the horizon: base × (1 + the drivers' pressure at the last tick, late work at the final health) × the market.
+        churnMonthly: Math.min(
+          1,
+          Math.max(
+            0,
+            rc.churnBase * (1 + (don[SLATE] ? dw[SLATE]! * (rc.sensitivity * ((100 - clampHealth(rc.health)) / 100)) : 0) + rc.extraA) * rc.lastB,
+          ),
+        ),
       };
     }
     for (const rc of rosterClients) if (rc.health < AT_RISK_HEALTH) atRisk++;
+  }
+  /** The churn drivers' accounting for this replication: who the churn is blamed on, and what each cause measured. */
+  function churnOut(): ChurnReplication {
+    const touched = allTouch.onTime + allTouch.late + allTouch.missed;
+    const values: (number | null)[] = new Array<number | null>(nSlots).fill(null);
+    const valuePerson: (string | null)[] = new Array<string | null>(nSlots).fill(null);
+    values[SLATE] = touched > 0 ? (allTouch.late + allTouch.missed) / touched : null;
+    values[SRESP] = respN > 0 ? respSum / respN : null;
+    values[SONB] = onbN > 0 ? onbSum / onbN / (model.hoursPerWeek / 5) : null;
+    values[SREWORK] = visitsAll > 0 ? reworksAll / visitsAll : null;
+    if (personUtil.size > 0) {
+      values[SLOAD] = busiest;
+      valuePerson[SLOAD] = busiestPerson;
+    }
+    for (const s of [SHAND, SRESULTS, STENURE, SPRICE]) values[s] = drivers[s - 1]!.value;
+    values[SMARKET] = 1 + (pressN > 0 ? pressSum[SMARKET]! / pressN : 0);
+    for (let s = SMARKET + 1; s < nSlots; s++) values[s] = drivers[s - 1]!.value;
+    return {
+      clients: Array.from(causeClients),
+      mrr: Array.from(causeMrr),
+      pressure: Array.from(pressSum),
+      pressureN: pressN,
+      byService: Object.fromEntries([...causeByService].map(([k, v]) => [k, Array.from(v)])),
+      values,
+      valuePerson,
+    };
   }
   // Revenue from the per-service counts (docs/PRD.md §13).
   let newMrr = 0;
@@ -1621,7 +1866,7 @@ export function runOnce(
     services: serviceOut,
     overtimeHours,
     overtimeCost,
-    ...(roster ? { clientsChurned: churned, clientsAtRisk: atRisk, touchpoints: allTouch, clients: clientsOut! } : {}),
+    ...(roster ? { clientsChurned: churned, clientsAtRisk: atRisk, touchpoints: allTouch, clients: clientsOut!, churn: churnOut() } : {}),
     cycle,
     steps: stepOut,
     roles: roleOut,
@@ -1888,5 +2133,6 @@ export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationRes
     wipEnd: model.steps.reduce((a, s) => a + (svcSteps.has(s.id) ? 0 : steps[s.id]!.wip), 0),
     initialState: start,
     ...(model.clients ? { clients: clientResults(model, runs) } : {}),
+    ...(runs[0]?.churn ? { churnCauses: summariseChurn(model, resolveChurnDrivers(model), runs.map((r) => r.churn!)) } : {}),
   };
 }

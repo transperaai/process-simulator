@@ -2,6 +2,7 @@
 // far with named people, services, end-step outcomes, seasonal demand, a client
 // roster, overtime, and client servicing with health and churn (docs/PRD.md §6).
 
+import type { ChurnCauses, ChurnReplication, EngineChurnDriver } from "./churn-drivers";
 import type { EngineMarket } from "./market";
 
 /** Times are in working hours. */
@@ -366,6 +367,13 @@ export interface EngineModel {
    */
   clientGroups?: Record<string, EngineClientGroup>;
   /**
+   * Churn drivers (decision D31, issue #121): the reasons clients leave, each with a
+   * weight and an on/off switch, plus any of your own (churn-drivers.ts). Omitted:
+   * the defaults, which are exactly how the engine churned clients before drivers
+   * existed (health and the market's "clients leaving" factor, both at weight 1).
+   */
+  churnDrivers?: EngineChurnDriver[];
+  /**
    * Servicing processes by id (see `EngineService.servicing`). Omitted or
    * empty: no servicing, and the model runs exactly as before it existed.
    */
@@ -525,7 +533,7 @@ export interface ClientReplication {
   touchpoints: Touchpoints;
   /** Whether it churned in the measured window. */
   churned: boolean;
-  /** Monthly churn probability from its health at the horizon (or when it churned). */
+  /** Monthly churn probability at the horizon: base × (1 + the drivers' pressure) × the market's factor, at most 1. */
   churnMonthly: number;
 }
 
@@ -570,6 +578,8 @@ export interface ReplicationResult {
   touchpoints?: Touchpoints;
   /** With a client roster: each roster client, by id. */
   clients?: Record<string, ClientReplication>;
+  /** With a client roster: who the churn is blamed on (churn-drivers.ts). */
+  churn?: ChurnReplication;
   /** Cycle times of won and done entities. */
   cycle: number[];
   steps: Record<string, StepResult>;
@@ -647,7 +657,7 @@ export interface ClientResult {
   trajectory: number[];
   /** Mean touchpoints per replication. */
   touchpoints: Touchpoints;
-  /** Monthly churn probability from its health at the horizon. */
+  /** Monthly churn probability at the horizon (see `ClientReplication.churnMonthly`). */
   churnMonthly: Stat;
   /** Share of replications in which it churned. */
   churned: number;
@@ -708,4 +718,6 @@ export interface SimulationResult {
   initialState: InitialState;
   /** With a client roster: each roster client, by id. */
   clients?: Record<string, ClientResult>;
+  /** With a client roster: how much of the churn each driver causes (docs/analysis-rules.md rule 10). */
+  churnCauses?: ChurnCauses;
 }

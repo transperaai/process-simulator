@@ -6,7 +6,7 @@
 
 import type { DetectedIssue } from "./issues";
 import type { EngineModel, EngineStep, SimulationResult } from "./model";
-import { fixedRating } from "./ratings";
+import { fixedRating, resolveRatingConfig, type RatingConfig, type RatingConfigInput } from "./ratings";
 import { AT_RISK_HEALTH, clientChurnSensitivity, servicingLinks } from "./servicing";
 import { clientChurnMonthly, clientHealthSummary, groupServiceOf, withClientGroups } from "./clients";
 
@@ -133,6 +133,76 @@ export function churnRiskIssues(source: EngineModel, result: SimulationResult): 
       clientId: null,
       fix: null,
     });
+  }
+  return out;
+}
+
+/** Fewer clients than this lost in a run and there is no churn worth blaming on anything. */
+const MIN_CLIENTS_LOST = 0.25;
+
+/**
+ * Rule 10, "cause of clients leaving" (docs/analysis-rules.md): a driver that
+ * causes 30% or more of a client group's churn is Bad, not urgent; Operational
+ * risk when the group's health is also under 50. Both numbers are the rule's
+ * settings (`config.rules.driver.cutoffs[0]` and `[2]`). One issue per group
+ * and driver, keyed `churn_risk:driver:<service>:<driver>`. A model whose
+ * clients are named, not counted in groups, is read by the first service of
+ * each client. Nothing is raised when the rule is switched off, the run has no
+ * driver accounting, or the group loses almost nobody.
+ */
+export function churnCauseIssues(source: EngineModel, result: SimulationResult, ratingConfig: RatingConfigInput | RatingConfig = {}): DetectedIssue[] {
+  const causes = result.churnCauses;
+  const rule = resolveRatingConfig(ratingConfig).rules.driver;
+  if (!causes || !rule.enabled) return [];
+  const model = withClientGroups(source);
+  const shareBad = rule.cutoffs[0];
+  const healthBelow = rule.cutoffs[2];
+  const weeks = model.horizonWeeks;
+  const out: DetectedIssue[] = [];
+  for (const sid of Object.keys(causes.byService).sort(cmp)) {
+    const row = causes.byService[sid]!;
+    if (row.clients < MIN_CLIENTS_LOST) continue;
+    // The group's simulated health at the horizon: its clients' average (the named roster by first service, as for groups).
+    let n = 0;
+    let sum = 0;
+    for (const [cid, c] of Object.entries(result.clients ?? {})) {
+      if ((model.clients?.[cid]?.services[0] ?? "") === sid) {
+        n++;
+        sum += c.health.mean;
+      }
+    }
+    const health = n ? sum / n : null;
+    const name = sid ? (model.services?.[sid]?.name ?? "") : "";
+    const who = name ? `${name} clients` : "clients";
+    for (const cause of causes.causes) {
+      const share = row.shares[cause.id] ?? 0;
+      if (!cause.enabled || !(share >= shareBad) || !(share > 0)) continue;
+      const lost = share * row.clients;
+      const risk = health !== null && health < healthBelow;
+      out.push({
+        key: `churn_risk:driver:${sid || "all"}:${cause.id}`,
+        type: "churn_risk",
+        ...fixedRating(risk ? "risk" : "bad"),
+        title: `${cause.name} causes ${pct(share)} of ${who} leaving`,
+        evidence:
+          `Simulated: ${cause.name.toLowerCase()} is behind ${pct(share)} of the ${who} lost over the ${num(weeks, 0)}-week run ` +
+          `(about ${num(lost)} of the ${num(row.clients)} that leave in a run; normal churn is ${pct(row.shares.normal ?? 0)}). ` +
+          `Rated Bad from ${pct(shareBad)} of churn` +
+          (health !== null ? `, Operational risk when the group's health is also under ${num(healthBelow, 0)} (it ends at ${num(health, 0)}).` : "."),
+        metrics: {
+          share,
+          clients_lost: row.clients,
+          clients_lost_to_it: lost,
+          ...(health !== null ? { group_health: health } : {}),
+          weight: cause.weight,
+        },
+        stepId: null,
+        roleId: null,
+        personId: null,
+        clientId: null,
+        fix: null,
+      });
+    }
   }
   return out;
 }

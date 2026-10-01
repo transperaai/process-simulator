@@ -180,3 +180,30 @@ export function northbeamWithClientGroups(): EngineModel {
     ),
   };
 }
+
+/**
+ * Northbeam as the seed loads it, with every churn driver switched on at the
+ * prototype's weights (A56): late work 1.5, response time 1, onboarding 0.8,
+ * rework 1, team overload 1.2, account manager changes 0.6, results 1 (rated 7
+ * out of 10), early tenure 0.8 (1.6 times as likely in months 1 to 6), price
+ * changes 0.5 (a 10% rise in month 3) and the market 1, plus one of its own
+ * (a competitor undercutting, 15% extra churn at weight 1).
+ */
+export function northbeamWithChurnDrivers(): EngineModel {
+  return {
+    ...northbeamWithClientGroups(),
+    churnDrivers: [
+      { id: "late", weight: 1.5, enabled: true },
+      { id: "resp", weight: 1, enabled: true },
+      { id: "onb", weight: 0.8, enabled: true, value: 10 },
+      { id: "rework", weight: 1, enabled: true },
+      { id: "load", weight: 1.2, enabled: true },
+      { id: "handoff", weight: 0.6, enabled: true, value: 0.3 },
+      { id: "results", weight: 1, enabled: true, value: 7 },
+      { id: "tenure", weight: 0.8, enabled: true, value: 1.6 },
+      { id: "price", weight: 0.5, enabled: true, value: 10, month: 3 },
+      { id: "market", weight: 1, enabled: true },
+      { id: "custom:competitor", name: "A competitor undercuts us", weight: 1, enabled: true, value: 15 },
+    ],
+  };
+}

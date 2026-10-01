@@ -28,5 +28,11 @@
     "date": "2026-10-01",
     "note": "Client groups (A55): clients can be counted per service and are simulated as unnamed clients; groups that count no clients change nothing; adds the northbeam-groups golden model, and the group churn-risk findings join it. The existing golden models do not move.",
     "digest": "sha256:98ec6a6b6e850ef4d5dfe27ac7b6f35a17ac5ac0c2bec9bc68599349ce48d278"
+  },
+  {
+    "version": "1.5.0",
+    "date": "2026-10-01",
+    "note": "Churn drivers: each driver's share of churn is now reported and locked, and the cause-of-clients-leaving rule (rule 10) raises issues; no simulated number moved (with the default drivers the churn maths is bit-for-bit the old one). A northbeam-drivers golden model runs all ten drivers and one of your own.",
+    "digest": "sha256:f76f694f659c58df34e8e605fdb83ffff86bdefa94e48338239ae113f8f4b77b"
   }
 ]

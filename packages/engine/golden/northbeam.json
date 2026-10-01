@@ -1,7 +1,7 @@
 {
   "model": "northbeam",
   "description": "Northbeam Digital, the prototype's model re-baselined after the §6.8 fixes: pooled head-counts, one implicit retainer, automatic warm-up.",
-  "engineVersion": "1.1.0",
+  "engineVersion": "1.2.0",
   "seed": 1,
   "reps": 30,
   "outputs": {
@@ -96,18 +96,18 @@
       "live": { "arrivals": 10.633333333333333, "departures": 10.366666666666667, "avgQueue": 0.0005882093555124239, "avgWait": 0.022587812538613906, "wip": 0, "slaBreaches": 0 }
     },
     "ratings": {
-      "capacity:role:strat": { "rating": "risk", "base": "good", "badMonth": true, "bottleneck": true },
-      "wait:step:audit": { "rating": "risk", "base": "bad", "badMonth": false, "bottleneck": true },
-      "wait:step:kickoff": { "rating": "risk", "base": "bad", "badMonth": true, "bottleneck": false },
-      "rework:step:audit": { "rating": "risk", "base": "bad", "badMonth": false, "bottleneck": true },
-      "rework:step:seo": { "rating": "risk", "base": "bad", "badMonth": true, "bottleneck": false },
-      "capacity:role:ppc": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },
-      "rework:step:onboard": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },
-      "rework:step:ppc": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },
-      "capacity:role:am": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false },
-      "capacity:role:seo": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false },
-      "spof:step:audit": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
-      "spof:step:kickoff": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false }
+      "rework:step:audit": { "rating": "risk", "base": "bad", "badMonth": false, "bottleneck": true, "costPerMonth": 690.6666666666666, "hoursPerMonth": 9.866666666666665 },
+      "rework:step:seo": { "rating": "risk", "base": "bad", "badMonth": true, "bottleneck": false, "costPerMonth": 116.66666666666666, "hoursPerMonth": 2.333333333333333 },
+      "wait:step:audit": { "rating": "risk", "base": "bad", "badMonth": false, "bottleneck": true, "costPerMonth": null, "hoursPerMonth": 205.22458576662575 },
+      "wait:step:kickoff": { "rating": "risk", "base": "bad", "badMonth": true, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": 57.551869968263986 },
+      "capacity:role:strat": { "rating": "risk", "base": "good", "badMonth": true, "bottleneck": true, "costPerMonth": null, "hoursPerMonth": null },
+      "rework:step:ppc": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false, "costPerMonth": 66.66666666666666, "hoursPerMonth": 1.3333333333333333 },
+      "rework:step:onboard": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false, "costPerMonth": 56.833333333333336, "hoursPerMonth": 1.0333333333333334 },
+      "capacity:role:ppc": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": null },
+      "capacity:role:am": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": null },
+      "capacity:role:seo": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": null },
+      "spof:step:audit": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": null },
+      "spof:step:kickoff": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": null }
     },
     "rosterClients": null
   }

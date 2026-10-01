@@ -18,6 +18,19 @@
 
 import type { EngineModel, EnginePerson, EngineStep, SimulationResult } from "./model";
 import { churnRiskIssues } from "./churn-issues";
+import { clientChurnMonthly } from "./clients";
+import {
+  WEEKS_PER_MONTH,
+  averageDealValue,
+  clientLossValue,
+  compareCostsDesc,
+  lossValueAtStep,
+  noCost,
+  resolveCostConfig,
+  type CostConfig,
+  type CostConfigInput,
+  type IssueCost,
+} from "./cost";
 import { overtimeIssues } from "./overtime-issues";
 import {
   compareRatingsDesc,
@@ -36,6 +49,7 @@ import {
 } from "./ratings";
 import { offeredLoad, type ScenarioPatch } from "./scenario";
 import { servicingLinks, servicingStepIds } from "./servicing";
+import { WEEKS_PER_QUARTER } from "./shadow-price";
 
 /** Issue types (docs/PRD.md §5 `issues.type`). Detectors use a subset; the rest are logged by hand. */
 export const ISSUE_TYPES = [
@@ -67,6 +81,8 @@ export interface DetectedIssue {
   rating: Rating;
   /** How the rating was reached: the average's band, and what raised it. */
   escalation: RatingEscalation;
+  /** What it costs a month, as an estimate, and how that was worked out (cost.ts). */
+  cost: IssueCost;
   title: string;
   /** One or two templated sentences with the numbers behind the finding. */
   evidence: string;
@@ -105,11 +121,20 @@ function eligible(personId: string, p: EnginePerson, s: EngineStep): boolean {
 export interface DetectOptions {
   /** The process the model is, for overrides set on a process. Servicing steps use their servicing process's id. */
   processId?: string | null;
+  /** The money settings: the cap on what a loss is worth, and absences a year. Any part left out takes the defaults. */
+  cost?: CostConfigInput | CostConfig;
+  /**
+   * Extra wins a quarter that one more person in each role would bring, by role id
+   * (the shadow price, shadow-price.ts), for the "too busy" cost. A role with none
+   * is costed on its overtime alone. Running it is an extra simulation, so it is
+   * the caller's to run (`shadowPricesFor`).
+   */
+  shadowPrices?: Record<string, number>;
 }
 
 /**
- * The issues a run points at, most severe first (then in `DETECTORS` order,
- * then by key). `result` must come from simulating `model`. `ratingConfig` is
+ * The issues a run points at, most severe first, then costliest first (then in
+ * `DETECTORS` order, then by key). `result` must come from simulating `model`. `ratingConfig` is
  * the workspace's analysis rules (ratings.ts): any part left out takes the
  * agreed defaults. Pure, so a stored run can be re-rated with a new config
  * without simulating again.
@@ -121,6 +146,8 @@ export function detectIssues(
   options: DetectOptions = {},
 ): DetectedIssue[] {
   const config = resolveRatingConfig(ratingConfig);
+  const money = resolveCostConfig(options.cost);
+  const shadow = options.shadowPrices ?? {};
   const hoursPerDay = model.hoursPerWeek / 5;
   const people = result.resolvedPeople;
   const named = Boolean(model.people && Object.keys(model.people).length);
@@ -160,6 +187,70 @@ export function detectIssues(
     return { resolved, outcome: resolved.enabled ? rateRule(config, rule, resolved, { average, p90, onBottleneck }) : null };
   };
 
+  // Cost helpers (cost.ts). A month is 52 / 12 weeks; a quarter 13.
+  const dealValue = averageDealValue(model, money.capMonths);
+  /** Rule 1: the wins one more person would bring × deal value, plus overtime. */
+  const busyCost = (roleId: string | null, overtimeHoursWeek: number, rate: number): IssueCost => {
+    const overtime = overtimeHoursWeek * rate * WEEKS_PER_MONTH;
+    const extraWins = roleId !== null && roleId in shadow ? (Math.max(0, shadow[roleId]!) * WEEKS_PER_MONTH) / WEEKS_PER_QUARTER : null;
+    if (extraWins === null) {
+      return overtime > 0
+        ? { perMonth: overtime, hoursPerMonth: null, method: "Overtime at cost rates. The work lost needs the what-if of one more person, which hasn't run." }
+        : noCost("Needs the what-if of one more person, which hasn't run.");
+    }
+    const lost = extraWins * dealValue;
+    return {
+      perMonth: lost + overtime,
+      hoursPerMonth: null,
+      method:
+        `Work lost: one more person would bring about ${num(extraWins)} more win${extraWins === 1 ? "" : "s"} a month, each worth ${num(dealValue, 0)} (deal value, capped at ${num(money.capMonths, 0)} months)` +
+        (overtime > 0 ? `, plus ${num(overtime, 0)} of overtime at cost rates.` : "."),
+    };
+  };
+  const roleCost = (roleId: string | null) => (roleId ? (model.roles[roleId]?.cost ?? 0) : 0);
+  const stepLosses = new Map<string, number>();
+  /** What losing one item at a step is worth: deal value × the chance it would still have signed (cost.ts). */
+  const stepLoss = (s: EngineStep) => {
+    if (!stepLosses.has(s.id)) stepLosses.set(s.id, lossValueAtStep(model, s, money.capMonths));
+    return stepLosses.get(s.id)!;
+  };
+  /** Rule 5: items lost through the step's "lost per day of waiting" × what a loss is worth; time only when none is set. */
+  const waitCost = (s: EngineStep, st: SimulationResult["steps"][string]): IssueCost => {
+    const itemsMonth = (st.arrivals / model.horizonWeeks) * WEEKS_PER_MONTH;
+    if (!(s.lostPerDay !== undefined && s.lostPerDay > 0)) {
+      return {
+        perMonth: null,
+        hoursPerMonth: itemsMonth * st.avgWait,
+        method: "Time, not money: set this step's lost per day of waiting to put a cost on it.",
+      };
+    }
+    const lostShare = Math.min(1, s.lostPerDay * (st.avgWait / hoursPerDay));
+    const value = stepLoss(s);
+    return {
+      perMonth: itemsMonth * lostShare * value,
+      hoursPerMonth: null,
+      method: `Through drop-off: ${pct(lostShare)} of about ${num(itemsMonth)} items a month go cold while waiting, each worth ${num(value, 0)} at this step.`,
+    };
+  };
+  /** Rule 7: client work through the churn it drives; nothing for work that isn't for a client. */
+  const slaCost = (s: EngineStep): IssueCost => {
+    if (!servicing.has(s.id) || !result.clients || !model.clients) return noCost("Not client work, so no money method.");
+    let total = 0;
+    for (const id of servicing) total += result.steps[id]?.slaBreaches ?? 0;
+    const share = total > 0 ? (result.steps[s.id]?.slaBreaches ?? 0) / total : 0;
+    let excess = 0;
+    for (const [cid, client] of Object.entries(model.clients)) {
+      const c = result.clients[cid];
+      if (!c) continue;
+      excess += Math.max(0, c.churnMonthly.mean - clientChurnMonthly(model, client)) * clientLossValue(model, client, money.capMonths);
+    }
+    return {
+      perMonth: excess * share,
+      hoursPerMonth: null,
+      method: `Through churn: late and missed work raises clients' monthly churn above its base, worth ${num(excess, 0)} a month in lost clients, and this step is ${pct(share)} of the missed deadlines.`,
+    };
+  };
+
   // --- Too busy (rule 1): roles, then people whose load isn't already explained by their role.
   // Client work alone is over capacity when it exceeds even the overtime cap
   // allows (docs/PRD.md §6.3.4): the run clamps to the floor, so utilisation
@@ -189,6 +280,7 @@ export function detectIssues(
       key: `capacity:role:${rid}`,
       type: "capacity",
       ...ratingFields(outcome),
+      cost: busyCost(rid, r.overtimeHours, roleCost(rid)),
       title: clientsAlone
         ? `${roleName(rid)}${who}: client work alone exceeds capacity${overCap}`
         : `${roleName(rid)}${who} at ${pct(r.util)} utilisation`,
@@ -232,6 +324,7 @@ export function detectIssues(
       key: `capacity:person:${pid}`,
       type: "capacity",
       ...ratingFields(outcome),
+      cost: busyCost(main, r.overtimeHours, p.cost ?? (p.roles.length ? p.roles.reduce((sum, rid) => sum + roleCost(rid), 0) / p.roles.length : 0)),
       title: alone ? `${who}: client work alone exceeds capacity${overCap}` : `${who} at ${pct(r.util)} utilisation`,
       evidence: (
         `Simulated: ${num(r.ongoingHours + r.servicingHours)} h/wk client work + ${num(r.pipelineHours)} h/wk pipeline work against ` +
@@ -280,6 +373,15 @@ export function detectIssues(
         key: `queue:step:${s.id}`,
         type: "bottleneck",
         ...ratingFields(growth.outcome),
+        cost: (() => {
+          const value = stepLoss(s);
+          const added = st.queueGrowth * WEEKS_PER_MONTH;
+          return {
+            perMonth: added * value,
+            hoursPerMonth: null,
+            method: `Value of the work stuck: about ${num(added)} more items pile up each month, each worth ${num(value, 0)} at this step.`,
+          };
+        })(),
         title: `The queue at ${s.name} keeps growing`,
         evidence:
           `Simulated: the queue grows by ${num(st.queueGrowth)} items a week and ends the run at ${num(st.wip)} ` +
@@ -311,6 +413,7 @@ export function detectIssues(
             key: `wait:step:${s.id}`,
             type: "delay",
             ...ratingFields(outcome),
+            cost: waitCost(s, st),
             title: `Work waits ${days(st.avgWait, hoursPerDay)} for ${s.name}`,
             evidence: (
               `Simulated: items queue ${num(st.avgWait)} h on average before anyone starts them, ` +
@@ -343,6 +446,8 @@ export function detectIssues(
           key: `spof:step:${s.id}`,
           type: "spof",
           ...fixedRating(util > busyBad ? "bad" : "good"),
+          // The damage of one absence × absences a year ÷ 12 needs the absence test (rule 8), which isn't built yet.
+          cost: noCost(`Needs the absence test (the damage of one absence × ${num(money.absencesPerYear, 0)} absences a year ÷ 12), which isn't built yet.`),
           title: named ? `Only ${people[pid]!.name} can do ${s.name}` : `Only one ${rid ? roleName(rid) : "person"} can do ${s.name}`,
           evidence:
             `Structural: ${num(st.arrivals)} items reach this step over the ${num(model.horizonWeeks, 0)}-week run and nobody else can pick them up when ` +
@@ -366,6 +471,15 @@ export function detectIssues(
           key: `rework:step:${s.id}`,
           type: "failure",
           ...ratingFields(outcome),
+          cost: (() => {
+            const rate = s.person ? (people[s.person]?.cost ?? roleCost(roleOf(s))) : roleCost(roleOf(s));
+            const hours = ((st.reworks * s.work) / model.horizonWeeks) * WEEKS_PER_MONTH;
+            return {
+              perMonth: hours * rate,
+              hoursPerMonth: hours,
+              method: `Repeated hours at cost rates: about ${num(hours)} h a month done twice at ${num(rate, 0)} an hour.`,
+            };
+          })(),
           title: `${pct(observed)} of ${s.name} is done twice`,
           evidence: (
             `Simulated: ${num(st.reworks)} repeats over the ${num(model.horizonWeeks, 0)}-week run, ${pct(observed)} of visits ` +
@@ -394,6 +508,7 @@ export function detectIssues(
           key: `sla:step:${s.id}`,
           type: "sla",
           ...ratingFields(outcome),
+          cost: slaCost(s),
           title: `${s.name} misses its ${num(s.sla)} h SLA ${pct(share)} of the time`,
           evidence: (
             `Simulated: ${num(st.slaBreaches)} of ${num(st.departures)} visits over the ${num(model.horizonWeeks, 0)}-week run took longer than ${num(s.sla)} h ` +
@@ -419,11 +534,11 @@ export function detectIssues(
   }
 
   // --- Clients whose health ends the run below 50 (docs/PRD.md §6.3.5). Not yet on the rating model (rules 9 and 10).
-  for (const issue of churnRiskIssues(model, result)) out.push({ detector: "churn", ...issue });
+  for (const issue of churnRiskIssues(model, result, money)) out.push({ detector: "churn", ...issue });
 
   const rank = (i: { detector: Detector }) => DETECTORS.indexOf(i.detector);
   return out
-    .sort((a, b) => compareRatingsDesc(a.rating, b.rating) || rank(a) - rank(b) || cmp(a.key, b.key))
+    .sort((a, b) => compareRatingsDesc(a.rating, b.rating) || compareCostsDesc(a.cost, b.cost) || rank(a) - rank(b) || cmp(a.key, b.key))
     .map(({ detector: _detector, ...issue }) => issue);
 }
 

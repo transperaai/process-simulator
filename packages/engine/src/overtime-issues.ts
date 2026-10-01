@@ -7,6 +7,7 @@
 
 import type { DetectedIssue } from "./issues";
 import type { EngineModel, SimulationResult } from "./model";
+import { WEEKS_PER_MONTH } from "./cost";
 import { escalationNote, ratingFields, rateRule, resolveRatingConfig, resolveRule, type RatingConfig, type RatingConfigInput } from "./ratings";
 
 const LOCALE = "en-GB";
@@ -44,6 +45,11 @@ export function overtimeIssues(model: EngineModel, result: SimulationResult, rat
       key: subject.key,
       type: "capacity",
       ...ratingFields(outcome),
+      cost: {
+        perMonth: r.overtimeHours * subject.rate * WEEKS_PER_MONTH,
+        hoursPerMonth: r.overtimeHours * WEEKS_PER_MONTH,
+        method: `Overtime hours × cost rate: ${num(r.overtimeHours * WEEKS_PER_MONTH)} h a month at ${num(subject.rate, 0)} an hour.`,
+      },
       title: `${subject.name} works ${num(r.overtimeHours)} h/wk overtime`,
       evidence:
         `Simulated: ${num(r.ongoingHours)} h/wk of client work against ${num(subject.capacity)} h/wk capacity, so ` +

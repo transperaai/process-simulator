@@ -288,7 +288,7 @@ function resolveServices(model: EngineModel): ServiceState[] {
  * ones diverts only entities carrying that tag while the rest split between
  * the untagged edges in proportion to their probabilities.
  */
-function routeFor(edges: EngineEdge[], tags: string[]): Route {
+export function routeFor(edges: EngineEdge[], tags: string[]): Route {
   const sum = (next: EngineEdge[]) => next.reduce((a, n) => a + n.p, 0);
   const tagged = edges.filter((n) => n.tag !== undefined && tags.includes(n.tag));
   if (tagged.length) return { next: tagged, total: sum(tagged), targets: [] };

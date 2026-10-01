@@ -171,6 +171,12 @@ export interface EngineClient {
   services: string[];
   /** Monthly recurring revenue: what it bills a month while active. */
   mrr: number;
+  /**
+   * Months it has been a client when the run starts, for what losing it is
+   * worth (the tenure it has left, docs/analysis-rules.md "Cost per month").
+   * Omitted: counted as new. It doesn't change the simulation.
+   */
+  monthsActive?: number;
   /** Health 0–100 at the start of the run. Omitted: `EngineHealthRules.initial` (80). */
   health?: number;
   /**
@@ -216,6 +222,13 @@ export interface EngineStep {
    * servicing steps). It rates the report; it doesn't change the simulation.
    */
   expectedWaitHours?: number;
+  /**
+   * The share of items that go cold for each working day they wait here (0.05:
+   * 5% of leads a day), docs/analysis-rules.md "Long wait". It costs the step's
+   * waiting insight money (items lost × what a loss is worth at this step);
+   * omitted, the insight shows time instead. It doesn't change the simulation.
+   */
+  lostPerDay?: number;
   next: EngineEdge[];
 }
 

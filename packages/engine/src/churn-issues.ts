@@ -7,6 +7,7 @@
 import type { DetectedIssue } from "./issues";
 import type { EngineModel, EngineStep, SimulationResult } from "./model";
 import { fixedRating } from "./ratings";
+import { DEFAULT_COST_CONFIG, clientLossValue, type CostConfig } from "./cost";
 import { AT_RISK_HEALTH, clientChurnSensitivity, servicingLinks } from "./servicing";
 import { clientChurnMonthly } from "./clients";
 
@@ -16,7 +17,7 @@ const pct = (share: number) => `${Math.round(share * 100)}%`;
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /** Churn-risk issues for a run of `model`, by client id. */
-export function churnRiskIssues(model: EngineModel, result: SimulationResult): DetectedIssue[] {
+export function churnRiskIssues(model: EngineModel, result: SimulationResult, money: CostConfig = DEFAULT_COST_CONFIG): DetectedIssue[] {
   const clients = result.clients;
   if (!clients || !model.clients) return [];
   const named = Boolean(model.people && Object.keys(model.people).length);
@@ -57,6 +58,14 @@ export function churnRiskIssues(model: EngineModel, result: SimulationResult): D
       type: "churn_risk",
       // Not yet on the rating model (rules 9 and 10 replace it): the old bands, as ratings.
       ...fixedRating(end < 30 || c.churned >= 0.5 ? "risk" : end < 40 ? "bad" : "good"),
+      cost: (() => {
+        const value = clientLossValue(model, client, money.capMonths);
+        return {
+          perMonth: c.churnMonthly.mean * value,
+          hoursPerMonth: null,
+          method: `Through churn: a ${pct(c.churnMonthly.mean)} chance it leaves in a month × ${num(value, 0)}, its monthly fee × the tenure it has left (capped at ${num(money.capMonths, 0)} months).`,
+        };
+      })(),
       title: `${client.name}: health ${trend}, at risk of churning`,
       evidence:
         `Simulated: health ${trend} over the ${num(weeks, 0)}-week run (range ${num(c.health.p10, 0)}–${num(c.health.p90, 0)}; below ${AT_RISK_HEALTH} is at risk). ` +

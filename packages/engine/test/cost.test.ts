@@ -1,0 +1,242 @@
+import { describe, expect, it } from "vitest";
+import {
+  WEEKS_PER_MONTH,
+  averageDealValue,
+  chanceToSign,
+  churnLossValue,
+  clientLossValue,
+  compareCostsDesc,
+  dealValue,
+  detectIssues,
+  larkspurModel,
+  lossValueAtStep,
+  northbeamModel,
+  northbeamWithServices,
+  northbeamWithServicing,
+  remainingTenure,
+  shadowPricesFor,
+  simulate,
+  type DetectedIssue,
+  type EngineModel,
+  type EngineStep,
+} from "../src";
+
+// Cost per month (issue #108; docs/analysis-rules.md "Cost per month"): what a
+// loss is worth, the cost method of each rule, and the order issues come in.
+
+const NO_ESC = { escalators: { badMonth: false, bottleneck: false } };
+const find = (issues: DetectedIssue[], key: string) => issues.find((i) => i.key === key);
+
+/** One pipeline of steps in a row on one role, 40 h weeks, 26-week horizon. A 1,000 a month retainer with a 20-month tenure (12 months once capped). */
+function line(leadsPerWeek: number, steps: (Partial<EngineStep> & { id: string })[], extra: Partial<EngineModel> = {}): EngineModel {
+  return {
+    horizonWeeks: 26,
+    hoursPerWeek: 40,
+    leadsPerWeek,
+    activeClients: 0,
+    churnMonthly: 0.05,
+    retainer: 1000,
+    warmupWeeks: 4,
+    roles: { r: { name: "Role r", count: 1, cost: 50, ongoing: 0 } },
+    entry: steps[0]!.id,
+    sinks: { won: "won", lost: "lost" },
+    steps: steps.map((s, i) => ({
+      name: `Step ${s.id}`,
+      role: "r",
+      work: 1,
+      wait: 0,
+      rework: 0,
+      workDist: { kind: "constant" },
+      next: [{ to: steps[i + 1]?.id ?? "won", p: 1 }],
+      ...s,
+    })),
+    ...extra,
+  };
+}
+
+describe("what a loss is worth", () => {
+  it("deal value is the monthly fee × typical tenure, capped at 12 months; a one-off is its price", () => {
+    expect(dealValue({ pricingModel: "retainer", price: 3500, tenureMonths: 18 }, 12)).toBe(42000);
+    expect(dealValue({ pricingModel: "retainer", price: 4200, tenureMonths: 6 }, 12)).toBe(25200);
+    expect(dealValue({ pricingModel: "retainer", price: 1000, tenureMonths: 18 }, 6)).toBe(6000);
+    expect(dealValue({ pricingModel: "one_off", price: 9000, tenureMonths: 0 }, 12)).toBe(9000);
+    expect(dealValue({ pricingModel: "hourly", price: 120, tenureMonths: 0 }, 12)).toBe(0);
+    // A retainer that never churns is worth the cap.
+    expect(dealValue({ pricingModel: "retainer", price: 1000, tenureMonths: 0 }, 12)).toBe(12000);
+  });
+
+  it("before signing, Northbeam's lead lost at Check fit is worth about 12% of a deal, and at Client decision about 32%", () => {
+    const m = northbeamModel();
+    // Qualify (Check fit) → Discovery 55% → Audit 70% → Client decision 32% → signed.
+    expect(chanceToSign(m, "qualify")).toBeCloseTo(0.55 * 0.7 * 0.32, 10);
+    expect(chanceToSign(m, "qualify")).toBeCloseTo(0.1232, 4);
+    expect(chanceToSign(m, "decision")).toBeCloseTo(0.32, 10);
+    expect(chanceToSign(m, "onboard")).toBeCloseTo(1, 10);
+    const deal = averageDealValue(m, 12);
+    expect(deal).toBe(3800 * 12);
+    expect(lossValueAtStep(m, { id: "qualify" }, 12) / deal).toBeCloseTo(0.12, 2);
+    expect(lossValueAtStep(m, { id: "decision" }, 12) / deal).toBeCloseTo(0.32, 10);
+  });
+
+  it("follows each service's own routing", () => {
+    const m = northbeamWithServices();
+    // Every kickoff branch leads to a win, so the services only differ in deal value.
+    expect(chanceToSign(m, "qualify")).toBeCloseTo(0.1232, 4);
+    const seo = 3500 * 12;
+    const ppc = 4200 * 12;
+    expect(averageDealValue(m, 12)).toBeCloseTo(0.55 * seo + 0.45 * ppc, 6);
+  });
+
+  it("copes with loops: a step that sends half its items back still ends where its other half goes", () => {
+    const m = line(5, [{ id: "a", next: [{ to: "a", p: 0.5 }, { to: "b", p: 0.5 }] }, { id: "b", next: [{ to: "won", p: 0.5 }, { to: "lost", p: 0.5 }] }]);
+    expect(chanceToSign(m, "a")).toBeCloseTo(0.5, 9);
+    expect(chanceToSign(m, "b")).toBeCloseTo(0.5, 9);
+  });
+
+  it("after signing, a churned client is worth its fee × the tenure it had left, capped at 12 months", () => {
+    // Month 2 of a 22-month tenure: 20 months left, so the cap's 12. Month 20: 2 left.
+    expect(remainingTenure(22, 2, 12)).toBe(12);
+    expect(remainingTenure(22, 20, 12)).toBe(2);
+    expect(churnLossValue(3000, 22, 2, 12)).toBe(36000);
+    expect(churnLossValue(3000, 22, 20, 12)).toBe(6000);
+    // Past its typical tenure there is nothing left to lose; a lower cap binds sooner.
+    expect(remainingTenure(22, 30, 12)).toBe(0);
+    expect(churnLossValue(3000, 22, 2, 6)).toBe(18000);
+  });
+
+  it("a roster client's loss value uses its service's tenure and the months it has been a client", () => {
+    const m = northbeamWithServices();
+    const client = { name: "C", services: ["seo"], mrr: 2000, assignments: {} };
+    expect(clientLossValue(m, client, 12)).toBe(2000 * 12);
+    // SEO's tenure is 18 months: 17 months in leaves 1.
+    expect(clientLossValue(m, { ...client, monthsActive: 17 }, 12)).toBe(2000);
+  });
+});
+
+describe("the cost of each insight", () => {
+  it("waiting: items lost through 'lost per day of waiting' × what a loss is worth at that step", () => {
+    const m = line(8, [{ id: "a", work: 4, lostPerDay: 0.05 }], { entry: "a" });
+    const r = simulate(m, 12, 1);
+    const issue = find(detectIssues(m, r, { ...NO_ESC, expectedWaitDays: { pipeline: 0.25 } }), "wait:step:a")!;
+    expect(issue).toBeDefined();
+    const st = r.steps.a!;
+    const lostShare = Math.min(1, 0.05 * (st.avgWait / 8));
+    const expected = (st.arrivals / 26) * WEEKS_PER_MONTH * lostShare * 12000;
+    expect(issue.cost.perMonth).toBeCloseTo(expected, 6);
+    expect(issue.cost.perMonth).toBeGreaterThan(0);
+    expect(issue.cost.hoursPerMonth).toBeNull();
+  });
+
+  it("waiting with no 'lost per day' shows time, not money", () => {
+    const m = line(8, [{ id: "a", work: 4 }]);
+    const r = simulate(m, 12, 1);
+    const issue = find(detectIssues(m, r, { ...NO_ESC, expectedWaitDays: { pipeline: 0.25 } }), "wait:step:a")!;
+    expect(issue.cost.perMonth).toBeNull();
+    expect(issue.cost.hoursPerMonth).toBeCloseTo((r.steps.a!.arrivals / 26) * WEEKS_PER_MONTH * r.steps.a!.avgWait, 6);
+    expect(issue.cost.method).toMatch(/^Time, not money/);
+  });
+
+  it("too busy: extra wins one more person would bring × deal value", () => {
+    const m = line(9, [{ id: "a", work: 4 }]);
+    const r = simulate(m, 12, 1);
+    const none = find(detectIssues(m, r, NO_ESC), "capacity:role:r")!;
+    expect(none.cost.perMonth).toBeNull();
+    // 3 extra wins a quarter = 1 a month × 12,000.
+    const issue = find(detectIssues(m, r, NO_ESC, { shadowPrices: { r: 3 } }), "capacity:role:r")!;
+    expect(issue.cost.perMonth).toBeCloseTo(((3 * WEEKS_PER_MONTH) / 13) * 12000, 6);
+    // A lower cap lowers what a win is worth.
+    const capped = find(detectIssues(m, r, NO_ESC, { shadowPrices: { r: 3 }, cost: { capMonths: 6 } }), "capacity:role:r")!;
+    expect(capped.cost.perMonth).toBeCloseTo(((3 * WEEKS_PER_MONTH) / 13) * 6000, 6);
+  });
+
+  it("too busy: the shadow price is the engine's extra run", () => {
+    const m = line(9, [{ id: "a", work: 4 }]);
+    const prices = shadowPricesFor(m, ["r", "r"], { reps: 6, seed: 1 });
+    expect(Object.keys(prices)).toEqual(["r"]);
+    expect(prices.r).toBeGreaterThan(0);
+  });
+
+  it("rework: repeated hours × cost rate", () => {
+    const m = line(3, [{ id: "a", work: 4, rework: 0.3 }]);
+    const r = simulate(m, 12, 1);
+    const issue = find(detectIssues(m, r, NO_ESC), "rework:step:a")!;
+    const hours = ((r.steps.a!.reworks * 4) / 26) * WEEKS_PER_MONTH;
+    expect(issue.cost.hoursPerMonth).toBeCloseTo(hours, 6);
+    expect(issue.cost.perMonth).toBeCloseTo(hours * 50, 6);
+  });
+
+  it("work piling up: the items added a month × what a loss is worth at that step", () => {
+    const m = line(14, [{ id: "a", work: 4 }]);
+    const r = simulate(m, 12, 1);
+    const issue = find(detectIssues(m, r, NO_ESC), "queue:step:a")!;
+    expect(issue.cost.perMonth).toBeCloseTo(r.steps.a!.queueGrowth * WEEKS_PER_MONTH * 12000, 6);
+  });
+
+  it("overtime: overtime hours × cost rate", () => {
+    const m = larkspurModel();
+    const r = simulate(m, 12, 1);
+    const ot = detectIssues(m, r, NO_ESC).filter((i) => i.key.startsWith("overtime:"));
+    expect(ot.length).toBeGreaterThan(0);
+    for (const i of ot) {
+      expect(i.cost.perMonth).toBeCloseTo(i.metrics.overtime_cost! * (WEEKS_PER_MONTH / m.horizonWeeks), 6);
+    }
+  });
+
+  it("single point of failure waits on the absence test: n/a for now", () => {
+    const m = line(2, [{ id: "a", work: 2 }]);
+    const issue = find(detectIssues(m, simulate(m, 6, 1), NO_ESC), "spof:step:a")!;
+    expect(issue.cost.perMonth).toBeNull();
+    expect(issue.cost.hoursPerMonth).toBeNull();
+  });
+
+  it("churn risk: the chance it leaves in a month × what losing it is worth", () => {
+    const m = northbeamWithServicing();
+    const r = simulate(m, 12, 1);
+    const issues = detectIssues(m, r).filter((i) => i.type === "churn_risk");
+    for (const i of issues) {
+      const client = m.clients![i.clientId!]!;
+      expect(i.cost.perMonth).toBeCloseTo(i.metrics.churn_monthly! * clientLossValue(m, client, 12), 6);
+    }
+  });
+
+  it("every insight has a cost with a method, and money is never negative", () => {
+    const m = northbeamWithServicing();
+    for (const i of detectIssues(m, simulate(m, 8, 1))) {
+      expect(i.cost.method.length).toBeGreaterThan(0);
+      expect(i.cost.perMonth === null || i.cost.perMonth >= 0).toBe(true);
+    }
+  });
+});
+
+describe("order", () => {
+  it("sorts by rating, then cost, highest first", () => {
+    const m = northbeamWithServicing();
+    const r = simulate(m, 12, 1);
+    const roles = Object.keys(m.roles);
+    const issues = detectIssues(m, r, {}, { shadowPrices: shadowPricesFor(m, roles, { reps: 6, seed: 1 }) });
+    expect(issues.length).toBeGreaterThan(3);
+    const RANK = { risk: 0, bad: 1, good: 2, great: 3 } as const;
+    for (let i = 1; i < issues.length; i++) {
+      const a = issues[i - 1]!;
+      const b = issues[i]!;
+      expect(RANK[a.rating]).toBeLessThanOrEqual(RANK[b.rating]);
+      if (a.rating === b.rating) expect(compareCostsDesc(a.cost, b.cost)).toBeLessThanOrEqual(0);
+    }
+  });
+
+  it("puts the costlier issue first within a rating", () => {
+    const m = line(14, [{ id: "a", work: 4 }, { id: "b", work: 1, rework: 0.3 }]);
+    const r = simulate(m, 12, 1);
+    const issues = detectIssues(m, r, NO_ESC);
+    const same = issues.filter((i) => i.rating === issues[0]!.rating);
+    const costs = same.map((i) => i.cost.perMonth ?? -1);
+    expect(costs).toEqual([...costs].sort((a, b) => b - a));
+  });
+
+  it("costs money first, then time, then nothing", () => {
+    const money = { perMonth: 5, hoursPerMonth: null, method: "" };
+    const time = { perMonth: null, hoursPerMonth: 9, method: "" };
+    const none = { perMonth: null, hoursPerMonth: null, method: "" };
+    expect([none, time, money].sort(compareCostsDesc)).toEqual([money, time, none]);
+  });
+});

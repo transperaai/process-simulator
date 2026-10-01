@@ -22,6 +22,7 @@
 
 import type { DetectedIssue } from "./issues";
 import type { EngineModel } from "./model";
+import { noCost } from "./cost";
 import { fixedRating } from "./ratings";
 import {
   applyPatches,
@@ -258,6 +259,7 @@ export function detectBrokenScenarios(model: EngineModel, scenarios: readonly Na
       key: brokenScenarioKey(s.id),
       type: "broken_scenario",
       ...fixedRating("bad"),
+      cost: noCost("A broken saved scenario has no money method."),
       title: `Scenario “${s.name}” needs attention`,
       evidence:
         `${broken.length === total ? (total === 1 ? "Its only change" : `All ${total} of its changes`) : `${broken.length} of its ${total} changes`} ` +

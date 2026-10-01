@@ -1,7 +1,7 @@
-import { OverviewSoon } from "@/components/shell/placeholders";
+import { WorkspaceOverview } from "@/components/overview/workspace-overview";
 
-/** Placeholder until A35 builds the Overview page (issue #98). */
+/** The Overview (issue #100): where the whole company stands. */
 export default async function OverviewPage(props: PageProps<"/w/[slug]/overview">) {
   const { slug } = await props.params;
-  return <OverviewSoon mapHref={`/w/${slug}`} />;
+  return <WorkspaceOverview slug={slug} />;
 }

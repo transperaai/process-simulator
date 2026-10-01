@@ -32,6 +32,7 @@ export default async function DemoHistoryPage(props: PageProps<"/demo/p/[process
         />
       }
       processName={history.processName}
+      kind={history.kind}
       versions={history.versions}
       models={history.models}
       viewBase={`/demo/p/${processId}`}

@@ -60,20 +60,16 @@ export async function loadHistory(slug: string, processId: string): Promise<Hist
   }));
   const models: Record<string, ModelEntry> = {};
   const wanted = autoRunIds(versions, AUTO_RUN_VERSIONS);
-  if (wanted.length) {
-    const [steps, edges] = await Promise.all([db.from("steps").select("*").in("revision_id", wanted), db.from("edges").select("*").in("revision_id", wanted)]);
-    if (steps.error) throw steps.error;
-    if (edges.error) throw edges.error;
-    for (const id of wanted) {
+  // One query pair per version: a single query for all of them would hit PostgREST's 1000-row cap on a big process.
+  await Promise.all(
+    wanted.map(async (id) => {
       const v = versions.find((x) => x.revisionId === id)!;
-      models[id] = modelOf(
-        live,
-        { id, number: v.number },
-        (steps.data as StepRow[]).filter((s) => s.revision_id === id),
-        (edges.data as EdgeRow[]).filter((e) => e.revision_id === id),
-      );
-    }
-  }
+      const [steps, edges] = await Promise.all([db.from("steps").select("*").eq("revision_id", id), db.from("edges").select("*").eq("revision_id", id)]);
+      if (steps.error) throw steps.error;
+      if (edges.error) throw edges.error;
+      models[id] = modelOf(live, { id, number: v.number }, steps.data as StepRow[], edges.data as EdgeRow[]);
+    }),
+  );
   return {
     workspace: { id: live.workspace.id, name: live.workspace.name, slug: live.workspace.slug },
     process: { id: live.process.id, name: live.process.name, kind: live.process.kind },

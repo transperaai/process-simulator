@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { EngineModel } from "@transpera-flow/engine";
 import { SimulationCancelled, SimulationClient, type WorkerLike } from "@/lib/sim/client";
-import { HISTORY_REPS, HISTORY_SEED, headlineOf, type RunEntry } from "./versions";
+import { HISTORY_REPS, HISTORY_SEED, headlineOf, type ProcessKind, type RunEntry } from "./versions";
 
 /** A version's model, or why there isn't one. */
 export type VersionModel = { model: EngineModel } | { error: string };
@@ -18,12 +18,15 @@ export function useVersionRuns({
   models,
   auto,
   weeks,
+  kind,
   loadModel,
 }: {
   models: Record<string, VersionModel>;
   auto: readonly string[];
   /** The projection length in weeks, or null for each model's own. */
   weeks: number | null;
+  /** What the process is, which decides the headline measures. */
+  kind: ProcessKind;
   loadModel?: (revisionId: string) => Promise<VersionModel>;
 }): { entries: Record<string, RunEntry>; run: (revisionId: string) => void } {
   const [results, setResults] = useState<Record<string, RunEntry>>({});
@@ -68,7 +71,7 @@ export function useVersionRuns({
           );
           const model = weeks === null ? got.model : { ...got.model, horizonWeeks: weeks };
           const { result } = await clientRef.current.run(model, { reps: HISTORY_REPS, seed: HISTORY_SEED });
-          entry = { status: "done", headline: headlineOf(result, model) };
+          entry = { status: "done", headline: headlineOf(result, model, kind) };
         }
       } catch (err) {
         cancelled = err instanceof SimulationCancelled;
@@ -86,7 +89,7 @@ export function useVersionRuns({
     })();
     // `key` closes over `weeks`, which is listed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wanted, results, models, fetched, weeks, loadModel]);
+  }, [wanted, results, models, fetched, weeks, kind, loadModel]);
 
   const run = useCallback((id: string) => setAsked((a) => (a.includes(id) ? a : [...a, id])), []);
   const entries = useMemo(() => {

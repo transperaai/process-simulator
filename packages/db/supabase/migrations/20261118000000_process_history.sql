@@ -8,17 +8,21 @@
 --   * `revision_history(process)`: every published and superseded revision of
 --     a process with when it was published, by whom (a person's name, or the
 --     kind of actor: user, mcp or system, from the audit log) and what changed
---     (the audit entry's step and edge changes). SECURITY DEFINER because
---     auth.users and the audit log are not readable by every member; it returns
---     rows only to someone who can read the workspace, and shows an email only
---     to someone who manages it.
+--     since the version before it: counts of steps and connections added,
+--     removed and changed (moving a step on the canvas is not a change).
+--     SECURITY DEFINER because auth.users and the audit log are not readable by
+--     every member; it returns rows only to someone who can read the workspace,
+--     and shows an email only to someone who manages it.
 --   * `restore_version(process, revision, replace_draft)`: copies an old
 --     revision into the process's draft (the same step and edge ids, as
 --     open_draft does). Live is untouched: it changes on publish, as ever.
 --     An open draft with changes is replaced only when `replace_draft` is true.
 --     A step holding a child process that no longer sits inside this process is
 --     kept as a plain step (its link is cleared), so the nesting rules hold.
---     SECURITY INVOKER: RLS and the draft-only trigger decide what the caller may do.
+--     SECURITY DEFINER, so it can write its own audit entry ("restore_version",
+--     naming the version restored; the open_draft entry its draft insert would
+--     write is rewritten into it). It checks `can_edit_workspace` itself and
+--     writes only into the process's draft.
 --   * `duplicate_version(revision, name)`: a new top-level process (kind, entity
 --     name and description copied) whose first draft is a copy of that revision,
 --     with new step and edge ids so the copy shares no issues or evidence with
@@ -31,11 +35,37 @@
 --   drop function if exists public.duplicate_version(uuid, text);
 --   drop function if exists public.restore_version(uuid, uuid, boolean);
 --   drop function if exists public.revision_history(uuid);
+--   drop function if exists private.revision_change_counts(uuid, uuid);
 --   delete from supabase_migrations.schema_migrations where version = '20261118000000';
 
 -- ---------------------------------------------------------------------------
 -- revision_history
 -- ---------------------------------------------------------------------------
+
+-- Counts of what changed between two revisions, as private.revision_changes finds it, except that moving a
+-- step (x, y) is not a change.
+create function private.revision_change_counts(from_revision uuid, to_revision uuid) returns jsonb
+language sql stable
+set search_path = ''
+as $$
+  with
+    ignored as (select array['revision_id', 'created_at', 'updated_at', 'created_by', 'x', 'y'] as cols),
+    ls as (select s.id, to_jsonb(s) - (select cols from ignored) as j from public.steps s where s.revision_id = from_revision),
+    ds as (select s.id, to_jsonb(s) - (select cols from ignored) as j from public.steps s where s.revision_id = to_revision),
+    le as (select e.id, to_jsonb(e) - (select cols from ignored) as j from public.edges e where e.revision_id = from_revision),
+    de as (select e.id, to_jsonb(e) - (select cols from ignored) as j from public.edges e where e.revision_id = to_revision)
+  select jsonb_build_object(
+    'steps', jsonb_build_object(
+      'added', (select count(*) from ds where not exists (select 1 from ls where ls.id = ds.id)),
+      'removed', (select count(*) from ls where not exists (select 1 from ds where ds.id = ls.id)),
+      'changed', (select count(*) from ds join ls on ls.id = ds.id where ds.j <> ls.j)),
+    'edges', jsonb_build_object(
+      'added', (select count(*) from de where not exists (select 1 from le where le.id = de.id)),
+      'removed', (select count(*) from le where not exists (select 1 from de where de.id = le.id)),
+      'changed', (select count(*) from de join le on le.id = de.id where de.j <> le.j)));
+$$;
+
+revoke all on function private.revision_change_counts(uuid, uuid) from public, anon, authenticated;
 
 create function public.revision_history(target_process uuid)
 returns table (
@@ -57,19 +87,27 @@ as $$
     r.published_at,
     a.actor_kind,
     coalesce(per.name, case when public.can_manage_workspace(r.workspace_id) then u.email end),
-    a.diff -> 'changes'
+    -- Against the published version before it; none for the first.
+    case when prev.id is not null then private.revision_change_counts(prev.id, r.id) end
   from public.processes p
   join public.process_revisions r on r.process_id = p.id
   left join auth.users u on u.id = r.published_by
   left join public.memberships m on m.user_id = r.published_by and m.workspace_id = r.workspace_id
   left join public.people per on per.id = m.person_id and per.workspace_id = r.workspace_id
   left join lateral (
-    select l.actor_kind, l.diff
+    select l.actor_kind
     from public.audit_log l
-    where l.target_table = 'processes' and l.target_id = p.id and l.action = 'publish' and l.diff ->> 'revision_id' = r.id::text
+    where l.workspace_id = r.workspace_id
+      and l.target_table = 'processes' and l.target_id = p.id and l.action = 'publish' and l.diff ->> 'revision_id' = r.id::text
     order by l.created_at desc
     limit 1
   ) a on true
+  left join lateral (
+    select q.id from public.process_revisions q
+    where q.process_id = p.id and q.status in ('published', 'superseded') and q.number < r.number
+    order by q.number desc
+    limit 1
+  ) prev on true
   where p.id = target_process
     and public.can_read_workspace(p.workspace_id)
     and r.status in ('published', 'superseded')
@@ -87,7 +125,7 @@ $$;
 --   {status: 'not_found'}              (no such process or version, a draft, or the caller may not edit it)
 create function public.restore_version(target_process uuid, source_revision uuid, replace_draft boolean default false) returns jsonb
 language plpgsql
-security invoker
+security definer
 set search_path = ''
 as $$
 declare
@@ -96,10 +134,16 @@ declare
   draft public.process_revisions;
   unlinked integer;
   untouched constant jsonb := '{"steps":{"added":[],"removed":[],"changed":[]},"edges":{"added":[],"removed":[],"changed":[]}}';
+  had_draft boolean;
+  kind text := case
+    when auth.jwt() ? 'api_token_id' then 'mcp'
+    when auth.uid() is not null then 'user'
+    else 'system' end;
+  entry jsonb;
 begin
-  -- FOR UPDATE applies the update policy too: a process the caller can't edit is not found.
+  -- Security definer: the caller's right to edit is checked here, and only the process's draft is written.
   select * into proc from public.processes p where p.id = target_process for update;
-  if proc.id is null then
+  if proc.id is null or public.can_edit_workspace(proc.workspace_id) is not true then
     return jsonb_build_object('status', 'not_found');
   end if;
   select * into src from public.process_revisions r where r.id = source_revision and r.process_id = proc.id;
@@ -111,6 +155,7 @@ begin
   end if;
 
   select * into draft from public.process_revisions r where r.process_id = proc.id and r.status = 'draft';
+  had_draft := draft.id is not null;
   if draft.id is not null then
     -- A draft nobody has changed (just opened) is safe to replace; one with work in it needs a yes.
     if not coalesce(replace_draft, false)
@@ -152,6 +197,19 @@ begin
   from public.edges e where e.revision_id = src.id;
 
   update public.processes p set draft_revision_id = draft.id where p.id = proc.id;
+
+  -- One audit entry says what happened. A new draft already has an 'open_draft' entry (written by the trigger on the
+  -- insert, in this transaction, saying it came from live); it is rewritten rather than followed by a second.
+  entry := jsonb_build_object('revision_id', draft.id, 'number', draft.number, 'restored_from_revision_id', src.id,
+    'restored_from_number', src.number, 'replaced_draft', had_draft);
+  if not had_draft then
+    update public.audit_log l set action = 'restore_version', diff = entry
+    where l.target_id = proc.id and l.action = 'open_draft' and l.diff ->> 'revision_id' = draft.id::text;
+  end if;
+  if had_draft or not found then
+    insert into public.audit_log (workspace_id, actor_id, actor_kind, action, target_table, target_id, diff)
+    values (proc.workspace_id, auth.uid(), kind, 'restore_version', 'processes', proc.id, entry);
+  end if;
   return jsonb_build_object('status', 'restored', 'revision_id', draft.id, 'number', draft.number, 'unlinked_children', unlinked);
 end;
 $$;
@@ -178,7 +236,7 @@ declare
   ids jsonb;
 begin
   select * into src from public.process_revisions r where r.id = source_revision;
-  if src.id is null or src.status = 'draft' or not public.can_edit_workspace(src.workspace_id) then
+  if src.id is null or src.status = 'draft' or public.can_edit_workspace(src.workspace_id) is not true then
     return jsonb_build_object('status', 'not_found');
   end if;
   select * into proc from public.processes p where p.id = src.process_id;

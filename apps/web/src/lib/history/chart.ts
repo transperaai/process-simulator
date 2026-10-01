@@ -53,12 +53,13 @@ export function niceMax(value: number): number {
 
 const r = (n: number) => Math.round(n * 10) / 10;
 
-export function chartGeometry(input: readonly ChartInput[], size: ChartSize): ChartGeometry {
+/** `fixedMax` pins the top of the axis (100 for a percentage) instead of rounding up from the data. */
+export function chartGeometry(input: readonly ChartInput[], size: ChartSize, fixedMax?: number): ChartGeometry {
   const { width, height, pad } = size;
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
   const highest = Math.max(0, ...input.flatMap((i) => (i.measure ? [i.measure.hi, i.measure.mean] : [])));
-  const max = niceMax(highest * 1.05);
+  const max = fixedMax ?? niceMax(highest * 1.05);
   const x = (i: number) => pad.left + (input.length <= 1 ? plotW / 2 : (plotW * i) / (input.length - 1));
   const y = (v: number) => pad.top + plotH - (Math.min(Math.max(v, 0), max) / max) * plotH;
 

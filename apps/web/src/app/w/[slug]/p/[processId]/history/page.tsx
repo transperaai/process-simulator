@@ -33,6 +33,7 @@ export default async function ProcessHistoryPage(props: PageProps<"/w/[slug]/p/[
         />
       }
       processName={process.name}
+      kind={process.kind}
       versions={history.versions}
       models={history.models}
       loadModel={versionModel.bind(null, process.id)}

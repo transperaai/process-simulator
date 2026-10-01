@@ -2108,6 +2108,14 @@ export type Database = {
           workspace_id: string
         }[]
       }
+      resolve_my_access: {
+        Args: never
+        Returns: {
+          role: Database["public"]["Enums"]["membership_role"]
+          source: string
+          workspace_id: string
+        }[]
+      }
       restore_version: {
         Args: {
           replace_draft?: boolean
@@ -2116,13 +2124,9 @@ export type Database = {
         }
         Returns: Json
       }
-      resolve_my_access: {
-        Args: never
-        Returns: {
-          role: Database["public"]["Enums"]["membership_role"]
-          source: string
-          workspace_id: string
-        }[]
+      review_suggestions: {
+        Args: { decision: string; ids: string[]; note?: string }
+        Returns: Json
       }
       revision_history: {
         Args: { target_process: string }
@@ -2135,10 +2139,6 @@ export type Database = {
           revision_id: string
           status: string
         }[]
-      }
-      review_suggestions: {
-        Args: { decision: string; ids: string[]; note?: string }
-        Returns: Json
       }
       save_fields: {
         Args: { base: Json; changes: Json; key: Json; target: string }

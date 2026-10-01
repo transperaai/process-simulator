@@ -15,6 +15,8 @@ export function HistoryChart({
   data,
   format,
   pending,
+  fixedMax,
+  empty,
 }: {
   title: string;
   /** The (i) beside the title. */
@@ -25,8 +27,12 @@ export function HistoryChart({
   format: (value: number) => string;
   /** Versions still being simulated. */
   pending: number;
+  /** Pin the top of the axis (100 for a percentage). */
+  fixedMax?: number;
+  /** What to say when every version has finished and there is nothing to plot. */
+  empty?: string;
 }) {
-  const g = chartGeometry(data, SIZE);
+  const g = chartGeometry(data, SIZE, fixedMax);
   const summary = g.points.length
     ? `${title}. ${g.points.map((p) => `${p.label}: ${format(p.mean)} ${unit}, range ${format(p.lo)} to ${format(p.hi)}`).join("; ")}.`
     : `${title}. No numbers yet.`;
@@ -67,7 +73,7 @@ export function HistoryChart({
         ))}
       </svg>
       <p className="text-xs text-muted-foreground" aria-live="polite">
-        {pending > 0 ? `Simulating ${pending} version${pending === 1 ? "" : "s"}…` : g.points.length ? "The line is the average; the shaded band is the range." : "Run a version to see it here."}
+        {pending > 0 ? `Simulating ${pending} version${pending === 1 ? "" : "s"}…` : g.points.length ? "The line is the average; the shaded band is the range." : (empty ?? "Run a version to see it here.")}
       </p>
     </figure>
   );

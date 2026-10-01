@@ -3,7 +3,7 @@ import { HistoryView } from "@/components/history/history-view";
 import type { VersionActions, VersionLinks } from "@/components/history/version-dialogs";
 import { ShellHeader } from "@/components/shell/shell-header";
 import type { VersionModel } from "@/lib/history/use-version-runs";
-import type { VersionMeta } from "@/lib/history/versions";
+import type { ProcessKind, VersionMeta } from "@/lib/history/versions";
 
 /**
  * The frame of a process's History screen (issue #105), shared by the workspace and the demo: the process
@@ -12,6 +12,7 @@ import type { VersionMeta } from "@/lib/history/versions";
 export function HistoryPage({
   nav,
   processName,
+  kind,
   versions,
   models,
   loadModel,
@@ -23,6 +24,7 @@ export function HistoryPage({
   /** The process switcher with its breadcrumbs. */
   nav: ReactNode;
   processName: string;
+  kind: ProcessKind;
   versions: VersionMeta[];
   models: Record<string, VersionModel>;
   loadModel?: (revisionId: string) => Promise<VersionModel>;
@@ -39,7 +41,7 @@ export function HistoryPage({
           {nav}
           <h2 className="font-heading text-2xl leading-tight font-semibold tracking-tight">Process history</h2>
         </header>
-        <HistoryView processName={processName} versions={versions} models={models} loadModel={loadModel} viewBase={viewBase} actions={actions} links={links} note={note} />
+        <HistoryView processName={processName} kind={kind} versions={versions} models={models} loadModel={loadModel} viewBase={viewBase} actions={actions} links={links} note={note} />
       </div>
     </div>
   );

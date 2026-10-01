@@ -102,7 +102,7 @@ describe("revision_history", () => {
     ]);
     const [r3, r2, r1] = rows;
     expect(r3).toMatchObject({ revision_id: v3, author_kind: "mcp", author_name: null });
-    expect(r3.changes.steps.changed).toEqual([ids.audit]);
+    expect(r3.changes).toEqual({ steps: { added: 0, removed: 0, changed: 1 }, edges: { added: 0, removed: 0, changed: 0 } });
     expect(r2).toMatchObject({ revision_id: v2, author_kind: "user", author_name: person.name });
     // Version 1 came with the seed: no author, no recorded change.
     expect(r1).toMatchObject({ revision_id: v1, author_kind: null, author_name: null, changes: null });
@@ -138,9 +138,11 @@ describe("restore_version", () => {
       { number: 3, status: "published" },
       { number: 4, status: "draft" },
     ]);
-    // The audit log shows a draft opened from live (version 3).
-    const opened = (await db.client.query("select diff from audit_log where action = 'open_draft' and target_id = $1 order by created_at desc, id limit 1", [proc])).rows[0];
-    expect(opened.diff).toMatchObject({ revision_id: draft, from_number: 3 });
+    // One audit entry, saying which version was restored (not an 'open_draft' entry claiming the draft came from live).
+    const entries = (await db.client.query("select action, actor_kind, actor_id, diff from audit_log where target_id = $1 and diff ->> 'revision_id' = $2 order by created_at, id", [proc, draft])).rows;
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ action: "restore_version", actor_kind: "user", actor_id: users.editor!.id });
+    expect(entries[0].diff).toEqual({ revision_id: draft, number: 4, restored_from_revision_id: v1, restored_from_number: 1, replaced_draft: false });
   });
 
   it("asks before replacing a draft that has changes, and replaces it when told to", async () => {
@@ -154,6 +156,9 @@ describe("restore_version", () => {
     expect(replaced).toMatchObject({ status: "restored", revision_id: draft, number: 4 });
     expect(await revisionRows(draft)).toEqual(await revisionRows(v2));
     expect((await processRow()).live_revision_id).toBe(v3);
+    // Replacing a draft that exists adds its own entry.
+    const last = (await db.client.query("select diff from audit_log where action = 'restore_version' and target_id = $1 order by created_at desc, id limit 1", [proc])).rows[0];
+    expect(last.diff).toMatchObject({ revision_id: draft, restored_from_number: 2, replaced_draft: true });
   });
 
   it("replaces an untouched draft without asking", async () => {
@@ -352,5 +357,16 @@ describe("duplicate_version", () => {
         await db.client.query("rollback");
       }
     }
+  });
+});
+
+describe("revision_history changes", () => {
+  it("does not count moving a step as a change", async () => {
+    await commitAs(users.editor!.claims, (c) => rpc(c, "open_draft", proc));
+    const draft = (await processRow()).draft_revision_id!;
+    await db.client.query("update steps set x = x + 40, y = y + 10 where revision_id = $1 and id = $2", [draft, ids.audit]);
+    await commitAs(users.editor!.claims, (c) => rpc(c, "publish_process", proc, true));
+    const [latest] = await db.as(users.editor!.claims, async (c) => (await c.query("select number, changes from revision_history($1) limit 1", [proc])).rows);
+    expect(latest.changes).toEqual({ steps: { added: 0, removed: 0, changed: 0 }, edges: { added: 0, removed: 0, changed: 0 } });
   });
 });

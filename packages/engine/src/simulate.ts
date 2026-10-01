@@ -467,17 +467,19 @@ interface PersonState {
   fracDirty: boolean;
   /** The service in progress, so hands-on time straddling the end of the warm-up can be split. */
   cur: { start: number; end: number; handsOn: number; acc: RoleAcc | null; over: boolean; svc: boolean } | null;
-  /** Ongoing client hours a week they carry now, in total and by role id. */
+  /** Ongoing client hours a week they carry now, in total and by role (indexed as `roleIds`; `roleHas` marks the roles they carry any of). */
   load: number;
-  roleLoad: Map<string, number>;
-  /** With a roster: each active client's share of their load, [role, hours a week] pairs. */
-  contrib: Map<RosterClient, [string, number][]>;
+  roleLoad: Float64Array;
+  roleHas: Uint8Array;
+  /** With a roster: each active client's share of their load, as flat (role index, hours a week) pairs. */
+  contrib: Map<RosterClient, number[]>;
   /** With a roster: active clients assigned to them in any role. */
   clients: number;
   /** Measured-window integrals of the above, from `lastT` on. */
   lastT: number;
   ongoingHours: number;
-  roleOngoingHours: Map<string, number>;
+  roleOngoingHours: Float64Array;
+  roleOngoingHas: Uint8Array;
   clientWeeks: number;
   /** While overloaded (load above capacity, with an overtime cap): weeks, ongoing hours and pipeline hands-on hours. */
   overWeeks: number;
@@ -485,6 +487,8 @@ interface PersonState {
   overPipeline: number;
   /** Which team's list they were last added to (see `teamFor`). */
   teamMark: number;
+  /** Their busy share so far in the measured window, as of the last weekly churn tick (the team-overload driver). */
+  util: number;
 }
 
 /** The people who look after some clients, shared by every client with the same services and assignees: their busy share and leave are read once a tick. */
@@ -547,6 +551,26 @@ interface RosterClient {
   causeRow: Float64Array | null;
   /** Whether any of its services has a servicing process: only then is there a first delivery to wait for. */
   serviced: boolean;
+  /** What it shares with clients of the same services and assignees (see `shapeFor`). */
+  shape: ClientShape;
+}
+
+/**
+ * What clients with the same services and assignees have in common, worked out once a run for the first of them and
+ * shared, read-only, by the rest: who carries their load and in what parts, who is assigned, and the team.
+ */
+interface ClientShape {
+  churnBase: number;
+  sensitivity: number;
+  carriers: [PersonState, string, number][];
+  assigned: PersonState[];
+  assignees: Map<string, PersonState>;
+  svcKey: string;
+  serviced: boolean;
+  team: Team;
+  /** Each carrier once, in the order first met, and their parts of the load as flat (role index, hours a week) pairs. */
+  touched: PersonState[];
+  parts: number[][];
 }
 
 /** True when any step has current WIP entered (0 counts: "nothing here right now"). */
@@ -704,6 +728,9 @@ export function runOnce(
   // Who can do what.
   const canDo = (pid: string, p: EnginePerson, s: EngineStep) =>
     s.person ? s.person === pid : p.skills ? p.skills.includes(s.id) : s.role !== null && p.roles.includes(s.role);
+  // Roles by index, for people's loads (a person's sums per role are kept in arrays rather than maps).
+  const roleIds = Object.keys(model.roles);
+  const roleIndex = new Map(roleIds.map((rid, i) => [rid, i]));
   const people: PersonState[] = Object.entries(peopleModel).map(([id, person]) => ({
     id,
     person,
@@ -718,17 +745,20 @@ export function runOnce(
     fracDirty: true,
     cur: null,
     load: 0,
-    roleLoad: new Map(),
+    roleLoad: new Float64Array(roleIds.length),
+    roleHas: new Uint8Array(roleIds.length),
     contrib: new Map(),
     clients: 0,
     lastT: -W,
     ongoingHours: 0,
-    roleOngoingHours: new Map(),
+    roleOngoingHours: new Float64Array(roleIds.length),
+    roleOngoingHas: new Uint8Array(roleIds.length),
     clientWeeks: 0,
     overWeeks: 0,
     overOngoing: 0,
     overPipeline: 0,
     teamMark: 0,
+    util: 0,
   }));
   for (const st of stepList) st.people = people.filter((p) => p.steps.includes(st));
 
@@ -789,7 +819,13 @@ export function runOnce(
     if (!(b > a)) return;
     const weeks = (b - a) / hpw;
     p.ongoingHours += p.load * weeks;
-    for (const [rid, hours] of p.roleLoad) p.roleOngoingHours.set(rid, (p.roleOngoingHours.get(rid) ?? 0) + hours * weeks);
+    const has = p.roleHas;
+    for (let r = 0; r < has.length; r++) {
+      if (has[r]) {
+        p.roleOngoingHours[r]! += p.roleLoad[r]! * weeks;
+        p.roleOngoingHas[r] = 1;
+      }
+    }
     p.clientWeeks += p.clients * weeks;
     if (overloaded(p)) {
       p.overWeeks += weeks;
@@ -800,7 +836,8 @@ export function runOnce(
   const setPooledLoads = (t: number) => {
     for (const p of people) {
       advance(p, t);
-      p.roleLoad.clear();
+      p.roleLoad.fill(0);
+      p.roleHas.fill(0);
       let hours = 0;
       for (const rid of p.person.roles) {
         const role = model.roles[rid];
@@ -808,7 +845,9 @@ export function runOnce(
         if (!role || !cap) continue;
         const h = (active * (role.ongoing || 0) * (p.person.capacity / p.person.roles.length)) / cap;
         hours += h;
-        p.roleLoad.set(rid, (p.roleLoad.get(rid) ?? 0) + h);
+        const r = roleIndex.get(rid)!;
+        p.roleLoad[r]! += h;
+        p.roleHas[r] = 1;
       }
       p.load = hours;
       p.fracDirty = true;
@@ -817,13 +856,37 @@ export function runOnce(
   /** Roster: a person's load from their active clients' contributions (summed afresh, so churn leaves no residue). */
   const setRosterLoad = (p: PersonState, t: number) => {
     advance(p, t);
-    p.roleLoad.clear();
+    const roleLoad = p.roleLoad;
+    const roleHas = p.roleHas;
+    roleLoad.fill(0);
+    roleHas.fill(0);
     let hours = 0;
     for (const parts of p.contrib.values()) {
-      for (const [rid, h] of parts) {
+      for (let i = 0; i < parts.length; i += 2) {
+        const r = parts[i]!;
+        const h = parts[i + 1]!;
         hours += h;
-        p.roleLoad.set(rid, (p.roleLoad.get(rid) ?? 0) + h);
+        roleLoad[r]! += h;
+        roleHas[r] = 1;
       }
+    }
+    p.load = hours;
+    p.fracDirty = true;
+  };
+  /**
+   * Roster: a client added last to a person's contributions. The sums run in the contributions' order, so adding its
+   * parts to the totals gives exactly what `setRosterLoad` would sum afresh, without going over every other client.
+   */
+  const addRosterLoad = (p: PersonState, parts: number[], t: number) => {
+    advance(p, t);
+    const roleLoad = p.roleLoad;
+    let hours = p.load;
+    for (let i = 0; i < parts.length; i += 2) {
+      const r = parts[i]!;
+      const h = parts[i + 1]!;
+      hours += h;
+      roleLoad[r]! += h;
+      p.roleHas[r] = 1;
     }
     p.load = hours;
     p.fracDirty = true;
@@ -897,8 +960,8 @@ export function runOnce(
     const f = mkt(t).churn;
     return dw[SMARKET] === 1 ? f : 1 + dw[SMARKET]! * (f - 1);
   };
-  /** People's busy share so far in the measured window, refreshed at each weekly tick; and the busiest of the last tick. */
-  const personUtil = new Map<PersonState, number>();
+  /** Whether people's busy shares (`PersonState.util`) have been read at a weekly tick; and the busiest of the last tick. */
+  let utilRead = false;
   /** Teams by their services and assignees, and the weekly tick's number (to read each team once a tick). */
   const teamOf = new Map<string, Team>();
   const NO_TEAM: Team = { people: [], util: 0, away: false, stamp: -1 };
@@ -924,7 +987,10 @@ export function runOnce(
     processRoles.set(pid, [...new Set(model.steps.filter((s) => ids.has(s.id) && s.role).map((s) => s.role!))].sort());
   }
   /** The team that looks after a client (see `Team`). */
-  const teamFor = (client: { services: string[]; assignments: Record<string, string> }, rc: RosterClient): Team => {
+  const teamFor = (
+    client: { services: string[]; assignments: Record<string, string> },
+    rc: { assigned: PersonState[]; carriers: [PersonState, string, number][] },
+  ): Team => {
     // Who looks after it (for the churn drivers): its carriers and assignees, and the people of the roles that work its servicing
     // processes. Clients with the same services and assignees have the same team, so it is worked out once for them.
     // (With nobody assigned in the model, the team is the roles' pools and the client's services alone say which.)
@@ -963,6 +1029,58 @@ export function runOnce(
     }
     return shared;
   };
+  /** Client shapes by their services and assignees (see `ClientShape`). */
+  const shapes = new Map<string, ClientShape>();
+  const shapeFor = (client: { services: string[]; assignments: Record<string, string> }): ClientShape => {
+    let key = client.services.length === 1 ? client.services[0]! : client.services.join("\u0000");
+    for (const rid in client.assignments) key += `\u0001${rid}\u0002${client.assignments[rid]}`;
+    let shape = shapes.get(key);
+    if (shape) return shape;
+    const carriers: [PersonState, string, number][] = [];
+    const loads = clientRoleLoads(model, client);
+    for (const rid in loads) {
+      for (const c of carriersFor(pools, peopleModel, rid, client.assignments[rid])) {
+        carriers.push([personById.get(c.person)!, rid, loads[rid]! * c.share]);
+      }
+    }
+    const assigned: PersonState[] = [];
+    for (const pid of new Set(Object.values(client.assignments))) {
+      const p = personById.get(pid);
+      if (p) assigned.push(p);
+    }
+    const assignees = new Map<string, PersonState>();
+    if (servicing) {
+      for (const [rid, pid] of Object.entries(client.assignments)) {
+        const p = personById.get(pid);
+        if (p) assignees.set(rid, p);
+      }
+    }
+    const touched: PersonState[] = [];
+    const parts: number[][] = [];
+    for (const [p, rid, hours] of carriers) {
+      let i = touched.indexOf(p);
+      if (i < 0) {
+        i = touched.push(p) - 1;
+        parts.push([]);
+      }
+      parts[i]!.push(roleIndex.get(rid)!, hours);
+    }
+    shape = {
+      churnBase: clientChurnMonthly(model, client),
+      sensitivity: clientChurnSensitivity(model, client),
+      carriers,
+      assigned,
+      assignees,
+      svcKey: client.services[0] ?? "",
+      serviced: client.services.some((sid) => (linksBySvc[serviceIndex.get(sid) ?? -1]?.length ?? 0) > 0),
+      team: NO_TEAM,
+      touched,
+      parts,
+    };
+    shape.team = teamFor(client, shape);
+    shapes.set(key, shape);
+    return shape;
+  };
   const addClient = (
     key: string,
     client: { services: string[]; assignments: Record<string, string>; health?: number; mrr?: number },
@@ -970,15 +1088,16 @@ export function runOnce(
     isRoster: boolean,
     weeklyBill: number,
   ) => {
+    const shape = shapeFor(client);
     const rc: RosterClient = {
       key,
       roster: isRoster,
-      churnBase: clientChurnMonthly(model, client),
-      sensitivity: clientChurnSensitivity(model, client),
+      churnBase: shape.churnBase,
+      sensitivity: shape.sensitivity,
       rng: streams.get(isRoster ? labels.join("churn", "client", key) : labels.join("churn", key)),
-      carriers: [],
-      assigned: [],
-      assignees: new Map(),
+      carriers: shape.carriers,
+      assigned: shape.assigned,
+      assignees: shape.assignees,
       active: true,
       health: client.health !== undefined && Number.isFinite(client.health) ? clampHealth(client.health) : rules.initial,
       touch: { onTime: 0, late: 0, missed: 0 },
@@ -988,8 +1107,8 @@ export function runOnce(
       since: t,
       open: [],
       openHead: 0,
-      svcKey: client.services[0] ?? "",
-      team: NO_TEAM,
+      svcKey: shape.svcKey,
+      team: shape.team,
       adhocN: 0,
       adhocBad: 0,
       visits: 0,
@@ -998,27 +1117,14 @@ export function runOnce(
       extraA: 0,
       lastB: 1,
       causeRow: null,
-      serviced: client.services.some((sid) => (linksBySvc[serviceIndex.get(sid) ?? -1]?.length ?? 0) > 0),
+      serviced: shape.serviced,
+      shape,
     };
     if (isRoster) {
       rc.trajectory = [rc.health];
       realClients.push(rc);
     }
-    const loads = clientRoleLoads(model, client);
-    for (const rid in loads) {
-      for (const c of carriersFor(pools, peopleModel, rid, client.assignments[rid])) {
-        rc.carriers.push([personById.get(c.person)!, rid, loads[rid]! * c.share]);
-      }
-    }
-    for (const pid of new Set(Object.values(client.assignments))) {
-      const p = personById.get(pid);
-      if (p) rc.assigned.push(p);
-    }
     if (servicing) {
-      for (const [rid, pid] of Object.entries(client.assignments)) {
-        const p = personById.get(pid);
-        if (p) rc.assignees.set(rid, p);
-      }
       for (const sid of client.services) {
         const svc = serviceIndex.get(sid);
         if (svc === undefined) continue;
@@ -1037,19 +1143,14 @@ export function runOnce(
         }
       }
     }
-    rc.team = teamFor(client, rc);
-    const touched = new Set<PersonState>();
-    for (const [p, rid, hours] of rc.carriers) {
-      let parts = p.contrib.get(rc);
-      if (!parts) p.contrib.set(rc, (parts = []));
-      parts.push([rid, hours]);
-      touched.add(p);
-    }
+    // Each carrier's parts (shared with alike clients, never changed): a new client goes last in their contributions.
+    const { touched, parts } = shape;
+    for (let i = 0; i < touched.length; i++) touched[i]!.contrib.set(rc, parts[i]!);
     for (const p of rc.assigned) {
       advance(p, t);
       p.clients++;
     }
-    for (const p of touched) setRosterLoad(p, t);
+    for (let i = 0; i < touched.length; i++) addRosterLoad(touched[i]!, parts[i]!, t);
     rosterClients.push(rc);
     active = rosterClients.length;
   };
@@ -1067,8 +1168,7 @@ export function runOnce(
       advance(p, t);
       p.clients--;
     }
-    const touched = new Set(rc.carriers.map(([p]) => p));
-    for (const p of touched) {
+    for (const p of rc.shape.touched) {
       p.contrib.delete(rc);
       setRosterLoad(p, t);
     }
@@ -1152,7 +1252,7 @@ export function runOnce(
       team.util = 0;
       team.away = false;
       for (const p of team.people) {
-        const u = personUtil.get(p) ?? 0;
+        const u = p.util;
         if (u > team.util) team.util = u;
         if (!team.away && awayAt(p, t)) team.away = true;
       }
@@ -1219,7 +1319,8 @@ export function runOnce(
       const unfinished = p.busy && cur && cur.end > t && cur.end > cur.start ? (cur.handsOn * (cur.end - t)) / (cur.end - cur.start) : 0;
       const capacity = p.person.capacity * weeksSoFar;
       const u = capacity > 0 ? Math.max(0, p.busyHours + p.svcHours + p.ongoingHours + pending - unfinished) / capacity : 0;
-      personUtil.set(p, u);
+      p.util = u;
+      utilRead = true;
       if (u > busiest) {
         busiest = u;
         busiestPerson = p.id;
@@ -1885,7 +1986,7 @@ export function runOnce(
       completed: p.completed,
       ...(roster ? { clients: p.clientWeeks / weeks } : {}),
     };
-    for (const [rid, hours] of p.roleOngoingHours) if (rid in roleOngoing) roleOngoing[rid]! += hours;
+    for (let r = 0; r < roleIds.length; r++) if (p.roleOngoingHas[r]) roleOngoing[roleIds[r]!]! += p.roleOngoingHours[r]!;
     const ownRoles = p.person.roles.filter((rid) => rid in roleOvertime);
     for (const rid of ownRoles) roleOvertime[rid]! += ot / p.person.roles.length;
     if (ot > 0) {
@@ -1947,7 +2048,7 @@ export function runOnce(
     values[SRESP] = respN > 0 ? respSum / respN : null;
     values[SONB] = onbN > 0 ? onbSum / onbN / (model.hoursPerWeek / 5) : null;
     values[SREWORK] = visitsAll > 0 ? reworksAll / visitsAll : null;
-    if (personUtil.size > 0) {
+    if (utilRead) {
       values[SLOAD] = busiest;
       valuePerson[SLOAD] = busiestPerson;
     }

@@ -127,11 +127,11 @@
       }
     },
     "ratings": {
-      "spof:step:audit": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false, "costPerMonth": 111906.66666666667, "hoursPerMonth": null },
-      "spof:step:kickoff": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false, "costPerMonth": 111906.66666666667, "hoursPerMonth": null },
-      "spof:step:report_strat": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false, "costPerMonth": 111906.66666666667, "hoursPerMonth": null },
-      "spof:step:report_fin": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false, "costPerMonth": 69433, "hoursPerMonth": null },
+      "spof:step:audit": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false, "costPerMonth": 4578, "hoursPerMonth": null },
+      "spof:step:kickoff": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false, "costPerMonth": 4578, "hoursPerMonth": null },
+      "spof:step:report_strat": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false, "costPerMonth": 4578, "hoursPerMonth": null },
       "rework:step:ppc": { "rating": "risk", "base": "bad", "badMonth": true, "bottleneck": false, "costPerMonth": 79.99999999999999, "hoursPerMonth": 1.5999999999999996 },
+      "spof:step:report_fin": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false, "costPerMonth": 0, "hoursPerMonth": null },
       "capacity:role:strat": { "rating": "risk", "base": "good", "badMonth": true, "bottleneck": true, "costPerMonth": null, "hoursPerMonth": null },
       "wait:step:audit": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false, "costPerMonth": 13552.7120323629, "hoursPerMonth": null },
       "rework:step:audit": { "rating": "bad", "base": "bad", "badMonth": false, "bottleneck": false, "costPerMonth": 695.3333333333333, "hoursPerMonth": 9.933333333333332 },

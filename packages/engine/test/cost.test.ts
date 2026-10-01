@@ -240,9 +240,39 @@ describe("the cost of each insight", () => {
     expect(issue).toBeDefined();
     const f = absence.people[0]!;
     // 12,000 a deal (1,000 a month for the 12-month cap); the one step only they can do carries all of it.
-    expect(issue!.cost.perMonth).toBeCloseTo((f.itemsLost * 12000 * 2) / 12, 6);
+    expect(issue!.cost.perMonth).toBeCloseTo((f.winsLost * 12000 * 2) / 12, 6);
     const more = find(detectIssues(m, simulate(m, 12, 1), NO_ESC, { absence, cost: { absencesPerYear: 4 } }), "spof:step:a")!;
     expect(more.cost.perMonth).toBeCloseTo(issue!.cost.perMonth! * 2, 6);
+  });
+
+  it("single point of failure: missed servicing tasks aren't priced as deals; only wins lost are", () => {
+    const m = northbeamWithServicing();
+    const r = simulate(m, 12, 1);
+    const absence = absenceTest(m, { seed: 1, weeks: 2 });
+    const deal = averageDealValue(m, 12);
+    const issues = detectIssues(m, r, NO_ESC, { absence }).filter((i) => i.key.startsWith("spof:"));
+    expect(issues.length).toBeGreaterThan(0);
+    let some = false;
+    for (const f of absence.people) {
+      // Servicing tasks are in the items lost but aren't wins.
+      if (f.itemsLost > f.winsLost + 1e-9) some = true;
+      const mine = issues.filter((i) => i.personId === f.personId);
+      const total = mine.reduce((sum, i) => sum + (i.cost.perMonth ?? 0), 0);
+      if (mine.length) expect(total).toBeLessThanOrEqual((f.winsLost * deal * 2) / 12 + 1e-6);
+    }
+    expect(some).toBe(true);
+  });
+
+  it("too busy: overtime that has its own insight isn't counted again", () => {
+    const m = larkspurModel();
+    const r = simulate(m, 12, 1);
+    const issues = detectIssues(m, r, NO_ESC, { shadowPrices: Object.fromEntries(Object.keys(m.roles).map((id) => [id, 0])) });
+    const overtime = issues.filter((i) => i.key.startsWith("overtime:"));
+    expect(overtime.length).toBeGreaterThan(0);
+    for (const o of overtime) {
+      const busy = issues.find((i) => i.key.startsWith("capacity:") && (o.personId ? i.personId === o.personId : i.roleId === o.roleId));
+      if (busy) expect(busy.cost.perMonth).toBeNull();
+    }
   });
 
   it("missed deadlines: client work costs the churn it drives; a step that isn't client work has no money method", () => {

@@ -7,7 +7,7 @@
 -- three-letter code.
 --
 -- (The step setting "lost per day of waiting" that costs the waiting insight is
--- A42's column, `steps.lost_per_day_waiting`, in 20261106000000.)
+-- A42's column, `steps.lost_per_day_waiting`, in 20261110000000.)
 --
 -- Strictly additive: a function replaced by a copy that differs only in the
 -- default currency.

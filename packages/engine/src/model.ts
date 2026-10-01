@@ -519,6 +519,8 @@ export interface WeeklySamples {
   queue: Record<string, number[]>;
   /** Cumulative completed items (won, done, and servicing tasks on time or late) at the end of each week. */
   completed: number[];
+  /** Cumulative wins (entities reaching their first `won` end) at the end of each week. */
+  won: number[];
 }
 
 export interface ReplicationResult {

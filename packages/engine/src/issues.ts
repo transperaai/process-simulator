@@ -200,20 +200,25 @@ export function detectIssues(
 
   // Cost helpers (cost.ts). A month is 52 / 12 weeks; a quarter 13.
   const dealValue = averageDealValue(model, money.capMonths);
-  /** Rule 1: the wins one more person would bring × deal value, plus overtime. */
-  const busyCost = (roleId: string | null, overtimeHoursWeek: number, rate: number): IssueCost => {
-    const overtime = overtimeHoursWeek * rate * WEEKS_PER_MONTH;
+  // Overtime has its own insights (rule 3); where one exists for the same person or role, the busy cost leaves overtime out so it isn't counted twice.
+  const overtimeFound = overtimeIssues(model, result, config, money);
+  const overtimeCovered = (roleId: string | null, personId: string | null) =>
+    overtimeFound.some((o) => (personId ? o.personId === personId : o.roleId === roleId));
+  /** Rule 1: the wins one more person would bring × deal value, plus overtime unless it has its own insight. */
+  const busyCost = (roleId: string | null, overtimeHoursWeek: number, rate: number, ownOvertime: boolean): IssueCost => {
+    const overtime = ownOvertime ? 0 : overtimeHoursWeek * rate * WEEKS_PER_MONTH;
+    const note = ownOvertime && overtimeHoursWeek > 0 ? " Overtime is costed in its own insight, so it isn't counted here." : "";
     const extraWins = roleId !== null && roleId in shadow ? (Math.max(0, shadow[roleId]!) * WEEKS_PER_MONTH) / WEEKS_PER_QUARTER : null;
     if (extraWins === null) {
       return overtime > 0
         ? { perMonth: overtime, hoursPerMonth: null, method: "Overtime at cost rates. The work lost needs the what-if of one more person, which hasn't run." }
-        : noCost("Needs the what-if of one more person, which hasn't run.");
+        : noCost(`Needs the what-if of one more person, which hasn't run.${note}`);
     }
     if (!(extraWins > 0)) {
       // More capacity there wouldn't add wins: say so rather than "About A$0 … 0 more wins".
       return overtime > 0
         ? { perMonth: overtime, hoursPerMonth: null, method: `More capacity here wouldn't add wins, so the cost is the ${fmt(overtime)} a month of overtime at cost rates.` }
-        : noCost("More capacity here wouldn't add wins, so there's no work lost to cost.");
+        : noCost(`More capacity here wouldn't add wins, so there's no work lost to cost.${note}`);
     }
     const lost = extraWins * dealValue;
     return {
@@ -221,7 +226,7 @@ export function detectIssues(
       hoursPerMonth: null,
       method:
         `Work lost: one more person would bring about ${num(extraWins)} more win${extraWins === 1 ? "" : "s"} a month, each worth ${fmt(dealValue)} (deal value, capped at ${num(money.capMonths, 0)} months)` +
-        (overtime > 0 ? `, plus ${fmt(overtime)} of overtime at cost rates.` : "."),
+        (overtime > 0 ? `, plus ${fmt(overtime)} of overtime at cost rates.` : `.${note}`),
     };
   };
   const roleCost = (roleId: string | null) => (roleId ? (model.roles[roleId]?.cost ?? 0) : 0);
@@ -297,7 +302,7 @@ export function detectIssues(
       key: `capacity:role:${rid}`,
       type: "capacity",
       ...ratingFields(outcome),
-      cost: busyCost(rid, r.overtimeHours, roleCost(rid)),
+      cost: busyCost(rid, r.overtimeHours, roleCost(rid), overtimeCovered(rid, null)),
       title: clientsAlone
         ? `${roleName(rid)}${who}: client work alone exceeds capacity${overCap}`
         : `${roleName(rid)}${who} at ${pct(r.util)} utilisation`,
@@ -341,7 +346,7 @@ export function detectIssues(
       key: `capacity:person:${pid}`,
       type: "capacity",
       ...ratingFields(outcome),
-      cost: busyCost(main, r.overtimeHours, p.cost ?? (p.roles.length ? p.roles.reduce((sum, rid) => sum + roleCost(rid), 0) / p.roles.length : 0)),
+      cost: busyCost(main, r.overtimeHours, p.cost ?? (p.roles.length ? p.roles.reduce((sum, rid) => sum + roleCost(rid), 0) / p.roles.length : 0), overtimeCovered(main, named ? pid : null)),
       title: alone ? `${who}: client work alone exceeds capacity${overCap}` : `${who} at ${pct(r.util)} utilisation`,
       evidence: (
         `Simulated: ${num(r.ongoingHours + r.servicingHours)} h/wk client work + ${num(r.pipelineHours)} h/wk pipeline work against ` +
@@ -364,7 +369,7 @@ export function detectIssues(
   }
 
   // --- Overtime worked to keep up with client work (rule 3; docs/PRD.md §4.1, decision D7).
-  for (const issue of overtimeIssues(model, result, config, money)) out.push({ detector: "overtime", ...issue });
+  for (const issue of overtimeFound) out.push({ detector: "overtime", ...issue });
 
   // --- Per step: work piling up (4), waiting too long (5), single point of failure, rework (6), missed deadlines (7).
   for (const s of [...model.steps].sort((a, b) => cmp(a.id, b.id))) {
@@ -601,12 +606,12 @@ export function detectIssues(
         type: "spof",
         ...ratingFields({ rating, base: rating, badMonth: false, bottleneck: false }),
         cost: (() => {
-          // The damage of one absence (the wins it loses, at deal value; shared by the steps only they can do) × absences a year ÷ 12.
-          const damage = (f.itemsLost / Math.max(1, soleSteps.length)) * dealValue;
+          // The damage of one absence (the wins it loses, at deal value, not servicing tasks; shared by the steps only they can do) × absences a year ÷ 12.
+          const damage = (f.winsLost / Math.max(1, soleSteps.length)) * dealValue;
           return {
             perMonth: (damage * money.absencesPerYear) / 12,
             hoursPerMonth: null,
-            method: `One absence loses about ${num(f.itemsLost / Math.max(1, soleSteps.length))} items, worth ${fmt(damage)} at deal value; × ${num(money.absencesPerYear, 0)} absences a year ÷ 12.`,
+            method: `One absence loses about ${num(f.winsLost / Math.max(1, soleSteps.length))} wins, worth ${fmt(damage)} at deal value (missed client tasks aren't counted here); × ${num(money.absencesPerYear, 0)} absences a year ÷ 12.`,
           };
         })(),
         title: named ? `Only ${p.name} can do ${s.name}` : `Only one ${main ? roleName(main) : "person"} can do ${s.name}`,
@@ -622,6 +627,7 @@ export function detectIssues(
         metrics: {
           work_lost: f.workLost,
           items_lost: f.itemsLost,
+          wins_lost: f.winsLost,
           recovery_weeks: f.recoveryWeeks,
           recovered: f.recovered ? 1 : 0,
           weeks_away: away,

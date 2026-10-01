@@ -15,7 +15,7 @@ export default async function DemoEditPage(props: PageProps<"/demo/edit">) {
   const pipeline = nested === "1" ? withDemoGroups(demoBundle()) : demoBundle();
   const bundle = typeof process === "string" ? bundleForProcess(pipeline, process) : pipeline;
   if (!bundle) notFound();
-  const back = `/demo${typeof process === "string" ? `?process=${process}` : nested === "1" ? "?nested=1" : ""}`;
+  const back = `/demo/p/${bundle.process.id}${nested === "1" ? "?nested=1" : ""}`;
   return (
     <EditorView
       key={bundle.process.id}

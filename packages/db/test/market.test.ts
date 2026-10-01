@@ -1,3 +1,4 @@
+import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { MARKET_PRESETS, percentsFromFactors, simulate, STABLE_MARKET } from "@transpera-flow/engine";
 import { NORTHBEAM_WORKSPACE_ID, engineMarket, northbeamBundle, toEngineModel, type MarketConditionRow, type MarketScheduleRow } from "../src";
@@ -134,6 +135,31 @@ describe("schedule", () => {
       db.client.query("insert into market_schedule (workspace_id, from_month, to_month, condition_id) values ($1, 5, 3, $2)", [ws, soft]),
     ).rejects.toThrow(/check constraint/);
     await db.client.query("delete from market_schedule where workspace_id = $1", [ws]);
+  });
+
+  it("two concurrent overlapping inserts can't both succeed", async () => {
+    const soft = await presetId(ws, "soft");
+    const b = new pg.Client({ connectionString: db.url });
+    await b.connect();
+    const sql = "insert into market_schedule (workspace_id, from_month, to_month, condition_id) values ($1, $2, $3, $4)";
+    try {
+      await db.client.query("begin");
+      await db.client.query(sql, [ws, 3, 8, soft]);
+      await b.query("begin");
+      // Blocks on the workspace's lock until the first transaction ends.
+      const second = b.query(sql, [ws, 6, 10, soft]);
+      const outcome = second.then(
+        () => "inserted",
+        (e: Error) => e.message,
+      );
+      await new Promise((r) => setTimeout(r, 200));
+      await db.client.query("commit");
+      expect(await outcome).toMatch(/overlap/);
+    } finally {
+      await b.query("rollback").catch(() => undefined);
+      await b.end();
+      await db.client.query("delete from market_schedule where workspace_id = $1", [ws]);
+    }
   });
 
   it("can't use another workspace's condition, and a condition in use can't be deleted", async () => {

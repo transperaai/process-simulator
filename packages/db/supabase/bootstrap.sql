@@ -10189,6 +10189,8 @@ language plpgsql
 set search_path = ''
 as $$
 begin
+  -- Serialise changes to one workspace's schedule, so two overlapping inserts can't both pass the check below.
+  perform pg_advisory_xact_lock(hashtextextended(new.workspace_id::text, 0));
   if exists (
     select 1 from public.market_schedule s
     where s.workspace_id = new.workspace_id and s.id <> new.id
@@ -10277,7 +10279,8 @@ create trigger seed_market_presets after insert on public.workspaces
 -- Workspaces that already exist get their presets now.
 insert into public.market_conditions (workspace_id, name, preset, leads, conv, cycle, price, churn, hire, pay)
 select w.id, p.name, p.preset, p.leads, p.conv, p.cycle, p.price, p.churn, p.hire, p.pay
-from public.workspaces w cross join private.market_presets() as p;
+from public.workspaces w cross join private.market_presets() as p
+on conflict (workspace_id, preset) where preset is not null do nothing;
 
 insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261105000000', 'market_conditions', array['-- Market conditions (docs/PRD.md decision D29, ticket A57 / #122): the outside
 -- climate for demand. A condition is seven factors, each a whole percent of
@@ -10372,6 +10375,8 @@ language plpgsql
 set search_path = ''''
 as $$
 begin
+  -- Serialise changes to one workspace''s schedule, so two overlapping inserts can''t both pass the check below.
+  perform pg_advisory_xact_lock(hashtextextended(new.workspace_id::text, 0));
   if exists (
     select 1 from public.market_schedule s
     where s.workspace_id = new.workspace_id and s.id <> new.id
@@ -10460,7 +10465,8 @@ create trigger seed_market_presets after insert on public.workspaces
 -- Workspaces that already exist get their presets now.
 insert into public.market_conditions (workspace_id, name, preset, leads, conv, cycle, price, churn, hire, pay)
 select w.id, p.name, p.preset, p.leads, p.conv, p.cycle, p.price, p.churn, p.hire, p.pay
-from public.workspaces w cross join private.market_presets() as p;
+from public.workspaces w cross join private.market_presets() as p
+on conflict (workspace_id, preset) where preset is not null do nothing;
 ']);
 
 -- seed.sql

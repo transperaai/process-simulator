@@ -25,7 +25,7 @@ import {
   servicingStepIds,
 } from "./servicing";
 import { arrivalTimes as drawArrivals } from "./demand";
-import { activeMarket, marketAt } from "./market";
+import { activeMarket, type MarketFactors } from "./market";
 import { EventQueue } from "./event-queue";
 import type {
   ClientReplication,
@@ -217,6 +217,10 @@ interface StepState {
   routes: Route[] | null;
   /** Where each of the step's edges (`s.next`) leads. */
   targets: Target[];
+  /** With a market: which of `s.next` lead to the sale (see `signingEdges`); null when conv doesn't apply here. */
+  winEdges: boolean[] | null;
+  /** With a market: the sale is still ahead (a lost end can be reached from here), so "time to decide" applies to its external wait. */
+  beforeSale: boolean;
   /** Its role's hour counters; null when the step has no role the model knows. */
   acc: RoleAcc | null;
   /**
@@ -233,6 +237,8 @@ interface Route {
   total: number;
   /** Where each of `next` leads. */
   targets: Target[];
+  /** As `StepState.winEdges`, for `next`. */
+  winEdges: boolean[] | null;
 }
 
 /** A service as a run uses it. */
@@ -295,33 +301,98 @@ function resolveServices(model: EngineModel): ServiceState[] {
 function routeFor(edges: EngineEdge[], tags: string[]): Route {
   const sum = (next: EngineEdge[]) => next.reduce((a, n) => a + n.p, 0);
   const tagged = edges.filter((n) => n.tag !== undefined && tags.includes(n.tag));
-  if (tagged.length) return { next: tagged, total: sum(tagged), targets: [] };
+  if (tagged.length) return { next: tagged, total: sum(tagged), targets: [], winEdges: null };
   const untagged = edges.filter((n) => n.tag === undefined);
-  if (untagged.length) return { next: untagged, total: sum(untagged), targets: [] };
-  return { next: edges, total: 1, targets: [] };
+  if (untagged.length) return { next: untagged, total: sum(untagged), targets: [], winEdges: null };
+  return { next: edges, total: 1, targets: [], winEdges: null };
+}
+
+/** What an edge or step can lead to: a won end, a lost end, or both (through different paths). */
+interface Reach {
+  won: boolean;
+  lost: boolean;
+}
+
+/**
+ * For every step and end, whether a won end and a lost end can be reached
+ * from it (through any edge; an end with a hand-off continues there, unless it
+ * is itself a win or a loss). Used by the market to find where a sale is
+ * decided and which steps come before it.
+ */
+function outcomeReach(stepStates: Map<string, StepState>, ends: Map<string, EngineEnd>): Map<string, Reach> {
+  const reach = new Map<string, Reach>();
+  const of = (id: string): Reach => {
+    const end = ends.get(id);
+    if (end) {
+      if (end.outcome === "won") return { won: true, lost: false };
+      if (end.outcome === "lost") return { won: false, lost: true };
+      return end.handoff ? { ...(reach.get(end.handoff) ?? { won: false, lost: false }) } : { won: false, lost: false };
+    }
+    return reach.get(id) ?? { won: false, lost: false };
+  };
+  for (const id of stepStates.keys()) reach.set(id, { won: false, lost: false });
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const [id, st] of stepStates) {
+      const r = reach.get(id)!;
+      for (const n of st.s.next) {
+        const t = of(n.to);
+        if (t.won && !r.won) {
+          r.won = true;
+          changed = true;
+        }
+        if (t.lost && !r.lost) {
+          r.lost = true;
+          changed = true;
+        }
+      }
+    }
+  }
+  const all = new Map(reach);
+  for (const id of ends.keys()) all.set(id, of(id));
+  return all;
+}
+
+/**
+ * The edges of a step that lead to the sale, when this step is where it is
+ * decided: some edges lead only to a win (a won end, or steps that go on to
+ * one and can't be lost) and all the others lead only to a loss. Elsewhere
+ * (earlier steps whose edges can still end either way, or steps with other
+ * kinds of edge) it is null, so "enquiries that sign" applies once per path.
+ */
+function signingEdges(next: EngineEdge[], targets: Target[], reach: Map<string, Reach>): boolean[] | null {
+  const win = targets.map((t) => {
+    const r = reach.get(t.id);
+    return r !== undefined && r.won && !r.lost;
+  });
+  const loseOnly = targets.map((t) => {
+    const r = reach.get(t.id);
+    return r !== undefined && r.lost && !r.won;
+  });
+  if (!win.some(Boolean)) return null;
+  return next.every((_, i) => win[i] || loseOnly[i]) ? win : null;
 }
 
 /**
  * Pick an edge when the market scales "enquiries that sign" by `conv`: the
- * edges that lead to a won end have their probability scaled (to at most the
- * edges' total), and the others share what is left in proportion. With no won
- * edge, or only won edges, there is nothing to shift, so the edges are picked
- * as entered. Uses the same single draw `u` (in 0..total).
+ * edges to the sale have their probability scaled (to at most the edges'
+ * total) and the losing ones share what is left in proportion. Uses the same
+ * single draw `u` (in 0..total).
  */
-function pickWithSigning(next: EngineEdge[], targets: Target[], u: number, conv: number): number {
+function pickWithSigning(next: EngineEdge[], winEdges: boolean[], u: number, conv: number): number {
   let win = 0;
   let total = 0;
   for (let i = 0; i < next.length; i++) {
     total += next[i]!.p;
-    if (targets[i]!.end?.outcome === "won") win += next[i]!.p;
+    if (winEdges[i]) win += next[i]!.p;
   }
   const other = total - win;
   const newWin = Math.min(total, win * conv);
-  const winScale = win > 0 && other > 0 ? newWin / win : 1;
-  const otherScale = win > 0 && other > 0 ? (total - newWin) / other : 1;
+  const winScale = win > 0 ? newWin / win : 1;
+  const otherScale = other > 0 ? (total - newWin) / other : 1;
   let acc = 0;
   for (let i = 0; i < next.length; i++) {
-    acc += next[i]!.p * (targets[i]!.end?.outcome === "won" ? winScale : otherScale);
+    acc += next[i]!.p * (winEdges[i] ? winScale : otherScale);
     if (u < acc) return i;
   }
   return next.length - 1;
@@ -480,7 +551,10 @@ export function runOnce(
   const hasServices = services[0]!.id !== null;
   // Market conditions (market.ts); null when the model has none or they are all Stable, which leaves every path below as it was.
   const market = activeMarket(model);
-  const mkt = (t: number) => marketAt(model, t);
+  // The month the factors come from is looked up per event, so the checks and the month length are done once here.
+  const monthHours = (52 / 12) * model.hoursPerWeek;
+  const lastMonth = market ? market.months.length - 1 : 0;
+  const mkt = (t: number): MarketFactors => market!.months[t < 0 ? 0 : Math.min(Math.floor(t / monthHours), lastMonth)]!;
   for (const sv of services) {
     if (!(sv.s.mixShare >= 0)) throw new Error(`Service '${sv.s.name}' needs a mix share of 0 or more`);
   }
@@ -543,6 +617,8 @@ export function runOnce(
           ? services.map((sv) => routeFor(s.next, sv.s.pathTags))
           : null,
       targets: [],
+      winEdges: null,
+      beforeSale: false,
       acc: s.role !== null && Object.hasOwn(roleAcc, s.role) ? roleAcc[s.role]! : null,
       assigned: servicingSteps.has(s.id) ? { people: [], lists: [], waiting: 0 } : null,
     });
@@ -562,6 +638,14 @@ export function runOnce(
   for (const st of stepList) {
     st.targets = st.s.next.map((n) => targetFor(n.to));
     if (st.routes) for (const r of st.routes) r.targets = r.next.map((n) => targetFor(n.to));
+  }
+  if (market) {
+    const reach = outcomeReach(stepStates, ends);
+    for (const st of stepList) {
+      st.beforeSale = reach.get(st.s.id)?.lost === true;
+      st.winEdges = signingEdges(st.s.next, st.targets, reach);
+      if (st.routes) for (const r of st.routes) r.winEdges = signingEdges(r.next, r.targets, reach);
+    }
   }
   const entryTargets = services.map((sv) => targetFor(sv.entry));
 
@@ -1201,8 +1285,8 @@ export function runOnce(
       p.completed++;
     }
     let w = st.wait ? st.wait() : 0;
-    // "Time to decide": the market stretches or shortens external waits in the pipeline, not servicing.
-    if (market && w > 0 && !st.assigned) w *= mkt(t).cycle;
+    // "Time to decide": the market stretches or shortens external waits before the sale, not onboarding, delivery or servicing.
+    if (market && w > 0 && st.beforeSale && !st.assigned) w *= mkt(t).cycle;
     // With no wait and nothing else pending at `t`, its leave event would be
     // the very next one handled (whatever `takeNext` schedules comes after
     // it), so it's handled here instead, in exactly that order.
@@ -1238,8 +1322,9 @@ export function runOnce(
     let acc = 0;
     let k = next.length - 1;
     const conv = market ? mkt(t).conv : 1;
-    if (conv !== 1) {
-      k = pickWithSigning(next, targets, u, conv);
+    const winEdges = st.routes ? st.routes[e.svc]!.winEdges : st.winEdges;
+    if (conv !== 1 && winEdges) {
+      k = pickWithSigning(next, winEdges, u, conv);
     } else {
       for (let i = 0; i < next.length; i++) {
         acc += next[i]!.p;

@@ -6,6 +6,8 @@ import {
   factorsFromPercents,
   marketAt,
   marketFromSchedule,
+  larkspurModel,
+  northbeamModel,
   northbeamWithServicing,
   percentsFromFactors,
   simulate,
@@ -102,6 +104,58 @@ describe("market conditions", () => {
     expect(soft.won / base.won).toBeGreaterThan(0.4);
     expect(soft.won / base.won).toBeLessThan(0.6);
     expect(soft.lost).toBeGreaterThan(base.lost);
+  });
+
+  it.each([
+    ["northbeamModel", northbeamModel],
+    ["northbeamWithServicing", northbeamWithServicing],
+    ["larkspurModel", larkspurModel],
+  ])("enquiries that sign lower wins on %s, where the sale is several steps from the end", (_name, build) => {
+    const base = simulate(build(), 12, 2);
+    const soft = simulate(withMarketCondition(build(), f({ conv: 0.5 })), 12, 2);
+    const boom = simulate(withMarketCondition(build(), f({ conv: 1.5 })), 12, 2);
+    expect(soft.won).toBeLessThan(base.won * 0.8);
+    expect(boom.won).toBeGreaterThan(base.won);
+  });
+
+  it("applies conv once per path: only at the step that decides the sale", () => {
+    // qualify -> (decide 50% | lost 50%); decide -> (onboard 40% | lost 60%); onboard -> won. conv 0.5 halves the 40%, not the 50%.
+    const m = funnel({
+      steps: [
+        { id: "q", name: "Q", role: null, work: 0, wait: 0, rework: 0, next: [{ to: "d", p: 0.5 }, { to: "lost", p: 0.5 }] },
+        { id: "d", name: "D", role: null, work: 0, wait: 0, rework: 0, next: [{ to: "o", p: 0.4 }, { to: "lost", p: 0.6 }] },
+        { id: "o", name: "O", role: null, work: 0, wait: 0, rework: 0, next: [{ to: "won", p: 1 }] },
+      ],
+      entry: "q",
+      leadsPerWeek: 20,
+    });
+    const base = simulate(m, 30, 4).won;
+    const half = simulate(withMarketCondition(m, f({ conv: 0.5 })), 30, 4).won;
+    expect(half / base).toBeGreaterThan(0.4);
+    expect(half / base).toBeLessThan(0.6);
+  });
+
+  it("time to decide only stretches waits before the sale, not onboarding", () => {
+    const m = funnel({
+      steps: [
+        { id: "d", name: "D", role: null, work: 0, wait: 8, rework: 0, next: [{ to: "o", p: 1 }] },
+        { id: "o", name: "O", role: null, work: 0, wait: 100, rework: 0, next: [{ to: "won", p: 0.5 }, { to: "lost", p: 0.5 }] },
+      ],
+      entry: "d",
+    });
+    // Both steps can still reach a lost end here, so both stretch; make onboarding unloseable and it must not.
+    const safe = funnel({
+      steps: [
+        { id: "d", name: "D", role: null, work: 0, wait: 8, rework: 0, next: [{ to: "o", p: 0.5 }, { to: "lost", p: 0.5 }] },
+        { id: "o", name: "O", role: null, work: 0, wait: 100, rework: 0, next: [{ to: "won", p: 1 }] },
+      ],
+      entry: "d",
+    });
+    const slow = (x: EngineModel) => simulate(withMarketCondition(x, f({ cycle: 2 })), 10, 3).kpi.cycle.mean - simulate(x, 10, 3).kpi.cycle.mean;
+    // Only the 8 h decision wait doubles (about +8 h), not the 100 h onboarding wait (+100 h).
+    expect(slow(safe)).toBeGreaterThan(5);
+    expect(slow(safe)).toBeLessThan(12);
+    expect(slow(m)).toBeGreaterThan(50);
   });
 
   it("prices scale new MRR", () => {

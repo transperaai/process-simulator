@@ -195,6 +195,7 @@ export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSett
     supabase.from("seasonality").select(SEASONALITY_COLUMNS).eq("workspace_id", ws).order("month"),
     supabase.from("demand_settings").select(DEMAND_SETTINGS_COLUMNS).eq("workspace_id", ws).maybeSingle(),
     supabase.from("service_servicing").select(SERVICE_SERVICING_COLUMNS).eq("workspace_id", ws).order("created_at").order("id"),
+    loadMarket(supabase, ws),
   ]);
   const [canEdit, canManage, roles, steps, people, personRoles, personSkills, personLeave, services, tags, roleSteps, assignments] = await Promise.all([
     supabase.rpc("can_edit_workspace", { ws }),
@@ -226,8 +227,7 @@ export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSett
     supabase.from("steps").select("id, role_id").eq("workspace_id", ws).not("role_id", "is", null),
     supabase.from("client_assignments").select("client_id, role_id").eq("workspace_id", ws),
   ]);
-  const [leadSources, seasonality, demand, servicingLinks] = await demandQueries;
-  const market = await loadMarket(supabase, ws);
+  const [leadSources, seasonality, demand, servicingLinks, market] = await demandQueries;
   for (const r of [canEdit, canManage, roles, steps, people, personRoles, personSkills, personLeave, services, tags, roleSteps, assignments, leadSources, seasonality, demand, servicingLinks]) {
     if (r.error) throw r.error;
   }

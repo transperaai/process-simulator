@@ -14,7 +14,7 @@
   {
     "version": "1.2.0",
     "date": "2026-10-01",
-    "note": "Market conditions (A57): the engine can apply a 24-month market schedule. No golden number moved; Stable or no market simulates exactly as before.",
-    "digest": "sha256:c7133e374de92920ec175088767ea9d7fa76397a74a0e46c4d3f71250d26e029"
+    "note": "Market conditions (A57): the engine applies a 24-month market schedule; adds the northbeam-downturn golden model (Northbeam as seeded under Downturn). No existing model's numbers moved: with no market, or Stable throughout, runs are exactly as before.",
+    "digest": "sha256:f21c60478c5b62173cbf0e07b0eb7079b163c21926f4f4224fea27cf5eeccd85"
   }
 ]

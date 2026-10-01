@@ -147,6 +147,14 @@ export function marketFromSchedule(
  * The model with one condition in force for the whole run: the entry point for
  * the market stress test (A50). Run it with `simulate`, e.g.
  * `simulate(withMarketCondition(model, MARKET_PRESETS.downturn.factors), reps, seed)`.
+ * It replaces any schedule the model already carries: the condition applies in
+ * every month, so the result shows that condition alone, not on top of the schedule.
+ *
+ * Known limits (for the "Market conditions" churn driver, A56): the factors act on
+ * what happens in the run, not on every derived figure. `lostRevenue` is valued at
+ * today's price, LTV uses today's tenure (`value`), a roster client's reported
+ * `churnMonthly` is its base rate, and the pooled `weeksBilled` estimate uses the
+ * churn factor of the month a client is won in, not later months'.
  */
 export function withMarketCondition(model: EngineModel, factors: MarketFactors): EngineModel {
   return { ...model, market: { months: [factors] } };

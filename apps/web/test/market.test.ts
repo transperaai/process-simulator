@@ -1,4 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi } from "vitest";
+import type { WorkspaceSettingsData } from "@/lib/data";
+import { demoMarket } from "@/lib/market-demo";
+import { MarketSettings } from "../src/app/w/[slug]/settings/market-settings";
 import type { MarketConditionRow, MarketScheduleRow } from "@transpera-flow/db";
 import { MARKET_FACTOR_KEYS } from "@transpera-flow/engine";
 import {
@@ -15,6 +21,9 @@ import {
   segments,
   timeline,
 } from "@/lib/market";
+
+// The section's Server Actions need a server (cookies, Supabase); the render tests never call them.
+vi.mock("../src/app/w/[slug]/settings/actions", () => ({}));
 
 // Wording, checks and the timeline behind Settings → Market conditions (A57).
 
@@ -145,5 +154,38 @@ describe("parseChange", () => {
     expect(clash).toHaveProperty("error");
     expect((clash as { error: string }).error).toContain("M7–M14");
     expect(parseChange(ws, id(2), 15, 16, [{ from_month: 7, to_month: 14 }])).not.toHaveProperty("error");
+  });
+});
+
+const dataFor = (canEdit: boolean) => {
+  const { workspaceId, marketConditions, marketSchedule } = demoMarket();
+  return { workspace: { id: workspaceId }, canEdit, marketConditions, marketSchedule } as unknown as WorkspaceSettingsData;
+};
+
+describe("the settings page", () => {
+  it("renders the market section after demand", () => {
+    const page = readFileSync(new URL("../src/app/w/[slug]/settings/page.tsx", import.meta.url), "utf8");
+    expect(page).toContain('import { MarketSettings } from "./market-settings"');
+    expect(page.indexOf("<DemandSettings")).toBeLessThan(page.indexOf("<MarketSettings data={data} />"));
+  });
+
+  it("the section shows the presets, the seven factors with (i) help, and the schedule", () => {
+    const html = renderToStaticMarkup(createElement(MarketSettings, { data: dataFor(true) }));
+    expect(html).toContain("Market conditions");
+    for (const name of ["Boom", "Stable", "Soft", "Downturn", "Cautious 2027", "+ Custom"]) expect(html).toContain(name);
+    for (const f of FACTORS) {
+      expect(html).toContain(f.label);
+      expect(html).toContain(`About ${f.label}`);
+    }
+    expect(html).toContain("Schedule over 24 months");
+    expect(html).toContain("+ Add change");
+    expect(html).toContain("M7–M14: Soft");
+    expect(html).toContain("M15–M24: Cautious 2027");
+  });
+
+  it("is read-only for someone who can't edit: no add or custom buttons", () => {
+    const html = renderToStaticMarkup(createElement(MarketSettings, { data: dataFor(false) }));
+    expect(html).not.toContain("+ Add change");
+    expect(html).not.toContain("+ Custom");
   });
 });

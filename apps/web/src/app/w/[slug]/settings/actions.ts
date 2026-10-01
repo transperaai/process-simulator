@@ -396,6 +396,7 @@ export interface MarketActionResult extends ActionResult {
 /** Add a condition: a copy of `sourceId` (to customise a preset), or a fresh one starting from Stable. */
 export async function createMarketCondition(workspaceId: string, sourceId: string | null): Promise<MarketActionResult> {
   if (!isId(workspaceId) || (sourceId !== null && !isId(sourceId))) return { error: "Couldn't save. Try again." };
+  if (!(await signedIn())) return { error: signedOut.message };
   const supabase = await createClient();
   const query = supabase
     .from("market_conditions")
@@ -433,6 +434,7 @@ export async function saveMarketField(conditionId: string, field: string, value:
 
 export async function removeMarketCondition(conditionId: string): Promise<ActionResult> {
   if (!isId(conditionId)) return { error: "Couldn't remove it. Try again." };
+  if (!(await signedIn())) return { error: signedOut.message };
   const supabase = await createClient();
   const { data, error } = await supabase.from("market_conditions").delete().eq("id", conditionId).select("id");
   if (error) {
@@ -448,6 +450,7 @@ export async function removeMarketCondition(conditionId: string): Promise<Action
 export async function addMarketChange(workspaceId: string, _prev: ActionResult, form: FormData): Promise<ActionResult> {
   const parsed = parseChange(workspaceId, form.get("condition_id"), Number(form.get("from_month")), Number(form.get("to_month")));
   if ("error" in parsed) return parsed;
+  if (!(await signedIn())) return { error: signedOut.message };
   const supabase = await createClient();
   const { error } = await supabase
     .from("market_schedule")
@@ -460,6 +463,7 @@ export async function addMarketChange(workspaceId: string, _prev: ActionResult, 
 
 export async function removeMarketChange(changeId: string): Promise<ActionResult> {
   if (!isId(changeId)) return { error: "Couldn't remove it. Try again." };
+  if (!(await signedIn())) return { error: signedOut.message };
   const supabase = await createClient();
   const { data, error } = await supabase.from("market_schedule").delete().eq("id", changeId).select("id");
   if (error) return failure(error);

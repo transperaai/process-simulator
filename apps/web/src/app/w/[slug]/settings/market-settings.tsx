@@ -186,7 +186,7 @@ function FactorRow({ condition: c, factor: f, readOnly }: { condition: MarketCon
         type="range"
         min={SLIDER_MIN}
         max={SLIDER_MAX}
-        step={5}
+        step={1}
         value={Math.min(SLIDER_MAX, Math.max(SLIDER_MIN, value))}
         disabled={readOnly}
         onChange={(e) => setValue(Number(e.target.value))}
@@ -328,7 +328,7 @@ function RemoveChange({ id, label }: { id: string; label: string }) {
             setError(r.error);
           })
         }
-        className="rounded-full px-1 text-fg-3 outline-none hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+        className="inline-grid size-6 place-items-center rounded-full text-base leading-none text-fg-3 outline-none hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
       >
         ×
       </button>

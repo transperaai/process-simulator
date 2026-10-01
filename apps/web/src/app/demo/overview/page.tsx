@@ -1,0 +1,6 @@
+import { OverviewSoon } from "@/components/shell/placeholders";
+
+/** Placeholder until A35 builds the Overview page (issue #98). */
+export default function DemoOverviewPage() {
+  return <OverviewSoon mapHref="/demo" />;
+}

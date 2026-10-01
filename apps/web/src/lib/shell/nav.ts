@@ -1,63 +1,125 @@
-// The sidebar's items and where they go (issue #93). Pure, so the mapping from a pathname to the
-// active item is unit-tested; the sidebar component only renders what this returns.
+// The sidebar's groups, items and where they go (issues #93, #98). Pure, so the mapping from a pathname to the
+// active item is unit-tested; the sidebar component only renders what this returns. Order and grouping follow the
+// prototype's `sidebar()` (apps/web/prototype/app-flow.html).
 
-export type NavIcon = "map" | "issues" | "people" | "suggestions" | "sources" | "settings" | "access";
+export type NavIcon = "overview" | "processes" | "issues" | "solutions" | "library" | "suggestions" | "sources" | "people" | "settings" | "access";
+
+/** How a count badge looks: plain, "AI" (pending suggestions) or a warning (sources that link to nothing; wired in A53). */
+export type CountTone = "plain" | "ai" | "warn";
 
 export interface NavItem {
   key: string;
   label: string;
   href: string;
   active: boolean;
-  /** A count shown as a badge (pending suggestions). */
+  /** A count shown as a badge; hidden when zero or absent. */
   count?: number;
-  /** On a map route, this item opens that tab of the map's side panel instead of navigating. */
+  tone?: CountTone;
+  /** What the count means, for the badge's accessible name ("open", "pending"). */
+  countNoun?: string;
+  /** A page that is not built yet: it opens a "Coming in A3x" placeholder (or, for People, a section of Settings). */
+  soon?: string;
+  /** On a map route, this item opens that tab of the map's side panel instead of navigating (the read-only Larkspur demo). */
   panel?: "issues";
   icon: NavIcon;
 }
 
-/** Settings and Access sit apart from the rest, at the bottom of the sidebar. */
-export const BOTTOM_KEYS: readonly string[] = ["settings", "access"];
-
-export function workspaceNav({
-  slug,
-  pathname,
-  canManage,
-  pendingSuggestions,
-}: {
-  slug: string;
-  pathname: string;
-  canManage: boolean;
-  pendingSuggestions: number;
-}): NavItem[] {
-  const base = `/w/${slug}`;
-  const rest = pathname.startsWith(base) ? pathname.slice(base.length) : "";
-  const onMap = pathname === base || rest.startsWith("/p/");
-  const at = (path: string) => rest === path || rest.startsWith(`${path}/`);
-  const main: NavItem[] = [
-    { key: "map", label: "Map", href: base, active: onMap, icon: "map" },
-    { key: "issues", label: "Issues", href: `${base}/issues`, active: at("/issues"), icon: "issues" },
-    { key: "people", label: "People", href: `${base}/settings#people-heading`, active: false, icon: "people" },
-    { key: "suggestions", label: "Suggestions", href: `${base}/suggestions`, active: at("/suggestions"), count: pendingSuggestions, icon: "suggestions" },
-    { key: "sources", label: "Sources", href: `${base}/sources`, active: at("/sources"), icon: "sources" },
-  ];
-  const bottom: NavItem[] = [{ key: "settings", label: "Settings", href: `${base}/settings`, active: rest === "/settings", icon: "settings" }];
-  if (canManage) bottom.push({ key: "access", label: "Access", href: `${base}/settings/access`, active: at("/settings/access"), icon: "access" });
-  return [...main, ...bottom];
+export interface NavGroup {
+  key: string;
+  /** The group's small heading; the first group has none. */
+  label: string | null;
+  items: NavItem[];
 }
 
-export function demoNav({ pathname, pendingSuggestions }: { pathname: string; pendingSuggestions: number }): NavItem[] {
-  if (pathname === "/demo/larkspur" || pathname.startsWith("/demo/larkspur/")) {
-    const base = "/demo/larkspur";
-    return [
-      { key: "map", label: "Map", href: base, active: true, icon: "map" },
-      { key: "issues", label: "Issues", href: `${base}?panel=issues`, active: false, panel: "issues", icon: "issues" },
-    ];
-  }
-  const at = (path: string) => pathname === path || pathname.startsWith(`${path}/`);
-  return [
-      { key: "map", label: "Map", href: "/demo", active: pathname === "/demo", icon: "map" },
-      { key: "issues", label: "Issues", href: "/demo?panel=issues", active: false, panel: "issues", icon: "issues" },
-      { key: "suggestions", label: "Suggestions", href: "/demo/suggestions", active: at("/demo/suggestions"), count: pendingSuggestions, icon: "suggestions" },
-      { key: "sources", label: "Sources", href: "/demo/sources", active: at("/demo/sources"), icon: "sources" },
+/** Numbers beside the items. Absent means "don't show a badge". */
+export interface NavCounts {
+  processes?: number;
+  /** Tracked issues that are still open. */
+  openIssues?: number;
+  /** Solutions arrive with A49; until then there is nothing to count. */
+  solutions?: number;
+  pendingSuggestions?: number;
+  /** Sources linked to nothing; wired in A53. */
+  unlinkedSources?: number;
+}
+
+const matches = (rest: string, path: string) => rest === path || rest.startsWith(`${path}/`);
+
+/**
+ * The shared shape: `base` is where the workspace's pages live (`/w/<slug>` or `/demo`), `rest` the path under it.
+ * The map (the workspace root and `/p/<id>`) belongs to Processes until A35 turns Overview into the landing page.
+ */
+function groups(base: string, rest: string, counts: NavCounts, extra: { people: string | null; settings: boolean; access: boolean }): NavGroup[] {
+  const onMap = rest === "" || rest.startsWith("/p/");
+  const item = (i: Omit<NavItem, "href" | "active"> & { path: string; active?: boolean }): NavItem => {
+    const { path, active, ...fields } = i;
+    return { ...fields, href: `${base}${path}`, active: active ?? matches(rest, path) };
+  };
+  const company: NavItem[] = [
+    item({ key: "sources", label: "Sources", path: "/sources", icon: "sources", count: counts.unlinkedSources, tone: "warn", countNoun: "not linked to anything" }),
   ];
+  // People is a section of Settings until it gets its own page, so it never shows as the current page.
+  if (extra.people) company.push({ key: "people", label: "People", href: extra.people, active: false, icon: "people" });
+  if (extra.settings) company.push(item({ key: "settings", label: "Settings", path: "/settings", icon: "settings", active: rest === "/settings" }));
+  if (extra.access) company.push(item({ key: "access", label: "Access", path: "/settings/access", icon: "access" }));
+  return [
+    {
+      key: "main",
+      label: null,
+      items: [
+        item({ key: "overview", label: "Overview", path: "/overview", icon: "overview", soon: "A35" }),
+        item({ key: "processes", label: "Processes", path: "/processes", icon: "processes", active: onMap || matches(rest, "/processes"), count: counts.processes, tone: "plain", countNoun: "processes" }),
+      ],
+    },
+    {
+      key: "improve",
+      label: "Improve",
+      items: [
+        item({ key: "issues", label: "Issues", path: "/issues", icon: "issues", count: counts.openIssues, tone: "plain", countNoun: "open" }),
+        item({ key: "solutions", label: "Solutions", path: "/solutions", icon: "solutions", soon: "A49", count: counts.solutions, tone: "plain" }),
+        item({ key: "library", label: "Block library", path: "/library", icon: "library", soon: "A51" }),
+        item({ key: "suggestions", label: "Suggestions", path: "/suggestions", icon: "suggestions", count: counts.pendingSuggestions, tone: "ai", countNoun: "pending" }),
+      ],
+    },
+    { key: "company", label: "Company", items: company },
+  ];
+}
+
+export function workspaceNav({ slug, pathname, canManage, counts }: { slug: string; pathname: string; canManage: boolean; counts: NavCounts }): NavGroup[] {
+  const base = `/w/${slug}`;
+  const rest = pathname.startsWith(base) ? pathname.slice(base.length) : "\u0000";
+  return groups(base, rest, counts, { people: `${base}/settings#people-heading`, settings: true, access: canManage });
+}
+
+/** Northbeam on the demo: no database, so no People, Settings or Access. */
+function demoGroups(pathname: string, counts: NavCounts): NavGroup[] {
+  const rest = pathname === "/demo" ? "" : pathname.startsWith("/demo/") ? pathname.slice("/demo".length) : "\u0000";
+  return groups("/demo", rest, counts, { people: null, settings: false, access: false });
+}
+
+/** Larkspur is a read-only map: just the map, and its issues in the map's side panel. */
+function larkspurGroups(): NavGroup[] {
+  const base = "/demo/larkspur";
+  return [
+    {
+      key: "main",
+      label: null,
+      items: [
+        { key: "processes", label: "Processes", href: base, active: true, icon: "processes" },
+        { key: "issues", label: "Issues", href: `${base}?panel=issues`, active: false, panel: "issues", icon: "issues" },
+      ],
+    },
+  ];
+}
+
+export function demoNav({ pathname, counts }: { pathname: string; counts: NavCounts }): NavGroup[] {
+  if (pathname === "/demo/larkspur" || pathname.startsWith("/demo/larkspur/")) return larkspurGroups();
+  return demoGroups(pathname, counts);
+}
+
+export const flatItems = (groups: NavGroup[]): NavItem[] => groups.flatMap((g) => g.items);
+
+/** The badge's accessible name: "Issues, 4 open". */
+export function countLabel(i: NavItem): string {
+  return `${i.label}, ${i.count} ${i.countNoun ?? ""}`.trim();
 }

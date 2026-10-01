@@ -47,6 +47,8 @@ interface Graph {
   working: EngineStep[];
   /** End steps, by id. */
   endSteps: StepRow[];
+  /** The process's target time end to end, in working hours, set on its start step (rule 13). */
+  targetCycleHours: number | null;
 }
 
 /**
@@ -96,10 +98,15 @@ function resolveGraph(steps: StepRow[], edges: EdgeRow[], tags: boolean): Graph 
         ...(step.current_wip != null ? { currentWip: Number(step.current_wip) } : {}),
         // An SLA only counts breaches (detected issues); it doesn't change the run.
         ...(step.sla_hours != null ? { sla: Number(step.sla_hours) } : {}),
+        // The rules' per-step settings (docs/analysis-rules.md rules 5, 12): they rate the report, not the run.
+        ...(step.expected_wait_hours != null ? { expectedWaitHours: Number(step.expected_wait_hours) } : {}),
+        ...(step.lost_per_day_waiting != null ? { lostPerDayWaiting: Number(step.lost_per_day_waiting) } : {}),
+        ...(step.dropoff_benchmark != null ? { dropoffBenchmark: Number(step.dropoff_benchmark) } : {}),
         next,
       };
     });
-  return { entry, working, endSteps: steps.filter((step) => step.kind === "end").sort(byIdAsc) };
+  const target = starts[0]!.target_cycle_hours;
+  return { entry, working, endSteps: steps.filter((step) => step.kind === "end").sort(byIdAsc), targetCycleHours: target != null ? Number(target) : null };
 }
 
 /**
@@ -144,7 +151,7 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
   const s = workspace.settings;
   const pipeline = pipelineOf(bundle);
   const baseServices = engineServices(bundle, pipeline.process.id);
-  const { entry, working: pipelineSteps, endSteps } = resolveGraph(pipeline.steps, pipeline.edges, Boolean(baseServices));
+  const { entry, working: pipelineSteps, endSteps, targetCycleHours } = resolveGraph(pipeline.steps, pipeline.edges, Boolean(baseServices));
 
   const sinkFor = (outcome: "won" | "lost") => endSteps.find((step) => step.outcome === outcome)?.id ?? `__${outcome}__`;
   const sinks = { won: sinkFor("won"), lost: sinkFor("lost") };
@@ -190,6 +197,7 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
     ...(clients ? { clients } : {}),
     ...(Object.keys(servicing.processes).length ? { servicingProcesses: servicing.processes } : {}),
     ...optional("health", healthRules(s)),
+    ...(targetCycleHours !== null ? { targetCycleHours } : {}),
     entry,
     sinks,
     ...(Object.keys(ends).length ? { ends } : {}),

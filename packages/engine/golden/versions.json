@@ -15,6 +15,6 @@
     "version": "1.2.0",
     "date": "2026-10-01",
     "note": "New analysis rules (issue #107): detected issues now include spare time, work lost at a step, too slow overall, goals met and the absence test (which replaces flagging every one-person step); the golden outputs also lock the absence test's results and the visits each step sends straight to a lost end. StepResult gains lostHere (and p90.lostShare); no simulated number changed.",
-    "digest": "sha256:6833edc65c3ed135cbc78678f53f933ae63980067cb468808a32626733ff0084"
+    "digest": "sha256:ee526feac5a7cac0050b21a6c9ef27000c752398f1ce8ec22f772fa30cfff800"
   }
 ]

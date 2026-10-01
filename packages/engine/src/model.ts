@@ -212,8 +212,8 @@ export interface EngineStep {
   /**
    * How long an item may queue for a person before it counts as waiting too
    * long, in hours (docs/analysis-rules.md rule 5). Omitted: the rating
-   * config's default for the step's kind (8 h for pipeline steps, 16 h for
-   * servicing steps). It rates the report; it doesn't change the simulation.
+   * config's default for the step's kind (1 working day for pipeline steps, 2
+   * for servicing steps). It rates the report; it doesn't change the simulation.
    */
   expectedWaitHours?: number;
   /**

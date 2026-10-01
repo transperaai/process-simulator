@@ -441,50 +441,56 @@ export function detectIssues(
   }
 
   // --- Only one person can do it (rule 8): the absence test's result, rated on work lost and weeks to recover.
+  // One finding for each step only that person can do (keyed by the step, as the structural check was), all rated
+  // from the same absence run. A step nothing reaches is left out.
   for (const f of options.absence?.people ?? []) {
     const p = people[f.personId];
-    const soleSteps = model.steps.filter((s) => f.stepIds.includes(s.id));
-    if (!p || !soleSteps.length) continue;
+    if (!p) continue;
     const main = p.roles[0] ?? null;
-    const stepId = heaviest(soleSteps)!;
-    const subject: RatingSubject = { stepId, roleId: main, personId: named ? f.personId : null, ...stepContext(stepId) };
-    const resolved = resolveRule(config, "absence", subject);
-    if (!resolved.enabled) continue;
-    const lost = rateRule(config, "absence", resolved, { average: f.workLost });
-    const recovery = rateValue(config.absence.recoveryCutoffs, { average: f.recoveryWeeks }, { upperInclusive: true, badMonth: false, bottleneck: false });
-    let rating = worseRating(lost.rating, recovery.rating);
-    if (f.clientDeadlineMissed) rating = "risk";
-    if (rating === "great") continue;
-    const who = named ? p.name : `One ${main ? roleName(main) : "person"}`;
-    const stepNames = soleSteps.map((s) => s.name);
-    const hireRole = soleSteps.find((s) => s.role)?.role ?? null;
-    out.push({
-      detector: "spof",
-      key: `spof:person:${f.personId}`,
-      type: "spof",
-      ...ratingFields({ rating, base: rating, badMonth: false, bottleneck: false }),
-      title: soleSteps.length === 1 ? `Only ${named ? p.name : `one ${main ? roleName(main) : "person"}`} can do ${stepNames[0]}` : `${who} is the only one who can do ${soleSteps.length} steps`,
-      evidence:
-        `Absence test: with ${named ? p.name : "them"} away for ${num(options.absence!.weeksAway, 1)} week${options.absence!.weeksAway === 1 ? "" : "s"}, ` +
-        `${pct(f.workLost)} of the work completed from then to the end of the run is lost, and the queues at ${stepNames.join(", ")} ` +
-        (f.recovered ? `take ${num(f.recoveryWeeks, 0)} week${f.recoveryWeeks === 1 ? "" : "s"} to get back to normal` : `are not back to normal within ${num(f.recoveryWeeks - 1, 0)} week${f.recoveryWeeks === 2 ? "" : "s"} of their return`) +
-        `.${f.clientDeadlineMissed ? ` A client deadline is missed: ${num(f.extraMissed)} more servicing tasks a run go unfinished.` : ""} ` +
-        `Cut-offs: work lost ${resolved.cutoffs.map(pct).join(" / ")}; weeks to recover ${config.absence.recoveryCutoffs.join(" / ")}.`,
-      metrics: {
-        work_lost: f.workLost,
-        items_lost: f.itemsLost,
-        recovery_weeks: f.recoveryWeeks,
-        recovered: f.recovered ? 1 : 0,
-        weeks_away: options.absence!.weeksAway,
-        extra_missed_tasks: f.extraMissed,
-        absences_per_year: config.absence.perYear,
-        sole_steps: soleSteps.length,
-      },
-      stepId,
-      roleId: main,
-      personId: named ? f.personId : null,
-      fix: hireRole ? hire(hireRole) : null,
-    });
+    const soleSteps = model.steps.filter((s) => f.stepIds.includes(s.id) && (result.steps[s.id]?.arrivals ?? 0) > 0);
+    for (const s of soleSteps.sort((x, y) => cmp(x.id, y.id))) {
+      const subject: RatingSubject = { stepId: s.id, roleId: main, personId: named ? f.personId : null, ...stepContext(s.id) };
+      const resolved = resolveRule(config, "absence", subject);
+      if (!resolved.enabled) continue;
+      const lost = rateRule(config, "absence", resolved, { average: f.workLost });
+      const recovery = rateValue(config.absence.recoveryCutoffs, { average: f.recoveryWeeks }, { upperInclusive: true, badMonth: false, bottleneck: false });
+      let rating = worseRating(lost.rating, recovery.rating);
+      if (f.clientDeadlineMissed) rating = "risk";
+      if (rating === "great") continue;
+      const away = options.absence!.weeksAway;
+      const others = soleSteps.filter((o) => o.id !== s.id).map((o) => o.name);
+      out.push({
+        detector: "spof",
+        key: `spof:step:${s.id}`,
+        type: "spof",
+        ...ratingFields({ rating, base: rating, badMonth: false, bottleneck: false }),
+        title: named ? `Only ${p.name} can do ${s.name}` : `Only one ${main ? roleName(main) : "person"} can do ${s.name}`,
+        evidence:
+          `Absence test: with ${named ? p.name : "them"} away for ${num(away, 1)} week${away === 1 ? "" : "s"}, ` +
+          `${pct(f.workLost)} of the work completed from then to the end of the run is lost, and the queues at their steps ` +
+          (f.recovered
+            ? `take ${num(f.recoveryWeeks, 0)} week${f.recoveryWeeks === 1 ? "" : "s"} to get back to normal`
+            : `are not back to normal within ${num(f.recoveryWeeks - 1, 0)} week${f.recoveryWeeks === 2 ? "" : "s"} of their return`) +
+          `.${f.clientDeadlineMissed ? ` A client deadline is missed: ${num(f.extraMissed)} more servicing tasks a run go unfinished.` : ""}` +
+          `${others.length ? ` They are also the only one for ${others.join(", ")}.` : ""} ` +
+          `Cut-offs: work lost ${resolved.cutoffs.map(pct).join(" / ")}; weeks to recover ${config.absence.recoveryCutoffs.join(" / ")}.`,
+        metrics: {
+          work_lost: f.workLost,
+          items_lost: f.itemsLost,
+          recovery_weeks: f.recoveryWeeks,
+          recovered: f.recovered ? 1 : 0,
+          weeks_away: away,
+          extra_missed_tasks: f.extraMissed,
+          absences_per_year: config.absence.perYear,
+          arrivals: result.steps[s.id]!.arrivals,
+          sole_steps: f.stepIds.length,
+        },
+        stepId: s.id,
+        roleId: roleOf(s),
+        personId: named ? f.personId : null,
+        fix: s.role ? hire(s.role) : null,
+      });
+    }
   }
 
   // --- Too slow overall (rule 13): end-to-end time against the process's target.

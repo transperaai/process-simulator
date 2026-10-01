@@ -164,6 +164,27 @@ describe("toEngineModel", () => {
     expect(r.steps[northbeamStepIds.audit]!.slaBreaches).toBeGreaterThan(0);
   });
 
+  it("maps the rules' step settings and the start step's time target, and leaves blank ones out", () => {
+    const b = northbeamBundle();
+    b.steps = b.steps.map((s) =>
+      s.id === northbeamStepIds.audit
+        ? { ...s, expected_wait_hours: 12, lost_per_day_waiting: 0.05, dropoff_benchmark: 0.3 }
+        : s.id === northbeamStepIds.start
+          ? { ...s, target_cycle_hours: 120 }
+          : s,
+    );
+    const model = toEngineModel(b, { startDate: START });
+    const steps = new Map(model.steps.map((s) => [s.id, s]));
+    expect(steps.get(northbeamStepIds.audit)).toMatchObject({ expectedWaitHours: 12, lostPerDayWaiting: 0.05, dropoffBenchmark: 0.3 });
+    expect(steps.get(northbeamStepIds.qualify)!).not.toHaveProperty("expectedWaitHours");
+    expect(steps.get(northbeamStepIds.qualify)!).not.toHaveProperty("lostPerDayWaiting");
+    expect(steps.get(northbeamStepIds.qualify)!).not.toHaveProperty("dropoffBenchmark");
+    expect(model.targetCycleHours).toBe(120);
+    expect(toEngineModel(northbeamBundle(), { startDate: START })).not.toHaveProperty("targetCycleHours");
+    // They rate the report; the simulation is the same.
+    expect(simulate(model, 3, 1).kpi).toEqual(simulate(toEngineModel(northbeamBundle(), { startDate: START }), 3, 1).kpi);
+  });
+
   it("maps entered current WIP, 0 included, and leaves unentered WIP out", () => {
     const b = northbeamBundle();
     b.steps = b.steps.map((s) =>

@@ -213,11 +213,11 @@ describe("single point of failure (rule 8, the absence test; see new-rules.test.
     const m = line(2, [{ id: "a", role: "solo", work: 18 }, { id: "b", role: "pair", work: 1 }], { solo: 1, pair: 2 });
     expect(absenceCandidates(m)).toEqual([{ personId: "solo#1", stepIds: ["a"] }]);
     const issues = runWithAbsence(m);
-    const issue = find(issues, "spof:person:solo#1")!;
+    const issue = find(issues, "spof:step:a")!;
     expect(issue.type).toBe("spof");
     expect(issue.title).toBe("Only one Role solo can do Step a");
     expect(issue.fix?.patch).toEqual([{ path: "roles.solo.headcount", op: "add", value: 1 }]);
-    expect(keys(issues).filter((k) => k.startsWith("spof"))).toEqual(["spof:person:solo#1"]);
+    expect(keys(issues).filter((k) => k.startsWith("spof"))).toEqual(["spof:step:a"]);
   });
 
   it("raises nothing without an absence test, however structural the single point is", () => {
@@ -230,7 +230,7 @@ describe("single point of failure (rule 8, the absence test; see new-rules.test.
       people: { ann: person(["r"], { name: "Ann", skills: ["a"] }), bob: person(["r"], { name: "Bob", skills: [] }) },
     });
     expect(absenceCandidates(m)).toEqual([{ personId: "ann", stepIds: ["a"] }]);
-    expect(find(runWithAbsence(m), "spof:person:ann")?.title).toBe("Only Ann can do Step a");
+    expect(find(runWithAbsence(m), "spof:step:a")?.title).toBe("Only Ann can do Step a");
   });
 
   it("ignores unstaffed steps", () => {
@@ -338,9 +338,9 @@ describe("Northbeam", () => {
     const m = northbeamModel();
     const issues = detectIssues(m, simulate(m, 30, 1), {}, { absence: absenceTest(m) });
     const strat = issues.filter((i) => i.type === "spof");
-    expect(strat.map((i) => i.key)).toEqual(["spof:person:strat#1"]);
-    expect(strat[0]!.title).toBe("One Strategist is the only one who can do 2 steps");
-    expect(strat[0]!.rating).toBe("risk");
+    expect(strat.map((i) => i.key)).toEqual(["spof:step:audit", "spof:step:kickoff"]);
+    expect(strat[0]!.title).toBe("Only one Strategist can do Audit & proposal");
+    expect(strat.map((i) => i.rating)).toEqual(["risk", "risk"]);
     expect(strat[0]!.fix?.name).toBe("Hire another Strategist");
     fixesApply(m, issues);
   });

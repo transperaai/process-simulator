@@ -128,8 +128,10 @@
     },
     "ratings": {
       "capacity:role:strat": { "rating": "risk", "base": "good", "badMonth": true, "bottleneck": true },
-      "spof:person:maya": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
-      "spof:person:rosa": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
+      "spof:step:audit": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
+      "spof:step:kickoff": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
+      "spof:step:report_fin": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
+      "spof:step:report_strat": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
       "rework:step:ppc": { "rating": "risk", "base": "bad", "badMonth": true, "bottleneck": false },
       "capacity:role:ppc": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },
       "wait:step:audit": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },

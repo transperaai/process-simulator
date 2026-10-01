@@ -154,7 +154,7 @@ describe("the absence test (rule 8)", () => {
     const person: AbsenceFinding = { personId: "solo#1", stepIds: ["a"], workLost: 0, itemsLost: 0, recoveryWeeks: 0, recovered: true, extraMissed: 0, clientDeadlineMissed: false };
     const rate = (over: Partial<AbsenceFinding>, config: RatingConfigInput = {}) => {
       const test: AbsenceTest = { reps: 10, seed: 1, weeksAway: 2, startWeek: 2, complete: true, people: [{ ...person, ...over }] };
-      return find(detectIssues(solo, simulate(solo, 6, 1), config, { absence: test }), "spof:person:solo#1")?.rating ?? "great";
+      return find(detectIssues(solo, simulate(solo, 6, 1), config, { absence: test }), "spof:step:a")?.rating ?? "great";
     };
 
     it("rates work lost: under 5% Great, 5-20% Bad, 20% or more Operational risk", () => {
@@ -181,7 +181,7 @@ describe("the absence test (rule 8)", () => {
 
     it("carries the numbers behind it and no escalation", () => {
       const test: AbsenceTest = { reps: 10, seed: 1, weeksAway: 2, startWeek: 2, complete: true, people: [{ ...person, workLost: 0.12, itemsLost: 3, recoveryWeeks: 3 }] };
-      const issue = find(detectIssues(solo, simulate(solo, 6, 1), {}, { absence: test }), "spof:person:solo#1")!;
+      const issue = find(detectIssues(solo, simulate(solo, 6, 1), {}, { absence: test }), "spof:step:a")!;
       expect(issue.metrics).toMatchObject({ work_lost: 0.12, items_lost: 3, recovery_weeks: 3, weeks_away: 2, absences_per_year: 2, recovered: 1 });
       expect(issue.escalation).toEqual({ base: "bad", badMonth: false, bottleneck: false });
       expect(issue.evidence).toContain("12% of the work");
@@ -205,7 +205,7 @@ describe("the absence test (rule 8)", () => {
       expect(maya.recovered).toBe(false);
       expect(maya.clientDeadlineMissed).toBe(true);
       const issues = detectIssues(m, simulate(m, 30, 1), {}, { absence: t });
-      expect(find(issues, "spof:person:maya")?.rating).toBe("risk");
+      expect(find(issues, "spof:step:audit")?.rating).toBe("risk");
     });
 
     it("is cheap enough to run beside the baseline: its own pass within the seeded target (250 ms)", () => {

@@ -9,6 +9,7 @@ import { detectBrokenScenarios, detectIssues } from "@transpera-flow/engine";
 import { perceptionGapDetections } from "@/lib/issues/perception";
 import { useIssues } from "@/lib/issues/use-issues";
 import { retiredSteps } from "@/lib/scenarios/broken";
+import { useAbsenceTest } from "@/lib/sim/absence";
 import { useSimulation } from "@/lib/sim/use-simulation";
 import { Card } from "@/components/ui/card";
 import { IssuesRegister, type Named } from "./issues-register";
@@ -42,9 +43,11 @@ export function IssuesPage({
   const broken = useMemo(() => (model ? detectBrokenScenarios(model, scenarios, retiredSteps(bundle)) : []), [model, scenarios, bundle]);
   // Perception gaps come from the steps' evidence, not the run (issue #21).
   const gaps = useMemo(() => perceptionGapDetections(bundle.steps), [bundle.steps]);
+  // The absence test runs in its own worker once the baseline is in (rule 8); until it returns, that rule raises nothing.
+  const absence = useAbsenceTest(model && result ? model : null, result?.seed ?? 1);
   const detected = useMemo(
-    () => (model && result ? [...broken, ...detectIssues(model, result), ...gaps] : model ? null : gaps),
-    [model, result, broken, gaps],
+    () => (model && result ? [...broken, ...detectIssues(model, result, {}, { absence }), ...gaps] : model ? null : gaps),
+    [model, result, absence, broken, gaps],
   );
   const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);
 

@@ -1488,8 +1488,11 @@ export type Database = {
           created_at: string
           created_by: string | null
           current_wip: number | null
+          dropoff_benchmark: number | null
+          expected_wait_hours: number | null
           id: string
           kind: string
+          lost_per_day_waiting: number | null
           name: string
           notes: string | null
           outcome: string | null
@@ -1502,6 +1505,7 @@ export type Database = {
           rework_to_step_id: string | null
           role_id: string | null
           sla_hours: number | null
+          target_cycle_hours: number | null
           tool: string | null
           updated_at: string
           wait_dist: string
@@ -1521,8 +1525,11 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           current_wip?: number | null
+          dropoff_benchmark?: number | null
+          expected_wait_hours?: number | null
           id?: string
           kind?: string
+          lost_per_day_waiting?: number | null
           name: string
           notes?: string | null
           outcome?: string | null
@@ -1535,6 +1542,7 @@ export type Database = {
           rework_to_step_id?: string | null
           role_id?: string | null
           sla_hours?: number | null
+          target_cycle_hours?: number | null
           tool?: string | null
           updated_at?: string
           wait_dist?: string
@@ -1554,8 +1562,11 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           current_wip?: number | null
+          dropoff_benchmark?: number | null
+          expected_wait_hours?: number | null
           id?: string
           kind?: string
+          lost_per_day_waiting?: number | null
           name?: string
           notes?: string | null
           outcome?: string | null
@@ -1568,6 +1579,7 @@ export type Database = {
           rework_to_step_id?: string | null
           role_id?: string | null
           sla_hours?: number | null
+          target_cycle_hours?: number | null
           tool?: string | null
           updated_at?: string
           wait_dist?: string

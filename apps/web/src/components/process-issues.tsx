@@ -8,6 +8,7 @@ import { detectBrokenScenarios, detectIssues, type EngineModel, type RetiredStep
 import { perceptionGapDetections } from "@/lib/issues/perception";
 import { entryView, promoteInput, registerEntries, stepBadges } from "@/lib/issues/register";
 import { useIssues } from "@/lib/issues/use-issues";
+import { useAbsenceTest } from "@/lib/sim/absence";
 import { IssuesRegister } from "./issues-register";
 import type { EditMode } from "./process-view";
 import { StepIssueBadges } from "./step-issue-badges";
@@ -62,7 +63,12 @@ export function useProcessIssues({
   const broken = useMemo(() => (model ? detectBrokenScenarios(model, scenarios, retired) : []), [model, scenarios, retired]);
   // Perception gaps from the steps' evidence (issue #21).
   const gaps = useMemo(() => perceptionGapDetections(bundle.steps), [bundle.steps]);
-  const detected = useMemo(() => (model && result ? [...broken, ...detectIssues(model, result), ...gaps] : null), [model, result, broken, gaps]);
+  // The absence test runs in its own worker once the baseline is in (rule 8); until it returns, that rule raises nothing.
+  const absence = useAbsenceTest(model && result ? model : null, result?.seed ?? 1);
+  const detected = useMemo(
+    () => (model && result ? [...broken, ...detectIssues(model, result, {}, { absence }), ...gaps] : null),
+    [model, result, absence, broken, gaps],
+  );
   const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);
 
   // A tracked broken-scenario issue resolves itself once its scenario is fixed (re-pointed or deleted).

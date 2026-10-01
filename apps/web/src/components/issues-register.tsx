@@ -5,9 +5,9 @@
 // filters. Detected issues are read-only and refresh on every run; tracking
 // one stores it (`source: promoted`) so later runs show it once, as tracked.
 
-import { useState, type FormEvent, type ReactNode } from "react";
-import type { IssueRow, IssueSource, IssueStatus, ScenarioRow } from "@transpera-flow/db";
-import { ISSUE_TYPES, RATING_LABELS, STORED_SEVERITIES, ratingOfStored, type DetectedIssue, type IssueType, type Rating, type StoredSeverity } from "@transpera-flow/engine";
+import { useState, type ReactNode } from "react";
+import type { IssueRow, IssueSource, ScenarioRow } from "@transpera-flow/db";
+import { ISSUE_TYPES, RATING_LABELS, type DetectedIssue, type Rating } from "@transpera-flow/engine";
 import type { Saver } from "@/lib/fields/field-controller";
 import {
   NO_FILTERS,
@@ -20,28 +20,26 @@ import {
   filterEntries,
   fixFor,
   formatIssueCost,
+  issueLabel,
   registerEntries,
   type IssueFilters,
   type RegisterEntry,
 } from "@/lib/issues/register";
 import type { IssuesState } from "@/lib/issues/use-issues";
-import { ISSUE_STATUSES, MAX_EVIDENCE, MAX_TITLE, type IssueField } from "@/lib/issues/validate";
+import { ISSUE_STATUSES, type IssueField } from "@/lib/issues/validate";
+import { draftFromIssue, emptyDraft, toSaveInput, type IssueDraft, type IssueFormOptions } from "@/lib/issues/draft";
 import { buttonVariants } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import { Textarea } from "@/components/ui/textarea";
+import { AcknowledgeDialog } from "./acknowledge-dialog";
 import { SelectField, TextField, type SelectOption } from "./fields";
 import { HelpLabel } from "./help";
 
 
 /** Plain-English (i) text for the issue fields and filters, with an example (issue #123). */
 const ISSUE_HELP = {
-  title: { description: "A short sentence saying what is wrong.", example: "Proposals wait too long for review." },
-  status: { description: "Where this issue is: new, being worked on, or dealt with.", example: "Open means someone still needs to look at it." },
+  status: { description: "Where this issue is: still open, having a solution tested, resolved, or one you have decided not to fix.", example: "Testing solutions means a change is being tried in a copy of the process." },
   rating: { description: "How serious it is: Great, Good, Bad, or Operational risk (could break delivery or lose clients).", example: "Operational risk for a step only one person can do." },
   type: { description: "What kind of problem it is.", example: "Manual means you wrote it yourself; detected ones come from the simulation." },
-  owner: { description: "The person who will sort it out.", example: "Maya, if she runs the strategist review." },
-  step: { description: "The step of the process where the problem shows up.", example: "Audit & proposal." },
   person: { description: "The person it affects, if it is about one person.", example: "Maya Collins, when she is too busy." },
   fix: { description: "A saved scenario that tries a fix for this issue, so you can see if it helps.", example: "Hire a strategist." },
   evidence: { description: "What you saw or heard, and where, so others can trust it.", example: "Rosa said in the 3 Oct interview that reviews take 2 days." },
@@ -71,13 +69,11 @@ const RATING_CHIP: Record<Rating, string> = {
 
 const chip = "rounded-full border border-border px-2 py-px text-xs whitespace-nowrap";
 const button = buttonVariants({ variant: "outline", size: "xs" });
-const primary = buttonVariants({ size: "xs" });
 
 const options = (list: readonly Named[]): SelectOption[] => list.map((x) => ({ value: x.id, label: x.name }));
 const typeOptions = ISSUE_TYPES.map((t) => ({ value: t, label: TYPE_LABELS[t] }));
-// Filters pick a rating. Stored issues keep the database's four values, so the edit and log forms send those, labelled with the rating each stands for.
+// Filters pick a rating. The Acknowledge dialog (components/acknowledge-dialog.tsx) edits an issue's title, rating, scope, owners, target and sources.
 const ratingOptions = RATINGS_WORST_FIRST.map((r) => ({ value: r, label: RATING_LABELS[r] }));
-const storedRatingOptions = STORED_SEVERITIES.map((s) => ({ value: s, label: RATING_LABELS[ratingOfStored(s)] }));
 const statusOptions = ISSUE_STATUSES.map((s) => ({ value: s, label: STATUS_LABELS[s] }));
 
 export function IssuesRegister({
@@ -91,6 +87,7 @@ export function IssuesRegister({
   processes,
   steps,
   people,
+  options: formOptions,
   scenarios,
   brokenScenarios = NONE,
   canEdit,
@@ -120,6 +117,8 @@ export function IssuesRegister({
   processes: Named[];
   steps: Named[];
   people: Named[];
+  /** What the Acknowledge dialog offers to pick (New issue and Edit): processes, steps with their process, people and sources. */
+  options: IssueFormOptions;
   scenarios: ScenarioRow[];
   /** Ids of saved scenarios that need attention: issues whose fix is one say so (issue #16). */
   brokenScenarios?: ReadonlySet<string>;
@@ -131,9 +130,10 @@ export function IssuesRegister({
   onHighlight?: (stepId: string | null) => void;
 }) {
   const [filters, setFilters] = useState<IssueFilters>(NO_FILTERS);
-  const [logging, setLogging] = useState(false);
+  // The Acknowledge dialog, for "+ New issue" and for Edit.
+  const [dialog, setDialog] = useState<{ mode: "new" | "edit"; draft: IssueDraft; number?: number | null } | null>(null);
   const sectioned = view !== "all";
-  const all = registerEntries(state.issues, detected ?? []).filter((e) => !sectioned || e.kind === (view === "insights" ? "detected" : "tracked"));
+  const all = registerEntries(state.issues, detected ?? [], state.revisionOf).filter((e) => !sectioned || e.kind === (view === "insights" ? "detected" : "tracked"));
   const entries = sectioned && stepIds ? entriesInProcess(all, processId, stepIds) : all;
   const shown = filterEntries(entries, { ...filters, step: stepFilter, ...(sectioned ? { process: processId } : {}) }, processId);
   const active = entries.filter((e) => entryView(e).open);
@@ -224,25 +224,11 @@ export function IssuesRegister({
         </p>
       )}
 
-      {canEdit && view !== "insights" &&
-        (logging ? (
-          <LogIssueForm
-            steps={steps}
-            people={people}
-            scenarios={scenarios}
-            processId={processId}
-            defaultStep={stepFilter}
-            busy={state.busy}
-            onCancel={() => setLogging(false)}
-            onSubmit={async (input) => {
-              if (await state.create(input)) setLogging(false);
-            }}
-          />
-        ) : (
-          <button type="button" className={`${button} self-start`} onClick={() => setLogging(true)}>
-            {view === "issues" ? "+ New issue" : "+ Log an issue"}
-          </button>
-        ))}
+      {canEdit && view !== "insights" && (
+        <button type="button" className={`${button} self-start`} onClick={() => setDialog({ mode: "new", draft: emptyDraft(processId, stepFilter) })}>
+          + New issue
+        </button>
+      )}
 
       {shown.length === 0 ? (
         <p className="rounded-lg border border-dashed border-line p-3 text-xs text-fg-2">
@@ -259,7 +245,6 @@ export function IssuesRegister({
               key={entryView(e).id}
               entry={e}
               names={names}
-              steps={steps}
               people={people}
               scenarios={scenarios}
               brokenScenarios={brokenScenarios}
@@ -268,10 +253,23 @@ export function IssuesRegister({
               state={state}
               showProcess={processes.length > 1}
               onHighlight={onHighlight}
+              onEdit={(issue) => setDialog({ mode: "edit", draft: draftFromIssue(issue), number: issue.number })}
             />
           ))}
         </ul>
       )}
+
+      <AcknowledgeDialog
+        open={dialog !== null}
+        mode={dialog?.mode ?? "new"}
+        draft={dialog?.draft ?? emptyDraft(processId)}
+        issueNumber={dialog?.number}
+        options={formOptions}
+        busy={state.busy}
+        error={state.error}
+        onClose={() => setDialog(null)}
+        onSubmit={(draft) => state.save(toSaveInput(draft, formOptions))}
+      />
     </section>
   );
 }
@@ -279,7 +277,6 @@ export function IssuesRegister({
 function IssueItem({
   entry,
   names,
-  steps,
   people,
   scenarios,
   brokenScenarios,
@@ -288,11 +285,11 @@ function IssueItem({
   state,
   showProcess,
   onHighlight,
+  onEdit,
 }: {
   currency: string;
   entry: RegisterEntry;
   names: { step: Map<string, string>; person: Map<string, string>; process: Map<string, string> };
-  steps: Named[];
   people: Named[];
   scenarios: ScenarioRow[];
   brokenScenarios: ReadonlySet<string>;
@@ -300,6 +297,8 @@ function IssueItem({
   state: IssuesState;
   showProcess: boolean;
   onHighlight?: (stepId: string | null) => void;
+  /** Opens the Acknowledge dialog on this issue. */
+  onEdit: (issue: IssueRow) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -309,6 +308,11 @@ function IssueItem({
   const fixBroken = Boolean(fix?.scenarioId && brokenScenarios.has(fix.scenarioId));
   const issue = entry.kind === "tracked" ? entry.issue : null;
   const meta: ReactNode[] = [
+    issue?.number != null ? (
+      <span key="number" className={`${chip} font-mono`} data-issue-number>
+        {issueLabel(issue)}
+      </span>
+    ) : null,
     <span key="source" className={`${chip} ${entry.kind === "detected" ? "border-accent" : ""}`}>
       {SOURCE_LABELS[v.source]}
     </span>,
@@ -327,11 +331,19 @@ function IssueItem({
       </span>,
     );
   }
+  const owners = issue ? (issue.owner_ids.length ? issue.owner_ids : issue.owner_person_id ? [issue.owner_person_id] : []) : [];
+  const touches = v.stepIds.length
+    ? v.stepIds.map((id) => names.step.get(id) ?? "a removed step").join(", ")
+    : issue && v.processIds.length
+      ? "The whole process"
+      : null;
+  const target = issue?.target_measure ? `Target: ${issue.target_measure}${issue.target_now ? `, now ${issue.target_now}` : ""}${issue.target_goal ? `, goal ${issue.target_goal}` : ""}` : null;
   const where = [
     showProcess && v.processId ? names.process.get(v.processId) : null,
-    v.stepId ? names.step.get(v.stepId) ?? "a removed step" : null,
+    touches,
     v.personId ? names.person.get(v.personId) : null,
-    issue?.owner_person_id ? `owner ${names.person.get(issue.owner_person_id) ?? "someone who left"}` : null,
+    owners.length ? `${owners.length > 1 ? "owners" : "owner"} ${owners.map((id) => names.person.get(id) ?? "someone who left").join(", ")}` : null,
+    target,
   ].filter(Boolean);
 
   return (
@@ -358,9 +370,14 @@ function IssueItem({
         {meta}
         <span className="ml-auto flex flex-wrap gap-1">
           {issue && canEdit && (
-            <button type="button" className={button} aria-expanded={editing} onClick={() => setEditing((x) => !x)}>
-              {editing ? "Done editing" : "Edit"}
-            </button>
+            <>
+              <button type="button" className={button} onClick={() => onEdit(issue)}>
+                Edit
+              </button>
+              <button type="button" className={button} aria-expanded={editing} onClick={() => setEditing((x) => !x)}>
+                {editing ? "Hide details" : "Status and details"}
+              </button>
+            </>
           )}
         </span>
       </div>
@@ -375,7 +392,7 @@ function IssueItem({
       )}
       {issue && editing && canEdit && (
         <div className="mt-2 grid gap-2 border-t border-line pt-2">
-          <IssueFields issue={issue} steps={steps} people={people} scenarios={scenarios} state={state} />
+          <IssueFields issue={issue} people={people} scenarios={scenarios} state={state} />
           {confirming ? (
             <p className="flex items-center gap-2 text-xs">
               Delete this issue?
@@ -405,13 +422,11 @@ function IssueItem({
 /** Every field of a tracked issue, each saved on its own (per-field saves). */
 function IssueFields({
   issue,
-  steps,
   people,
   scenarios,
   state,
 }: {
   issue: IssueRow;
-  steps: Named[];
   people: Named[];
   scenarios: ScenarioRow[];
   state: IssuesState;
@@ -419,13 +434,9 @@ function IssueFields({
   const save = (field: IssueField) => state.saver(issue.id, field) as Saver<string | null>;
   return (
     <>
-      <TextField label="Title" value={issue.title} save={save("title")} help={ISSUE_HELP.title} />
       <div className="grid grid-cols-2 gap-2">
         <SelectField label="Status" value={issue.status} save={save("status")} options={statusOptions} help={ISSUE_HELP.status} />
-        <SelectField label="Rating" value={issue.severity} save={save("severity")} options={storedRatingOptions} help={ISSUE_HELP.rating} />
         <SelectField label="Type" value={issue.type} save={save("type")} options={typeOptions} help={ISSUE_HELP.type} />
-        <SelectField label="Owner" value={issue.owner_person_id} save={save("owner_person_id")} options={options(people)} noneLabel="No owner" help={ISSUE_HELP.owner} />
-        <SelectField label="Step" value={issue.step_id} save={save("step_id")} options={options(steps)} noneLabel="No step" help={ISSUE_HELP.step} />
         <SelectField label="Person" value={issue.person_id} save={save("person_id")} options={options(people)} noneLabel="Nobody" help={ISSUE_HELP.person} />
       </div>
       <SelectField
@@ -438,94 +449,5 @@ function IssueFields({
               />
       <TextField label="Evidence" value={issue.evidence} save={save("evidence")} optional multiline help={ISSUE_HELP.evidence} />
     </>
-  );
-}
-
-function LogIssueForm({
-  steps,
-  people,
-  scenarios,
-  processId,
-  defaultStep,
-  busy,
-  onCancel,
-  onSubmit,
-}: {
-  steps: Named[];
-  people: Named[];
-  scenarios: ScenarioRow[];
-  processId: string;
-  defaultStep: string;
-  busy: boolean;
-  onCancel: () => void;
-  onSubmit: (input: Parameters<IssuesState["create"]>[0]) => Promise<void>;
-}) {
-  const [error, setError] = useState<string | null>(null);
-  const submit = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const f = new FormData(e.currentTarget);
-    const get = (k: string) => String(f.get(k) ?? "");
-    const title = get("title").trim();
-    if (!title) return setError("Give the issue a title.");
-    setError(null);
-    void onSubmit({
-      title,
-      type: get("type") as IssueType,
-      severity: get("severity") as StoredSeverity,
-      status: "open" as IssueStatus,
-      evidence: get("evidence").trim() || null,
-      process_id: processId,
-      step_id: get("step_id") || null,
-      role_id: null,
-      person_id: get("person_id") || null,
-      owner_person_id: get("owner_person_id") || null,
-      scenario_id: get("scenario_id") || null,
-    });
-  };
-  const select = (name: string, label: string, opts: SelectOption[], help: { description: string; example: string }, none?: string, value?: string) => (
-    <label className="flex min-w-0 flex-col gap-0.5">
-      <HelpLabel label={label} {...help} />
-      <NativeSelect name={name} defaultValue={value ?? ""}>
-        {none !== undefined && <option value="">{none}</option>}
-        {opts.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </NativeSelect>
-    </label>
-  );
-  return (
-    <form onSubmit={submit} aria-label="Log an issue" className="grid gap-2 rounded-lg border border-line bg-panel-2 p-2">
-      <label className="flex flex-col gap-0.5">
-        <HelpLabel label="Title" {...ISSUE_HELP.title} />
-        <Input name="title" required maxLength={MAX_TITLE} placeholder="What's wrong, in a sentence" />
-      </label>
-      <div className="grid grid-cols-2 gap-2">
-        {select("type", "Type", typeOptions, ISSUE_HELP.type, undefined, "manual")}
-        {select("severity", "Rating", storedRatingOptions, ISSUE_HELP.rating, undefined, "warning")}
-        {select("step_id", "Step", options(steps), ISSUE_HELP.step, "No step", defaultStep)}
-        {select("person_id", "Person", options(people), ISSUE_HELP.person, "Nobody")}
-        {select("owner_person_id", "Owner", options(people), ISSUE_HELP.owner, "No owner")}
-        {select("scenario_id", "Fix (scenario)", options(scenarios), ISSUE_HELP.fix, "None yet")}
-      </div>
-      <label className="flex flex-col gap-0.5">
-        <HelpLabel label="Evidence" {...ISSUE_HELP.evidence} />
-        <Textarea name="evidence" rows={2} maxLength={MAX_EVIDENCE} placeholder="What you saw or heard, and where" />
-      </label>
-      {error && (
-        <p role="alert" className="text-xs text-crit">
-          {error}
-        </p>
-      )}
-      <div className="flex gap-2">
-        <button type="submit" className={primary} disabled={busy}>
-          Log issue
-        </button>
-        <button type="button" className={button} onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
-    </form>
   );
 }

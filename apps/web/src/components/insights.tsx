@@ -10,13 +10,15 @@ import { ChevronRight, Sparkles } from "lucide-react";
 import type { DetectedIssue } from "@transpera-flow/engine";
 import type { IssueRow, ScenarioRow } from "@transpera-flow/db";
 import { RATING_LABELS, type Rating } from "@transpera-flow/engine";
+import { AcknowledgeDialog } from "@/components/acknowledge-dialog";
 import { Help } from "@/components/help";
 import { RatingPill } from "@/components/overview/rating-pill";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { entriesInProcess, formatIssueCost, registerEntries } from "@/lib/issues/register";
-import { acknowledgeInsight, dismissInsight, type InsightContext } from "@/lib/insights/actions";
+import { entriesInProcess, formatIssueCost, issueLabel, registerEntries } from "@/lib/issues/register";
+import { acknowledgeDraft, acknowledgeInsight, dismissInsight, type InsightContext } from "@/lib/insights/actions";
+import type { IssueDraft, IssueFormOptions } from "@/lib/issues/draft";
 import { buildInsights, filterByRating, ratingCountsOf, type Insight } from "@/lib/insights/insights";
 import type { IssuesState } from "@/lib/issues/use-issues";
 
@@ -55,23 +57,23 @@ export const INSIGHT_HELP = {
   },
   linkSource: {
     label: "Link a source",
-    description: "Attach an interview, note or document to this insight. It comes with the Acknowledge dialog (A47), so it is switched off for now.",
+    description: "Attach an interview, note or document to this insight. You do it in the Acknowledge dialog, as you turn the insight into an issue: the sources you pick stay with the issue.",
     example: "Link Maya's interview to “Strategist is too busy”.",
   },
   dismiss: {
     label: "Dismiss",
-    description: "Say this isn't a problem. It leaves the list and doesn't come back on later runs. It never reaches the map.",
-    example: "Dismiss “Spare time” on a person who is meant to have slack.",
+    description: "Say this isn't a problem. It leaves the list and stays away until the process's next published version: if the analysis still finds it then, it is listed again and you can dismiss it again. It never reaches the map.",
+    example: "Dismiss “Spare time” on a person who is meant to have slack. Publish a new version of the process and, if they still have slack, it comes back for another look.",
   },
   acknowledge: {
     label: "Acknowledge as issue",
-    description: "Make this a tracked issue the team owns, with a rating, an owner and a status. Only then does it show on the map as a badge.",
+    description: "Opens the Acknowledge dialog: confirm the title, how bad it is, what it touches, who owns it, a target and its sources. Saving makes it a tracked issue with a number. Only then does it show on the map as a badge.",
     example: "Acknowledge “Strategist is too busy”: it becomes an issue with a red badge on that step.",
   },
   issueLink: {
     label: "Issue number",
-    description: "This insight has been acknowledged and is now a tracked issue. The link opens it in the register.",
-    example: "“Strategist is too busy” is now an issue, owned by Maya.",
+    description: "This insight has been acknowledged and is now a tracked issue, with a number that stays the same. The link opens it in the register.",
+    example: "“Strategist is too busy” is now Issue #4, owned by Maya.",
   },
 } as const;
 
@@ -93,10 +95,14 @@ export interface InsightsProps {
   registerHref?: string;
   /** Whether the viewer may acknowledge or dismiss. */
   canAct: boolean;
-  /** Resolve to something falsy when the save failed, so the pop-up stays open. */
-  onAcknowledge: (insight: Insight) => Promise<unknown>;
+  /** Saves the Acknowledge dialog's draft. Resolve to something falsy when the save failed, so the dialog stays open. */
+  onAcknowledge: (insight: Insight, draft: IssueDraft) => Promise<unknown>;
+  /** The draft the Acknowledge dialog opens with for an insight: its rating, steps and sources. */
+  ackDraft: (insight: Insight) => IssueDraft;
+  /** What the Acknowledge dialog offers to pick: processes, steps, people and sources. */
+  formOptions: IssueFormOptions;
   onDismiss: (insight: Insight) => Promise<unknown>;
-  /** The sources linked to an insight. Linking one comes with A47, so there are none to show yet. */
+  /** The sources linked to an insight, if any are known before it is acknowledged. */
   linkedSources?: (insight: Insight) => { id: string; title: string }[];
   /** Show this many at first, with a button for the rest. */
   initialLimit?: number;
@@ -111,6 +117,7 @@ export function Insights(props: InsightsProps) {
   const { insights, currency, stepName, processName, onLight, registerHref, initialLimit, error, running } = props;
   const [rating, setRating] = useState<Rating | "">("");
   const [open, setOpen] = useState<string | null>(null);
+  const [acking, setAcking] = useState<string | null>(null);
   const [all, setAll] = useState(false);
   const counts = useMemo(() => ratingCountsOf(insights ?? []), [insights]);
 
@@ -130,6 +137,7 @@ export function Insights(props: InsightsProps) {
   const filtered = filterByRating(insights, rating);
   const shown = initialLimit && !all ? filtered.slice(0, initialLimit) : filtered;
   const opened = insights.find((i) => i.key === open) ?? null;
+  const ackFor = insights.find((i) => i.key === acking) ?? null;
 
   return (
     <div className="flex min-w-0 flex-col gap-3" data-insights>
@@ -192,10 +200,10 @@ export function Insights(props: InsightsProps) {
                   {i.issue &&
                     (link ? (
                       <Link href={link} className="rounded-md border px-2 py-0.5 font-medium text-foreground hover:bg-muted" data-issue-link>
-                        Issue →
+                        {issueLabel(i.issue)} →
                       </Link>
                     ) : (
-                      <span className="font-medium text-foreground">Issue</span>
+                      <span className="font-medium text-foreground">{issueLabel(i.issue)}</span>
                     ))}
                   <ChevronRight aria-hidden className="size-4 transition-transform group-hover:translate-x-0.5" />
                 </span>
@@ -211,7 +219,27 @@ export function Insights(props: InsightsProps) {
         </Button>
       )}
 
-      <InsightDialog insight={opened} onClose={() => setOpen(null)} {...props} stepName={stepName} />
+      <InsightDialog
+        insight={opened}
+        onClose={() => setOpen(null)}
+        onStartAcknowledge={(i) => {
+          setOpen(null);
+          setAcking(i.key);
+        }}
+        {...props}
+        stepName={stepName}
+      />
+      <AcknowledgeDialog
+        open={!!ackFor}
+        mode="acknowledge"
+        draft={ackFor ? props.ackDraft(ackFor) : EMPTY_DRAFT}
+        fromTitle={ackFor?.title}
+        options={props.formOptions}
+        busy={props.busy}
+        error={error}
+        onSubmit={(draft) => (ackFor ? props.onAcknowledge(ackFor, draft) : Promise.resolve(false))}
+        onClose={() => setAcking(null)}
+      />
     </div>
   );
 }
@@ -242,20 +270,22 @@ function SourceTag({ insight }: { insight: Insight }) {
   );
 }
 
+const EMPTY_DRAFT: IssueDraft = { title: "", rating: "bad", processId: null, scope: "steps", stepIds: [], ownerIds: [], targetMeasure: "", targetNow: "", targetGoal: "", sourceIds: [] };
+
 function InsightDialog({
   insight,
   onClose,
+  onStartAcknowledge,
   stepName,
   currency,
   rulesHref,
   registerHref,
   canAct,
-  onAcknowledge,
   onDismiss,
   linkedSources,
   busy,
   error,
-}: InsightsProps & { insight: Insight | null; onClose: () => void }) {
+}: InsightsProps & { insight: Insight | null; onClose: () => void; onStartAcknowledge: (insight: Insight) => void }) {
   const [working, setWorking] = useState(false);
   const act = async (run: (i: Insight) => Promise<unknown>) => {
     if (!insight) return;
@@ -351,7 +381,7 @@ function InsightDialog({
                   <Help {...INSIGHT_HELP.sources} />
                 </span>
                 <span className="flex items-center">
-                  <Button variant="ghost" size="sm" disabled title="Comes with A47">
+                  <Button variant="ghost" size="sm" disabled={insight.issue !== null || !canAct} onClick={() => onStartAcknowledge(insight)}>
                     + Link a source
                   </Button>
                   <Help {...INSIGHT_HELP.linkSource} />
@@ -378,10 +408,10 @@ function InsightDialog({
                 <span className="flex items-center">
                   {link ? (
                     <Button asChild>
-                      <Link href={link}>Issue →</Link>
+                      <Link href={link}>{issueLabel(insight.issue)} →</Link>
                     </Button>
                   ) : (
-                    <span className="text-sm font-medium">Issue</span>
+                    <span className="text-sm font-medium">{issueLabel(insight.issue)}</span>
                   )}
                   <Help {...INSIGHT_HELP.issueLink} />
                 </span>
@@ -394,7 +424,7 @@ function InsightDialog({
                     <Help {...INSIGHT_HELP.dismiss} />
                   </span>
                   <span className="flex items-center">
-                    <Button disabled={working || busy} onClick={() => act(onAcknowledge)}>
+                    <Button disabled={working || busy} onClick={() => onStartAcknowledge(insight)}>
                       Acknowledge as issue…
                     </Button>
                     <Help {...INSIGHT_HELP.acknowledge} />
@@ -422,7 +452,7 @@ export function InsightsSection({
   processOfStep,
   canEdit,
   ...rest
-}: Omit<InsightsProps, "insights" | "onAcknowledge" | "onDismiss" | "busy" | "error" | "canAct"> & {
+}: Omit<InsightsProps, "insights" | "onAcknowledge" | "onDismiss" | "busy" | "error" | "canAct" | "ackDraft"> & {
   state: IssuesState;
   /** This run's detections; null until the first run finishes. */
   detected: DetectedIssue[] | null;
@@ -436,10 +466,10 @@ export function InsightsSection({
 }) {
   const insights = useMemo(() => {
     if (detected === null) return null;
-    const entries = registerEntries(state.issues, detected);
+    const entries = registerEntries(state.issues, detected, state.revisionOf);
     return buildInsights(stepIds ? entriesInProcess(entries, processId, stepIds) : entries);
-  }, [detected, state.issues, stepIds, processId]);
-  const ctx: InsightContext = { processId, processOfStep, scenarios };
+  }, [detected, state.issues, state.revisionOf, stepIds, processId]);
+  const ctx: InsightContext = { processId, processOfStep, scenarios, options: rest.formOptions };
   return (
     <Insights
       {...rest}
@@ -448,7 +478,8 @@ export function InsightsSection({
       canAct={canEdit}
       busy={state.busy}
       error={state.error}
-      onAcknowledge={(i) => acknowledgeInsight(state, i, ctx)}
+      ackDraft={(i) => acknowledgeDraft(i, ctx)}
+      onAcknowledge={(i, draft) => acknowledgeInsight(state, i, ctx, draft)}
       onDismiss={(i) => dismissInsight(state, i, ctx)}
     />
   );

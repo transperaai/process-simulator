@@ -15,7 +15,7 @@ const proc = (id: string, parentId: string | null = null, over: Partial<ProcessF
   ...over,
 });
 const step = (id: string, process_id: string, kind: "task" | "start" | "end" | "group" | "wait" = "task", child_process_id: string | null = null) => ({ id, process_id, kind, child_process_id });
-const issue = (process_id: string | null, severity: "info" | "warning" | "serious" | "critical", status: "open" | "in_progress" | "done" | "dismissed" = "open", step_id: string | null = null) => ({
+const issue = (process_id: string | null, severity: "info" | "warning" | "serious" | "critical", status: "open" | "testing" | "resolved" | "dismissed" = "open", step_id: string | null = null) => ({
   process_id,
   step_id,
   severity,
@@ -58,7 +58,7 @@ describe("processRows", () => {
     const rows = processRows({
       processes,
       steps: [],
-      issues: [issue("c", "warning"), issue("b", "serious"), issue("b", "critical", "done"), issue("a", "info"), issue("d", "info"), issue("d", "serious", "dismissed")],
+      issues: [issue("c", "warning"), issue("b", "serious"), issue("b", "critical", "resolved"), issue("a", "info"), issue("d", "info"), issue("d", "serious", "dismissed")],
       versions: new Map(),
     });
     const r = (id: string) => rows.find((x) => x.id === id)!;
@@ -69,7 +69,7 @@ describe("processRows", () => {
   });
 
   it("places an issue with no process by its step", () => {
-    const rows = processRows({ processes, steps: [step("s1", "c")], issues: [issue(null, "critical", "in_progress", "s1")], versions: new Map() });
+    const rows = processRows({ processes, steps: [step("s1", "c")], issues: [issue(null, "critical", "testing", "s1")], versions: new Map() });
     expect(rows.find((r) => r.id === "a")).toMatchObject({ openIssues: 1, rating: "risk" });
   });
 

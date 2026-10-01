@@ -31,6 +31,8 @@ export interface Insight {
   detection: Detection;
   /** The tracked issue it became, if acknowledged. */
   issue: IssueRow | null;
+  /** The row of an earlier dismissal that has expired (the process was published again): acknowledging or dismissing reuses it. */
+  dismissed: IssueRow | null;
 }
 
 /** Why a finding of each type matters, in plain words (the detection itself carries the numbers). */
@@ -89,6 +91,7 @@ export function buildInsights(entries: readonly RegisterEntry[]): Insight[] {
       source: sourceOf(d),
       detection: d,
       issue,
+      dismissed: e.kind === "detected" ? (e.dismissed ?? null) : null,
     });
   }
   const none = noCost("");

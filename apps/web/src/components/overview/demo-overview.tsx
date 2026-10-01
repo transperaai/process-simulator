@@ -1,6 +1,6 @@
 import { northbeamIssues, partOf, processesOf } from "@transpera-flow/db";
 import { Overview } from "@/components/overview/overview";
-import { demoBundle } from "@/lib/sources/demo";
+import { demoBundle, demoSources } from "@/lib/sources/demo";
 
 /** The Overview of the Northbeam demo (issue #100): the landing page of `/demo`, also at `/demo/overview`. No database. */
 export function DemoOverview() {
@@ -13,6 +13,7 @@ export function DemoOverview() {
       live={live}
       parts={parts}
       issues={northbeamIssues()}
+      sources={demoSources()}
       mode="demo"
       hrefs={hrefs}
       processesHref="/demo/processes"

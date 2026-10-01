@@ -42,6 +42,7 @@ export async function WorkspaceProcessPage({ slug, processId, version }: { slug:
       scenarios={scenarios}
       issues={issues}
       sources={sources}
+      liveRevisions={isUnpublished(live) ? {} : { [live.process.id]: live.revision.id }}
       analysisRules={rules.settings}
       hiddenLevers={levers.hidden}
       registerHref={`${base}/issues`}

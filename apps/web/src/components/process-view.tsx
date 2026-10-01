@@ -88,6 +88,7 @@ export function ProcessView({
   userId = null,
   viewer = null,
   sources = [],
+  liveRevisions,
   analysisRules,
   hiddenLevers,
   processPicker,
@@ -111,6 +112,8 @@ export function ProcessView({
   viewer?: Viewer | null;
   /** The workspace's sources, which values cite as evidence (issue #21). */
   sources?: SourceRow[];
+  /** Each process's live revision id, which a dismissed insight is measured against. Omitted: this bundle's own. */
+  liveRevisions?: Record<string, string>;
   /** The workspace's analysis rules, which rate the run (Settings → Analysis rules). Omitted: the defaults. */
   analysisRules?: AnalysisSettings;
   /** The lever kinds the workspace has switched off in Settings -> Levers (the demo keeps its own in the tab). */
@@ -354,6 +357,8 @@ export function ProcessView({
     registerHref,
     retired,
     analysisRules,
+    sources,
+    liveRevisions: liveRevisions ?? { [bundle.process.id]: bundle.revision.id },
     onShowIssues: () => {
       setPanelOpen(true);
       setPanelTab("insights");

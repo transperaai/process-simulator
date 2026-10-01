@@ -3,7 +3,7 @@
 // Issues on the process page (issue #17): the Issues tab in the map's Insights panel, badges on the steps, Kept out of process-view.tsx so that file only wires it in.
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { IssueRow, ProcessBundle, ScenarioRow } from "@transpera-flow/db";
+import type { IssueRow, ProcessBundle, ScenarioRow, SourceRow } from "@transpera-flow/db";
 import { detectBrokenScenarios, resolveMoney, type AnalysisSettings, type EngineModel, type RetiredSteps, type SimulationResult } from "@transpera-flow/engine";
 import { processStepIds, processSteps } from "@/lib/process-steps";
 import { perceptionGapDetections } from "@/lib/issues/perception";
@@ -12,6 +12,7 @@ import { useDetectedIssues } from "@/lib/issues/use-detected";
 import { useRatingSettings } from "@/lib/rules/use-rating-settings";
 import { entryView, mapFeed, promoteInput, registerEntries, stepRatingOf } from "@/lib/issues/register";
 import { useIssues } from "@/lib/issues/use-issues";
+import { issueFormOptions } from "@/lib/issues/draft";
 import { useAbsenceTest } from "@/lib/sim/absence";
 import { IssuesRegister } from "./issues-register";
 import { InsightsSection } from "./insights";
@@ -45,6 +46,7 @@ export interface ProcessIssues {
 }
 
 const NO_RETIRED: RetiredSteps = {};
+const NO_SOURCES: SourceRow[] = [];
 
 export function useProcessIssues({
   bundle,
@@ -59,6 +61,8 @@ export function useProcessIssues({
   retired = NO_RETIRED,
   analysisRules,
   onShowIssues,
+  sources = NO_SOURCES,
+  liveRevisions,
 }: {
   bundle: ProcessBundle;
   model: EngineModel | null;
@@ -77,8 +81,12 @@ export function useProcessIssues({
   analysisRules?: AnalysisSettings;
   /** A step's issue badge was clicked: the caller opens the panel the Issues tab is in. */
   onShowIssues?: () => void;
+  /** The workspace's sources, which the Acknowledge dialog can link to an issue. */
+  sources?: SourceRow[];
+  /** Each process's live revision id: a dismissed insight stays away until its process is published again. */
+  liveRevisions?: Record<string, string>;
 }): ProcessIssues {
-  const state = useIssues(bundle.workspace.id, initialIssues, mode);
+  const state = useIssues(bundle.workspace.id, initialIssues, mode, liveRevisions);
   const [scenarios, setScenarios] = useState(initialScenarios);
   const [tab, setTab] = useState<"utilisation" | "issues">("utilisation");
   const [stepFilter, setStepFilter] = useState("");
@@ -120,10 +128,15 @@ export function useProcessIssues({
       void promote(promoteInput(g, bundle.process.id, scenarios));
     }
   }, [mode, gaps, tracked, promote, bundle.process.id, scenarios]);
-  const entries = useMemo(() => registerEntries(state.issues, detected ?? []), [state.issues, detected]);
+  const entries = useMemo(() => registerEntries(state.issues, detected ?? [], state.revisionOf), [state.issues, state.revisionOf, detected]);
   // Issues on this process, or on none in particular.
   const here = useMemo(
-    () => entries.filter((e) => e.kind === "detected" || !e.issue.process_id || e.issue.process_id === bundle.process.id),
+    () =>
+      entries.filter((e) => {
+        if (e.kind === "detected") return true;
+        const { processIds } = entryView(e);
+        return processIds.length === 0 || processIds.includes(bundle.process.id);
+      }),
     [entries, bundle.process.id],
   );
   // Nothing reaches the map until it is acknowledged (D24): badges count, and colours come from, confirmed issues only.
@@ -133,10 +146,12 @@ export function useProcessIssues({
     const out = new Map<string, StepExtras>();
     for (const e of here) {
       const v = entryView(e);
-      if (!v.open || !v.stepId) continue;
-      const x = out.get(v.stepId) ?? { insights: [], issues: [] };
-      (e.kind === "tracked" ? x.issues : x.insights).push(v.title);
-      out.set(v.stepId, x);
+      if (!v.open) continue;
+      for (const stepId of v.stepIds) {
+        const x = out.get(stepId) ?? { insights: [], issues: [] };
+        (e.kind === "tracked" ? x.issues : x.insights).push(v.title);
+        out.set(stepId, x);
+      }
     }
     return out;
   }, [here]);
@@ -150,6 +165,16 @@ export function useProcessIssues({
     [bundle],
   );
   const people = bundle.people.filter((p) => p.active).map((p) => ({ id: p.id, name: p.name }));
+  const formOptions = useMemo(
+    () =>
+      issueFormOptions({
+        processes: [{ id: bundle.process.id, name: bundle.process.name }],
+        steps: processSteps(bundle),
+        people: bundle.people.filter((p) => p.active),
+        sources,
+      }),
+    [bundle, sources],
+  );
 
   const stepNames = useMemo(() => new Map(processSteps(bundle).map((s) => [s.id, s.name])), [bundle]);
 
@@ -165,6 +190,7 @@ export function useProcessIssues({
       processes={[{ id: bundle.process.id, name: bundle.process.name }]}
       steps={steps}
       people={people}
+      options={formOptions}
       scenarios={scenarios}
       brokenScenarios={brokenScenarios}
       canEdit={mode !== "readonly"}
@@ -183,6 +209,7 @@ export function useProcessIssues({
       processId={bundle.process.id}
       stepIds={stepIds}
       scenarios={scenarios}
+      formOptions={formOptions}
       currency={bundle.workspace.settings.currency}
       stepName={(id) => stepNames.get(id) ?? null}
       onLight={setLit}
@@ -229,6 +256,7 @@ export function useProcessIssues({
               processes={[{ id: bundle.process.id, name: bundle.process.name }]}
               steps={steps}
               people={people}
+              options={formOptions}
               scenarios={scenarios}
               brokenScenarios={brokenScenarios}
               canEdit={mode !== "readonly"}

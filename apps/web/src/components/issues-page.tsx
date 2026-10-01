@@ -4,7 +4,8 @@
 // a fresh run of the live process detects (in a worker, as on the process
 // page).
 import { useMemo, useState } from "react";
-import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow } from "@transpera-flow/db";
+import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow, type SourceRow } from "@transpera-flow/db";
+import { issueFormOptions } from "@/lib/issues/draft";
 import { detectBrokenScenarios, resolveMoney, type AnalysisSettings } from "@transpera-flow/engine";
 import { perceptionGapDetections } from "@/lib/issues/perception";
 import { visibleFindings } from "@/lib/rules/edit";
@@ -22,6 +23,8 @@ export function IssuesPage({
   issues,
   scenarios,
   processes,
+  sources = [],
+  liveRevisions,
   mode,
   analysisRules,
 }: {
@@ -29,11 +32,15 @@ export function IssuesPage({
   issues: IssueRow[];
   scenarios: ScenarioRow[];
   processes: Named[];
+  /** The workspace's sources, which the Acknowledge dialog can link to an issue. */
+  sources?: SourceRow[];
+  /** Each process's live revision id: a dismissed insight stays away until its process is published again. */
+  liveRevisions?: Record<string, string>;
   mode: "live" | "demo" | "readonly";
   /** The workspace's analysis rules (Settings → Analysis rules); omitted means the defaults. On the demo, the ones edited in this tab. */
   analysisRules?: AnalysisSettings;
 }) {
-  const state = useIssues(bundle.workspace.id, issues, mode);
+  const state = useIssues(bundle.workspace.id, issues, mode, liveRevisions ?? { [bundle.process.id]: bundle.revision.id });
   const [stepFilter, setStepFilter] = useState("");
   const model = useMemo(() => {
     try {
@@ -60,6 +67,17 @@ export function IssuesPage({
   );
   const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);
 
+  const options = useMemo(
+    () =>
+      issueFormOptions({
+        processes,
+        steps: [...bundle.steps, ...(bundle.otherProcesses ?? []).flatMap((p) => p.steps)],
+        people: bundle.people.filter((p) => p.active),
+        sources,
+      }),
+    [processes, bundle, sources],
+  );
+
   return (
     <Card className="px-4">
       <IssuesRegister
@@ -71,6 +89,7 @@ export function IssuesPage({
         processes={processes}
         steps={bundle.steps.filter((s) => s.kind !== "start" && s.kind !== "end").map((s) => ({ id: s.id, name: s.name }))}
         people={bundle.people.filter((p) => p.active).map((p) => ({ id: p.id, name: p.name }))}
+        options={options}
         scenarios={scenarios}
         brokenScenarios={brokenScenarios}
         canEdit={mode !== "readonly"}

@@ -51,6 +51,8 @@ export interface PromoteInput extends Links {
   client_id?: string | null;
   /** Tracked as dismissed in one write (an insight someone dismissed); omitted means open. */
   status?: "open" | "dismissed";
+  /** With `dismissed`: the live revision of the process it was dismissed against; the dismissal lasts until that changes. */
+  dismissed_revision_id?: string | null;
 }
 
 const object = (input: unknown): Record<string, unknown> | null =>
@@ -214,7 +216,7 @@ export function parsePromoteInput(input: unknown): Parsed<PromoteInput> {
   ) {
     return { ok: false, error: "That detected issue isn't valid." };
   }
-  if (!optionalId(o.client_id)) return { ok: false, error: "That detected issue isn't valid." };
+  if (!optionalId(o.client_id) || !optionalId(o.dismissed_revision_id)) return { ok: false, error: "That detected issue isn't valid." };
   // A tracked detection starts open, or dismissed when that is what the person chose; nothing else.
   if (o.status !== undefined && o.status !== "open" && o.status !== "dismissed") return { ok: false, error: "That detected issue isn't valid." };
   const rest: Partial<IssueInput> = { ...base.value };
@@ -227,6 +229,7 @@ export function parsePromoteInput(input: unknown): Parsed<PromoteInput> {
       status: o.status === "dismissed" ? "dismissed" : "open",
       evidence_metrics: metrics as Record<string, number>,
       ...(o.client_id ? { client_id: o.client_id as string } : {}),
+      ...(o.status === "dismissed" && o.dismissed_revision_id ? { dismissed_revision_id: o.dismissed_revision_id as string } : {}),
     },
   };
 }

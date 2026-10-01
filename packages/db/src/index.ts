@@ -122,6 +122,7 @@ export {
   ISSUE_EVENT_COLUMNS,
   assembleIssues,
   loadIssue,
+  loadLiveRevisionIds,
   loadIssueEvents,
   saveIssue,
   type SaveIssueArgs,

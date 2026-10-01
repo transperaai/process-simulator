@@ -74,6 +74,21 @@ export function stepOptions(steps: readonly StepRow[], known: readonly Pick<Sour
     .map((s) => ({ id: s.id, name: s.name, processId: s.process_id, sourceIds: sourcesCitedBy(s).filter((id) => !real || real.has(id)) }));
 }
 
+/** What the Acknowledge dialog offers on a page, from the page's own data. */
+export function issueFormOptions(input: {
+  processes: readonly { id: string; name: string }[];
+  steps: readonly StepRow[];
+  people: readonly { id: string; name: string }[];
+  sources: readonly Pick<SourceRow, "id" | "title">[];
+}): IssueFormOptions {
+  return {
+    processes: input.processes.map((p) => ({ id: p.id, name: p.name })),
+    steps: stepOptions(input.steps, input.sources),
+    people: input.people.map((p) => ({ id: p.id, name: p.name })),
+    sources: input.sources.map((s) => ({ id: s.id, title: s.title })),
+  };
+}
+
 export function emptyDraft(processId: string | null, stepId = ""): IssueDraft {
   return {
     title: "",

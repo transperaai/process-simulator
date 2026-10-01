@@ -69,6 +69,7 @@ export async function promoteIssue(workspaceId: unknown, input: unknown): Promis
   const parsed = parsePromoteInput(input);
   if (!parsed.ok) return { status: "error", message: parsed.error };
   const { process_id, step_id, owner_person_id, evidence_metrics, ...rest } = parsed.value;
+  // `dismissed_revision_id` is in `rest`: a dismissal is written with the revision it was made against.
   return write(workspaceId, {
     fields: { ...rest, evidence_metrics: evidence_metrics as Json, source: "promoted", status: rest.status ?? "open" },
     links: linksOf({ process_id, step_id }),
@@ -105,6 +106,12 @@ export async function saveIssueFromDialog(workspaceId: unknown, input: unknown):
     }
   }
   return write(workspaceId, { id: v.id, fields, links: v.links, owners: v.owner_ids, sources: v.source_ids });
+}
+
+/** Dismiss an insight again: its row stays dismissed, against the process's current live revision. */
+export async function redismissIssue(workspaceId: unknown, id: unknown, revisionId: unknown): Promise<SaveIssueResult> {
+  if (!isId(workspaceId) || !isId(id) || !(revisionId === null || isId(revisionId))) return invalid;
+  return write(workspaceId, { id, fields: { status: "dismissed", dismissed_revision_id: revisionId } });
 }
 
 /** Save one field of an issue if its stored value is still `base`. */

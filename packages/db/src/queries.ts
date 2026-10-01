@@ -454,6 +454,15 @@ export async function saveIssue(db: Db, args: SaveIssueArgs): Promise<{ id: stri
   return { id: (data as { id: string }).id };
 }
 
+/**
+ * Each process's live revision id (processes never published are left out). A dismissed insight is hidden only until
+ * its process's live revision changes, so the screens that list insights compare against this (`isDismissalCurrent`).
+ */
+export async function loadLiveRevisionIds(db: Db, workspaceId: string): Promise<Record<string, string>> {
+  const r = await db.from("processes").select("id, live_revision_id").eq("workspace_id", workspaceId);
+  return Object.fromEntries(rows(r).flatMap((p) => (p.live_revision_id ? [[p.id, p.live_revision_id]] : [])));
+}
+
 /** The `SourceRow` columns. */
 export const SOURCE_COLUMNS = "id, workspace_id, kind, title, speakers, recorded_at, body, file_url, created_at, updated_at" as const;
 

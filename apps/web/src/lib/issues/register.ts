@@ -3,7 +3,7 @@
 // each one links to, and the badges on the map. Pure functions; the
 // components render the results.
 
-import { isActiveStatus, isVisibleIssue, type IssueRow, type IssueSource, type IssueStatus, type ScenarioRow } from "@transpera-flow/db";
+import { isActiveStatus, isDismissalCurrent, isVisibleIssue, type IssueRow, type IssueSource, type IssueStatus, type ScenarioRow } from "@transpera-flow/db";
 import {
   RATINGS,
   compareCostsDesc,
@@ -25,8 +25,12 @@ import type { PromoteInput } from "./validate";
 export type RegisterEntry =
   /** A stored issue; `detection` is what the latest run detected for its key, if it still does. */
   | { kind: "tracked"; issue: IssueRow; detection: DetectedIssue | null }
-  /** Detected by the latest run and not tracked yet: read-only, regenerated each run. */
-  | { kind: "detected"; detection: DetectedIssue };
+  /**
+   * Detected by the latest run and not tracked yet: read-only, regenerated each run. `dismissed` is the row of an
+   * earlier dismissal that has expired (the process has a newer published version), so the insight is listed again;
+   * acknowledging or dismissing it again reuses that row.
+   */
+  | { kind: "detected"; detection: DetectedIssue; dismissed?: IssueRow };
 
 export const TYPE_LABELS: Record<IssueType, string> = {
   bottleneck: "Bottleneck",
@@ -52,7 +56,7 @@ export const STATUS_LABELS: Record<IssueStatus, string> = {
 };
 
 /** "Issue #12": the stable number the issue carries in its workspace, as the insight's link and the issue pages show it. */
-export const issueLabel = (issue: Pick<IssueRow, "number">): string => `Issue #${issue.number}`;
+export const issueLabel = (issue: Pick<IssueRow, "number">): string => (issue.number == null ? "Issue" : `Issue #${issue.number}`);
 
 /** The four ratings, most severe first: the order the register, filters and reports list them in. */
 export const RATINGS_WORST_FIRST: readonly Rating[] = [...RATINGS].reverse();
@@ -76,6 +80,9 @@ export function formatIssueCost(cost: IssueCost | null, currency: string): strin
 }
 
 const isOpen = isActiveStatus;
+
+/** The process a dismissed row sits on: its process, else the first one it links. */
+export const dismissalProcess = (i: Pick<IssueRow, "process_id" | "links">): string | null => i.process_id ?? i.links.find((l) => l.process_id)?.process_id ?? null;
 
 /** An entry's shared fields, whichever kind it is. */
 export function entryView(e: RegisterEntry) {
@@ -129,14 +136,27 @@ export function entryView(e: RegisterEntry) {
  * a tracked issue carries shows once, as that tracked issue. Open issues come
  * first, most severe first; closed ones last, most recently changed first.
  */
-export function registerEntries(tracked: readonly IssueRow[], detected: readonly DetectedIssue[]): RegisterEntry[] {
+export function registerEntries(
+  tracked: readonly IssueRow[],
+  detected: readonly DetectedIssue[],
+  /** A process's live revision id. With it, a dismissal ends when its process is published again. */
+  revisionOf?: (processId: string | null | undefined) => string | undefined,
+): RegisterEntry[] {
   const byKey = new Map(detected.map((d) => [d.key, d]));
-  // A dismissed insight is kept as a row so it doesn't come back, but it is never an issue: it holds its key (so the
-  // detection isn't listed again) and nothing else, which keeps it out of the register, the counts and the map.
-  const trackedKeys = new Set(tracked.flatMap((i) => (i.detected_key ? [i.detected_key] : [])));
+  // A dismissed insight is kept as a row so it doesn't come back, but it is never an issue: while the dismissal lasts
+  // it holds its key (so the detection isn't listed again) and nothing else, which keeps it out of the register, the
+  // counts and the map. Once its process has a newer published version the dismissal has expired: the row steps aside
+  // and the detection, if the run still finds it, is listed as an insight again.
+  const expired = new Map<string, IssueRow>();
+  const live: IssueRow[] = [];
+  for (const i of tracked) {
+    if (i.status === "dismissed" && i.detected_key && !isDismissalCurrent(i, revisionOf?.(dismissalProcess(i)))) expired.set(i.detected_key, i);
+    else live.push(i);
+  }
+  const trackedKeys = new Set(live.flatMap((i) => (i.detected_key ? [i.detected_key] : [])));
   const entries: RegisterEntry[] = [
-    ...tracked.filter(isVisibleIssue).map((issue): RegisterEntry => ({ kind: "tracked", issue, detection: issue.detected_key ? (byKey.get(issue.detected_key) ?? null) : null })),
-    ...detected.filter((d) => !trackedKeys.has(d.key)).map((detection): RegisterEntry => ({ kind: "detected", detection })),
+    ...live.filter(isVisibleIssue).map((issue): RegisterEntry => ({ kind: "tracked", issue, detection: issue.detected_key ? (byKey.get(issue.detected_key) ?? null) : null })),
+    ...detected.filter((d) => !trackedKeys.has(d.key)).map((detection): RegisterEntry => ({ kind: "detected", detection, ...(expired.has(detection.key) ? { dismissed: expired.get(detection.key)! } : {}) })),
   ];
   const updated = (e: RegisterEntry) => (e.kind === "tracked" ? e.issue.updated_at : "");
   // Stable sort: equal entries keep tracked-then-detected, each in its own order.

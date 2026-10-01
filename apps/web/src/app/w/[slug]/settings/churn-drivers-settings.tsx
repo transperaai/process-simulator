@@ -1,7 +1,7 @@
 "use client";
 
 // Settings, Churn drivers (A56, issue #121; the prototype's Settings screen of the same name): the reasons clients
-// leave, each with a weight and an on/off switch, plus your own. The simulation measures the ones it can; this page
+// leave, each with a weight and an on/off switch, plus your own. The simulation measures the ones it can; this section
 // shows each one's value now, its weight and how much of the churn it explains, and projects churn as the weights
 // move (no new simulation: it works from what the latest run measured).
 
@@ -9,9 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ModelError, toEngineModel, type ChurnDriverRow, type ProcessBundle } from "@transpera-flow/db";
 import { CHURN_DRIVER_SPECS, CHURN_WEIGHT_MAX, CHURN_WEIGHT_MIN, CUSTOM_DRIVER_VALUE, projectChurn, type ChurnCauses, type EngineModel } from "@transpera-flow/engine";
 import { Help } from "@/components/help";
-import { Page } from "@/components/shell/page";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -33,7 +31,8 @@ import {
 } from "@/lib/churn-drivers";
 import { useSimulation } from "@/lib/sim/use-simulation";
 import { cn } from "@/lib/utils";
-import { addChurnDriver, removeChurnDriver, saveChurnDriver } from "@/app/w/[slug]/settings/churn-drivers/actions";
+import { addChurnDriver, removeChurnDriver, saveChurnDriver } from "./churn-drivers-actions";
+import { SettingsSection } from "./section";
 
 export type DriversMode = "live" | "readonly" | "demo";
 
@@ -173,13 +172,12 @@ export function ChurnDriversSettings({
   const clientCount = model?.activeClients ?? 0;
 
   return (
-    <Page
+    <SettingsSection
+      id="churn-drivers"
       title="Churn drivers"
-      eyebrow="Settings"
-      width="max-w-6xl"
       description="Base churn per service is multiplied by these drivers. Weights are your estimates; the simulation measures the drivers marked Measured. Contribution shows how much of the churn in the latest run each driver explains."
-      actions={mode === "live" && <SaveStatus state={save} />}
     >
+      {mode === "live" && <SaveStatus state={save} />}
       {mode === "readonly" && (
         <p role="note" className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
           Only owners and editors can change the churn drivers. You can see them here.
@@ -196,12 +194,12 @@ export function ChurnDriversSettings({
         </p>
       )}
       {!model && bundle && (
-        <Card className="p-4 text-sm text-muted-foreground">This workspace&apos;s live process can&apos;t be simulated yet, so there is nothing to measure. Fix it on the map first. You can still set the weights.</Card>
+        <p className="rounded-lg border border-line p-4 text-sm text-muted-foreground">This workspace&apos;s live process can&apos;t be simulated yet, so there is nothing to measure. Fix it on the map first. You can still set the weights.</p>
       )}
 
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <Card className="min-w-56">
-          <CardContent className="flex flex-col gap-1">
+        <div className="flex min-w-56 flex-col gap-1 rounded-lg border border-line p-4">
+          <div className="contents">
             <span className="flex items-center text-2xs font-semibold tracking-wider text-muted-foreground uppercase">
               Projected churn
               <Help label="Projected churn" {...CONTROL_HELP.projected} />
@@ -219,8 +217,8 @@ export function ChurnDriversSettings({
                     ? "Running the simulation…"
                     : "no simulation to project from"}
             </span>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
         <div className="flex items-center">
           <Button type="button" variant="outline" disabled={!canEdit || adding || customs >= MAX_CUSTOM_DRIVERS} onClick={() => void add()}>
             + Add driver
@@ -229,7 +227,7 @@ export function ChurnDriversSettings({
         </div>
       </div>
 
-      <Card>
+      <div className="rounded-lg border border-line">
         <ul className="flex flex-col" aria-label="Churn drivers" aria-busy={sim.status === "running"}>
           {states.map((d) => (
             <DriverRow
@@ -253,8 +251,8 @@ export function ChurnDriversSettings({
             <Contribution share={projection ? projection.normalShare : null} tone="plain" label="Normal churn" />
           </li>
         </ul>
-      </Card>
-    </Page>
+      </div>
+    </SettingsSection>
   );
 }
 

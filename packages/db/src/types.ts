@@ -465,7 +465,7 @@ export interface MarketConditionRow {
 
 export type MarketPreset = "boom" | "stable" | "soft" | "downturn";
 
-/** The ten built-in churn drivers (docs/PRD.md decision D31; A56). The engine's `BUILTIN_CHURN_DRIVER_IDS`. */
+/** The ten built-in churn drivers (docs/PRD.md decision D28; A56). The engine's `BUILTIN_CHURN_DRIVER_IDS`. */
 export type ChurnDriverKey = "late" | "resp" | "onb" | "rework" | "load" | "handoff" | "results" | "tenure" | "price" | "market";
 
 /**

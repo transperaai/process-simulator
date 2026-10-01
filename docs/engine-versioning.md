@@ -12,6 +12,7 @@ which every run records.
 | `northbeam` | `northbeamModel()` | The prototype's model, re-baselined after the §6.8 fixes: pooled head-counts, one implicit retainer, automatic warm-up. |
 | `northbeam-seeded` | `northbeamWithServicing()` | Northbeam with its 26 named clients (the seed now counts clients per service: see `northbeam-groups`): SEO and PPC services with condition-tag routing, 11 named people, the 26-client roster, a 10% overtime cap, and two servicing processes whose late and missed tasks move health and churn. |
 | `northbeam-groups` | `northbeamWithClientGroups()` | Northbeam with its clients counted per service (17 SEO clients at health 83, 12 PPC clients at health 52, from `NORTHBEAM_CLIENT_GROUPS`) and simulated as unnamed clients, with the same servicing (issue #120). |
+| `northbeam-drivers` | `northbeamWithChurnDrivers()` | `northbeam-groups` with all ten churn drivers switched on at the prototype's weights and one of the user's own (a competitor undercutting): who the churn is blamed on, and what each cause measured (A56, below). |
 | `larkspur` | `larkspurModel()` | Larkspur Creative, the "second, messier sample agency" (§6.9): overloaded designers, a copywriter past her week on overtime, an 18-client named roster whose health drives churn, and the corners Northbeam leaves alone (below). |
 
 Each runs with the app's defaults, 30 replications at seed 1. The outputs kept (`keyOutputs` in
@@ -99,13 +100,57 @@ probability of the edges to the sale at the step that decides it: the step whose
 only to a loss (Northbeam's and Larkspur's `decision`); earlier steps, whose edges can still end either way, are
 left alone. Time to decide scales external waits at steps before the sale (steps that can still reach a lost end),
 not onboarding, delivery or servicing. Prices scale the fee of each client won (new MRR, billed, LTV added). Clients
-leaving scale churn. Known limits, for the churn driver (A56): `lostRevenue` is valued at today's price, LTV uses
-today's tenure, a roster client's reported `churnMonthly` is its base rate, and the pooled billing estimate uses the
-churn factor of the month a client is won in. `withMarketCondition` replaces any schedule on the model. The
+leaving scale churn. Known limits, which A56 considered (see "Churn drivers" below): `lostRevenue` is valued at
+today's price and LTV uses today's tenure (both still true), a roster client's reported `churnMonthly` was its base
+rate (fixed in 1.5.0), and the pooled billing estimate uses the churn factor of the month a client is won in (still
+true). `withMarketCondition` replaces any schedule on the model. The
 `northbeam-downturn` golden model runs Northbeam as seeded under Downturn, so a change to this maths shows up in the
 golden test. Time to hire and late payments are stored but change
 nothing, as the engine has no hiring or cash-flow model yet. To run a model under one condition (the stress test
 on solution pages): `simulate(withMarketCondition(model, MARKET_PRESETS.downturn.factors), reps, seed)`.
+
+## Churn drivers (engine 1.5.0)
+
+`EngineModel.churnDrivers` holds the ten built-in drivers' weights (0 to 3) and on/off switches, plus the user's own
+(`packages/engine/src/churn-drivers.ts`, decision D28, issue #121). A client's weekly chance of leaving is
+
+    base × (1 + Σ weight × pressure) × (1 + market weight × (churn factor − 1)) ÷ 4.33
+
+where base is its service's normal churn (the client group's), the sum runs over the switched-on drivers other than
+the market, and a driver's *pressure* is how much extra churn its cause adds at weight 1 (0 = nothing wrong, 1 =
+doubles that client's churn). Late work's pressure is the health term the engine always had (health sensitivity ×
+the health lost), so `late` at weight 1 is the old formula. The others are measured per client each week: ad-hoc
+requests answered late or missed (`resp`), a client won in the run waiting for its first delivery against a normal
+10 working days (`onb`, first six months), the share of its servicing visits redone against a quarter (`rework`),
+how busy the people who look after it have been against 85% (`load`), an entered rate of account manager changes
+plus weeks its people are away (`handoff`). `results` (a rating out of 10, 8 or more adds nothing), `tenure` (the
+multiple in the first six months for a client won in the run), `price` (a planned rise, 20% more churn per 10% for 13
+weeks from its month) and your own drivers (extra churn in percent) are what the user enters. The market driver
+weighs the whole product.
+
+**Defaults change nothing.** A model with no `churnDrivers` runs with late work and the market on at weight 1 and
+everything else off. At weight 1 the multipliers are bit-for-bit the old ones (`1 + 1 × x`, and the plain factor), no
+random draw is added or moved, so every number the golden models already kept is unchanged; 1.5.0 was approved
+because it adds what the baselines keep: each driver's share, pressure and measured value (`churnCauses`), the new
+`northbeam-drivers` model, and the rule 10 issues in `ratings`. Drivers apply to a model with a client roster (named
+or counted in groups); the pooled model has no per-client state, so only the market driver acts on it.
+
+**What a run reports** (`SimulationResult.churnCauses`): per driver (switched off ones too, so the screen can show
+what they would be), its share of all the clients lost, the clients and monthly fees that is, its average pressure and
+the value measured (share late, hours to reply, working days to first delivery, share redone, how busy the busiest
+person is, the market's average factor, or the number entered). Shares are of the *expected* clients lost, summed from
+each client's weekly chance split by the parts of the product above, so they are smooth (not just the churn events
+that happened) and add up, with normal churn, to 1. They are also kept per service for rule 10. The Settings screen
+projects churn as the weights move (`projectChurn`) from these pressures without simulating again.
+
+**Rule 10** (`churnCauseIssues`, key `churn_risk:driver:<service>:<driver>`): a driver causing 30% or more of a
+group's churn is Bad; Operational risk when the group's health is also under 50. Both numbers are the rule's settings.
+
+Known limits from the market ticket: the per-client `churnMonthly` now includes the drivers and the month's churn
+factor (the chance it had at the last tick, with health as it ended). Not changed: `lostRevenue` and LTV still use
+today's price and tenure, and the pooled billing estimate still uses the won-month churn factor. Pressures are
+measured on the clients that are still active, so a driver that makes clients leave also thins the sample it is
+measured on; the share is of expected churn each week, which keeps that small.
 
 ## 24-month horizon (A58, no engine change)
 

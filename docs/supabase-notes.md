@@ -123,3 +123,11 @@ Checked against PGlite (PostgreSQL 17 compiled to WASM) and against Postgres 16 
 - `on delete set null (column)` on the composite foreign keys (`processes_parent_fk`, `steps_entry_step_fk`, `steps_child_process_fk`) needs PostgreSQL 15 or later. Supabase runs 15+, but check when applying.
 - The deferred constraint trigger `nesting_is_a_tree` and the deferred foreign keys on `steps` run at commit. Over PostgREST each request is one transaction, so a bad nesting is refused when that request commits (`23514` or `23503`), not on the statement that caused it.
 - Which of the deferred foreign key and the constraint trigger reports first for a step whose parent is missing depends on trigger firing order (both are `after` triggers fired in name order), so tests only assert that the write is refused.
+
+## Churn drivers (issue #121, migration 20261116000000)
+
+Checked on plain Postgres 16 with the auth shim (`packages/db/test/churn-drivers.test.ts`); not confirmed on Supabase itself:
+
+- The 25-driver cap is a `before insert` trigger that takes `pg_advisory_xact_lock(hashtextextended('churn_drivers:' || workspace_id, 0))` before counting, as `market_schedule`'s overlap check does. Supabase allows advisory locks inside a transaction; over PostgREST each request is one transaction.
+- The partial unique index `churn_drivers_driver_key (workspace_id, driver) where driver is not null` is not a valid `ON CONFLICT` target for supabase-js `upsert`, so the app selects, then inserts or updates, and retries the update when the insert loses a race (`23505`).
+- `stamp_provenance` is given a boolean column (`enabled`) as well as numbers; it compares `to_jsonb(new) -> col` values, so it works for either, but that is only exercised here.

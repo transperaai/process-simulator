@@ -367,7 +367,7 @@ export interface EngineModel {
    */
   clientGroups?: Record<string, EngineClientGroup>;
   /**
-   * Churn drivers (decision D31, issue #121): the reasons clients leave, each with a
+   * Churn drivers (decision D28, issue #121): the reasons clients leave, each with a
    * weight and an on/off switch, plus any of your own (churn-drivers.ts). Omitted:
    * the defaults, which are exactly how the engine churned clients before drivers
    * existed (health and the market's "clients leaving" factor, both at weight 1).

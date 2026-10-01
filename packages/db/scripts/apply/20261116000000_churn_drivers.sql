@@ -18,7 +18,7 @@
 -- Rollback is in the migration's header. No data change: nothing is backfilled.
 begin;
 
--- Churn drivers (docs/PRD.md decisions D21 and D31; issue #121, ticket A56): the
+-- Churn drivers (docs/PRD.md decisions D21 and D28; issue #121, ticket A56): the
 -- reasons clients leave. Base churn per service (the client group's "normal
 -- churn", A55) is multiplied by what is going on around each client, and each
 -- driver has a weight (0 to 3; 1 is normal, 0 ignores it) and an on/off
@@ -147,7 +147,7 @@ create trigger needs_review before insert or update or delete on public.churn_dr
 create trigger audit_company after insert or update or delete on public.churn_drivers
   for each row execute function private.audit_company_write();
 
-insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261116000000', 'churn_drivers', array[$mig$-- Churn drivers (docs/PRD.md decisions D21 and D31; issue #121, ticket A56): the
+insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261116000000', 'churn_drivers', array[$mig$-- Churn drivers (docs/PRD.md decisions D21 and D28; issue #121, ticket A56): the
 -- reasons clients leave. Base churn per service (the client group's "normal
 -- churn", A55) is multiplied by what is going on around each client, and each
 -- driver has a weight (0 to 3; 1 is normal, 0 ignores it) and an on/off

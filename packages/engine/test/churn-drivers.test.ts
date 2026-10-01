@@ -10,6 +10,7 @@ import {
   northbeamWithServicing,
   projectChurn,
   resolveChurnDrivers,
+  ruleOfFinding,
   simulate,
   toRatingConfig,
   withMarketCondition,
@@ -17,7 +18,7 @@ import {
   type EngineModel,
 } from "../src";
 
-// Churn drivers (docs/PRD.md decision D31; issue #121): base churn × (1 + Σ weight × pressure) × market,
+// Churn drivers (docs/PRD.md decision D28; issue #121): base churn × (1 + Σ weight × pressure) × market,
 // and each driver's share of the churn.
 
 const withDrivers = (model: EngineModel, churnDrivers: EngineChurnDriver[]): EngineModel => ({ ...model, churnDrivers });
@@ -243,5 +244,11 @@ describe("rule 10: cause of clients leaving", () => {
   it("raises nothing for a run with no client accounting (the pooled model)", () => {
     const pooled: EngineModel = { ...northbeamWithServicing(), clients: undefined, servicingProcesses: undefined, services: undefined };
     expect(issues({}, pooled, simulate(pooled, 3, 1))).toEqual([]);
+  });
+
+  it("belongs to rule 10, not rule 9, though both are churn risks", () => {
+    expect(ruleOfFinding({ key: "churn_risk:driver:ppc:late", type: "churn_risk" })).toBe("driver");
+    expect(ruleOfFinding({ key: "churn_risk:group:ppc", type: "churn_risk" })).toBe("health");
+    expect(ruleOfFinding({ key: "churn_risk:client:c1", type: "churn_risk" })).toBe("health");
   });
 });

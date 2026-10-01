@@ -1,4 +1,4 @@
-// Churn drivers (docs/PRD.md decisions D21 and D31; ticket A56, issue #121).
+// Churn drivers (docs/PRD.md decisions D21 and D28; ticket A56, issue #121).
 //
 // A client's base churn (its service's "normal churn", from the client group)
 // is multiplied by what is going on around it. Each reason clients leave is a

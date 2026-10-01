@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Page } from "@/components/shell/page";
 import { buttonVariants } from "@/components/ui/button";
-import { loadWorkspaceSettings } from "@/lib/data";
+import { loadLiveProcess, loadWorkspaceSettings } from "@/lib/data";
+import { ChurnDriversSettings } from "./churn-drivers-settings";
 import { ClientGroupsSettings } from "./client-groups-settings";
 import { DemandSettings } from "./demand-settings";
 import { MarketSettings } from "./market-settings";
@@ -13,7 +14,7 @@ import { HealthSettings } from "./servicing-settings";
 
 export default async function WorkspaceSettingsPage(props: PageProps<"/w/[slug]/settings">) {
   const { slug } = await props.params;
-  const data = await loadWorkspaceSettings(slug);
+  const [data, bundle] = await Promise.all([loadWorkspaceSettings(slug), loadLiveProcess(slug)]);
   if (!data) notFound();
   return (
     <Page
@@ -35,6 +36,7 @@ export default async function WorkspaceSettingsPage(props: PageProps<"/w/[slug]/
       <RolesSettings data={data} />
       <ServicesSettings data={data} />
       <ClientGroupsSettings data={data} />
+      <ChurnDriversSettings mode={data.canEdit ? "live" : "readonly"} workspaceId={data.workspace.id} bundle={bundle} rows={data.churnDrivers} />
       <HealthSettings data={data} />
       <DemandSettings data={data} />
       <MarketSettings data={data} />

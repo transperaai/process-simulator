@@ -265,10 +265,31 @@ tr.mapcard .pcard { width: 0; min-width: 100%; }
 tr.mapcard .mapwrap { background: var(--panel); }
 table.rules td { vertical-align: middle; }
 table.rules .inp.band { font-family: var(--f-mono); font-size: 11.5px; padding: 4px 6px; min-width: 0; width: 100%; border-left: 3px solid var(--pc); }
-table.rules td:first-child { min-width: 130px; }
-table.rules td:nth-child(n+3):not(:last-child) { width: 13%; }
+table.rules td:first-child { width: 56px; }
+table.rules td:nth-child(2) { min-width: 210px; }
+.tog .tl { font-size: 13px; }
+table.rules td:nth-child(n+3):nth-child(-n+6) { width: 14%; }
 table.rules th { white-space: normal; }
 .cost { font-family: var(--f-mono); font-size: 12px; font-weight: 500; color: var(--fg); background: var(--panel-2); border-radius: 4px; padding: 0 6px; }
+.tog { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13px; }
+.tog input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.tog > span:first-of-type { width: 34px; height: 20px; border-radius: 99px; background: var(--line-2); position: relative; flex: none; transition: background var(--m, 120ms); }
+.tog > span:first-of-type::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--panel); transition: transform var(--m, 120ms); }
+.tog input:checked + span { background: var(--accent); }
+.tog input:checked + span::after { transform: translateX(14px); }
+.tog input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+tr.ruleoff td:not(:first-child) { opacity: .45; }
+.band { display: inline-block; font-family: var(--f-mono); font-size: 11.5px; border-left: 3px solid var(--pc); padding: 2px 7px; background: var(--bg); border-radius: 0 4px 4px 0; }
+.kvgrid { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 10px 14px; align-items: center; font-size: 13px; }
+@media (max-width: 600px) { .kvgrid { grid-template-columns: 1fr; } }
+.inp.tiny { width: 56px; padding: 3px 6px; display: inline-block; text-align: right; }
+.cutgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.cutgrid .inp { width: 90px; }
+.bandrow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.bandrow > div { border-top: 3px solid var(--pc); background: var(--ps); border-radius: 0 0 6px 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.bandrow span { font-family: var(--f-mono); font-size: 11.5px; }
+@media (max-width: 600px) { .bandrow { grid-template-columns: 1fr 1fr; } }
+.ovr { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
 /* Lists */
 .status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; padding: 1px 8px; border-radius: 4px; background: var(--panel-2); white-space: nowrap; }
 .status.done { background: var(--good-soft); }
@@ -635,23 +656,28 @@ let MARKETS = {
 const MCOL = { boom: "var(--good-soft)", stable: "var(--panel-2)", soft: "var(--warn-soft)", downturn: "var(--crit-soft)", c1: "var(--teal-soft)" };
 let SCHED = [{ from: 1, to: 6, m: "stable" }, { from: 7, to: 14, m: "soft" }, { from: 15, to: 24, m: "c1" }];
 
-let RULES = [
-  { name: "Busy role or person", num: "Simulated utilisation", b: ["under 70%", "70–85%", "85–95%", "over 95%"], cost: "Throughput lost at the bottleneck, or overtime cost" },
-  { name: "Spare capacity", num: "Simulated utilisation", b: ["", "under 40% (opportunity)", "", ""], cost: "Idle hours at cost rates" },
-  { name: "Overtime", num: "Overtime hours", b: ["none", "", "any regular overtime", "cap used up"], cost: "Overtime hours × cost rate" },
-  { name: "Queue keeps growing", num: "Queue growth per week", b: ["", "", "", "0.5+ items a week"], cost: "Value of work stuck" },
-  { name: "Long wait", num: "Wait ÷ the step's expected wait", b: ["within 1×", "up to 1.5×", "up to 3×", "over 3×"], cost: "Revenue delayed or lost" },
-  { name: "Rework", num: "Simulated share done twice", b: ["under 5%", "5–10%", "10–20%", "over 20%"], cost: "Repeated hours × cost rate" },
-  { name: "SLA missed", num: "Share of visits over SLA", b: ["under 5%", "5–10%", "10–25%", "over 25%"], cost: "Through the churn drivers" },
-  { name: "Single point of failure", num: "Absence test: person off 2 weeks", b: ["little effect", "", "noticeable delays", "work stops or clients hit"], cost: "Damage of the absence, per year" },
-  { name: "Client health", num: "Health of each client group", b: ["75+", "65–75", "50–65", "under 50"], cost: "Churned MRR × tenure" },
-  { name: "Churn driver", num: "Driver's share of churn", b: ["", "", "30%+", "30%+ and group under 50"], cost: "Driver's share of churned MRR" },
-  { name: "Success measure", num: "Share of runs meeting target", b: ["80%+", "50–80%", "20–50%", "under 20%"], cost: "Depends on the measure" },
-  { name: "Drop-off between steps", num: "Share lost vs the step's benchmark", b: ["at or better", "up to 1.25×", "up to 1.5×", "over 1.5×"], cost: "Lost items × expected value" },
-  { name: "Cycle time vs target", num: "End-to-end time vs target", b: ["within target", "up to 1.25×", "up to 1.5×", "over 1.5×"], cost: "Revenue delayed" },
-  { name: "Sources disagree", num: "Ratio between two sources", b: ["", "", "2× or more", ""], cost: "—" },
-  { name: "Broken solution", num: "Solution points at a missing step", b: ["", "", "always", ""], cost: "—" },
+const RULE_DEFS = [
+  { id: "busy", name: "Busy role or person", num: "Simulated utilisation", cuts: [["Great up to", 70, "%"], ["Good up to", 85, "%"], ["Bad up to", 95, "%"]], show: c => [`under ${c[0]}%`, `${c[0]}–${c[1]}%`, `${c[1]}–${c[2]}%`, `over ${c[2]}%`], cost: "Extra wins one more person would bring × value of a loss, plus overtime", over: "role" },
+  { id: "spare", name: "Spare capacity", num: "Simulated utilisation", cuts: [["Opportunity under", 40, "%"]], show: c => ["", `under ${c[0]}% · shown as an opportunity`, "", ""], cost: "Idle hours × cost rate", over: "role" },
+  { id: "overtime", name: "Overtime", num: "Overtime hours a week", cuts: [["Bad from", 1, "h/wk"]], show: c => ["none", `under ${c[0]} h/wk`, `${c[0]}+ h/wk`, "overtime cap used up"], cost: "Overtime hours × cost rate", over: "person" },
+  { id: "queue", name: "Queue keeps growing", num: "Queue growth per week", cuts: [["Risk from", 0.5, "items/wk"]], show: c => ["", "", "", `${c[0]}+ items a week`], cost: "Value of the work stuck in the queue", over: "step" },
+  { id: "wait", name: "Long wait", num: "Wait for a person ÷ the step's expected wait", cuts: [["Great up to", 1, "×"], ["Good up to", 1.5, "×"], ["Bad up to", 3, "×"]], show: c => [`within ${c[0]}×`, `up to ${c[1]}×`, `up to ${c[2]}×`, `over ${c[2]}×`], cost: "Deals lost through the step's drop-off per day of waiting", over: "step" },
+  { id: "rework", name: "Rework", num: "Simulated share done twice", cuts: [["Great under", 5, "%"], ["Good up to", 10, "%"], ["Bad up to", 20, "%"]], show: c => [`under ${c[0]}%`, `${c[0]}–${c[1]}%`, `${c[1]}–${c[2]}%`, `over ${c[2]}%`], cost: "Repeated hours × cost rate", over: "step" },
+  { id: "sla", name: "SLA missed", num: "Share of visits over the step's SLA", cuts: [["Great under", 5, "%"], ["Good up to", 10, "%"], ["Bad up to", 25, "%"]], show: c => [`under ${c[0]}%`, `${c[0]}–${c[1]}%`, `${c[1]}–${c[2]}%`, `over ${c[2]}%`], cost: "Churned revenue through the churn drivers", over: "step" },
+  { id: "spof", name: "Single point of failure", num: "Absence test: work lost and weeks to recover", cuts: [["Great: lost under", 5, "%"], ["Risk: lost over", 20, "%"], ["Great: back within", 1, "wk"], ["Risk: not back in", 4, "wk"]], show: c => [`under ${c[0]}% lost, back in ${c[2]} wk`, "", `${c[0]}–${c[1]}% lost or ${c[2]}–${c[3]} wk`, `over ${c[1]}%, over ${c[3]} wk, or a client SLA missed`], cost: "Damage of one absence × absences a year", over: "person" },
+  { id: "health", name: "Client health", num: "Health of each client group (0–100)", cuts: [["Great from", 75, ""], ["Good from", 65, ""], ["Bad from", 50, ""]], show: c => [`${c[0]}+`, `${c[1]}–${c[0]}`, `${c[2]}–${c[1]}`, `under ${c[2]}`], cost: "Churned clients × value of a loss", over: "service" },
+  { id: "driver", name: "Churn driver", num: "A driver's share of churn", cuts: [["Bad from", 30, "%"], ["Risk if group health under", 50, ""]], show: c => ["", "", `${c[0]}%+ of churn`, `${c[0]}%+ and group under ${c[1]}`], cost: "That driver's share of churned revenue", over: null },
+  { id: "success", name: "Success measure", num: "Share of runs that meet the target", cuts: [["Great from", 80, "%"], ["Good from", 50, "%"], ["Bad from", 20, "%"]], show: c => [`${c[0]}%+`, `${c[1]}–${c[0]}%`, `${c[2]}–${c[1]}%`, `under ${c[2]}%`], cost: "Depends on the measure", over: "process" },
+  { id: "dropoff", name: "Drop-off between steps", num: "Share lost ÷ the step's benchmark", cuts: [["Good up to", 1.25, "×"], ["Bad up to", 1.5, "×"]], show: c => ["at or better", `up to ${c[0]}×`, `up to ${c[1]}×`, `over ${c[1]}×`], cost: "Lost items × value of a loss", over: "step" },
+  { id: "cycle", name: "Cycle time vs target", num: "End-to-end time ÷ target", cuts: [["Good up to", 1.25, "×"], ["Bad up to", 1.5, "×"]], show: c => ["within target", `up to ${c[0]}×`, `up to ${c[1]}×`, `over ${c[1]}×`], cost: "Revenue delayed", over: "process" },
+  { id: "sources", name: "Sources disagree", num: "Ratio between two sources", cuts: [["Bad from", 2, "×"]], show: c => ["", "", `${c[0]}× or more`, ""], cost: "—", over: null },
+  { id: "broken", name: "Broken solution", num: "Solution points at something missing", cuts: [], show: () => ["", "", "always", ""], cost: "—", over: null },
 ];
+let RULES = RULE_DEFS.map(r => ({ ...r, on: true, v: r.cuts.map(c => c[1]), overrides: [] }));
+RULES.find(r => r.id === "busy").overrides.push({ target: "Maya Collins (person)", v: [60, 75, 90], why: "Only strategist; keep her lower" });
+RULES.find(r => r.id === "wait").overrides.push({ target: "Check fit (step)", v: [1, 1.5, 3], why: "Expected wait 4 h, not 1 day" }, { target: "Strategist review (step)", v: [1, 1.5, 3], why: "Expected wait 2 days" });
+const RULESET = { p90: true, bottleneck: true, capMonths: 12, absenceWeeks: 2, absencesYear: 2, waitPipeline: 8, waitServicing: 16 };
+
 
 const LEVERS = [
   ["Demand", ["Leads per week, per source", "Conversion per source", "Seasonality", "Growth per month"]],
@@ -1283,12 +1309,24 @@ const SETTINGS = {
   },
   rules() {
     const order = ["great", "good", "bad", "risk"];
-    return `<div class="sechead"><div><h2>Analysis rules</h2><p>Fixed checks that run on every simulation. Each one turns a number into a rating using three cut-offs. Agreed 1 Oct; edit the defaults here, or override them on a role, person or step.</p></div></div>
-    <div class="card stack"><b>How a rating is set</b>
-      <ol class="small" style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px"><li>The <b>average</b> across 30 runs picks the band.</li><li>If a <b>bad month</b> (P90) crosses the next cut-off, it goes up one level.</li><li>If it's <b>on the bottleneck</b>, it goes up one more. Never higher than Operational risk.</li><li>Within a level, insights are sorted by <b>estimated cost per month</b> (A$).</li></ol>
-      <span class="small muted">Example: the strategist averages 82% (Good) → bad month 97% (Bad) → on the bottleneck (Operational risk).</span></div>
-    <div class="tblwrap"><table class="rules"><thead><tr><th>Rule</th><th>Number it rates</th>${order.map(r => `<th><span class="cdot" style="background:${RT[r].c}"></span> ${RT[r].l}</th>`).join("")}<th>Cost per month</th></tr></thead><tbody>
-    ${RULES.map((r, i) => `<tr><td><b>${esc(r.name)}</b></td><td class="small">${esc(r.num)}</td>${r.b.map((v, j) => `<td>${v ? `<input class="inp band" style="--pc:${RT[order[j]].c}" value="${esc(v)}" aria-label="${esc(r.name)}: ${RT[order[j]].l}">` : `<span class="muted small">—</span>`}</td>`).join("")}<td class="small muted">${esc(r.cost)}</td></tr>`).join("")}</tbody></table></div>`;
+    const sw = (k, on, l) => `<label class="tog"><input type="checkbox" ${on ? "checked" : ""} data-act="ruleset" data-k="${k}"><span></span><span class="tl">${l}</span></label>`;
+    return `<div class="sechead"><div><h2>Analysis rules</h2><p>Fixed checks that run on every simulation. Each turns a number into a rating. Everything here is editable: switch rules on or off, change the cut-offs, or override them for one role, person or step.</p></div><button class="btn sm" data-act="rulesreset">Reset all to defaults</button></div>
+    <div class="grid2">
+      <div class="card stack"><b>How a rating is set</b>
+        <span class="small">The <b>average</b> across 30 runs picks the level. Then:</span>
+        ${sw("p90", RULESET.p90, "A <b>bad month</b> (P90) crossing the next cut-off bumps it up one level")}
+        ${sw("bottleneck", RULESET.bottleneck, "Being <b>on the bottleneck</b> bumps it up one more")}
+        <span class="small muted">Never higher than Operational risk. Example: strategist 82% (Good) → bad month 97% (Bad) → bottleneck (Operational risk).</span></div>
+      <div class="card stack"><b>Money and defaults</b>
+        <div class="kvgrid">
+          <span>A loss is worth</span><span class="small">the revenue still to come when it's lost (chance-weighted before signing, remaining tenure after), capped at <input class="inp num tiny" value="${RULESET.capMonths}" data-rs="capMonths"> months</span>
+          <span>Absence test</span><span class="small">person off for <input class="inp num tiny" value="${RULESET.absenceWeeks}" data-rs="absenceWeeks"> weeks, about <input class="inp num tiny" value="${RULESET.absencesYear}" data-rs="absencesYear"> times a year</span>
+          <span>Expected wait if a step has none</span><span class="small">pipeline <input class="inp num tiny" value="${RULESET.waitPipeline}" data-rs="waitPipeline"> h · servicing <input class="inp num tiny" value="${RULESET.waitServicing}" data-rs="waitServicing"> h</span>
+          <span>Currency</span><span class="small">A$ (from Company settings)</span>
+        </div></div>
+    </div>
+    <div class="tblwrap"><table class="rules"><thead><tr><th>On</th><th>Rule</th>${order.map(r => `<th><span class="cdot" style="background:${RT[r].c}"></span> ${RT[r].l}</th>`).join("")}<th>Overrides</th><th></th></tr></thead><tbody>
+    ${RULES.map(r => { const b = r.show(r.v); return `<tr class="${r.on ? "" : "ruleoff"}"><td><label class="tog"><input type="checkbox" ${r.on ? "checked" : ""} data-act="ruleon" data-id="${r.id}" aria-label="Use ${esc(r.name)}"><span></span></label></td><td><b>${esc(r.name)}</b><div class="small muted">${esc(r.num)}</div></td>${b.map((v, j) => `<td>${v ? `<span class="band" style="--pc:${RT[order[j]].c}">${esc(v)}</span>` : `<span class="muted small">—</span>`}</td>`).join("")}<td class="small">${r.overrides.length ? `<span class="chip">${r.overrides.length}</span>` : `<span class="muted">—</span>`}</td><td><button class="btn sm" data-act="ruleedit" data-id="${r.id}">Edit</button></td></tr>`; }).join("")}</tbody></table></div>`;
   },
   ai() {
     return `<div class="sechead"><h2>AI analysis</h2><p>Runs alongside the rules. It reads the results, each process's first principles and your sources, and writes insights labelled AI. It never invents numbers: every figure it uses comes from the simulation.</p></div>
@@ -1396,6 +1434,18 @@ function resolveModal(id, how) {
     <span class="small muted">The issue leaves the map and the open list, but keeps its history and solutions.</span><div class="err" id="rs-err"></div></div>
     <div class="mfoot"><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="resolvesave" data-id="${id}" data-h="${how}">Mark resolved</button></div>`);
 }
+function ruleModal(id) {
+  const r = RULES.find(x => x.id === id), def = RULE_DEFS.find(x => x.id === id), order = ["great", "good", "bad", "risk"], b = r.show(r.v);
+  const targets = { role: Object.values(ROLES).slice(0, 6).map(x => x + " (role)").concat(PEOPLE.filter(p => p.u != null).map(p => p.name + " (person)")), person: PEOPLE.filter(p => p.u != null).map(p => p.name + " (person)"), step: Object.values(BASE).filter(x => !x.cols && x.role).map(x => x.name + " (step)"), service: ["SEO retainer (service)", "PPC management (service)", "SEO + PPC (service)"], process: procList().filter(([i]) => i !== "company").map(([i]) => BASE[i].name + " (process)") }[r.over] || [];
+  modal(`${mhead(`Edit rule: ${esc(r.name)}`, `<span class="small muted">${esc(r.num)}</span>`)}<div class="mbody">
+    <label class="tog"><input type="checkbox" ${r.on ? "checked" : ""} data-act="ruleon" data-id="${r.id}" data-modal="1"><span></span><span class="tl">Use this rule</span></label>
+    ${r.cuts.length ? `<div class="stack" style="gap:8px"><span class="eyebrow">Cut-offs</span><div class="cutgrid">${r.cuts.map((c, i) => `<label class="field">${esc(c[0])}<span class="row" style="flex-wrap:nowrap"><input type="number" step="any" class="inp num" value="${r.v[i]}" data-cut="${i}" data-id="${r.id}"><span class="small muted">${esc(c[2])}</span></span><span class="small muted">default ${def.cuts[i][1]}</span></label>`).join("")}</div></div>` : `<p class="small muted">This rule has no numbers to set.</p>`}
+    <div class="stack" style="gap:6px"><span class="eyebrow">Gives these ratings</span><div class="bandrow" id="bandprev">${b.map((v, j) => `<div style="--pc:${RT[order[j]].c};--ps:${RT[order[j]].s}"><b>${RT[order[j]].l}</b><span>${esc(v || "—")}</span></div>`).join("")}</div></div>
+    <div class="stack" style="gap:4px"><span class="eyebrow">Cost per month</span><span class="small">${esc(r.cost)}</span></div>
+    ${r.over ? `<div class="stack" style="gap:8px"><span class="eyebrow">Overrides</span>${r.overrides.map((o, i) => `<div class="ovr"><b class="small">${esc(o.target)}</b><span class="small mono">${o.v.join(" / ")}</span><span class="small muted">${esc(o.why || "")}</span><button class="btn ghost sm" data-act="ruleovdel" data-id="${r.id}" data-i="${i}">Remove</button></div>`).join("") || `<span class="small muted">None. The defaults apply everywhere.</span>`}
+      ${r.cuts.length ? `<div class="row"><select class="inp" id="ov-target" style="max-width:280px">${targets.map(t => `<option>${esc(t)}</option>`).join("")}</select><button class="btn sm" data-act="ruleovadd" data-id="${r.id}">+ Add override with these cut-offs</button></div>` : ""}</div>` : ""}
+  </div><div class="mfoot"><button class="btn" data-act="rulereset" data-id="${r.id}">Reset to default</button><button class="btn primary" data-act="close">Done</button></div>`, true);
+}
 let ACK = null;
 function ackModal(o) {
   ACK = o;
@@ -1473,8 +1523,8 @@ document.addEventListener("click", e => {
   const H = ACTIONS[act]; if (H) H(d, a, e);
 });
 const ACTIONS = {
-  close() { closeModal(); },
-  closebg(d, a, e) { if (e.target === a) closeModal(); },
+  close() { closeModal(); if (S.screen === "settings") keepY(); },
+  closebg(d, a, e) { if (e.target === a) { closeModal(); if (S.screen === "settings") keepY(); } },
   horizon(d) { S.h = +d.h; render(); },
   expandall(d) { const ok = MAPS[d.map]?.openKey || d.map; S.all[ok] = !S.all[ok]; if (!S.all[ok]) S.open[ok] = new Set(); if (d.map === "ed") renderEditorKeepScroll(); else refreshWrap(d.map); },
   zoom(d) {
@@ -1547,6 +1597,13 @@ const ACTIONS = {
   edsaveselblk() { const e = S.ed, g = e.tree[e.sel]; const defs = {}; for (const k of desc(e.tree, e.sel)) if (k !== e.sel && !e.tree[k].cols) { const { id: _, parent, added, ...rest } = e.tree[k]; defs[k] = rest; } BLK["blk_" + Date.now()] = { name: g.name, type: "Manual", desc: "Saved from the Editor.", cols: clone(g.cols.map(c => c.filter(x => defs[x])).filter(c => c.length)), defs }; toast(`Saved “${g.name}” to the block library.`); renderEditorKeepScroll(); },
   verdict(d) { const s = SOL.find(x => x.id === d.id), f = forOf(s, +d.i); f.yours = f.yours === d.v ? null : d.v; if (f.yours) logIssue(+d.i, `Marked “${s.name}” as ${f.yours}.`); const y = window.scrollY; render(); window.scrollTo(0, y); toast(f.yours ? `Marked ${f.yours} for #${d.i}. Logged in the issue's history.` : "Verdict cleared."); },
   seeresolved() { S.issueView = "resolved"; go("issues"); },
+  ruleedit(d) { ruleModal(d.id); },
+  ruleon(d, a) { const r = RULES.find(x => x.id === d.id); r.on = a.checked; if (d.modal) { keepY(); ruleModal(d.id); } else keepY(); },
+  ruleset(d, a) { RULESET[d.k] = a.checked; },
+  rulereset(d) { const r = RULES.find(x => x.id === d.id), def = RULE_DEFS.find(x => x.id === d.id); r.v = def.cuts.map(c => c[1]); r.on = true; keepY(); ruleModal(d.id); toast("Rule reset to its defaults."); },
+  rulesreset() { RULES.forEach(r => { r.v = r.cuts.map(c => c[1]); r.on = true; }); Object.assign(RULESET, { p90: true, bottleneck: true, capMonths: 12, absenceWeeks: 2, absencesYear: 2, waitPipeline: 8, waitServicing: 16 }); keepY(); toast("All rules reset to the agreed defaults."); },
+  ruleovadd(d) { const r = RULES.find(x => x.id === d.id); r.overrides.push({ target: $("#ov-target").value, v: [...r.v], why: "" }); keepY(); ruleModal(d.id); toast("Override added. Edit its numbers by changing the cut-offs, then add again."); },
+  ruleovdel(d) { RULES.find(x => x.id === d.id).overrides.splice(+d.i, 1); keepY(); ruleModal(d.id); },
   openfp(d) { S.fpStep = 0; go("principles", d.p); },
   fpstep(d) { if (+d.i < 0 || +d.i > 6) return; S.fpStep = +d.i; render(); window.scrollTo(0, 0); },
   fpset(d) { setPath(FP[S.p], d.path, d.v === "" ? false : d.v === "1" ? true : d.v); keepY(); },
@@ -1599,6 +1656,8 @@ function keepY() { const y = window.scrollY; render(); window.scrollTo(0, y); }
 function keepAck() { if (!ACK) return; const t = $("#ack-title"); if (t) ACK.title = t.value; const l = $("#ack-tl"), g = $("#ack-tg"); if (l) ACK.target = { ...ACK.target, label: l.value, goal: g.value }; }
 
 document.addEventListener("input", e => {
+  const cut = e.target.closest("[data-cut]"); if (cut) { const r = RULES.find(x => x.id === cut.dataset.id); r.v[+cut.dataset.cut] = +cut.value; const order = ["great", "good", "bad", "risk"]; const pv = $("#bandprev"); if (pv) pv.innerHTML = r.show(r.v).map((v, j) => `<div style="--pc:${RT[order[j]].c};--ps:${RT[order[j]].s}"><b>${RT[order[j]].l}</b><span>${esc(v || "—")}</span></div>`).join(""); return; }
+  const rs = e.target.closest("[data-rs]"); if (rs) { RULESET[rs.dataset.rs] = +rs.value; return; }
   const a = e.target.closest("[data-act]"); if (!a) return; const d = a.dataset;
   if (d.act === "drvw") { const dr = DRV.find(x => x.id === d.id); dr.w = +a.value; $("#dw-" + d.id).textContent = dr.w.toFixed(1); clearTimeout(window._dt); window._dt = setTimeout(() => { const y = window.scrollY; render(); window.scrollTo(0, y); }, 250); }
   if (d.act === "drvname") DRV.find(x => x.id === d.id).name = a.value;

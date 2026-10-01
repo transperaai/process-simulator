@@ -35,25 +35,57 @@ her at all, because 82% is under its single 85% threshold.
 
 Every insight shows an estimated cost per month in the workspace currency. The default currency for new workspaces is
 **AUD**. Within a rating, insights are sorted by this cost, highest first. The cost is always labelled as an estimate.
-The method for each rule is listed in the table below. Confirm the methods when the tickets are written.
 
-### Thresholds and overrides
+**What a loss is worth** (decided 1 Oct): the revenue still to come at the moment it's lost, capped at **12 months**.
 
-The cut-offs below are workspace defaults, editable in Settings → Analysis rules. A role, person or step can override
-them. For example, a step can have its own expected wait.
+- **Before signing**, a lost lead or deal is worth the deal value × the chance it would still have signed from that
+  step. With Northbeam's routing, a lead lost at Check fit is worth about 12% of a deal, and one lost at Client decision
+  about 32%.
+- **After signing**, a churned client is worth its monthly fee × the tenure it had left, from the month it churns.
+  Losing a client in month 2 of a typical 22-month tenure counts 12 months (the cap); losing one in month 20 counts 2.
+- **Deal value** is the service's monthly fee × typical tenure (one-off price for one-off services), capped at 12
+  months.
+
+**Methods per rule** (decided 1 Oct where marked):
+
+- **Busy role or person** (decided): work lost. The engine's shadow price gives the extra wins one more person would
+  bring; cost = those wins × deal value, plus any overtime cost.
+- **Long wait** (decided): through drop-off. Each pipeline step gets an optional **lost per day of waiting** (e.g. 5%
+  of leads go cold per day). Cost = items lost to waiting × what a loss is worth at that step. With none set, the
+  insight shows time, not money.
+- **Single point of failure**: the damage of one absence (from the absence test) × absences a year (default 2) ÷ 12.
+- **Client health, churn driver, SLA missed**: churned clients × what a loss is worth after signing.
+- **Drop-off**: items lost above the benchmark × what a loss is worth at that step.
+- The rest are listed in the table below.
+
+### Editing the rules
+
+Everything in this document is a workspace default, editable in **Settings → Analysis rules**:
+
+- Each rule can be switched **on or off**.
+- Each rule's **cut-offs** can be changed. The screen shows the default next to each number and previews the four
+  bands as you type.
+- A rule can be **overridden** for one role, person, step, service or process (e.g. a lower busy limit for a person
+  nobody can cover, or a shorter expected wait for replying to leads). Overrides are listed on the rule.
+- The two **escalators** (bad month, bottleneck) can each be switched off.
+- The money settings and defaults below are editable: the 12-month cap, the absence-test length and how often it
+  happens, and the default expected waits.
+- **Reset to default** works per rule, and for all rules at once.
+
+Changing a rule re-rates the latest run straight away; it doesn't need a new simulation.
 
 ## The rules
 
 | # | Rule | Number it rates | Great | Good, could improve | Bad, not urgent | Operational risk | Cost per month (estimate) |
 |---|---|---|---|---|---|---|---|
-| 1 | **Busy role or person** | Simulated utilisation | under 70% | 70–85% | 85–95% | over 95% | Throughput lost at the bottleneck (shadow price × deal value); otherwise overtime cost |
+| 1 | **Busy role or person** | Simulated utilisation | under 70% | 70–85% | 85–95% | over 95% | Extra wins one more person would bring × deal value, plus overtime |
 | 2 | **Spare capacity** | Simulated utilisation | n/a | under 40%, shown as an opportunity ("about N h a week free") | n/a | n/a | Cost of the idle hours at cost rates |
 | 3 | **Overtime** | Overtime hours | none | n/a | any regular overtime | overtime cap used up | Overtime hours × cost rate |
 | 4 | **Queue keeps growing** | Queue growth per week | n/a | n/a | n/a | 0.5 or more items a week (always) | Value of work stuck in the queue |
-| 5 | **Long wait** | Average wait for a person ÷ the step's expected wait | within 1× | up to 1.5× | up to 3× | over 3× | Revenue delayed, or lost if the step feeds a drop-off |
+| 5 | **Long wait** | Average wait for a person ÷ the step's expected wait | within 1× | up to 1.5× | up to 3× | over 3× | Items lost through the step's "lost per day of waiting" × value |
 | 6 | **Rework** | Simulated share of work done twice | under 5% | 5–10% | 10–20% | over 20% | Repeated hours × cost rate |
 | 7 | **SLA missed** | Share of visits over the step's SLA | under 5% | 5–10% | 10–25% | over 25% | Through the churn drivers when the step is client work |
-| 8 | **Single point of failure** | Absence test: the person off for 2 weeks | little effect | n/a | noticeable delays | work stops or clients are affected | Damage over the 2-week absence, spread across the year |
+| 8 | **Single point of failure** | Absence test: work lost and weeks to recover | under 5% lost, back within 1 week | n/a | 5–20% lost or 1–4 weeks | over 20%, over 4 weeks, or a client SLA missed | Damage of one absence × absences a year ÷ 12 |
 | 9 | **Client health** | Simulated health of each client group (per service) | 75+ | 65–75 | 50–65 | under 50 | Churned MRR × expected tenure |
 | 10 | **Churn driver** | A driver's share of simulated churn | n/a | n/a | 30% or more | 30% or more and the client group is under 50 | That driver's share of churned MRR |
 | 11 | **Success measure** (first principles) | Share of runs that meet the measure's target | 80%+ | 50–80% | 20–50% | under 20% | Depends on the measure |
@@ -70,9 +102,12 @@ Notes:
   expected wait is set on the step. With none set, it defaults to 1 working day for pipeline steps and 2 for servicing
   steps.
 - **Rule 6:** rated from what the simulation shows, not from the rework rate typed into the model (today's behaviour).
-- **Rule 8:** the engine runs an extra simulation with the person away for 2 weeks and compares it with the baseline.
-  Cut-offs for "noticeable" and "work stops" are set when building (proposal: under 5% throughput loss = little
-  effect; a queue that doesn't clear within 2 weeks of their return, or any missed client SLA = operational risk).
+- **Rule 8** (decided 1 Oct): the engine runs an extra simulation with the person away for 2 weeks and compares it
+  with the baseline, on two numbers: work lost (throughput) and weeks until their queues are back to normal after they
+  return.
+  - **Great:** under 5% lost and back to normal within 1 week.
+  - **Bad, not urgent:** 5–20% lost, or 1–4 weeks to recover.
+  - **Operational risk:** over 20% lost, not recovered within 4 weeks, or any client-facing SLA missed.
 - **Rules 9 and 10:** replace today's per-client rule. They use client groups per service and the churn drivers in
   Settings.
 - **Rule 11:** reads the success measures from the process's first principles (`docs/research/first-principles.md`).

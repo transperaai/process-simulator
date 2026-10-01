@@ -189,6 +189,13 @@ describe("the migration's backfill from named clients", () => {
     const prov = (await db.client.query("select provenance from client_groups where service_id = $1", [a])).rows[0].provenance;
     expect(Object.keys(prov).sort()).toEqual(["churn_monthly", "client_count", "fee", "starting_health", "stay_months"]);
     expect(prov.fee).toMatchObject({ source: "estimated" });
+    // No health entered and no health_initial setting: 80 (greatest(0, null) would have given 0).
+    const plain = (await db.client.query(`insert into workspaces (name, slug) values ('Plain', 'backfill-plain') returning id`)).rows[0].id;
+    const ps = (await db.client.query("insert into services (workspace_id, name, price, churn_monthly_base, tenure_months) values ($1, 'P', 1, 0, 12) returning id", [plain])).rows[0].id;
+    const pc = (await db.client.query("insert into clients (workspace_id, name, mrr, health, active) values ($1, 'p', 500, null, true) returning id", [plain])).rows[0].id;
+    await db.client.query("insert into client_services (client_id, service_id, workspace_id) values ($1, $2, $3)", [pc, ps, plain]);
+    await db.client.query(backfill);
+    expect((await db.client.query("select starting_health::float8 as h from client_groups where service_id = $1", [ps])).rows[0].h).toBe(80);
     // Run again after an edit: nothing is overwritten.
     await db.client.query("update client_groups set client_count = 99 where service_id = $1", [a]);
     await db.client.query(backfill);

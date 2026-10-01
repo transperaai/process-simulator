@@ -11289,7 +11289,8 @@ select
   s.tenure_months,
   coalesce(
     round(avg(c.health), 1),
-    (select least(100, greatest(0, (w.settings ->> 'health_initial')::numeric)) from public.workspaces w where w.id = s.workspace_id),
+    (select least(100, greatest(0, (w.settings ->> 'health_initial')::numeric)) from public.workspaces w
+     where w.id = s.workspace_id and w.settings ->> 'health_initial' is not null), -- greatest(0, null) is 0, not null
     80
   ),
   (
@@ -11571,7 +11572,8 @@ select
   s.tenure_months,
   coalesce(
     round(avg(c.health), 1),
-    (select least(100, greatest(0, (w.settings ->> ''health_initial'')::numeric)) from public.workspaces w where w.id = s.workspace_id),
+    (select least(100, greatest(0, (w.settings ->> ''health_initial'')::numeric)) from public.workspaces w
+     where w.id = s.workspace_id and w.settings ->> ''health_initial'' is not null), -- greatest(0, null) is 0, not null
     80
   ),
   (

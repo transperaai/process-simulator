@@ -135,6 +135,109 @@ export type Database = {
         }
         Relationships: []
       }
+      churn_drivers: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          driver: string | null
+          enabled: boolean
+          example: string | null
+          id: string
+          month: number | null
+          name: string | null
+          provenance: Json
+          updated_at: string
+          value: number | null
+          weight: number
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          driver?: string | null
+          enabled?: boolean
+          example?: string | null
+          id?: string
+          month?: number | null
+          name?: string | null
+          provenance?: Json
+          updated_at?: string
+          value?: number | null
+          weight?: number
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          driver?: string | null
+          enabled?: boolean
+          example?: string | null
+          id?: string
+          month?: number | null
+          name?: string | null
+          provenance?: Json
+          updated_at?: string
+          value?: number | null
+          weight?: number
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "churn_drivers_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      blocks: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string
+          id: string
+          name: string
+          steps: Json
+          type: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string
+          id?: string
+          name: string
+          steps: Json
+          type?: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string
+          id?: string
+          name?: string
+          steps?: Json
+          type?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "blocks_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_assignments: {
         Row: {
           client_id: string

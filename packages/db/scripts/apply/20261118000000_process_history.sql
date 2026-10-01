@@ -4,7 +4,7 @@ begin;
 --
 -- The History screen lists a process's published versions and lets an editor
 -- restore one into the draft or duplicate one as a new process. No table or
--- column changes: three functions only. (Headline numbers are not stored: the
+-- column changes: four functions only (three public, one private helper). (Headline numbers are not stored: the
 -- browser simulates each version, so no results table is needed.)
 --
 --   * `revision_history(process)`: every published and superseded revision of
@@ -142,10 +142,16 @@ declare
     when auth.uid() is not null then 'user'
     else 'system' end;
   entry jsonb;
+  ws uuid;
 begin
-  -- Security definer: the caller's right to edit is checked here, and only the process's draft is written.
+  -- Security definer: the caller's right to edit is checked here, before the process row is locked, and only the
+  -- process's draft is written.
+  select p.workspace_id into ws from public.processes p where p.id = target_process;
+  if ws is null or public.can_edit_workspace(ws) is not true then
+    return jsonb_build_object('status', 'not_found');
+  end if;
   select * into proc from public.processes p where p.id = target_process for update;
-  if proc.id is null or public.can_edit_workspace(proc.workspace_id) is not true then
+  if proc.id is null then
     return jsonb_build_object('status', 'not_found');
   end if;
   select * into src from public.process_revisions r where r.id = source_revision and r.process_id = proc.id;
@@ -206,7 +212,9 @@ begin
     'restored_from_number', src.number, 'replaced_draft', had_draft);
   if not had_draft then
     update public.audit_log l set action = 'restore_version', diff = entry
-    where l.target_id = proc.id and l.action = 'open_draft' and l.diff ->> 'revision_id' = draft.id::text;
+    -- Narrowed to this workspace and this transaction's timestamp so it uses the (workspace_id, created_at) index.
+    where l.workspace_id = proc.workspace_id and l.target_table = 'processes' and l.created_at = now()
+      and l.target_id = proc.id and l.action = 'open_draft' and l.diff ->> 'revision_id' = draft.id::text;
   end if;
   if had_draft or not found then
     insert into public.audit_log (workspace_id, actor_id, actor_kind, action, target_table, target_id, diff)
@@ -306,7 +314,7 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --
 -- The History screen lists a process's published versions and lets an editor
 -- restore one into the draft or duplicate one as a new process. No table or
--- column changes: three functions only. (Headline numbers are not stored: the
+-- column changes: four functions only (three public, one private helper). (Headline numbers are not stored: the
 -- browser simulates each version, so no results table is needed.)
 --
 --   * `revision_history(process)`: every published and superseded revision of
@@ -444,10 +452,16 @@ declare
     when auth.uid() is not null then 'user'
     else 'system' end;
   entry jsonb;
+  ws uuid;
 begin
-  -- Security definer: the caller's right to edit is checked here, and only the process's draft is written.
+  -- Security definer: the caller's right to edit is checked here, before the process row is locked, and only the
+  -- process's draft is written.
+  select p.workspace_id into ws from public.processes p where p.id = target_process;
+  if ws is null or public.can_edit_workspace(ws) is not true then
+    return jsonb_build_object('status', 'not_found');
+  end if;
   select * into proc from public.processes p where p.id = target_process for update;
-  if proc.id is null or public.can_edit_workspace(proc.workspace_id) is not true then
+  if proc.id is null then
     return jsonb_build_object('status', 'not_found');
   end if;
   select * into src from public.process_revisions r where r.id = source_revision and r.process_id = proc.id;
@@ -508,7 +522,9 @@ begin
     'restored_from_number', src.number, 'replaced_draft', had_draft);
   if not had_draft then
     update public.audit_log l set action = 'restore_version', diff = entry
-    where l.target_id = proc.id and l.action = 'open_draft' and l.diff ->> 'revision_id' = draft.id::text;
+    -- Narrowed to this workspace and this transaction's timestamp so it uses the (workspace_id, created_at) index.
+    where l.workspace_id = proc.workspace_id and l.target_table = 'processes' and l.created_at = now()
+      and l.target_id = proc.id and l.action = 'open_draft' and l.diff ->> 'revision_id' = draft.id::text;
   end if;
   if had_draft or not found then
     insert into public.audit_log (workspace_id, actor_id, actor_kind, action, target_table, target_id, diff)

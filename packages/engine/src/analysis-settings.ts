@@ -78,7 +78,7 @@ export const ANALYSIS_RULE_SPECS: Record<AnalysisRuleId, AnalysisRuleSpec> = {
   spof: { number: 8, defaults: [0.05, 0.2, 1, 4], chains: [asc(0, 1), asc(2, 3)], max: 100, overridable: true, engine: "spof" },
   health: { number: 9, defaults: [75, 65, 50], chains: [desc(0, 1, 2)], max: 100, overridable: true, engine: null },
   // A driver's share of churn for Bad, and the client group health below which it is Operational risk.
-  driver: { number: 10, defaults: [0.3, 50], chains: [], max: 100, overridable: false, engine: null },
+  driver: { number: 10, defaults: [0.3, 50], chains: [], max: 100, overridable: false, engine: "driver" },
   success: { number: 11, defaults: [0.8, 0.5, 0.2], chains: [desc(0, 1, 2)], max: 1, overridable: true, engine: "success" },
   dropoff: { number: 12, defaults: [1.25, 1.5], chains: [asc(0, 1)], max: 100, overridable: true, engine: "dropoff" },
   cycle: { number: 13, defaults: [1.25, 1.5], chains: [asc(0, 1)], max: 100, overridable: true, engine: "cycle" },
@@ -100,6 +100,8 @@ const TO_CUTOFFS: Record<RatingRuleId, (inputs: readonly number[]) => Cutoffs> =
   // `config.absence.recoveryCutoffs` (see `toRatingConfig`); they are not per-subject, so an override's recovery weeks are ignored.
   spof: (i) => [i[0]!, i[0]!, i[1]!],
   success: (i) => [i[0]!, i[1]!, i[2]!],
+  // Cause of clients leaving: the share for Bad, then the group health below which it is Operational risk (churn-issues.ts).
+  driver: (i) => [i[0]!, i[0]!, i[1]!],
   // Work lost at a step and too slow overall: at or within the benchmark / target is Great, then Good up to the first input.
   dropoff: (i) => [1, i[0]!, i[1]!],
   cycle: (i) => [1, i[0]!, i[1]!],
@@ -425,6 +427,8 @@ const RULE_OF_KEY_PREFIX: Record<string, AnalysisRuleId> = {
 
 /** The analysis rule a finding comes from, by its key (`capacity:role:<id>`, `spof:step:<id>`, ...); null for ones no rule owns. */
 export function ruleOfFinding(finding: { key: string; type?: string }): AnalysisRuleId | null {
+  // A driver causing a share of a group's churn (rule 10) is a churn_risk issue too, but not rule 9's.
+  if (finding.key.startsWith("churn_risk:driver:")) return "driver";
   return RULE_OF_KEY_PREFIX[finding.key.split(":")[0]!] ?? (finding.type ? (RULE_OF_KEY_PREFIX[finding.type] ?? null) : null);
 }
 

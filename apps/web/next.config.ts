@@ -10,6 +10,11 @@ const nextConfig: NextConfig = {
   transpilePackages: ["@transpera-flow/engine", "@transpera-flow/db", "@transpera-flow/mcp"],
   // Trace from the monorepo root: the pnpm store (node_modules/.pnpm) lives there.
   outputFileTracingRoot: monorepoRoot,
+  // The Block library's address before it was built (a bookmark of the placeholder still works).
+  redirects: async () => [
+    { source: "/w/:slug/library", destination: "/w/:slug/blocks", permanent: false },
+    { source: "/demo/library", destination: "/demo/blocks", permanent: false },
+  ],
 };
 
 export default nextConfig;

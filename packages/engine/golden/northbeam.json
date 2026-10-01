@@ -1,7 +1,7 @@
 {
   "model": "northbeam",
   "description": "Northbeam Digital, the prototype's model re-baselined after the §6.8 fixes: pooled head-counts, one implicit retainer, automatic warm-up.",
-  "engineVersion": "1.5.0",
+  "engineVersion": "1.6.0",
   "seed": 1,
   "reps": 30,
   "outputs": {
@@ -121,6 +121,7 @@
       "capacity:role:am": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": null },
       "capacity:role:seo": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": null }
     },
+    "churnCauses": null,
     "rosterClients": null
   }
 }

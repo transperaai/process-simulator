@@ -4,9 +4,10 @@ import { isId } from "@/lib/editor/validate";
 import { loadVersionModel, type ModelEntry } from "@/lib/history/data";
 import { createClient } from "@/lib/supabase/server";
 
-// Writes and reads of the History screen (issue #105). Every call runs as the signed-in user through RLS: the
-// database functions (restore_version, duplicate_version) decide who may do what, and say "not_found" for a
-// process or version the caller can't edit. The checks here only reject malformed input early.
+// Writes and reads of the History screen (issue #105). Every call runs as the signed-in user. The database functions
+// decide who may do what and say "not_found" for a process or version the caller can't edit: duplicate_version
+// through RLS, restore_version (security definer, so it can write its audit entry) through its own
+// can_edit_workspace check. The checks here only reject malformed input early.
 
 export type RestoreResult =
   | { status: "restored"; number: number; unlinkedChildren: number }

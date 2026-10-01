@@ -70,6 +70,7 @@ describe("every (i) on the Editor screen", () => {
     "components/editor/simulate-footer.tsx",
     "components/editor/editor-bar.tsx",
     "components/evidence.tsx",
+    "components/blocks/block-library.tsx",
   ];
 
   it("has a label, a description and an example, each on its own", () => {
@@ -87,9 +88,9 @@ describe("every (i) on the Editor screen", () => {
 
   it("keeps each named (i), so deleting one is caught", () => {
     const expected: Record<string, string[]> = {
-      "components/editor/inspector.tsx": ["Loose ends", "First principles", "First step"],
-      "components/editor/palette.tsx": ["Add", "Groups", "Blocks"],
-      "components/editor/editor-bar.tsx": ["Simulate"],
+      "components/editor/inspector.tsx": ["Loose ends", "First principles", "First step", "Save this group as a block"],
+      "components/editor/palette.tsx": ["Add", "Groups", "Blocks", "Insert", "Replace selected"],
+      "components/editor/editor-bar.tsx": ["Simulate", "Save to library", "Block name", "Description"],
       "components/editor/simulate-footer.tsx": ["Compared with live"],
     };
     for (const [file, labels] of Object.entries(expected)) {
@@ -98,14 +99,34 @@ describe("every (i) on the Editor screen", () => {
     }
   });
 
-  it("puts one beside each heading of the palette, as the prototype has them", () => {
-    expect(helpTags(read("components/editor/palette.tsx"))).toHaveLength(3);
+  it("puts one beside each heading of the palette, as the prototype has them, and one beside the block buttons", () => {
+    expect(helpTags(read("components/editor/palette.tsx"))).toHaveLength(5);
   });
 
   it("cites a source with an (i) on every field of the form", () => {
     const form = helpTags(read("components/evidence.tsx"));
     for (const label of ["Evidence", "Value", "Source", "Speaker", "Where", "Quote", "The value they stated"]) {
       expect(form.some((t) => t.includes(`label="${label}"`)), label).toBe(true);
+    }
+  });
+});
+
+describe("every control of the block library (issue #116)", () => {
+  it("names its (i)s: the library's New block, type and usage count", () => {
+    const tags = helpTags(read("components/blocks/block-library.tsx"));
+    expect(tags.map((t) => /label="([^"]+)"/.exec(t)?.[1])).toEqual(["New block", "Block type", "Used in"]);
+  });
+
+  it("has a button for each thing the block (i)s describe", () => {
+    const palette = read("components/editor/palette.tsx");
+    for (const button of ["Insert", "Replace selected"]) expect(palette).toContain(button);
+    expect(read("components/editor/inspector.tsx")).toContain("Save this group as a block");
+    expect(read("components/editor/editor-bar.tsx")).toContain("Save to library");
+  });
+
+  it("uses plain words, not jargon, in the block (i)s", () => {
+    for (const file of ["components/blocks/block-library.tsx", "components/editor/palette.tsx", "components/editor/inspector.tsx", "components/editor/editor-bar.tsx"]) {
+      for (const tag of helpTags(read(file))) expect(words(tag), words(tag)).not.toMatch(JARGON);
     }
   });
 });

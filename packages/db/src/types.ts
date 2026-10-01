@@ -413,6 +413,44 @@ export interface FirstPrinciplesRow {
   updated_at: string;
 }
 
+/** The five switches on Settings -> AI analysis (issue #111, A46). No row means the defaults. */
+export interface AiSettingsRow {
+  workspace_id: string;
+  review_on_publish: boolean;
+  review_on_market: boolean;
+  suggest_issues: boolean;
+  suggest_solutions: boolean;
+  read_sources: boolean;
+  updated_at: string;
+}
+
+export type AiAnalysisStatus = "ok" | "unavailable" | "failed";
+export type AiAnalysisTrigger = "publish" | "market" | "manual";
+
+/**
+ * What AI wrote about one process version (issue #111, A46): the read, the insights and the first-principles review,
+ * each as jsonb whose app-side shape lives in apps/web/src/lib/ai/types.ts.
+ */
+export interface AiAnalysisRow {
+  id: string;
+  workspace_id: string;
+  process_id: string;
+  revision_id: string;
+  status: AiAnalysisStatus;
+  reason: string | null;
+  trigger: AiAnalysisTrigger;
+  summary: Json;
+  insights: Json;
+  review: Json;
+  checked: number;
+  dropped: number;
+  input_hash: string;
+  model: string | null;
+  usage: Json;
+  created_at: string;
+  updated_at: string;
+}
+
 export type SourceKind = "transcript" | "notes" | "screenshot";
 
 /**
@@ -814,6 +852,8 @@ export type _SchemaDriftChecks = [
   Assert<Matches<ClientAssignmentRow, "client_assignments">>,
   Assert<Matches<ClientGroupRow, "client_groups">>,
   Assert<Matches<FirstPrinciplesRow, "first_principles">>,
+  Assert<Matches<AiSettingsRow, "ai_settings">>,
+  Assert<Matches<AiAnalysisRow, "ai_analyses">>,
   // recurrence and provenance are jsonb; RecurrenceJson and ProvenanceMap are their app-side shapes.
   Assert<Matches<Omit<ServiceServicingRow, "recurrence">, "service_servicing">>,
   Assert<Matches<LeadSourceRow, "lead_sources">>,

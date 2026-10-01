@@ -27,7 +27,7 @@ const SAVE_DELAY_MS = 400;
 const CONTROL_NOTE: Record<LeverKind["control"], string> = {
   slider: "Slider on process pages",
   settings: "Set in Settings",
-  later: "No slider yet. Your choice is kept for when there is one.",
+  later: "No slider yet",
 };
 
 export function LeversSettings({

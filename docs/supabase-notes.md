@@ -144,3 +144,8 @@ Verified only against plain Postgres (the db test harness, `process-history.test
 
 - `revision_history` is `security definer` and reads `auth.users` and `audit_log` (both closed to ordinary members). It checks `can_read_workspace` itself and shows an email only to someone who manages the workspace. On Supabase, check that the function owner can read `auth.users`.
 - `restore_version` and `duplicate_version` are `security invoker` and copy rows with `jsonb_populate_record`, like `open_draft`. The deferred nesting trigger (`nesting_is_a_tree`) runs at commit, so a bad copy is refused when the RPC's transaction commits.
+
+Verified only against plain Postgres (the db test harness, `ai-analysis.test.ts`), not against Supabase:
+
+- `ai_settings` and `ai_analyses` (A46) are written by the server **as the signed-in user** (the publisher, the settings editor, the person who clicked "Run again", or an API token's user through MCP), under row-level security: every member reads, owners and editors write, `anon` has nothing. The tests run those policies as `authenticated` with JWT claims set, as the other tables' tests do; PostgREST's `upsert(..., { onConflict })` (a one-column upsert for a switch, a whole-row upsert for an analysis) is verified only through the app's own code against a type check, not against a running PostgREST. No `SECURITY DEFINER` function is involved.
+- The AI call itself (`claude-opus-5-5`, structured output, `fallbacks: "default"`) is the same request narration makes and is verified only against the SDK's types and a fake `fetch`; the first real call happens on a deploy with `ANTHROPIC_API_KEY`.

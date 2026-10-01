@@ -211,6 +211,8 @@ It writes insights marked **AI**. It may suggest a rating, but every number it u
 insights go through the same Acknowledge step as rule insights. AI also runs the first-principles checks (see the
 research note), such as automation proposed for a step that is still a delete candidate.
 
+How it is built, what it is given, how every number it writes is checked against the run, and when it runs: [ADR 0013](adr/0013-ai-analysis.md). The switches are on Settings → AI analysis.
+
 ## Changes from today
 
 - One rating scale instead of critical / serious / warning / info.

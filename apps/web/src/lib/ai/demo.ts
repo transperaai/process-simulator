@@ -38,7 +38,7 @@ export const DEMO_AI_OUTPUT = {
     },
   ],
   review: [
-    { step: "saa", level: "bad", text: "“AI lead qualifier” automates Qualify lead, which is still a delete candidate. Decide whether to delete the step before you automate it." },
+    { step: "saa", level: "bad", text: "“AI lead qualifier” automates Qualify lead, which is still a delete candidate. The run points at Audit & proposal, not Qualify lead, so simplifying that step first would help more." },
     { step: "del", level: "info", text: "Qualify lead is the one delete candidate. The run shows it isn't what holds work up: Audit & proposal is, so deleting it won't free the Strategist." },
     { step: "reqs", level: "warn", text: "“Every lead is qualified before anyone speaks to them” is owned by Sales team, which is a team, and the reason given is habit. Name who set it, and why." },
     { step: "why", level: "ok", text: "The root cause, no written pricing and scoping rules, is in the process, and the run backs it up: the Strategist is busy avg 97% of the time (range 85%–101%)." },
@@ -60,7 +60,7 @@ export function demoAiView(processId: string): AiAnalysisView | null {
     review: DEMO_AI_OUTPUT.review.map((r): AiReviewFinding => ({ ...r })),
     checked: 22,
     dropped: 0,
-    model: "written in advance (demo)",
+    model: null,
     at: "2026-09-30T09:00:00.000Z",
     revisionId: "demo",
   };

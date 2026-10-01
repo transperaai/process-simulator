@@ -30,7 +30,7 @@ describe("process page help", () => {
 
   it("the sections carry help through <Section help>", () => {
     const text = read("components/process-page.tsx");
-    for (const label of ["Map colours", "Insights", "Issues"]) expect(text).toContain(`label: "${label}"`);
+    for (const label of ["First principles", "Map colours", "Insights", "Issues"]) expect(text).toContain(`label: "${label}"`);
   });
 
   it("the headline cards and levers bring their own (i)", () => {

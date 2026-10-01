@@ -92,10 +92,10 @@ To turn interview transcripts into a draft process, use the `/extract-process` s
 
 ## Narration (Claude)
 
-The report's executive summary and "explain this run" can be drafted by Claude
+"Explain this run" can be drafted by Claude
 (`claude-opus-5-5`), server-side only, when `ANTHROPIC_API_KEY` is set in the
 server's environment (Vercel: Production and Preview). Without it the templated
 text prints and the UI says narration needs the key. Every number in a draft is
-checked against the report's figures; one redraft, then the template. Tests use
+checked against the run's figures; one redraft, then the template. Tests use
 fakes and never call the API. The public `/demo` uses a stand-in writer, never
 the API. See [`docs/adr/0011-narration.md`](docs/adr/0011-narration.md).

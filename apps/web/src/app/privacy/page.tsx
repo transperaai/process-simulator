@@ -66,7 +66,7 @@ export default function PrivacyPage() {
           <li>Vercel: web hosting.</li>
           <li>Google: sign-in.</li>
           <li>
-            Anthropic: drafts a report&rsquo;s executive summary or explains a saved run, only when someone asks. It receives the
+            Anthropic: explains a saved run, only when someone asks. It receives the
             figures being described and the names of the process, its steps, roles and scenarios; the names of your staff and
             clients are replaced with labels before anything is sent. Anthropic doesn&rsquo;t use it to train models.
           </li>

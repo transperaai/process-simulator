@@ -31,7 +31,6 @@ export default async function WorkspaceIssuesPage(props: PageProps<"/w/[slug]/is
           scenarios={scenarios}
           processes={processes}
           mode={canEdit ? "live" : "readonly"}
-          fixHref={`/w/${slug}?fix=`}
         />
       </div>
     </div>

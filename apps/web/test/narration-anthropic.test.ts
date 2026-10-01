@@ -9,7 +9,7 @@ vi.mock("server-only", () => ({}));
 // no SDK retries) and how it reads answers and failures. No network: the
 // real API is never called from tests or CI.
 
-const req: DraftRequest = { purpose: "summary", system: "SYSTEM", facts: 'Facts (JSON):\n{"a":1}', instruction: "Write it.", timeoutMs: 45_000 };
+const req: DraftRequest = { purpose: "explain", system: "SYSTEM", facts: 'Facts (JSON):\n{"a":1}', instruction: "Write it.", timeoutMs: 45_000 };
 
 function fakeFetch(respond: (body: Record<string, unknown>, headers: Headers) => Response) {
   const seen: { url: string; body: Record<string, unknown>; headers: Headers }[] = [];

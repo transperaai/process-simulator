@@ -95,8 +95,8 @@ password to `postgres`.
 
 **Secrets:**
 - `SUPABASE_ACCESS_TOKEN` is set in the cloud environment.
-- `ANTHROPIC_API_KEY` is set in Vercel (Production and Preview) for narration (#29). Without it, reports print
-  the templated summary.
+- `ANTHROPIC_API_KEY` is set in Vercel (Production and Preview) for narration (#29). Without it, "explain this run" prints
+  the templated text.
 
 ## Next steps
 
@@ -179,6 +179,4 @@ simulation, waits for Austin's end-of-build review.
   golden-model numbers needs an `ENGINE_VERSION` bump and `golden:approve` (see `docs/engine-versioning.md`).
 - **Fixtures are the source of truth for sample data:** after changing them or a migration, run
   `pnpm --filter @transpera-flow/db gen:seed` and `gen:bootstrap`. CI fails if either is stale.
-- **PDF reports on Vercel:** `apps/web/next.config.ts` traces Chromium's real `bin/` path (not the pnpm
-  symlink). Keep it that way or the PDF route returns 500s.
 - **Plain Postgres vs Supabase:** anything verified only against plain Postgres goes in `docs/supabase-notes.md`.

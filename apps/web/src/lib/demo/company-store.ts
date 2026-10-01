@@ -1,9 +1,7 @@
 "use client";
 
 // The public demo's company model, suggestions and saved runs, in memory for
-// this tab (issue #25). One store for the demo's pages, so a suggestion
-// accepted on /demo/suggestions shows up in /demo/runs' "model changed since
-// this run" banner, and a run saved on /demo is listed there. Lost on reload.
+// this tab (issue #25). Lost on reload.
 
 import { useSyncExternalStore } from "react";
 import type { CompanyModel, RunRow, SuggestionRow } from "@transpera-flow/db";

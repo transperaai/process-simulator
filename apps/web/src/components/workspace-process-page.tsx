@@ -12,7 +12,7 @@ import { loadProcessForEditing, loadWorkspaceIssues, loadWorkspaceOverview, load
  * process) and `/w/[slug]/p/[processId]` (any process, never-published ones
  * included; issue #76).
  */
-export async function WorkspaceProcessPage({ slug, processId, fix }: { slug: string; processId?: string; fix: string | null }) {
+export async function WorkspaceProcessPage({ slug, processId }: { slug: string; processId?: string }) {
   const process = await loadProcessForEditing(slug, processId);
   if (!process) {
     // A workspace nothing is published in (a new one) still opens: its links and how to get started.
@@ -39,7 +39,6 @@ export async function WorkspaceProcessPage({ slug, processId, fix }: { slug: str
       scenarios={scenarios}
       issues={issues}
       sources={sources}
-      initialFix={fix}
       registerHref={`${base}/issues`}
       settingsHref={`${base}/settings`}
       userId={viewer?.userId ?? null}

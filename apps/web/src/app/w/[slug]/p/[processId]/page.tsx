@@ -6,6 +6,5 @@ import { isId } from "@/lib/editor/validate";
 export default async function ProcessPage(props: PageProps<"/w/[slug]/p/[processId]">) {
   const { slug, processId } = await props.params;
   if (!isId(processId)) notFound();
-  const { fix } = await props.searchParams;
-  return <WorkspaceProcessPage slug={slug} processId={processId} fix={typeof fix === "string" ? fix : null} />;
+  return <WorkspaceProcessPage slug={slug} processId={processId} />;
 }

@@ -2,13 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   bundleForProcess,
   northbeamBundle,
-  northbeamPersonIds,
   northbeamServicingProcessIds,
   toEngineModel,
   unpublishedLive,
 } from "@transpera-flow/db";
 import { detectIssues, simulate } from "@transpera-flow/engine";
-import { personClientLoads, type RosterData } from "@/lib/clients/roster";
 import { MemoryDraftBackend, DraftSession } from "@/lib/drafts/session";
 import { promoteInput } from "@/lib/issues/register";
 import { parsePromoteInput } from "@/lib/issues/validate";
@@ -17,22 +15,6 @@ import { clientRetention, recurrenceFromValue, recurrenceOptions, recurrenceText
 // Client servicing in the app (issue #19) and opening never-published processes (issue #76).
 
 const START = "2026-10-05";
-
-function roster(withServicing: boolean): RosterData {
-  const b = northbeamBundle();
-  return {
-    workspace: b.workspace,
-    canEdit: true,
-    roles: b.roles,
-    people: b.people,
-    personRoles: b.personRoles,
-    services: b.services,
-    clients: b.clients!,
-    clientServices: b.clientServices!,
-    clientAssignments: b.clientAssignments!,
-    ...(withServicing ? { servicingLinks: b.servicingLinks!, simulation: b } : {}),
-  };
-}
 
 describe("recurrences in settings", () => {
   it("names the presets and round-trips them through the select's values", () => {
@@ -60,16 +42,7 @@ describe("recurrences in settings", () => {
   });
 });
 
-describe("the Clients page", () => {
-  it("a service with a servicing process adds no fallback load to the people looking after its clients", () => {
-    const nina = northbeamPersonIds["Nina Kowalski"]!;
-    const before = personClientLoads(roster(false)).find((l) => l.personId === nina)!;
-    expect(before.hours).toBeCloseTo((8 * 19) / 4.33, 9);
-    const after = personClientLoads(roster(true)).find((l) => l.personId === nina)!;
-    expect(after.hours).toBe(0);
-    expect(after.clients).toBe(8);
-  });
-
+describe("client retention", () => {
   it("reads each client's simulated retention from the run", () => {
     const b = northbeamBundle();
     const r = simulate(toEngineModel(b, { startDate: START }), 10, 1);

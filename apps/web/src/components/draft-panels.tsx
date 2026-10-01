@@ -83,7 +83,7 @@ export function DraftBar({
         ? "Edits open a draft; the live model only changes when you publish."
         : "The live model."
       : view === "live"
-        ? `The live model, as simulation, forecasts and reports use it. The draft has ${plural(changes, "change")}.`
+        ? `The live model, as simulation and forecasts use it. The draft has ${plural(changes, "change")}.`
         : changes
           ? `${plural(changes, "change")} against live${conflicts ? ` · ${plural(conflicts, "conflict")}` : ""}${unresolved.length - conflicts ? ` · ${plural(unresolved.length - conflicts, "unconfirmed estimate")}` : ""}${breaks.length ? ` · publishing breaks ${plural(breaks.length, "saved scenario")}` : ""}.`
           : "No changes against live yet.";
@@ -187,7 +187,7 @@ export function DraftBar({
             </>
           ) : (
             <p>
-              Publish this draft as revision {draftNumber}? It becomes the live model that simulation, forecasts and reports use.
+              Publish this draft as revision {draftNumber}? It becomes the live model that simulation and forecasts use.
             </p>
           )}
           <div className="flex flex-wrap gap-2">
@@ -415,7 +415,7 @@ export function DraftCompare({
 
 /**
  * Saved scenarios this draft would break (issue #16): published, each needs
- * attention, is left out of comparisons and reports, and raises an issue until
+ * attention, is left out of comparisons, and raises an issue until
  * its changes are re-pointed.
  */
 function BreaksWarning({ breaks }: { breaks: BreakingScenario[] }) {
@@ -425,7 +425,7 @@ function BreaksWarning({ breaks }: { breaks: BreakingScenario[] }) {
         <strong>
           Publishing breaks {plural(breaks.length, "saved scenario")}.
         </strong>{" "}
-        {breaks.length === 1 ? "It" : "Each"} will need attention: left out of comparisons and reports, with an issue raised, until its changes are
+        {breaks.length === 1 ? "It" : "Each"} will need attention: left out of comparisons, with an issue raised, until its changes are
         re-pointed under Scenarios.
       </p>
       <ul className="flex flex-col gap-0.5">

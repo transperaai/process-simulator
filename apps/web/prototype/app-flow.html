@@ -257,6 +257,12 @@ svg.map { display: block; }
 .fp2 .mrow { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; }
 .principles.fp2 { grid-template-columns: 1.3fr 1.2fr 1fr; }
 @media (max-width: 980px) { .principles.fp2 { grid-template-columns: 1fr; } .principles.fp2 > div { border-left: 0; border-top: 1px solid var(--line); } }
+.chev { display: inline-block; font-size: 18px; line-height: 1; color: var(--fg-3); transition: transform var(--m, 120ms); }
+.chev.on { transform: rotate(90deg); color: var(--accent); }
+tr.opened td { background: var(--panel-2); }
+tr.mapcard > td { background: var(--bg); padding: 12px 16px 16px; }
+tr.mapcard .pcard { width: 0; min-width: 100%; }
+tr.mapcard .mapwrap { background: var(--panel); }
 /* Lists */
 .status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; padding: 1px 8px; border-radius: 4px; background: var(--panel-2); white-space: nowrap; }
 .status.done { background: var(--good-soft); }
@@ -1072,18 +1078,13 @@ const SCREENS = {
     </div></section>`;
   },
   processes() {
-    const rows = procList().filter(([id]) => id !== "company"), view = S.procView || "map";
-    const tops = BASE.company.cols.flat();
-    const card = id => { const nd = BASE[id], iss = issuesFor(id).length, v = (VERSIONS[id] || VERSIONS.sales)[0]; return `<section class="card pcard">
-      <div class="spread"><div class="row"><h2><button class="link" data-go="process:${id}">${esc(nd.name)}</button></h2>${pill(nd.rating)}<span class="chip">${esc(nd.kind || "Process")}</span></div>
-        <div class="row small muted"><span>${leafCount(BASE, id)} steps</span><span>·</span><span>${iss ? `<span class="iss">${iss}</span> open issue${iss > 1 ? "s" : ""}` : "no open issues"}</span><span>·</span><span>live v${v.v}</span><button class="btn sm" data-go="process:${id}">Open →</button></div></div>
-      ${PRIN[id] ? `<p class="small muted">Goal: ${esc(PRIN[id].goal)}</p>` : ""}
-      ${mapBlock("pv-" + id, { root: id, issues: true, legend: false, flat: true })}</section>`; };
-    return `<header class="head"><div class="t"><span class="eyebrow">Processes</span><h1>Processes</h1><p class="muted">Every process on its own map. Sub-processes sit inside them: use Expand to open one in place.</p></div>
-      <div class="row"><div class="seg" role="group" aria-label="View"><button class="${view === "map" ? "on" : ""}" data-act="procview" data-v="map">Maps</button><button class="${view === "list" ? "on" : ""}" data-act="procview" data-v="list">List</button></div><button class="btn" data-go="process:company">Company map</button><button class="btn edit" data-act="editdraft" data-p="company">✎ New process</button></div></header>
-    ${view === "map" ? tops.map(card).join("") : `<div class="tblwrap"><table class="proc"><thead><tr><th>Process</th><th>Type</th><th>Rating</th><th class="n">Steps</th><th class="n">Open issues</th><th>Live version</th></tr></thead><tbody>
-      ${rows.map(([id, d]) => { const nd = BASE[id], iss = issuesFor(id).length, v = (VERSIONS[id] || VERSIONS.sales)[0]; return `<tr class="click" data-go="process:${id}"><td><span style="padding-left:${(d - 1) * 22}px" class="pname">${d > 1 ? `<span class="muted">↳</span>` : ""}<b>${esc(nd.name)}</b></span></td><td class="small">${esc(nd.kind || "Process")}</td><td>${pill(nd.rating)}</td><td class="n">${leafCount(BASE, id)}</td><td class="n">${iss ? `<span class="iss">${iss}</span>` : `<span class="muted">0</span>`}</td><td class="small nowrap">v${v.v} · ${v.date.replace(" 2026", "")}</td></tr>`; }).join("")}
-    </tbody></table></div>`}`;
+    const rows = procList().filter(([id]) => id !== "company"), openSet = S.procOpen || (S.procOpen = new Set());
+    return `<header class="head"><div class="t"><span class="eyebrow">Processes</span><h1>Processes</h1><p class="muted">The company map and everything inside it. Open a row to see that process's map card.</p></div>
+      <div class="row"><button class="btn" data-go="process:company">Company map</button><button class="btn edit" data-act="editdraft" data-p="company">✎ New process</button></div></header>
+    <div class="tblwrap"><table class="proc"><thead><tr><th style="width:36px"></th><th>Process</th><th>Type</th><th>Rating</th><th class="n">Steps</th><th class="n">Open issues</th><th>Live version</th><th></th></tr></thead><tbody>
+      ${rows.map(([id, d]) => { const nd = BASE[id], iss = issuesFor(id).length, v = (VERSIONS[id] || VERSIONS.sales)[0], op = openSet.has(id); return `<tr class="click ${op ? "opened" : ""}" data-act="proctoggle" data-p="${id}" aria-expanded="${op}"><td><span class="chev ${op ? "on" : ""}" aria-hidden="true">›</span></td><td><span style="padding-left:${(d - 1) * 22}px" class="pname">${d > 1 ? `<span class="muted">↳</span>` : ""}<b>${esc(nd.name)}</b></span></td><td class="small">${esc(nd.kind || "Process")}</td><td>${pill(nd.rating)}</td><td class="n">${leafCount(BASE, id)}</td><td class="n">${iss ? `<span class="iss">${iss}</span>` : `<span class="muted">0</span>`}</td><td class="small nowrap">v${v.v} · ${v.date.replace(" 2026", "")}</td><td><button class="btn sm" data-go="process:${id}">Open →</button></td></tr>
+        ${op ? `<tr class="mapcard"><td colspan="8"><div class="pcard">${PRIN[id] || FP[id] ? `<p class="small muted">Goal: ${esc(FP[id]?.job.progress || PRIN[id].goal)}</p>` : ""}${mapBlock("pv-" + id, { root: id, issues: true, legend: false, flat: true, title: esc(nd.name) })}</div></td></tr>` : ""}`; }).join("")}
+    </tbody></table></div>`;
   },
   process() {
     const pid = S.p, nd = BASE[pid], key = "pr-" + pid, pr = PRIN[pid], vers = VERSIONS[pid] || VERSIONS.sales;
@@ -1539,7 +1540,7 @@ const ACTIONS = {
   fpaddlane(d) { FP[S.p].saa[d.l].push({ t: "New change", steps: ["q_enrich"] }); keepY(); toast("Added. It touches Enrich in CRM, so the AI checks the order."); },
   fpaddwhy() { FP[S.p].why.chain.push(""); keepY(); },
   fpsimdel(d) { const x = FP[S.p].del[+d.i]; x.sim = { done: true, text: `Without ${nodeName(x.step)}: proposal turnaround 3.1 d → 2.8 d; win rate 31% → 30% (within range).` }; keepY(); toast("Simulated 30 runs without that step."); },
-  procview(d) { S.procView = d.v; render(); },
+  proctoggle(d) { const o = S.procOpen || (S.procOpen = new Set()); o.has(d.p) ? o.delete(d.p) : o.add(d.p); keepY(); },
   issueview(d) { S.issueView = d.v; render(); },
   buildidea(d) { const g = SUG.find(x => x.id === d.id); const i = ISS.find(x => x.id === g.issue); const t = treeWith({ [g.target]: g.block }); startEditor({ mode: "solution", root: procOf(g.target), issue: i.id, tree: t, replaced: { [g.target]: g.block }, open: [...ancestors(g.target).filter(a => a !== "company" && a !== procOf(g.target)), g.target], name: g.title, idea: g.id }); toast("The AI's steps are placed. Adjust them, simulate, then save."); },
   newsol() { modal(`${mhead("New solution", `<span class="small muted">Pick the process it changes. You can link issues after.</span>`)}<div class="mbody"><div class="stack" style="gap:4px">${procList().filter(([id]) => id !== "company").map(([id, dd]) => `<button class="nav" style="padding-left:${dd * 14}px" data-act="newsolgo" data-p="${id}"><span class="cdot" style="background:${RT[BASE[id].rating].c}"></span>${esc(BASE[id].name)}</button>`).join("")}</div></div>`); },

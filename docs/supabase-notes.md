@@ -127,3 +127,11 @@ Checked against PGlite (PostgreSQL 17 compiled to WASM) and against Postgres 16 
 ## Cost per month (issue #108, migration 20261113000000)
 
 Verified only against plain Postgres (the db test harness), not against Supabase: `public.create_workspace` now defaults new workspaces to `AUD`. It is `security invoker`, as before, and was redefined with `create or replace` from the 20261021000000 copy, so the migration re-applies its grants.
+
+## Churn drivers (issue #121, migration 20261116000000)
+
+Checked on plain Postgres 16 with the auth shim (`packages/db/test/churn-drivers.test.ts`); not confirmed on Supabase itself:
+
+- The 25-driver cap is a `before insert` trigger that takes `pg_advisory_xact_lock(hashtextextended('churn_drivers:' || workspace_id, 0))` before counting, as `market_schedule`'s overlap check does. Supabase allows advisory locks inside a transaction; over PostgREST each request is one transaction.
+- The partial unique index `churn_drivers_driver_key (workspace_id, driver) where driver is not null` is not a valid `ON CONFLICT` target for supabase-js `upsert`, so the app selects, then inserts or updates, and retries the update when the insert loses a race (`23505`).
+- `stamp_provenance` is given a boolean column (`enabled`) as well as numbers; it compares `to_jsonb(new) -> col` values, so it works for either, but that is only exercised here.

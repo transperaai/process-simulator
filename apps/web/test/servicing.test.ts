@@ -60,7 +60,7 @@ describe("churn-risk issues in the register", () => {
   it("tracking one links its client", () => {
     const b = { ...northbeamBundle(), clientGroups: [] };
     const model = toEngineModel(b, { startDate: START });
-    const issue = detectIssues(model, simulate(model, 10, 1)).find((i) => i.type === "churn_risk")!;
+    const issue = detectIssues(model, simulate(model, 10, 1)).find((i) => i.key.startsWith("churn_risk:client:"))!;
     expect(issue.clientId).toBeTruthy();
     const input = promoteInput(issue, b.process.id, []);
     expect(input.client_id).toBe(issue.clientId);
@@ -73,7 +73,7 @@ describe("churn-risk issues in the register", () => {
     const b = northbeamBundle();
     const unhappy = { ...b, clientGroups: b.clientGroups!.map((g) => ({ ...g, starting_health: 20 })) };
     const model = toEngineModel(unhappy, { startDate: START });
-    const issues = detectIssues(model, simulate(model, 10, 1)).filter((i) => i.type === "churn_risk");
+    const issues = detectIssues(model, simulate(model, 10, 1)).filter((i) => i.key.startsWith("churn_risk:group:"));
     expect(issues.map((i) => i.key).sort()).toEqual(b.clientGroups!.map((g) => `churn_risk:group:${g.service_id}`).sort());
     const input = promoteInput(issues[0]!, b.process.id, []);
     expect(input.client_id).toBeUndefined();

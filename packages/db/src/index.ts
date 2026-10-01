@@ -2,6 +2,7 @@ export * from "./types";
 export type { Database, Json } from "./database.types";
 export {
   ModelError,
+  engineChurnDrivers,
   engineMarket,
   engineDistribution,
   isHolderStep,
@@ -110,6 +111,7 @@ export {
   larkspurStepIds,
 } from "./fixtures/larkspur";
 export {
+  CHURN_DRIVER_COLUMNS,
   CLIENT_ASSIGNMENT_COLUMNS,
   CLIENT_GROUP_COLUMNS,
   CLIENT_COLUMNS,
@@ -118,6 +120,7 @@ export {
   ISSUE_COLUMNS,
   LEAD_SOURCE_COLUMNS,
   listProcesses,
+  loadChurnDrivers,
   loadClientGroups,
   loadClients,
   loadMarket,

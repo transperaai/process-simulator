@@ -25,7 +25,7 @@ export default function DemoProcessesPage() {
   return (
     <ProcessesPage
       rows={rows}
-      hrefs={Object.fromEntries(rows.map((r) => [r.id, r.id === pipeline.process.id ? "/demo" : `/demo?process=${r.id}`]))}
+      hrefs={Object.fromEntries(rows.map((r) => [r.id, `/demo/p/${r.id}`]))}
       companyMapHref="/demo"
       loadCard={openDemoProcessCard}
       note="Demo mode: sample data. Nothing here is kept."

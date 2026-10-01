@@ -47,10 +47,10 @@ const matches = (rest: string, path: string) => rest === path || rest.startsWith
 
 /**
  * The shared shape: `base` is where the workspace's pages live (`/w/<slug>` or `/demo`), `rest` the path under it.
- * The map (the workspace root and `/p/<id>`) belongs to Processes until A35 turns Overview into the landing page.
+ * The workspace root is the Overview, the landing page (issue #100); a process's map (`/p/<id>`) belongs to Processes.
  */
 function groups(base: string, rest: string, counts: NavCounts, extra: { settings: boolean; access: boolean; rules?: boolean; levers?: boolean }): NavGroup[] {
-  const onMap = rest === "" || rest.startsWith("/p/");
+  const onMap = rest.startsWith("/p/");
   const item = (i: Omit<NavItem, "href" | "active"> & { path: string; active?: boolean }): NavItem => {
     const { path, active, ...fields } = i;
     return { ...fields, href: `${base}${path}`, active: active ?? matches(rest, path) };
@@ -69,7 +69,7 @@ function groups(base: string, rest: string, counts: NavCounts, extra: { settings
       key: "main",
       label: null,
       items: [
-        item({ key: "overview", label: "Overview", path: "/overview", icon: "overview", soon: "A35" }),
+        item({ key: "overview", label: "Overview", path: "/overview", icon: "overview", active: rest === "" || matches(rest, "/overview") }),
         item({ key: "processes", label: "Processes", path: "/processes", icon: "processes", active: onMap || matches(rest, "/processes"), count: counts.processes, tone: "plain", countNoun: "processes" }),
       ],
     },

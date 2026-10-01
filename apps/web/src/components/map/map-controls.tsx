@@ -66,7 +66,7 @@ export function MapLegend({ badge }: { badge: boolean }) {
       {LEGEND_ORDER.map((r) => (
         <Item key={r} color={RATING_STYLE[r].stripe} full={RATING_LABELS[r]} short={SHORT[r]} title={RATING_STYLE[r].hint} />
       ))}
-      <Item color="var(--line-2)" full="No confirmed issues" short="None" title="Steps with no confirmed issue are not coloured: insights stay off the map until someone acknowledges them." />
+      <Item color="var(--line-2)" full="Nothing to fix" short="None" title="Steps with no confirmed issue are not coloured: insights stay off the map until someone acknowledges them." />
       {badge && (
         <Item
           color="var(--crit)"

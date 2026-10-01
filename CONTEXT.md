@@ -34,6 +34,10 @@ _Avoid_: Slider, parameter, scenario
 Seven short answers for one process that separate hard truths from copied assumptions, and end in goals. Example: "Proposals take 3 days" is an assumption. "The client needs a price before they can decide" is a hard truth.
 _Avoid_: Process charter, goals sheet
 
+**Editor**:
+The full-screen page, in its own colour, where a process's steps are changed. It edits a draft (or, later, a solution or a block), never the live map; **Publish** makes the draft the next live version and keeps the old one in History. The map is for reading only. Example: "Open the Editor, add a wait step after the discovery call, simulate it against live, then publish version 4."
+_Avoid_: Edit mode, edit toggle
+
 ### Analysis
 
 **Rating**:

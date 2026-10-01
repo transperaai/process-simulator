@@ -30,16 +30,16 @@ export default async function DemoPage(props: PageProps<"/demo">) {
       scenarios={northbeamScenarios()}
       issues={northbeamIssues()}
       sources={demoSources()}
+      editHref={`/demo/edit${typeof process === "string" ? `?process=${process}` : nested === "1" ? "?nested=1" : ""}`}
       processPicker={<ProcessNav processes={processes} current={bundle.process.id} hrefs={hrefs} />}
       notice={
         <Alert role="note">
           <Info />
           <AlertDescription className="text-xs leading-relaxed">
             <p>
-              Demo mode: sample data from the seed fixtures, not a database. Edit the map freely: edits open a draft you can compare with
-              live, publish or discard. Move levers, save scenarios and log issues too. Split a step a saved scenario changes (right-click
-              “Audit &amp; proposal”, Split in two) to see it flagged for re-pointing. Everything stays in this tab and is gone when you
-              reload.
+              Demo mode: sample data from the seed fixtures, not a database. This map is for reading: press Edit process to open the
+              Editor, where edits go into a draft you can simulate against live, publish or discard. Move levers, save scenarios and log
+              issues here too. Everything stays in this tab and is gone when you reload.
             </p>
           </AlertDescription>
         </Alert>

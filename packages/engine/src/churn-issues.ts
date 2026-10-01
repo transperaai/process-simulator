@@ -7,6 +7,7 @@
 import type { DetectedIssue } from "./issues";
 import type { EngineModel, EngineStep, SimulationResult } from "./model";
 import { fixedRating, resolveRatingConfig, type RatingConfig, type RatingConfigInput } from "./ratings";
+import { DEFAULT_COST_CONFIG, WEEKS_PER_MONTH, clientLossValue, formatMoney, noCost, type CostConfig } from "./cost";
 import { AT_RISK_HEALTH, clientChurnSensitivity, servicingLinks } from "./servicing";
 import { clientChurnMonthly, clientHealthSummary, groupServiceOf, withClientGroups } from "./clients";
 
@@ -16,7 +17,7 @@ const pct = (share: number) => `${Math.round(share * 100)}%`;
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /** Churn-risk issues for a run of `model`, by client id. */
-export function churnRiskIssues(source: EngineModel, result: SimulationResult): DetectedIssue[] {
+export function churnRiskIssues(source: EngineModel, result: SimulationResult, money: CostConfig = DEFAULT_COST_CONFIG): DetectedIssue[] {
   const model = withClientGroups(source);
   const clients = result.clients;
   if (!clients || !model.clients) return [];
@@ -59,6 +60,16 @@ export function churnRiskIssues(source: EngineModel, result: SimulationResult): 
       type: "churn_risk",
       // Not yet on the rating model (rules 9 and 10 replace it): the old bands, as ratings.
       ...fixedRating(end < 30 || c.churned >= 0.5 ? "risk" : end < 40 ? "bad" : "good"),
+      cost: (() => {
+        // Only the churn above the client's base rate counts: that is what late and missed work adds (as for the deadlines cost).
+        const value = clientLossValue(model, client, money.capMonths);
+        const excess = Math.max(0, c.churnMonthly.mean - base);
+        return {
+          perMonth: excess * value,
+          hoursPerMonth: null,
+          method: `Through churn above its base rate: a ${pct(excess)} extra chance it leaves in a month (${pct(c.churnMonthly.mean)} against a base of ${pct(base)}) × ${formatMoney(value, money.currency)}, its monthly fee × the tenure it has left (capped at ${num(money.capMonths, 0)} months).`,
+        };
+      })(),
       title: `${client.name}: health ${trend}, at risk of churning`,
       evidence:
         `Simulated: health ${trend} over the ${num(weeks, 0)}-week run (range ${num(c.health.p10, 0)}–${num(c.health.p90, 0)}; below ${AT_RISK_HEALTH} is at risk). ` +
@@ -110,6 +121,19 @@ export function churnRiskIssues(source: EngineModel, result: SimulationResult): 
       key: `churn_risk:group:${group.service}`,
       type: "churn_risk",
       ...fixedRating(group.rating),
+      cost: (() => {
+        // Only the churn above the group's base rate counts: clients expected to leave in a month because of it × what losing one is worth.
+        const first = model.clients![members[0]!]!;
+        const value = clientLossValue(model, first, money.capMonths);
+        const base = clientChurnMonthly(model, first);
+        const excess = Math.max(0, churnMonthly - base);
+        const leaving = excess * members.length;
+        return {
+          perMonth: leaving * value,
+          hoursPerMonth: null,
+          method: `Through churn above the base rate: about ${num(leaving)} of the ${num(members.length, 0)} clients leave in a month on top of the usual (${pct(churnMonthly)} each against a base of ${pct(base)}) × ${formatMoney(value, money.currency)}, a client's monthly fee × the tenure it has left (capped at ${num(money.capMonths, 0)} months).`,
+        };
+      })(),
       title: `${group.name} clients: health ${trend}, ${group.rating === "risk" ? "at risk of churning" : "slipping"}`,
       evidence:
         `Simulated: the average health of the ${num(group.clients, 0)} ${group.name} clients ${trend} over the ${num(weeks, 0)}-week run (Bad below 65, Operational risk below ${AT_RISK_HEALTH}). ` +
@@ -150,7 +174,7 @@ const MIN_CLIENTS_LOST = 0.25;
  * each client. Nothing is raised when the rule is switched off, the run has no
  * driver accounting, or the group loses almost nobody.
  */
-export function churnCauseIssues(source: EngineModel, result: SimulationResult, ratingConfig: RatingConfigInput | RatingConfig = {}): DetectedIssue[] {
+export function churnCauseIssues(source: EngineModel, result: SimulationResult, ratingConfig: RatingConfigInput | RatingConfig = {}, money: CostConfig = DEFAULT_COST_CONFIG): DetectedIssue[] {
   const causes = result.churnCauses;
   const rule = resolveRatingConfig(ratingConfig).rules.driver;
   if (!causes || !rule.enabled) return [];
@@ -178,6 +202,9 @@ export function churnCauseIssues(source: EngineModel, result: SimulationResult, 
       const share = row.shares[cause.id] ?? 0;
       if (!cause.enabled || !(share >= shareBad) || !(share > 0)) continue;
       const lost = share * row.clients;
+      // Cost a month: the clients this driver loses in a month × what losing one is worth after signing (a client of the group).
+      const sample = Object.values(model.clients ?? {}).find((c) => (c.services[0] ?? "") === sid);
+      const perMonthClients = lost / (weeks / WEEKS_PER_MONTH);
       const risk = health !== null && health < healthBelow;
       out.push({
         key: `churn_risk:driver:${sid || "all"}:${cause.id}`,
@@ -196,6 +223,16 @@ export function churnCauseIssues(source: EngineModel, result: SimulationResult, 
           ...(health !== null ? { group_health: health } : {}),
           weight: cause.weight,
         },
+        cost: sample
+          ? (() => {
+              const value = clientLossValue(model, sample, money.capMonths);
+              return {
+                perMonth: perMonthClients * value,
+                hoursPerMonth: null,
+                method: `This driver's share of the clients lost: about ${num(perMonthClients, 2)} a month × ${formatMoney(value, money.currency)}, a client's monthly fee × the tenure it has left (capped at ${num(money.capMonths, 0)} months).`,
+              };
+            })()
+          : noCost("No client of this group to value a loss from."),
         stepId: null,
         roleId: null,
         personId: null,

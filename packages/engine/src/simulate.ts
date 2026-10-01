@@ -317,7 +317,7 @@ function resolveServices(model: EngineModel): ServiceState[] {
  * ones diverts only entities carrying that tag while the rest split between
  * the untagged edges in proportion to their probabilities.
  */
-function routeFor(edges: EngineEdge[], tags: string[]): Route {
+export function routeFor(edges: EngineEdge[], tags: string[]): Route {
   const sum = (next: EngineEdge[]) => next.reduce((a, n) => a + n.p, 0);
   const tagged = edges.filter((n) => n.tag !== undefined && tags.includes(n.tag));
   if (tagged.length) return { next: tagged, total: sum(tagged), targets: [], winEdges: null };
@@ -1661,7 +1661,7 @@ export function runOnce(
   if (servicing) for (const p of people) for (const [a] of p.leave ?? []) if (a > -W && a < H) schedule(a, "away", null, null, p);
   if (start.kind === "wip") seedWip();
   // Optional weekly samples (the absence test, absence.ts): queue lengths and completions at each weekly tick.
-  const weekly: WeeklySamples | null = sampleWeekly ? { queue: {}, completed: [] } : null;
+  const weekly: WeeklySamples | null = sampleWeekly ? { queue: {}, completed: [], won: [] } : null;
   if (weekly) for (const st of stepList) weekly.queue[st.s.id] = [];
 
   for (let ev = events.pop(); ev; ev = events.pop()) {
@@ -1697,6 +1697,7 @@ export function runOnce(
       if (weekly) {
         for (const st of stepList) weekly.queue[st.s.id]!.push(st.stat.qLen);
         weekly.completed.push(won + done + allTouch.onTime + allTouch.late);
+        weekly.won.push(won);
       }
     }
     // Handled: recycle it (nothing keeps a reference to an event after it runs).

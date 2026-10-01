@@ -1,7 +1,7 @@
 {
   "model": "northbeam-downturn",
   "description": "Northbeam as seeded under the Downturn market for the whole run: fewer enquiries that sign less, slower decisions, lower prices, more churn (market.ts).",
-  "engineVersion": "1.5.0",
+  "engineVersion": "1.6.0",
   "seed": 1,
   "reps": 30,
   "outputs": {
@@ -127,22 +127,22 @@
       }
     },
     "ratings": {
-      "spof:step:audit": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
-      "spof:step:kickoff": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
-      "spof:step:report_fin": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
-      "spof:step:report_strat": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
-      "rework:step:ppc": { "rating": "risk", "base": "bad", "badMonth": true, "bottleneck": false },
-      "capacity:role:ppc": { "rating": "bad", "base": "great", "badMonth": true, "bottleneck": true },
-      "wait:step:report_ppc": { "rating": "bad", "base": "great", "badMonth": true, "bottleneck": true },
-      "rework:step:audit": { "rating": "bad", "base": "bad", "badMonth": false, "bottleneck": false },
-      "rework:step:onboard": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },
-      "rework:step:seo": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },
-      "churn_risk:driver:ppc:late": { "rating": "bad", "base": "bad", "badMonth": false, "bottleneck": false },
-      "capacity:person:sam": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false },
-      "wait:step:ppc": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false },
-      "spare:person:priya": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
-      "spare:person:rosa": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
-      "spare:person:tom": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false }
+      "rework:step:ppc": { "rating": "risk", "base": "bad", "badMonth": true, "bottleneck": false, "costPerMonth": 44.44444444444444, "hoursPerMonth": 0.8888888888888888 },
+      "spof:step:audit": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": null },
+      "spof:step:kickoff": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": null },
+      "spof:step:report_fin": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": null },
+      "spof:step:report_strat": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": null },
+      "churn_risk:driver:ppc:late": { "rating": "bad", "base": "bad", "badMonth": false, "bottleneck": false, "costPerMonth": 29413.96443418014, "hoursPerMonth": null },
+      "rework:step:audit": { "rating": "bad", "base": "bad", "badMonth": false, "bottleneck": false, "costPerMonth": 438.66666666666663, "hoursPerMonth": 6.266666666666666 },
+      "rework:step:seo": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false, "costPerMonth": 55.55555555555555, "hoursPerMonth": 1.111111111111111 },
+      "rework:step:onboard": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false, "costPerMonth": 31.166666666666664, "hoursPerMonth": 0.5666666666666667 },
+      "wait:step:report_ppc": { "rating": "bad", "base": "great", "badMonth": true, "bottleneck": true, "costPerMonth": null, "hoursPerMonth": 179.8144189729505 },
+      "capacity:role:ppc": { "rating": "bad", "base": "great", "badMonth": true, "bottleneck": true, "costPerMonth": null, "hoursPerMonth": null },
+      "spare:person:tom": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false, "costPerMonth": 7219.584117004901, "hoursPerMonth": 160.4352026001089 },
+      "spare:person:priya": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false, "costPerMonth": 7206.367042304404, "hoursPerMonth": 160.14148982898675 },
+      "spare:person:rosa": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false, "costPerMonth": 5548.548614900238, "hoursPerMonth": 138.71371537250596 },
+      "wait:step:ppc": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": 3.2786191998263194 },
+      "capacity:person:sam": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": null }
     },
     "churnCauses": {
       "clients": 5.401891974595843,

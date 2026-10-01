@@ -116,14 +116,23 @@ Every insight shows an estimated cost per month in the workspace currency. The d
 **Methods per rule** (decided 1 Oct where marked):
 
 - **Busy role or person** (decided): work lost. The engine's shadow price gives the extra wins one more person would
-  bring; cost = those wins × deal value, plus any overtime cost.
+  bring; cost = those wins × deal value. Overtime has its own insight (rule 3), so it is added here only when no
+  overtime insight exists for the same person or role; otherwise it would be counted twice.
 - **Long wait** (decided): through drop-off. Each pipeline step gets an optional **lost per day of waiting** (e.g. 5%
   of leads go cold per day). Cost = items lost to waiting × what a loss is worth at that step. With none set, the
   insight shows time, not money.
 - **Single point of failure**: the damage of one absence (from the absence test) × absences a year (default 2) ÷ 12.
-- **Client health, churn driver, SLA missed**: churned clients × what a loss is worth after signing.
+  The damage counts the wins lost in the absence window at deal value. Missed servicing tasks are not priced as deals;
+  they are flagged separately (a missed client deadline makes the insight Operational risk). When no wins are lost,
+  only client tasks, the cost shows n/a rather than a zero.
+- **Client health, churn driver, SLA missed**: clients lost × what a loss is worth after signing. Only churn above a
+  client's (or group's) base rate counts, because that is what late and missed work adds; a client that churns at its
+  usual rate isn't a cost of the insight.
 - **Drop-off**: items lost above the benchmark × what a loss is worth at that step.
 - The rest are listed in the table below.
+- **Overlaps**: costs are estimates per insight and are not added up. A step's waiting cost and its drop-off cost can
+  overlap (items that go cold while waiting are also items lost at the step), and so can an SLA cost and a churn-risk
+  cost (both count the churn that late work causes).
 
 ### Editing the rules
 
@@ -184,8 +193,8 @@ Notes:
     across the clients who leave; what no driver explains is normal churn. A driver at **30% or more** of a group's
     churn is Bad, not urgent; it is Operational risk when that group's health is also **under 50**. Both numbers are
     editable in Settings → Analysis rules. The rule is rated per client group and driver, so one finding reads "Late
-    or missed servicing work causes 53% of PPC clients leaving". The cost per month (that driver's share of the
-    churned MRR × what a loss is worth after signing) arrives with the money ticket. See `docs/engine-versioning.md` ("Churn drivers").
+    or missed servicing work causes 53% of PPC clients leaving". The cost per month is the clients that driver
+    loses in a month × what a loss is worth after signing. See `docs/engine-versioning.md` ("Churn drivers").
 - **Rule 11:** reads the success measures from the process's first principles (`docs/research/first-principles.md`).
   A measure the simulation can't compute is not rated.
 

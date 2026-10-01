@@ -102,14 +102,14 @@ left alone. Time to decide scales external waits at steps before the sale (steps
 not onboarding, delivery or servicing. Prices scale the fee of each client won (new MRR, billed, LTV added). Clients
 leaving scale churn. Known limits, which A56 considered (see "Churn drivers" below): `lostRevenue` is valued at
 today's price and LTV uses today's tenure (both still true), a roster client's reported `churnMonthly` was its base
-rate (fixed in 1.5.0), and the pooled billing estimate uses the churn factor of the month a client is won in (still
+rate (fixed in 1.6.0), and the pooled billing estimate uses the churn factor of the month a client is won in (still
 true). `withMarketCondition` replaces any schedule on the model. The
 `northbeam-downturn` golden model runs Northbeam as seeded under Downturn, so a change to this maths shows up in the
 golden test. Time to hire and late payments are stored but change
 nothing, as the engine has no hiring or cash-flow model yet. To run a model under one condition (the stress test
 on solution pages): `simulate(withMarketCondition(model, MARKET_PRESETS.downturn.factors), reps, seed)`.
 
-## Churn drivers (engine 1.5.0)
+## Churn drivers (engine 1.6.0)
 
 `EngineModel.churnDrivers` holds the ten built-in drivers' weights (0 to 3) and on/off switches, plus the user's own
 (`packages/engine/src/churn-drivers.ts`, decision D28, issue #121). A client's weekly chance of leaving is
@@ -130,7 +130,7 @@ weighs the whole product.
 
 **Defaults change nothing.** A model with no `churnDrivers` runs with late work and the market on at weight 1 and
 everything else off. At weight 1 the multipliers are bit-for-bit the old ones (`1 + 1 × x`, and the plain factor), no
-random draw is added or moved, so every number the golden models already kept is unchanged; 1.5.0 was approved
+random draw is added or moved, so every number the golden models already kept is unchanged; 1.6.0 was approved
 because it adds what the baselines keep: each driver's share, pressure and measured value (`churnCauses`), the new
 `northbeam-drivers` model, and the rule 10 issues in `ratings`. Drivers apply to a model with a client roster (named
 or counted in groups); the pooled model has no per-client state, so only the market driver acts on it.

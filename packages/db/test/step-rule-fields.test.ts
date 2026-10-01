@@ -24,9 +24,12 @@ describe("step rule fields", () => {
     );
     expect(rows.map((r) => [r.column_name, r.is_nullable, r.column_default])).toEqual(COLUMNS.slice().sort().map((c) => [c, "YES", null]));
     const { rows: used } = await db.client.query(
-      "select count(*)::int as n from public.steps where expected_wait_hours is not null or lost_per_day_waiting is not null or dropoff_benchmark is not null or target_cycle_hours is not null",
+      "select count(*)::int as n from public.steps where expected_wait_hours is not null or dropoff_benchmark is not null or target_cycle_hours is not null",
     );
     expect(used[0].n).toBe(0);
+    // Only Northbeam's audit step carries a lost-per-day of waiting, so its waiting insight shows money (issue #108).
+    const { rows: lost } = await db.client.query("select count(*)::int as n from public.steps where lost_per_day_waiting is not null");
+    expect(lost[0].n).toBe(1);
   });
 
   it("accept values in range", async () => {

@@ -124,6 +124,10 @@ Checked against PGlite (PostgreSQL 17 compiled to WASM) and against Postgres 16 
 - The deferred constraint trigger `nesting_is_a_tree` and the deferred foreign keys on `steps` run at commit. Over PostgREST each request is one transaction, so a bad nesting is refused when that request commits (`23514` or `23503`), not on the statement that caused it.
 - Which of the deferred foreign key and the constraint trigger reports first for a step whose parent is missing depends on trigger firing order (both are `after` triggers fired in name order), so tests only assert that the write is refused.
 
+## Cost per month (issue #108, migration 20261113000000)
+
+Verified only against plain Postgres (the db test harness), not against Supabase: `public.create_workspace` now defaults new workspaces to `AUD`. It is `security invoker`, as before, and was redefined with `create or replace` from the 20261021000000 copy, so the migration re-applies its grants.
+
 ## Churn drivers (issue #121, migration 20261116000000)
 
 Checked on plain Postgres 16 with the auth shim (`packages/db/test/churn-drivers.test.ts`); not confirmed on Supabase itself:

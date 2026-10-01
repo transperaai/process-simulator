@@ -110,8 +110,19 @@ export function keyOutputs(model: EngineModel, r: SimulationResult) {
       absence.people.map((f) => [f.personId, { steps: f.stepIds, workLost: f.workLost, itemsLost: f.itemsLost, recoveryWeeks: f.recoveryWeeks, recovered: f.recovered, extraMissed: f.extraMissed }]),
     ),
     // The rating of every detected issue and how it was reached (ratings.ts), so a moved cut-off or escalator shows here.
+    // The cost per month of each (cost.ts), without the shadow-price run the busy rule's money cost needs.
     ratings: Object.fromEntries(
-      detectIssues(model, r, {}, { absence }).map((i) => [i.key, { rating: i.rating, base: i.escalation.base, badMonth: i.escalation.badMonth, bottleneck: i.escalation.bottleneck }]),
+      detectIssues(model, r, {}, { absence }).map((i) => [
+        i.key,
+        {
+          rating: i.rating,
+          base: i.escalation.base,
+          badMonth: i.escalation.badMonth,
+          bottleneck: i.escalation.bottleneck,
+          costPerMonth: i.cost.perMonth,
+          hoursPerMonth: i.cost.hoursPerMonth,
+        },
+      ]),
     ),
     // Who the churn is blamed on (churn-drivers.ts): each cause's share of the clients lost, its average pressure and what was measured.
     churnCauses: r.churnCauses

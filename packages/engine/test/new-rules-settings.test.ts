@@ -65,7 +65,7 @@ describe("the stored analysis rules feed the new rules", () => {
       weeksAway: 2,
       startWeek: 0,
       complete: true,
-      people: [{ personId: "solo#1", stepIds: ["a"], workLost: 0, itemsLost: 0, recoveryWeeks: 2, recovered: false, extraMissed: 0, clientDeadlineMissed: false }],
+      people: [{ personId: "solo#1", stepIds: ["a"], workLost: 0, itemsLost: 0, winsLost: 0, recoveryWeeks: 2, recovered: false, extraMissed: 0, clientDeadlineMissed: false }],
     };
     const issue = detectIssues(m, simulate(m, 4, 1), {}, { absence: t }).find((i) => i.key === "spof:step:a");
     expect(issue?.rating).toBe("risk");

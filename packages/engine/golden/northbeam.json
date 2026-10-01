@@ -1,7 +1,7 @@
 {
   "model": "northbeam",
   "description": "Northbeam Digital, the prototype's model re-baselined after the §6.8 fixes: pooled head-counts, one implicit retainer, automatic warm-up.",
-  "engineVersion": "1.5.0",
+  "engineVersion": "1.6.0",
   "seed": 1,
   "reps": 30,
   "outputs": {
@@ -106,20 +106,20 @@
       }
     },
     "ratings": {
-      "capacity:role:strat": { "rating": "risk", "base": "good", "badMonth": true, "bottleneck": true },
-      "wait:step:audit": { "rating": "risk", "base": "bad", "badMonth": false, "bottleneck": true },
-      "wait:step:kickoff": { "rating": "risk", "base": "bad", "badMonth": true, "bottleneck": false },
-      "spof:step:audit": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
-      "spof:step:kickoff": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
-      "rework:step:audit": { "rating": "risk", "base": "bad", "badMonth": false, "bottleneck": true },
-      "rework:step:seo": { "rating": "risk", "base": "bad", "badMonth": true, "bottleneck": false },
-      "capacity:role:ppc": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },
-      "rework:step:onboard": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },
-      "rework:step:ppc": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },
-      "capacity:role:am": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false },
-      "capacity:role:seo": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false },
-      "spare:role:fin": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
-      "spare:role:sales": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false }
+      "wait:step:audit": { "rating": "risk", "base": "bad", "badMonth": false, "bottleneck": true, "costPerMonth": 18716.48222191627, "hoursPerMonth": null },
+      "spof:step:audit": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false, "costPerMonth": 3800, "hoursPerMonth": null },
+      "spof:step:kickoff": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false, "costPerMonth": 3800, "hoursPerMonth": null },
+      "rework:step:audit": { "rating": "risk", "base": "bad", "badMonth": false, "bottleneck": true, "costPerMonth": 690.6666666666666, "hoursPerMonth": 9.866666666666665 },
+      "rework:step:seo": { "rating": "risk", "base": "bad", "badMonth": true, "bottleneck": false, "costPerMonth": 116.66666666666666, "hoursPerMonth": 2.333333333333333 },
+      "wait:step:kickoff": { "rating": "risk", "base": "bad", "badMonth": true, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": 57.551869968263986 },
+      "capacity:role:strat": { "rating": "risk", "base": "good", "badMonth": true, "bottleneck": true, "costPerMonth": null, "hoursPerMonth": null },
+      "rework:step:ppc": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false, "costPerMonth": 66.66666666666666, "hoursPerMonth": 1.3333333333333333 },
+      "rework:step:onboard": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false, "costPerMonth": 56.833333333333336, "hoursPerMonth": 1.0333333333333334 },
+      "capacity:role:ppc": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": null },
+      "spare:role:sales": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false, "costPerMonth": 13767.582936061766, "hoursPerMonth": 305.94628746803926 },
+      "spare:role:fin": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false, "costPerMonth": 5364.188329940726, "hoursPerMonth": 134.10470824851816 },
+      "capacity:role:am": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": null },
+      "capacity:role:seo": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": null }
     },
     "churnCauses": null,
     "rosterClients": null

@@ -1,0 +1,142 @@
+import { normalizeFirstPrinciples, type FirstPrinciples } from "@transpera-flow/engine";
+import type { Json } from "./database.types";
+import type { Db } from "./queries";
+import type { FirstPrinciplesRow } from "./types";
+
+// First principles per process revision (issue #119, A54). One row per revision; edits go into the draft (the
+// database refuses a published or superseded revision). Reads and writes run as the signed-in user, so RLS decides:
+// every member reads, owners and editors write. What the answers mean, and the rule checks, are in the engine
+// (packages/engine/src/first-principles.ts); this module only stores and finds them.
+
+export const FIRST_PRINCIPLES_COLUMNS =
+  "id, workspace_id, process_id, revision_id, job_who, job_progress, job_situation, job_done, statements, requirements, deletes, improvements, why_problem, why_chain, root_cause, measures, updated_at" as const;
+
+/** A stored row as the app's shape (never throws: bad JSON reads as empty, see `normalizeFirstPrinciples`). */
+export function firstPrinciplesFromRow(row: FirstPrinciplesRow): FirstPrinciples {
+  return normalizeFirstPrinciples({
+    job: { who: row.job_who, progress: row.job_progress, situation: row.job_situation, done: row.job_done },
+    statements: row.statements,
+    requirements: row.requirements,
+    deletes: row.deletes,
+    improvements: row.improvements,
+    why: { problem: row.why_problem, chain: row.why_chain, root: row.root_cause },
+    measures: row.measures,
+  });
+}
+
+/** The columns to write for these answers (cleaned first, so what is stored is what `normalizeFirstPrinciples` returns). */
+export function firstPrinciplesToColumns(doc: FirstPrinciples): Omit<FirstPrinciplesRow, "id" | "workspace_id" | "process_id" | "revision_id" | "updated_at"> {
+  const d = normalizeFirstPrinciples(doc);
+  return {
+    job_who: d.job.who,
+    job_progress: d.job.progress,
+    job_situation: d.job.situation,
+    job_done: d.job.done,
+    statements: d.statements as unknown as Json,
+    requirements: d.requirements as unknown as Json,
+    deletes: d.deletes as unknown as Json,
+    improvements: d.improvements as unknown as Json,
+    why_problem: d.why.problem,
+    why_chain: d.why.chain as unknown as Json,
+    root_cause: d.why.root,
+    measures: d.measures as unknown as Json,
+  };
+}
+
+export interface ResolvedFirstPrinciples {
+  /** The answers for the revision, or null when it and every earlier revision have none ("not started"). */
+  doc: FirstPrinciples | null;
+  /**
+   * The revision's own row's `updated_at`, which a save must quote to prove it saw the latest. Null when the
+   * revision has no row of its own (its answers, if any, are inherited), so the next save inserts one.
+   */
+  version: string | null;
+  /** The number of the earlier revision the answers come from, when the revision has none of its own. */
+  inheritedFrom: number | null;
+}
+
+/**
+ * The first principles of a revision: its own row, else the row of the nearest earlier revision (a draft opened from
+ * live starts with live's; a version published without a row of its own keeps the one before). Pure.
+ */
+export function resolveFirstPrinciples(
+  revisions: readonly { id: string; number: number }[],
+  rows: readonly Pick<FirstPrinciplesRow, "revision_id" | "updated_at" | "job_who" | "job_progress" | "job_situation" | "job_done" | "statements" | "requirements" | "deletes" | "improvements" | "why_problem" | "why_chain" | "root_cause" | "measures">[],
+  revisionId: string,
+): ResolvedFirstPrinciples {
+  const own = rows.find((r) => r.revision_id === revisionId);
+  const full = (r: (typeof rows)[number]) => firstPrinciplesFromRow(r as FirstPrinciplesRow);
+  if (own) return { doc: full(own), version: own.updated_at, inheritedFrom: null };
+  const here = revisions.find((r) => r.id === revisionId);
+  if (!here) return { doc: null, version: null, inheritedFrom: null };
+  const number = new Map(revisions.map((r) => [r.id, r.number]));
+  const earlier = rows
+    .filter((r) => (number.get(r.revision_id) ?? Infinity) < here.number)
+    .sort((a, b) => number.get(b.revision_id)! - number.get(a.revision_id)!)[0];
+  return earlier ? { doc: full(earlier), version: null, inheritedFrom: number.get(earlier.revision_id)! } : { doc: null, version: null, inheritedFrom: null };
+}
+
+/** Load the first principles of one revision of a process (own or inherited). */
+export async function loadFirstPrinciples(db: Db, processId: string, revisionId: string): Promise<ResolvedFirstPrinciples> {
+  const [revisions, rows] = await Promise.all([
+    db.from("process_revisions").select("id, number").eq("process_id", processId),
+    db.from("first_principles").select(FIRST_PRINCIPLES_COLUMNS).eq("process_id", processId),
+  ]);
+  if (revisions.error) throw revisions.error;
+  if (rows.error) throw rows.error;
+  return resolveFirstPrinciples(revisions.data, rows.data as unknown as FirstPrinciplesRow[], revisionId);
+}
+
+export interface FirstPrinciplesOwner {
+  workspaceId: string;
+  processId: string;
+  revisionId: string;
+}
+
+export type SaveFirstPrinciplesOutcome =
+  | { status: "saved"; version: string }
+  /** Someone saved since `version`: their answers, to merge or overwrite. */
+  | { status: "conflict"; doc: FirstPrinciples; version: string }
+  /** No permission (viewers and members can't write). */
+  | { status: "forbidden" }
+  /** The revision isn't a draft any more (it was published or discarded). */
+  | { status: "not_draft" }
+  | { status: "error"; message: string };
+
+/**
+ * Save the whole document to a revision. `version` is the revision's own row's `updated_at` as last loaded, or null
+ * when it had no row: the save goes through only if no one has saved since (compare-and-set), so two people editing
+ * at once are told instead of one silently undoing the other.
+ */
+export async function saveFirstPrinciples(db: Db, owner: FirstPrinciplesOwner, doc: FirstPrinciples, version: string | null): Promise<SaveFirstPrinciplesOutcome> {
+  const columns = firstPrinciplesToColumns(doc);
+  const fail = (error: { code?: string }): SaveFirstPrinciplesOutcome => {
+    if (error.code === "42501") return { status: "forbidden" };
+    if (error.code === "55000") return { status: "not_draft" };
+    return { status: "error", message: "Couldn't save. Try again." };
+  };
+  const conflict = async (): Promise<SaveFirstPrinciplesOutcome> => {
+    const { data, error } = await db.from("first_principles").select(FIRST_PRINCIPLES_COLUMNS).eq("revision_id", owner.revisionId).maybeSingle();
+    if (error) return { status: "error", message: "Couldn't save. Try again." };
+    // Nothing to compare against and the write didn't go through: the user can't write here.
+    if (!data || data.updated_at === version) return { status: "forbidden" };
+    return { status: "conflict", doc: firstPrinciplesFromRow(data as unknown as FirstPrinciplesRow), version: data.updated_at };
+  };
+
+  if (version === null) {
+    const { data, error } = await db
+      .from("first_principles")
+      .insert({ workspace_id: owner.workspaceId, process_id: owner.processId, revision_id: owner.revisionId, ...columns })
+      .select("updated_at")
+      .single();
+    if (!error) return { status: "saved", version: data.updated_at };
+    if (error.code === "23505") return conflict();
+    return fail(error);
+  }
+
+  const { data, error } = await db.from("first_principles").update(columns).eq("revision_id", owner.revisionId).eq("updated_at", version).select("updated_at");
+  if (error) return fail(error);
+  const row = data[0];
+  if (!row) return conflict();
+  return { status: "saved", version: row.updated_at };
+}

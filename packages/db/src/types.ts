@@ -4,7 +4,7 @@
 // bottom fail the typecheck if they drift from it.
 
 import type { IssueType, ScenarioPatch, StoredSeverity } from "@transpera-flow/engine";
-import type { Database } from "./database.types";
+import type { Database, Json } from "./database.types";
 
 export type MembershipRole = "agency_admin" | "owner" | "editor" | "member" | "viewer";
 export type StepKind = "task" | "wait" | "decision" | "subprocess" | "group" | "start" | "end";
@@ -388,6 +388,31 @@ export interface ClientGroupRow {
   provenance: ProvenanceMap;
 }
 
+/**
+ * A process revision's first principles (issue #119, A54): the job and root cause as text, the lists the rule checks
+ * read as jsonb arrays. `FirstPrinciples` (engine) is the app-side shape of the whole, read with
+ * `firstPrinciplesFromRow`.
+ */
+export interface FirstPrinciplesRow {
+  id: string;
+  workspace_id: string;
+  process_id: string;
+  revision_id: string;
+  job_who: string;
+  job_progress: string;
+  job_situation: string;
+  job_done: string;
+  statements: Json;
+  requirements: Json;
+  deletes: Json;
+  improvements: Json;
+  why_problem: string;
+  why_chain: Json;
+  root_cause: string;
+  measures: Json;
+  updated_at: string;
+}
+
 export type SourceKind = "transcript" | "notes" | "screenshot";
 
 /**
@@ -723,6 +748,7 @@ export type _SchemaDriftChecks = [
   Assert<Matches<ClientServiceRow, "client_services">>,
   Assert<Matches<ClientAssignmentRow, "client_assignments">>,
   Assert<Matches<ClientGroupRow, "client_groups">>,
+  Assert<Matches<FirstPrinciplesRow, "first_principles">>,
   // recurrence and provenance are jsonb; RecurrenceJson and ProvenanceMap are their app-side shapes.
   Assert<Matches<Omit<ServiceServicingRow, "recurrence">, "service_servicing">>,
   Assert<Matches<LeadSourceRow, "lead_sources">>,

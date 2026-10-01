@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Building2, ChevronsUpDown, CircleAlert, FileChartColumn, FileText, History, Inbox, KeyRound, LogOut, Settings, ShieldCheck, SlidersHorizontal, Users, Workflow, type LucideIcon } from "lucide-react";
+import { ChevronsUpDown, CircleAlert, FileText, Inbox, KeyRound, LogOut, Settings, ShieldCheck, Users, Workflow, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
@@ -26,13 +26,9 @@ import { WorkspaceSwitcher, type SwitcherWorkspace } from "./workspace-switcher"
 const ICONS: Record<NavIcon, LucideIcon> = {
   map: Workflow,
   issues: CircleAlert,
-  clients: Building2,
   people: Users,
-  scenarios: SlidersHorizontal,
   suggestions: Inbox,
   sources: FileText,
-  runs: History,
-  report: FileChartColumn,
   settings: Settings,
   access: ShieldCheck,
 };
@@ -43,7 +39,6 @@ export type ShellProps =
       slug: string;
       workspaceName: string;
       workspaces: SwitcherWorkspace[];
-      canEdit: boolean;
       canManage: boolean;
       pendingSuggestions: number;
       viewer: { name: string; email: string | null } | null;
@@ -56,12 +51,12 @@ export function AppSidebar(props: ShellProps) {
   const { isMobile, setOpenMobile } = useSidebar();
   const items =
     props.mode === "live"
-      ? workspaceNav({ slug: props.slug, pathname, canEdit: props.canEdit, canManage: props.canManage, pendingSuggestions: props.pendingSuggestions })
+      ? workspaceNav({ slug: props.slug, pathname, canManage: props.canManage, pendingSuggestions: props.pendingSuggestions })
       : demoNav({ pathname, pendingSuggestions: props.pendingSuggestions });
   const main = items.filter((i) => !BOTTOM_KEYS.includes(i.key));
   const bottom = items.filter((i) => BOTTOM_KEYS.includes(i.key));
   const larkspur = props.mode === "demo" && (pathname === "/demo/larkspur" || pathname.startsWith("/demo/larkspur/"));
-  // On a map route the Issues and Scenarios items open the map's panel instead of loading the page again.
+  // On a map route the Issues item opens the map's panel instead of loading the page again.
   const onMapRoute = main.find((i) => i.key === "map")?.active ?? false;
 
   const item = (i: NavItem) => {

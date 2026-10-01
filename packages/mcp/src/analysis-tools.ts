@@ -33,7 +33,7 @@ export const ANALYSIS_TOOL_NAMES = ["save_scenario", "compare_scenarios", "check
 const DEFAULT_REPS = 30;
 const DEFAULT_SEED = 1;
 const MAX_REPS = 200;
-/** Well inside the route's `maxDuration` (apps/web/src/app/api/mcp/route.ts; 300 s since export_report, #28). */
+/** Well inside the route's `maxDuration` (apps/web/src/app/api/mcp/route.ts; 300 s). */
 export const DEFAULT_ROBUSTNESS_SECONDS = 20;
 export const MAX_ROBUSTNESS_SECONDS = 45;
 export const SHADOW_PRICE_BUDGET_MS = 15_000;

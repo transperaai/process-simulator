@@ -40,7 +40,7 @@ export class NarrationError extends Error {
   }
 }
 
-/** Time for one draft, and for the drafts together (the report route allows 300 s; robustness takes up to 120 s). */
+/** Time for one draft, and for the drafts together (under the narrate route's 120 s). */
 export const NARRATION_ATTEMPT_MS = 45_000;
 export const NARRATION_BUDGET_MS = 75_000;
 const MAX_PARAGRAPHS = 8;
@@ -159,5 +159,5 @@ export async function narrate(
     rejected.push({ paragraphs: Array.isArray(draft.paragraphs) ? draft.paragraphs : [], problems: result.problems });
   }
   const last = rejected[rejected.length - 1]!;
-  return fallback("invalid", `both drafts cited figures not in the report: ${listProblems(last.problems)}`, { rejected, usage, model: lastModel });
+  return fallback("invalid", `both drafts cited figures not in the run: ${listProblems(last.problems)}`, { rejected, usage, model: lastModel });
 }

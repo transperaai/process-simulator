@@ -6,10 +6,9 @@
 // its own worker with the baseline's seed and replication count, so the two
 // runs pair up replication by replication.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ScenarioRow } from "@transpera-flow/db";
 import { applyPatches, compareHeadline, compareRuns, repointPatch, type EngineModel, type EnginePerson, type ProvenanceRows, type RetiredSteps } from "@transpera-flow/engine";
-import type { FixRequest } from "@/lib/issues/register";
 import { buildLevers, leverPatches, type LeverValues } from "@/lib/scenarios/levers";
 import { liveScenarioStore } from "@/lib/scenarios/live-store";
 import { resolveRun } from "@/lib/scenarios/broken";
@@ -34,7 +33,6 @@ export function ScenarioPanel({
   workspaceId,
   initialScenarios,
   mode,
-  fix = null,
   onScenariosChange,
   provenance = NO_PROVENANCE,
   retired = NO_RETIRED,
@@ -48,8 +46,6 @@ export function ScenarioPanel({
   initialScenarios: ScenarioRow[];
   /** `live` saves to the database, `demo` in memory, `readonly` not at all (viewers still apply and compare). */
   mode: EditMode;
-  /** "Run the fix" from an issue: applied on its own, then the compare view is brought into view. */
-  fix?: FixRequest | null;
   /** Told the saved scenarios whenever they change, so issues can link and run them. */
   onScenariosChange?: (scenarios: ScenarioRow[]) => void;
   /** Step, service and workspace rows, for the robustness check: their provenance says which values are estimated. */
@@ -64,38 +60,11 @@ export function ScenarioPanel({
   const [values, setValues] = useState<LeverValues>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // An issue's suggested fix that isn't a saved scenario: applied like one, never saved.
-  const [fixScenario, setFixScenario] = useState<ScenarioRow | null>(null);
-  const [appliedFix, setAppliedFix] = useState<FixRequest | null>(null);
-  const compareRef = useRef<HTMLDivElement>(null);
-  if (fix !== appliedFix) {
-    setAppliedFix(fix);
-    if (fix) {
-      const saved = fix.scenarioId ? scenarios.find((s) => s.id === fix.scenarioId) : undefined;
-      const row: ScenarioRow = saved ?? {
-        id: `fix:${fix.nonce}`,
-        workspace_id: workspaceId,
-        name: fix.name,
-        description: null,
-        patch: fix.patch,
-        parent_scenario_id: null,
-      };
-      setFixScenario(saved ? null : row);
-      setStackIds([row.id]);
-      setValues({});
-    }
-  }
-  useEffect(() => {
-    if (fix) compareRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [fix]);
   useEffect(() => onScenariosChange?.(scenarios), [scenarios, onScenariosChange]);
-  // The stack can hold the unsaved fix; the library lists saved scenarios only.
-  const known = useMemo(() => (fixScenario ? [...scenarios, fixScenario] : scenarios), [scenarios, fixScenario]);
-
-  const problems = useMemo(() => Object.fromEntries(known.map((s) => [s.id, scenarioProblems(model, s, retired)])), [model, known, retired]);
+  const problems = useMemo(() => Object.fromEntries(scenarios.map((s) => [s.id, scenarioProblems(model, s, retired)])), [model, scenarios, retired]);
   const stack = useMemo(
-    () => stackIds.map((id) => known.find((s) => s.id === id)).filter((s): s is ScenarioRow => Boolean(s)),
-    [stackIds, known],
+    () => stackIds.map((id) => scenarios.find((s) => s.id === id)).filter((s): s is ScenarioRow => Boolean(s)),
+    [stackIds, scenarios],
   );
   const usable = useMemo(() => stack.filter((s) => !problems[s.id]?.length), [stack, problems]);
   const left = stack.filter((s) => problems[s.id]?.length);
@@ -180,21 +149,7 @@ export function ScenarioPanel({
           }
           onReset={() => setValues({})}
         />
-        <div ref={compareRef} className="flex min-w-0 scroll-mt-4 flex-col gap-3">
-          {fixScenario && stackIds.includes(fixScenario.id) && (
-            <p className="flex flex-wrap items-center gap-2 rounded-token border border-accent bg-accent-soft px-3 py-2 text-sm" data-running-fix>
-              <span>
-                Running the suggested fix “{fixScenario.name}” from the issues register (not a saved scenario).
-              </span>
-              <button
-                type="button"
-                className="rounded-token border border-line bg-panel px-2 py-0.5 text-xs"
-                onClick={() => setStackIds((ids) => ids.filter((id) => id !== fixScenario.id))}
-              >
-                Clear
-              </button>
-            </p>
-          )}
+        <div className="flex min-w-0 flex-col gap-3">
           <CompareView
             comparison={comparison}
             headline={headline}

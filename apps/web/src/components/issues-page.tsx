@@ -2,11 +2,8 @@
 
 // The full issues register screen: tracked issues from the database plus what
 // a fresh run of the live process detects (in a worker, as on the process
-// page). "Run the fix" goes to the process page, which applies it and opens
-// the compare view.
-
+// page).
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow } from "@transpera-flow/db";
 import { detectBrokenScenarios, detectIssues } from "@transpera-flow/engine";
 import { perceptionGapDetections } from "@/lib/issues/perception";
@@ -21,17 +18,13 @@ export function IssuesPage({
   scenarios,
   processes,
   mode,
-  fixHref,
 }: {
   bundle: ProcessBundle;
   issues: IssueRow[];
   scenarios: ScenarioRow[];
   processes: Named[];
   mode: "live" | "readonly";
-  /** Prefix of the link that runs an issue's fix; the issue id (or detected key) is appended. */
-  fixHref: string;
 }) {
-  const router = useRouter();
   const state = useIssues(bundle.workspace.id, issues, mode);
   const [stepFilter, setStepFilter] = useState("");
   const model = useMemo(() => {
@@ -70,7 +63,6 @@ export function IssuesPage({
         canEdit={mode === "live"}
         stepFilter={stepFilter}
         onStepFilterChange={setStepFilter}
-        onRunFix={(_fix, id) => router.push(`${fixHref}${encodeURIComponent(id)}`)}
       />
     </div>
   );

@@ -96,6 +96,31 @@ golden test. Time to hire and late payments are stored but change
 nothing, as the engine has no hiring or cash-flow model yet. To run a model under one condition (the stress test
 on solution pages): `simulate(withMarketCondition(model, MARKET_PRESETS.downturn.factors), reps, seed)`.
 
+## 24-month horizon (A58, no engine change)
+
+The horizon picker (1, 3, 6, 12 or 24 months, `apps/web/src/lib/horizon.ts`) sets `horizonWeeks` to 4, 13, 26, 52 or
+104 weeks (52 a year, so 3 months is the 13-week default). The engine already took any horizon from 1 to 104 weeks,
+so nothing in it changed: no golden number moved and `ENGINE_VERSION` stays 1.2.0. The market schedule (A57) covers
+24 months, so a 24-month run reads every month of it.
+
+PRD §6.7's targets are for 13 weeks. A run costs about as much per week as the one before, so
+`apps/web/test/horizon-performance.test.ts` scales them by the horizon: 104 weeks is 8 times 13, so the limits are
+8 × 150 ms for the pipeline-only Northbeam and 8 × 250 ms for the full seeded Northbeam and Larkspur, best of three
+re-runs after a lever move at 30 replications. Measured on a shared 4-core container (another agent's load was on
+it), 30 replications, seed 1:
+
+| 24-month run | Best of 3 | Scaled limit | Unscaled §6.7 target |
+| --- | --- | --- | --- |
+| Pipeline-only Northbeam | 180 ms | 1,200 ms | 150 ms (over, as expected for 8 times the weeks) |
+| Full Northbeam (roster and servicing) | 362 ms | 2,000 ms | 250 ms (over) |
+| Full Larkspur | 235 ms | 2,000 ms | 250 ms |
+| Full Northbeam, downturn all 24 months | 300 ms | 2,000 ms | 250 ms (over) |
+
+All sit well inside the scaled limits (about a fifth to a sixth), and they are a fraction of the 12-month forecast
+target (< 5 s for a 40-step model). The 40-step, 25-person model was not measured at 24 months: its 12-month target
+is 5 s, and the numbers above leave plenty of room, but a 24-month run of it should be timed when a model that size
+exists to test with. Timing tests can fail on a loaded machine; re-run them alone before concluding.
+
 ## Where the version goes
 
 - `SimulationResult.engineVersion` on every run, in the browser worker and on the server.

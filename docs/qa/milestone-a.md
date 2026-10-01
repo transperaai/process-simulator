@@ -128,6 +128,9 @@ The Scenarios list and saved scenarios are removed (A32, #97), replaced by solut
 - [ ] Click the **Point at …** button suggested under that scenario. (#16) **Expected:** the badge clears and the scenario can be applied again.
 - [ ] Open the **Issues** tab on the right while a scenario is broken. (#16, #17) **Expected:** a broken-scenario issue is listed, and it resolves itself once you re-point.
 - [ ] Finish: **Discard draft…** to remove the split. (#16) **Expected:** back to live with nothing broken.
+- [ ] Above the numbers on a process page, find **Projection** with 1m, 3m, 6m, 12m and 24m. (A58, #123) **Expected:** the workspace's own length is selected (3m for 13 weeks); pick **24m** and the numbers and the compare area re-run over 104 weeks; the (i) explains it.
+- [ ] Open **Settings → Levers** (the **Levers** button on Settings; in the demo, **Levers** in the sidebar). (A58, #123) **Expected:** six groups (Demand, People, Process, Clients and churn, Finances, Market), each lever with a switch and an (i) with a plain description and an example. Levers that are set on another page say where; levers with no slider yet say so.
+- [ ] Switch off **Time each step takes**, then go back to a process page and open the levers. (A58, #123) **Expected:** no "Hands-on time" sliders; the panel says "1 kind of lever hidden" with a link back. Switch it on again and they return. Viewers see the page but can't change the switches.
 
 ## 8. Demand and services
 
@@ -314,6 +317,7 @@ Left out of the steps above because only a developer can check them, or because 
 - #28: removed in A32 (reports and the PDF export are gone; the database tables stay).
 - #29: the number validator (adversarial cases), single retry then template fallback, `narrations.validated` and `fallback` recorded, the API key never reaches the client, the latest Claude model per the repo's guidance.
 - #76: `/w/[slug]` and `/demo` keep their existing behaviour.
+- A58 (#123): a source check that every setting and control on a Settings page has an (i); every lever kind and rule has a description and example; every generated slider belongs to a lever kind; hiding a kind hides its sliders; RLS and compare-and-set for the saved list of hidden levers; the 24-month run stays within the PRD §6.7 targets scaled by horizon (`docs/engine-versioning.md`).
 - #79: new patch paths accepted by both parsers (parity test); robustness perturbs only estimated health rules and churn sensitivity, never entered or measured ones.
 
 Excluded from this pack: **#27** (Transcript to draft, end to end) has its own QA pack coming, and **#88** (Create workspaces and roles from the app and MCP) is still in progress.

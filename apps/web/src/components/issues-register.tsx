@@ -16,6 +16,7 @@ import {
   STATUS_LABELS,
   TYPE_LABELS,
   entryView,
+  entriesInProcess,
   filterEntries,
   fixFor,
   formatIssueCost,
@@ -82,6 +83,7 @@ const statusOptions = ISSUE_STATUSES.map((s) => ({ value: s, label: STATUS_LABEL
 export function IssuesRegister({
   layout,
   view = "all",
+  stepIds,
   state,
   detected,
   running,
@@ -107,6 +109,8 @@ export function IssuesRegister({
    * the process page's sections: they list this process's, with no filters.
    */
   view?: "all" | "insights" | "issues";
+  /** With `insights` or `issues`: the steps that belong to the process (its own and those inside it); anything on another step is left out. */
+  stepIds?: ReadonlySet<string>;
   state: IssuesState;
   /** This run's detections; null until the first run finishes. */
   detected: DetectedIssue[] | null;
@@ -129,7 +133,8 @@ export function IssuesRegister({
   const [filters, setFilters] = useState<IssueFilters>(NO_FILTERS);
   const [logging, setLogging] = useState(false);
   const sectioned = view !== "all";
-  const entries = registerEntries(state.issues, detected ?? []).filter((e) => !sectioned || e.kind === (view === "insights" ? "detected" : "tracked"));
+  const all = registerEntries(state.issues, detected ?? []).filter((e) => !sectioned || e.kind === (view === "insights" ? "detected" : "tracked"));
+  const entries = sectioned && stepIds ? entriesInProcess(all, processId, stepIds) : all;
   const shown = filterEntries(entries, { ...filters, step: stepFilter, ...(sectioned ? { process: processId } : {}) }, processId);
   const active = entries.filter((e) => entryView(e).open);
   const count = (r: Rating) => active.filter((e) => entryView(e).rating === r).length;

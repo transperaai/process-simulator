@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { IssueRow, ProcessBundle, ScenarioRow } from "@transpera-flow/db";
 import { detectBrokenScenarios, resolveMoney, type AnalysisSettings, type EngineModel, type RetiredSteps, type SimulationResult } from "@transpera-flow/engine";
+import { processStepIds, processSteps } from "@/lib/process-steps";
 import { perceptionGapDetections } from "@/lib/issues/perception";
 import { visibleFindings } from "@/lib/rules/edit";
 import { useDetectedIssues } from "@/lib/issues/use-detected";
@@ -139,13 +140,19 @@ export function useProcessIssues({
   const highlight = useMemo(() => (lit ? [lit] : null), [lit]);
   const openCount = here.filter((e) => entryView(e).open).length;
 
-  const steps = bundle.steps.filter((s) => s.kind !== "start" && s.kind !== "end").map((s) => ({ id: s.id, name: s.name }));
+  // Steps of this process and of those inside it, named for the register; the page's sections keep to them.
+  const stepIds = useMemo(() => processStepIds(bundle), [bundle]);
+  const steps = useMemo(
+    () => processSteps(bundle).filter((s) => s.kind !== "start" && s.kind !== "end").map((s) => ({ id: s.id, name: s.name })),
+    [bundle],
+  );
   const people = bundle.people.filter((p) => p.active).map((p) => ({ id: p.id, name: p.name }));
 
   const section = (view: "insights" | "issues") => (
     <IssuesRegister
       layout="page"
       view={view}
+      stepIds={stepIds}
       state={state}
       detected={detected}
       running={running}

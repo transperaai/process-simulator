@@ -22,6 +22,7 @@ import { mrrAfter, startingMrr, summarise } from "@/lib/overview/projection";
 import { resolveRun } from "@/lib/scenarios/broken";
 import { leverKind, visibleLevers } from "@/lib/scenarios/lever-catalogue";
 import { buildLevers, leverPatches, type LeverValues } from "@/lib/scenarios/levers";
+import { processStepIds } from "@/lib/process-steps";
 import { useSimulation } from "@/lib/sim/use-simulation";
 import { HorizonPicker } from "./horizon-picker";
 import { LeverPanel } from "./lever-panel";
@@ -158,20 +159,7 @@ export function ProcessPage({
 
   const old = viewingVersion !== null;
   // The steps of this process and of the processes inside it, which the wait chart is about (the model may hold more).
-  const stepIds = useMemo(() => {
-    const inside = new Set([bundle.process.id]);
-    const others = bundle.otherProcesses ?? [];
-    for (let grew = true; grew; ) {
-      grew = false;
-      for (const o of others) {
-        if (!inside.has(o.process.id) && o.process.parent_process_id && inside.has(o.process.parent_process_id)) {
-          inside.add(o.process.id);
-          grew = true;
-        }
-      }
-    }
-    return new Set([...bundle.steps, ...others.filter((o) => inside.has(o.process.id)).flatMap((o) => o.steps)].map((x) => x.id));
-  }, [bundle]);
+  const stepIds = useMemo(() => processStepIds(bundle), [bundle]);
   const unpublished = liveVersion === 0;
 
   return (

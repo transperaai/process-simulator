@@ -140,6 +140,17 @@ export function registerEntries(tracked: readonly IssueRow[], detected: readonly
     .map(({ e }) => e);
 }
 
+/**
+ * What belongs to one process on its page: an entry on a step keeps only if the step is one of `stepIds` (the
+ * process's own and those inside it); one on no step keeps if it is this process's (a detection is, by the run it came from).
+ */
+export function entriesInProcess(entries: readonly RegisterEntry[], processId: string, stepIds: ReadonlySet<string>): RegisterEntry[] {
+  return entries.filter((e) => {
+    const v = entryView(e);
+    return v.stepId ? stepIds.has(v.stepId) : e.kind === "detected" || v.processId === processId;
+  });
+}
+
 export interface IssueFilters {
   /** A process id; detected issues belong to the process that was run. */
   process: string;

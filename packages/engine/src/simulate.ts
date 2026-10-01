@@ -218,7 +218,7 @@ interface StepState {
   /** Where each of the step's edges (`s.next`) leads. */
   targets: Target[];
   /** With a market: which of `s.next` lead to the sale (see `signingEdges`); null when conv doesn't apply here. */
-  winEdges: boolean[] | null;
+  winEdges: EdgeKind[] | null;
   /** With a market: the sale is still ahead (a lost end can be reached from here), so "time to decide" applies to its external wait. */
   beforeSale: boolean;
   /** Its role's hour counters; null when the step has no role the model knows. */
@@ -238,7 +238,7 @@ interface Route {
   /** Where each of `next` leads. */
   targets: Target[];
   /** As `StepState.winEdges`, for `next`. */
-  winEdges: boolean[] | null;
+  winEdges: EdgeKind[] | null;
 }
 
 /** A service as a run uses it. */
@@ -353,46 +353,45 @@ function outcomeReach(stepStates: Map<string, StepState>, ends: Map<string, Engi
   return all;
 }
 
+/** Where an edge leads, for the market's "enquiries that sign": only to a win, only to a loss, or still either way. */
+type EdgeKind = "win" | "lose" | "open";
+
 /**
- * The edges of a step that lead to the sale, when this step is where it is
- * decided: some edges lead only to a win (a won end, or steps that go on to
- * one and can't be lost) and all the others lead only to a loss. Elsewhere
- * (earlier steps whose edges can still end either way, or steps with other
- * kinds of edge) it is null, so "enquiries that sign" applies once per path.
+ * How each edge of a step leads, when this step is where a sale is decided:
+ * at least one edge goes only to a win (a won end, or steps that go on to one
+ * and can't be lost) and at least one goes only to a loss. Edges that can
+ * still end either way (a follow-up loop) are "open" and keep their
+ * probability. Elsewhere (earlier steps, or steps with no such pair: kickoff
+ * splitting between services, say) it is null, so "enquiries that sign"
+ * applies once per path.
  */
-function signingEdges(next: EngineEdge[], targets: Target[], reach: Map<string, Reach>): boolean[] | null {
-  const win = targets.map((t) => {
+function signingEdges(targets: Target[], reach: Map<string, Reach>): EdgeKind[] | null {
+  const kinds = targets.map((t): EdgeKind => {
     const r = reach.get(t.id);
-    return r !== undefined && r.won && !r.lost;
+    return r?.won && !r.lost ? "win" : r?.lost && !r.won ? "lose" : "open";
   });
-  const loseOnly = targets.map((t) => {
-    const r = reach.get(t.id);
-    return r !== undefined && r.lost && !r.won;
-  });
-  if (!win.some(Boolean)) return null;
-  return next.every((_, i) => win[i] || loseOnly[i]) ? win : null;
+  return kinds.includes("win") && kinds.includes("lose") ? kinds : null;
 }
 
 /**
- * Pick an edge when the market scales "enquiries that sign" by `conv`: the
- * edges to the sale have their probability scaled (to at most the edges'
- * total) and the losing ones share what is left in proportion. Uses the same
- * single draw `u` (in 0..total).
+ * Pick an edge when the market scales "enquiries that sign" by `conv`: with W
+ * the win-only edges' probability and L the loss-only edges', the wins become
+ * min(W + L, W × conv) and the losses take the rest of W + L; open edges keep
+ * theirs, so the total is unchanged. Uses the same single draw `u`.
  */
-function pickWithSigning(next: EngineEdge[], winEdges: boolean[], u: number, conv: number): number {
+function pickWithSigning(next: EngineEdge[], kinds: EdgeKind[], u: number, conv: number): number {
   let win = 0;
-  let total = 0;
+  let lose = 0;
   for (let i = 0; i < next.length; i++) {
-    total += next[i]!.p;
-    if (winEdges[i]) win += next[i]!.p;
+    if (kinds[i] === "win") win += next[i]!.p;
+    else if (kinds[i] === "lose") lose += next[i]!.p;
   }
-  const other = total - win;
-  const newWin = Math.min(total, win * conv);
+  const newWin = Math.min(win + lose, win * conv);
   const winScale = win > 0 ? newWin / win : 1;
-  const otherScale = other > 0 ? (total - newWin) / other : 1;
+  const loseScale = lose > 0 ? (win + lose - newWin) / lose : 1;
   let acc = 0;
   for (let i = 0; i < next.length; i++) {
-    acc += next[i]!.p * (winEdges[i] ? winScale : otherScale);
+    acc += next[i]!.p * (kinds[i] === "win" ? winScale : kinds[i] === "lose" ? loseScale : 1);
     if (u < acc) return i;
   }
   return next.length - 1;
@@ -643,8 +642,8 @@ export function runOnce(
     const reach = outcomeReach(stepStates, ends);
     for (const st of stepList) {
       st.beforeSale = reach.get(st.s.id)?.lost === true;
-      st.winEdges = signingEdges(st.s.next, st.targets, reach);
-      if (st.routes) for (const r of st.routes) r.winEdges = signingEdges(r.next, r.targets, reach);
+      st.winEdges = signingEdges(st.targets, reach);
+      if (st.routes) for (const r of st.routes) r.winEdges = signingEdges(r.targets, reach);
     }
   }
   const entryTargets = services.map((sv) => targetFor(sv.entry));

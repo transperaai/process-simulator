@@ -118,6 +118,29 @@ describe("market conditions", () => {
     expect(boom.won).toBeGreaterThan(base.won);
   });
 
+  it("enquiries that sign leave Northbeam's SEO to PPC split alone", () => {
+    const base = simulate(northbeamModel(), 12, 2);
+    const soft = simulate(withMarketCondition(northbeamModel(), f({ conv: 0.5 })), 12, 2);
+    const ratio = (r: typeof base) => r.steps.seo!.arrivals / r.steps.ppc!.arrivals;
+    expect(ratio(soft)).toBeGreaterThan(ratio(base) * 0.85);
+    expect(ratio(soft)).toBeLessThan(ratio(base) * 1.15);
+  });
+
+  it("enquiries that sign still apply when the deciding step also has an open follow-up loop", () => {
+    // decide: won 30%, lost 30%, back to "talk" 40%; talk -> decide or lost, so the loop can still end either way.
+    const m = funnel({
+      leadsPerWeek: 20,
+      steps: [
+        { id: "decide", name: "D", role: null, work: 0, wait: 0, rework: 0, next: [{ to: "won", p: 0.3 }, { to: "lost", p: 0.3 }, { to: "talk", p: 0.4 }] },
+        { id: "talk", name: "T", role: null, work: 0, wait: 1, rework: 0, next: [{ to: "decide", p: 0.5 }, { to: "lost", p: 0.5 }] },
+      ],
+      entry: "decide",
+    });
+    const base = simulate(m, 20, 5).won;
+    const soft = simulate(withMarketCondition(m, f({ conv: 0.5 })), 20, 5).won;
+    expect(soft).toBeLessThan(base * 0.85);
+  });
+
   it("applies conv once per path: only at the step that decides the sale", () => {
     // qualify -> (decide 50% | lost 50%); decide -> (onboard 40% | lost 60%); onboard -> won. conv 0.5 halves the 40%, not the 50%.
     const m = funnel({

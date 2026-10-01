@@ -102,7 +102,7 @@ export interface SummaryNarration {
 export interface MapNode {
   id: string;
   name: string;
-  kind: "task" | "wait" | "decision" | "subprocess" | "start" | "end";
+  kind: "task" | "wait" | "decision" | "subprocess" | "group" | "start" | "end";
   outcome: "won" | "lost" | "done" | null;
   x: number;
   y: number;

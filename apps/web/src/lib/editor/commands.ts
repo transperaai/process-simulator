@@ -21,6 +21,7 @@ export const KIND_LABELS: Record<StepKind, string> = {
   wait: "Wait",
   decision: "Decision",
   subprocess: "Sub-process",
+  group: "Group",
   start: "Start",
   end: "End",
 };
@@ -68,6 +69,9 @@ function newStepRow(bundle: ProcessBundle, kind: NewStepKind, outcome: StepOutco
     notes: null,
     sla_hours: null,
     current_wip: null,
+    parent_step_id: null,
+    entry_step_id: null,
+    child_process_id: null,
     x: Math.round(x),
     y: Math.round(y),
     assumption: false,

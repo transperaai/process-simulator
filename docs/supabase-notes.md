@@ -111,3 +111,11 @@ Estimate for a typical agency (1 consultant plus a few client staff, ~10 workspa
 So one agency uses well under a tenth of the included messages, and the connection quota is 15× the likely peak.
 Watch the Realtime usage page after launch; the first thing to cut, if ever needed, is the notes (names only) and
 the unfiltered deletes.
+
+## Nested processes (issue #102, migration 20261101000000)
+
+Checked against PGlite (PostgreSQL 17 compiled to WASM) (the build container could not start a Postgres server); CI runs the same tests against Postgres 16. Not confirmed on Supabase itself:
+
+- `on delete set null (column)` on the composite foreign keys (`processes_parent_fk`, `steps_entry_step_fk`, `steps_child_process_fk`) needs PostgreSQL 15 or later. Supabase runs 15+, but check when applying.
+- The deferred constraint trigger `nesting_is_a_tree` and the deferred foreign keys on `steps` run at commit. Over PostgREST each request is one transaction, so a bad nesting is refused when that request commits (`23514` or `23503`), not on the statement that caused it.
+- Which of the deferred foreign key and the constraint trigger reports first for a step whose parent is missing depends on trigger firing order (both are `after` triggers fired in name order), so tests only assert that the write is refused.

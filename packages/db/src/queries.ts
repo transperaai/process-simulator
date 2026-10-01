@@ -66,8 +66,23 @@ export async function loadServicingContext(
     db.from("service_servicing").select(SERVICE_SERVICING_COLUMNS).eq("workspace_id", workspaceId).order("id"),
   ]);
   const live = processes.filter((p) => p.id !== process.id && p.live_revision_id);
-  const pipeline = process.kind === "servicing" ? live.find((p) => p.kind !== "servicing") : undefined;
-  const wanted = live.filter((p) => p.kind === "servicing" || p === pipeline);
+  // A child process runs inside its parent, so it is never the pipeline a servicing process runs beside.
+  const pipeline = process.kind === "servicing" ? live.find((p) => p.kind !== "servicing" && !p.parent_process_id) : undefined;
+  const base = live.filter((p) => p.kind === "servicing" || p === pipeline);
+  // The child processes (any depth) of this process and of those, which the steps holding them are simulated through.
+  const reached = new Set([process.id, ...base.map((p) => p.id)]);
+  const children: typeof live = [];
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const p of live) {
+      if (p.parent_process_id && reached.has(p.parent_process_id) && !reached.has(p.id)) {
+        reached.add(p.id);
+        children.push(p);
+        grew = true;
+      }
+    }
+  }
+  const wanted = [...base, ...children.filter((c) => !base.includes(c))];
   const revisionIds = wanted.map((p) => p.live_revision_id!);
   const [revisions, steps, edges] = revisionIds.length
     ? await Promise.all([
@@ -187,7 +202,7 @@ export async function loadProcessBundle(
   };
 }
 
-const PROCESS_COLUMNS = "id, workspace_id, name, kind, entity_name, description, live_revision_id" as const;
+const PROCESS_COLUMNS = "id, workspace_id, name, kind, entity_name, description, live_revision_id, parent_process_id" as const;
 
 /** A workspace's processes, oldest first. */
 export async function listProcesses(db: Db, workspaceId: string): Promise<(ProcessRow & { draft_revision_id: string | null })[]> {

@@ -3,6 +3,7 @@ export type { Database, Json } from "./database.types";
 export {
   ModelError,
   engineDistribution,
+  isHolderStep,
   isWorkingStep,
   qualifiedLeadsPerWeek,
   seasonalityCurve,

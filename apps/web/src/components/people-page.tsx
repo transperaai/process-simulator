@@ -69,7 +69,7 @@ export function PeoplePage({
   }, [model, run, bundle.people]);
 
   if (!model) {
-    return <Card className="p-4 text-sm text-muted-foreground">This workspace's live process can't be simulated yet, so there is nothing to show here. Fix it on the map first.</Card>;
+    return <Card className="p-4 text-sm text-muted-foreground">This workspace&apos;s live process can&apos;t be simulated yet, so there is nothing to show here. Fix it on the map first.</Card>;
   }
   if (!view) {
     return (
@@ -217,7 +217,7 @@ function ClientGroupsTable({ health }: { health: ClientHealthSummary }) {
             <TableRow>
               <TableHead>Service</TableHead>
               <TableHead className="text-right">Clients</TableHead>
-              <TableHead className="text-right">Starting health</TableHead>
+              <TableHead className="hidden text-right sm:table-cell">Starting health</TableHead>
               <TableHead className="text-right">Health</TableHead>
               <TableHead>Rating</TableHead>
             </TableRow>
@@ -227,7 +227,7 @@ function ClientGroupsTable({ health }: { health: ClientHealthSummary }) {
               <TableRow key={g.service}>
                 <TableCell className="font-medium">{g.name}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatNumber(g.clients, 0)}</TableCell>
-                <TableCell className="text-right tabular-nums">{Math.round(g.startHealth)}</TableCell>
+                <TableCell className="hidden text-right tabular-nums sm:table-cell">{Math.round(g.startHealth)}</TableCell>
                 <TableCell className="text-right tabular-nums">{Math.round(g.health)}</TableCell>
                 <TableCell>
                   <RatingChip rating={g.rating} />
@@ -259,7 +259,7 @@ function HowBusy({ rows }: { rows: PersonBusy[] }) {
               <TableHead>Name</TableHead>
               <TableHead>Role</TableHead>
               <TableHead className="text-right">FTE</TableHead>
-              <TableHead>How busy</TableHead>
+              <TableHead className="hidden sm:table-cell">How busy</TableHead>
               <TableHead className="text-right">Average</TableHead>
             </TableRow>
           </TableHeader>
@@ -269,7 +269,7 @@ function HowBusy({ rows }: { rows: PersonBusy[] }) {
                 <TableCell className="font-medium">{p.name}</TableCell>
                 <TableCell className="text-sm">{p.role}</TableCell>
                 <TableCell className="text-right tabular-nums">{p.fte === null ? "–" : formatNumber(p.fte, 1)}</TableCell>
-                <TableCell className="min-w-40">
+                <TableCell className="hidden min-w-40 sm:table-cell">
                   <span className="block h-2 overflow-hidden rounded-full bg-panel-2" role="img" aria-label={`${formatPercent(p.average)} busy on average, ${formatPercent(p.p90)} in a bad month`}>
                     <i
                       className={`block h-full ${p.average >= BUSY_LIMIT ? "bg-crit" : p.average >= 0.75 ? "bg-warn" : "bg-accent"}`}

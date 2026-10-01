@@ -38,7 +38,7 @@ export function personRows(model: EngineModel, result: SimulationResult, fteById
       ];
     })
     .sort((a, b) => a.first - b.first || a.name.localeCompare(b.name))
-    .map(({ first: _first, ...row }) => row);
+    .map((r) => ({ id: r.id, name: r.name, role: r.role, fte: r.fte, average: r.average, p90: r.p90 }));
 }
 
 export interface TeamSummary {

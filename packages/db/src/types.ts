@@ -580,6 +580,38 @@ export interface ScenarioRow {
   parent_scenario_id: string | null;
 }
 
+/** By hand (built or saved by a person) or made by the AI ideas (A52). */
+export type BlockType = "manual" | "ai";
+
+/** A step of a block: a process's step without the revision, workspace and process it sits in (a block belongs to none). */
+export type BlockStep = Omit<StepRow, "revision_id" | "workspace_id" | "process_id">;
+/** A connection between two steps of a block. */
+export type BlockEdge = Omit<EdgeRow, "revision_id" | "workspace_id" | "process_id">;
+
+/**
+ * The steps, connections and groups of a block (`blocks.steps`). Ids are local to the bundle: inserting it into a process
+ * gives everything fresh ids. Groups are steps of kind `group` with `parent_step_id` set, as in a process; steps with no
+ * parent are the block's top level.
+ */
+export interface BlockBundle {
+  steps: BlockStep[];
+  edges: BlockEdge[];
+  /** The top-level step the block is entered at; null when it has none to choose. */
+  entry_step_id: string | null;
+}
+
+/** A saved bundle of steps that can be reused in any process or solution (A51). */
+export interface BlockRow {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description: string;
+  type: BlockType;
+  steps: BlockBundle;
+  created_at: string;
+  updated_at: string;
+}
+
 export type IssueStatus = "open" | "in_progress" | "done" | "dismissed";
 /** Logged by hand, detected by a stored run (reserved), or promoted from a detection. */
 export type IssueSource = "manual" | "detected" | "promoted";
@@ -738,6 +770,8 @@ export type _SchemaDriftChecks = [
   // evidence_metrics is jsonb; Record<string, number> is its app-side shape.
   Assert<Matches<Omit<IssueRow, "evidence_metrics">, "issues">>,
   Assert<Matches<SourceRow, "sources">>,
+  // steps is jsonb; BlockBundle is its checked shape, and the check constraint limits type to BlockType.
+  Assert<Matches<Omit<BlockRow, "steps" | "type">, "blocks">>,
   // patch, evidence and applied are jsonb; the check constraints limit the text columns.
   Assert<Matches<Omit<SuggestionRow, "patch" | "evidence" | "applied">, "suggestions">>,
 ];

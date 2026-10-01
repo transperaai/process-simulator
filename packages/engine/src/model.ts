@@ -209,7 +209,37 @@ export interface EngineStep {
    * SLA breaches; it doesn't change how the step is worked.
    */
   sla?: number;
+  /**
+   * The group this step sits in (a key of `EngineModel.groups`), if any. A step
+   * with no `next` inside a group leaves through the group's own `next`.
+   */
+  parent?: string;
   next: EngineEdge[];
+}
+
+/**
+ * A box of steps, or a child process, held by one step of the parent graph
+ * (docs/PRD.md §4.1 nesting, issue #102). The engine simulates only the leaf
+ * steps: `flattenModel` removes groups before a run, so a nested model gives
+ * the same numbers as the same model drawn flat.
+ */
+export interface EngineGroup {
+  name: string;
+  /** The group this one sits in, if any. */
+  parent?: string;
+  /** Where entities enter: a leaf step, another group (its entry), or an end id. */
+  entry: string;
+  /**
+   * Where entities go when they leave the group, as the parent graph's edges.
+   * Empty: the group is the last thing in its own parent, so they leave that too.
+   */
+  next: EngineEdge[];
+  /**
+   * End ids inside the group that mean "leave the group" instead of ending the
+   * run: a child process's `done` ends. An edge to one of them leaves through
+   * `next`, and the id is no longer an end of the model.
+   */
+  exits?: string[];
 }
 
 /**
@@ -292,6 +322,11 @@ export interface EngineModel {
    * Ignored when any step has `currentWip`: the run starts from that instead.
    */
   warmupWeeks?: number;
+  /**
+   * Groups by id (see `EngineGroup`), for steps inside groups or child
+   * processes. Omitted: a flat model, simulated exactly as before groups existed.
+   */
+  groups?: Record<string, EngineGroup>;
   entry: string;
   /** The terminal `won` and `lost` end steps' ids. */
   sinks: { won: string; lost: string };

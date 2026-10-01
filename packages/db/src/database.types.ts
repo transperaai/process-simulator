@@ -541,6 +541,87 @@ export type Database = {
           },
         ]
       }
+      first_principles: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          deletes: Json
+          id: string
+          improvements: Json
+          job_done: string
+          job_progress: string
+          job_situation: string
+          job_who: string
+          measures: Json
+          process_id: string
+          requirements: Json
+          revision_id: string
+          root_cause: string
+          statements: Json
+          updated_at: string
+          why_chain: Json
+          why_problem: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          deletes?: Json
+          id?: string
+          improvements?: Json
+          job_done?: string
+          job_progress?: string
+          job_situation?: string
+          job_who?: string
+          measures?: Json
+          process_id: string
+          requirements?: Json
+          revision_id: string
+          root_cause?: string
+          statements?: Json
+          updated_at?: string
+          why_chain?: Json
+          why_problem?: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          deletes?: Json
+          id?: string
+          improvements?: Json
+          job_done?: string
+          job_progress?: string
+          job_situation?: string
+          job_who?: string
+          measures?: Json
+          process_id?: string
+          requirements?: Json
+          revision_id?: string
+          root_cause?: string
+          statements?: Json
+          updated_at?: string
+          why_chain?: Json
+          why_problem?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "first_principles_revision_id_process_id_workspace_id_fkey"
+            columns: ["revision_id", "process_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "process_revisions"
+            referencedColumns: ["id", "process_id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "first_principles_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       issues: {
         Row: {
           client_id: string | null

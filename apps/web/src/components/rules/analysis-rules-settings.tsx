@@ -6,6 +6,8 @@
 // is simulated once; each change re-rates it on the spot, with no new simulation, and the page shows what the rules
 // now flag.
 
+import { useSuccessMeasures } from "@/lib/first-principles/use-measures";
+import type { FirstPrinciples } from "@transpera-flow/engine";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ModelError, toEngineModel, type AnalysisRules, type ProcessBundle } from "@transpera-flow/db";
 import {
@@ -47,6 +49,7 @@ export function AnalysisRulesSettings({
   workspaceId,
   initial,
   bundle,
+  firstPrinciples,
   processes,
 }: {
   mode: RulesMode;
@@ -54,6 +57,8 @@ export function AnalysisRulesSettings({
   initial: AnalysisRules;
   /** The live process: its model is simulated for the preview and names what an override can apply to. */
   bundle: ProcessBundle | null;
+  /** The live version's first principles, so the preview rates goals met as the other pages do. */
+  firstPrinciples?: FirstPrinciples | null;
   processes: SubjectOption[];
 }) {
   const canEdit = mode !== "readonly";
@@ -80,7 +85,8 @@ export function AnalysisRulesSettings({
   const result = sim.run?.result ?? null;
   // The absence test (rule 8) is its own worker pass once the baseline is done.
   const absence = useAbsenceTest(model && result && sim.status === "done" ? model : null, result?.seed ?? 1, resolveMoney(settings).absenceWeeks);
-  const issues = useMemo(() => (model && result ? rerate(model, result, settings, bundle?.process.id, absence) : null), [model, result, settings, bundle, absence]);
+  const successMeasures = useSuccessMeasures(bundle?.process.id ?? "", mode === "demo", firstPrinciples);
+  const issues = useMemo(() => (model && result ? rerate(model, result, settings, bundle?.process.id, absence, { successMeasures }) : null), [model, result, settings, bundle, absence, successMeasures]);
   const counts = useMemo(() => (issues ? tally(issues) : null), [issues]);
   const subjects = useMemo(() => subjectsOf(model, processes), [model, processes]);
   const currency = bundle?.workspace.settings.currency ?? "AUD";

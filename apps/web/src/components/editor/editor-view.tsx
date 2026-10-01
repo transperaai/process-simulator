@@ -15,7 +15,7 @@ import { blockFromSteps } from "@/lib/blocks/blocks";
 import { parseBlockInput } from "@/lib/blocks/save";
 import { newStepRow } from "@/lib/editor/commands";
 import { discardChange, revertField } from "@/lib/drafts/discard";
-import { EMPTY_DIFF, diffBundles, unresolvedSteps } from "@/lib/drafts/diff";
+import { EMPTY_DIFF, diffBundles, publishableChanges, unresolvedSteps } from "@/lib/drafts/diff";
 import { useDraftSession } from "@/lib/drafts/use-draft-session";
 import { namesOf } from "@/lib/editor/describe";
 import type { Table } from "@/lib/editor/ops";
@@ -59,6 +59,7 @@ export function EditorView({
   sourcesHref,
   exitHref,
   horizonMonths = null,
+  extraChanges = 0,
 }: {
   live: ProcessBundle;
   draft: ProcessBundle | null;
@@ -79,6 +80,8 @@ export function EditorView({
   exitHref: string;
   /** The horizon picked on the map, in months; null runs the model at its own length. */
   horizonMonths?: number | null;
+  /** Changes the draft has that aren't steps or edges (its first principles differ from live's), which Publish counts too. */
+  extraChanges?: number;
 }) {
   const router = useRouter();
   const stamp = useCallback(() => ({ at: new Date().toISOString(), by: userId }), [userId]);
@@ -228,7 +231,7 @@ export function EditorView({
         subject={live.process.name}
         session={session}
         drafts={drafts}
-        changes={diff.list.length}
+        changes={publishableChanges(diff, hasDraft, extraChanges)}
         saving={state.saving}
         blocked={blocked}
         unresolved={unresolved}

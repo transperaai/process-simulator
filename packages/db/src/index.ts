@@ -16,6 +16,19 @@ export {
 } from "./model";
 export { loadAnalysisRules, saveAnalysisRules, type AnalysisRules, type SaveAnalysisRulesOutcome } from "./analysis-rules";
 export { loadLeverSettings, saveLeverSettings, type LeverSettings, type SaveLeverSettingsOutcome } from "./lever-settings";
+export {
+  FIRST_PRINCIPLES_COLUMNS,
+  firstPrinciplesDiffer,
+  firstPrinciplesFromRow,
+  firstPrinciplesToColumns,
+  loadFirstPrinciples,
+  loadFirstPrinciplesFor,
+  resolveFirstPrinciples,
+  saveFirstPrinciples,
+  type FirstPrinciplesOwner,
+  type ResolvedFirstPrinciples,
+  type SaveFirstPrinciplesOutcome,
+} from "./first-principles";
 export { isRetiredStep, partitionSteps } from "./retired";
 export {
   absolutePositions,

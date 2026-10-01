@@ -72,7 +72,7 @@ export function processRows(input: {
     if (isWorking(s)) mine(s.process_id).steps++;
   }
   for (const i of input.issues) {
-    if (i.status !== "open" && i.status !== "in_progress") continue;
+    if (i.status !== "open" && i.status !== "testing") continue;
     const pid = i.process_id ?? (i.step_id ? stepProcess.get(i.step_id) : undefined);
     if (!pid) continue;
     const o = mine(pid);

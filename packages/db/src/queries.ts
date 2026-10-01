@@ -361,7 +361,7 @@ export async function loadBlocks(db: Db, workspaceId: string): Promise<BlockRow[
 }
 
 export const ISSUE_COLUMNS =
-  "id, workspace_id, process_id, step_id, role_id, person_id, client_id, type, severity, title, evidence, evidence_metrics, owner_person_id, status, scenario_id, source, detected_key, resolved_at, created_at, updated_at, number, target_measure, target_now, target_goal" as const;
+  "id, workspace_id, process_id, step_id, role_id, person_id, client_id, type, severity, title, evidence, evidence_metrics, owner_person_id, status, scenario_id, source, detected_key, resolved_at, created_at, updated_at, number, dismissed_revision_id, target_measure, target_now, target_goal" as const;
 
 /** The history log's columns. */
 export const ISSUE_EVENT_COLUMNS = "id, issue_id, workspace_id, seq, kind, at, actor, detail, tx" as const;

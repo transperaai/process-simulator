@@ -5,7 +5,7 @@ import type { IssueRow } from "@transpera-flow/db";
 import type { SaveOutcome, Saver } from "@/lib/fields/field-controller";
 import { liveIssueStore } from "./live-store";
 import { MemoryIssueStore, type IssueStore, type SaveIssueResult } from "./store";
-import type { IssueField, IssueInput, PromoteInput, Scalar } from "./validate";
+import type { IssueField, IssueInput, PromoteInput, SaveIssueInput, Scalar } from "./validate";
 
 export interface IssuesState {
   issues: IssueRow[];
@@ -13,6 +13,8 @@ export interface IssuesState {
   error: string | null;
   create(input: IssueInput): Promise<IssueRow | null>;
   promote(input: PromoteInput): Promise<IssueRow | null>;
+  /** The Acknowledge dialog: create an issue (from an insight or by hand) or edit one. Null when it failed; `error` says why. */
+  save(input: SaveIssueInput): Promise<IssueRow | null>;
   /** A saver for one field of one issue that also updates the list once saved. */
   saver(id: string, field: IssueField): Saver<Scalar>;
   remove(id: string): Promise<boolean>;
@@ -66,6 +68,7 @@ export function useIssues(workspaceId: string, initial: readonly IssueRow[], mod
     error,
     create: (input) => add(() => store.create(input)),
     promote: (input) => add(() => store.promote(input)),
+    save: (input) => add(() => store.save(input)),
     saver,
     remove: async (id) => {
       setBusy(true);

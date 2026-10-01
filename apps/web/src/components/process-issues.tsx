@@ -104,9 +104,9 @@ export function useProcessIssues({
     const still = new Set(broken.map((d) => d.key));
     for (const i of tracked) {
       if (i.type !== "broken_scenario" || !i.detected_key || still.has(i.detected_key)) continue;
-      if ((i.status !== "open" && i.status !== "in_progress") || resolving.current.has(i.id)) continue;
+      if ((i.status !== "open" && i.status !== "testing") || resolving.current.has(i.id)) continue;
       resolving.current.add(i.id);
-      void saver(i.id, "status")(i.status, "done").finally(() => resolving.current.delete(i.id));
+      void saver(i.id, "status")(i.status, "resolved").finally(() => resolving.current.delete(i.id));
     }
   }, [mode, model, broken, tracked, saver]);
 

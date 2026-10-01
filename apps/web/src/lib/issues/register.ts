@@ -3,7 +3,7 @@
 // each one links to, and the badges on the map. Pure functions; the
 // components render the results.
 
-import type { IssueRow, IssueSource, IssueStatus, ScenarioRow } from "@transpera-flow/db";
+import { isActiveStatus, isVisibleIssue, type IssueRow, type IssueSource, type IssueStatus, type ScenarioRow } from "@transpera-flow/db";
 import {
   RATINGS,
   compareCostsDesc,
@@ -44,10 +44,15 @@ export const TYPE_LABELS: Record<IssueType, string> = {
 
 export const STATUS_LABELS: Record<IssueStatus, string> = {
   open: "Open",
-  in_progress: "In progress",
-  done: "Done",
+  testing: "Testing solutions",
+  resolved: "Resolved",
+  wont_fix: "Won't fix",
+  // Not an issue a person sees: a dismissed insight. The register and the map never list it.
   dismissed: "Dismissed",
 };
+
+/** "Issue #12": the stable number the issue carries in its workspace, as the insight's link and the issue pages show it. */
+export const issueLabel = (issue: Pick<IssueRow, "number">): string => `Issue #${issue.number}`;
 
 /** The four ratings, most severe first: the order the register, filters and reports list them in. */
 export const RATINGS_WORST_FIRST: readonly Rating[] = [...RATINGS].reverse();
@@ -70,7 +75,7 @@ export function formatIssueCost(cost: IssueCost | null, currency: string): strin
   return "Cost per month: n/a";
 }
 
-const isOpen = (s: IssueStatus) => s === "open" || s === "in_progress";
+const isOpen = isActiveStatus;
 
 /** An entry's shared fields, whichever kind it is. */
 export function entryView(e: RegisterEntry) {
@@ -86,12 +91,18 @@ export function entryView(e: RegisterEntry) {
       cost: d.cost as IssueCost | null,
       status: null,
       stepId: d.stepId,
+      stepIds: d.stepId ? [d.stepId] : ([] as string[]),
       personId: d.personId,
       processId: null as string | null,
+      processIds: [] as string[],
       open: true,
     };
   }
   const i = e.issue;
+  // Everything it touches: the steps it links to, else the one the compatibility column names.
+  const linkedSteps = i.links.flatMap((l) => (l.step_id ? [l.step_id] : []));
+  const stepIds = linkedSteps.length ? linkedSteps : i.step_id ? [i.step_id] : [];
+  const processIds = [...new Set([...i.links.flatMap((l) => (l.process_id ? [l.process_id] : [])), ...(i.process_id ? [i.process_id] : [])])];
   return {
     id: i.id,
     title: i.title,
@@ -103,11 +114,13 @@ export function entryView(e: RegisterEntry) {
     // A tracked issue is costed by what the latest run detects for it.
     cost: (e.detection?.cost ?? null) as IssueCost | null,
     status: i.status,
-    stepId: i.step_id,
+    stepId: stepIds[0] ?? null,
+    stepIds,
     personId: i.person_id,
     processId: i.process_id,
-    // Marked done but detected again: back on the list.
-    open: isOpen(i.status) || (i.status === "done" && e.detection !== null),
+    processIds,
+    // Marked resolved but detected again: back on the list.
+    open: isOpen(i.status) || (i.status === "resolved" && e.detection !== null),
   };
 }
 
@@ -118,9 +131,11 @@ export function entryView(e: RegisterEntry) {
  */
 export function registerEntries(tracked: readonly IssueRow[], detected: readonly DetectedIssue[]): RegisterEntry[] {
   const byKey = new Map(detected.map((d) => [d.key, d]));
+  // A dismissed insight is kept as a row so it doesn't come back, but it is never an issue: it holds its key (so the
+  // detection isn't listed again) and nothing else, which keeps it out of the register, the counts and the map.
   const trackedKeys = new Set(tracked.flatMap((i) => (i.detected_key ? [i.detected_key] : [])));
   const entries: RegisterEntry[] = [
-    ...tracked.map((issue): RegisterEntry => ({ kind: "tracked", issue, detection: issue.detected_key ? (byKey.get(issue.detected_key) ?? null) : null })),
+    ...tracked.filter(isVisibleIssue).map((issue): RegisterEntry => ({ kind: "tracked", issue, detection: issue.detected_key ? (byKey.get(issue.detected_key) ?? null) : null })),
     ...detected.filter((d) => !trackedKeys.has(d.key)).map((detection): RegisterEntry => ({ kind: "detected", detection })),
   ];
   const updated = (e: RegisterEntry) => (e.kind === "tracked" ? e.issue.updated_at : "");
@@ -147,7 +162,8 @@ export function registerEntries(tracked: readonly IssueRow[], detected: readonly
 export function entriesInProcess(entries: readonly RegisterEntry[], processId: string, stepIds: ReadonlySet<string>): RegisterEntry[] {
   return entries.filter((e) => {
     const v = entryView(e);
-    return v.stepId ? stepIds.has(v.stepId) : e.kind === "detected" || v.processId === processId;
+    // On a step of this process; or on none in particular: a detection is this process's, an issue is if it links it whole.
+    return v.stepIds.length ? v.stepIds.some((id) => stepIds.has(id)) : e.kind === "detected" || v.processIds.includes(processId);
   });
 }
 
@@ -158,7 +174,7 @@ export interface IssueFilters {
   person: string;
   rating: Rating | "";
   source: IssueSource | "";
-  /** "active": open, in progress, or detected; "" for everything. */
+  /** "active": open, testing solutions, or detected; "" for everything. */
   status: IssueStatus | "active" | "";
   /** A step id, e.g. from clicking a badge on the map. */
   step: string;
@@ -170,13 +186,13 @@ export const NO_FILTERS: IssueFilters = { process: "", person: "", rating: "", s
 export function filterEntries(entries: readonly RegisterEntry[], f: IssueFilters, processId: string | null): RegisterEntry[] {
   return entries.filter((e) => {
     const v = entryView(e);
-    if (f.process && (e.kind === "detected" ? processId : v.processId) !== f.process) return false;
-    if (f.person && v.personId !== f.person && !(e.kind === "tracked" && e.issue.owner_person_id === f.person)) return false;
+    if (f.process && !(e.kind === "detected" ? processId === f.process : v.processIds.includes(f.process))) return false;
+    if (f.person && v.personId !== f.person && !(e.kind === "tracked" && (e.issue.owner_person_id === f.person || e.issue.owner_ids.includes(f.person)))) return false;
     if (f.rating && v.rating !== f.rating) return false;
     if (f.source && v.source !== f.source) return false;
     if (f.status === "active" && !v.open) return false;
     if (f.status && f.status !== "active" && v.status !== f.status) return false;
-    if (f.step && v.stepId !== f.step) return false;
+    if (f.step && !v.stepIds.includes(f.step)) return false;
     return true;
   });
 }
@@ -282,11 +298,13 @@ export function stepBadges(entries: readonly RegisterEntry[]): Record<string, St
   const out: Record<string, StepBadge> = {};
   for (const e of entries) {
     const v = entryView(e);
-    if (!v.open || !v.stepId) continue;
-    const b = (out[v.stepId] ??= { count: 0, rating: v.rating, titles: [] });
-    b.count++;
-    b.titles.push(v.title);
-    if (compareRatingsDesc(v.rating, b.rating) < 0) b.rating = v.rating;
+    if (!v.open) continue;
+    for (const stepId of v.stepIds) {
+      const b = (out[stepId] ??= { count: 0, rating: v.rating, titles: [] });
+      b.count++;
+      b.titles.push(v.title);
+      if (compareRatingsDesc(v.rating, b.rating) < 0) b.rating = v.rating;
+    }
   }
   return out;
 }

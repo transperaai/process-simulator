@@ -654,6 +654,17 @@ export type IssueStatus = "open" | "testing" | "resolved" | "wont_fix" | "dismis
 /** The four statuses a person can give an issue. */
 export const ISSUE_STATUSES = ["open", "testing", "resolved", "wont_fix"] as const satisfies readonly IssueStatus[];
 export type VisibleIssueStatus = (typeof ISSUE_STATUSES)[number];
+/**
+ * A dismissed insight stays dismissed until its process's next published version. True while the process's live
+ * revision is the one it was dismissed against (or it is unknown which that was: a row migrated without one). A
+ * different live revision means it has expired, and the analysis may list the insight again.
+ */
+export function isDismissalCurrent(i: { status: IssueStatus; dismissed_revision_id: string | null }, liveRevisionId: string | null | undefined): boolean {
+  if (i.status !== "dismissed") return false;
+  if (!i.dismissed_revision_id || !liveRevisionId) return true;
+  return i.dismissed_revision_id === liveRevisionId;
+}
+
 /** True unless the row is a dismissed insight. */
 export const isVisibleIssue = (i: { status: IssueStatus }): boolean => i.status !== "dismissed";
 /** Still to be dealt with: open, or having a solution tested. */
@@ -701,8 +712,10 @@ export interface IssueRow {
   resolved_at: string | null;
   created_at: string;
   updated_at: string;
-  /** Stable per workspace, never reused: "Issue #12". Assigned by the database. */
-  number: number;
+  /** Stable per workspace, never reused: "Issue #12". Assigned by the database. Null for a dismissed insight, which is not an issue. */
+  number: number | null;
+  /** For a dismissed insight: the live revision of its process it was dismissed against. See `isDismissalCurrent`. */
+  dismissed_revision_id: string | null;
   /** What is measured ("Wait at Check fit"), its value now ("1.4 d") and the goal ("under 4 hours"). */
   target_measure: string | null;
   target_now: string | null;

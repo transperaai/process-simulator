@@ -670,6 +670,7 @@ export function northbeamIssues(): IssueRow[] {
     scenario_id: null,
     detected_key: null,
     resolved_at: null,
+    dismissed_revision_id: null,
     created_at: at,
     updated_at: at,
   } satisfies Partial<IssueRow>;

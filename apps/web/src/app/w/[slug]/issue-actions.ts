@@ -1,17 +1,19 @@
 "use server";
 
-import { ISSUE_COLUMNS, type IssueRow, type Json } from "@transpera-flow/db";
+import { loadIssue, saveIssue, type IssueLinkRef, type Json } from "@transpera-flow/db";
 import type { SaveOutcome } from "@/lib/fields/field-controller";
 import { saveField } from "@/lib/fields/server";
 import { ALREADY_TRACKED, type RemoveIssueResult, type SaveIssueResult } from "@/lib/issues/store";
-import { cleanFieldValue, isId, isIssueField, parseIssueInput, parsePromoteInput, type Scalar } from "@/lib/issues/validate";
+import { cleanFieldValue, isId, isIssueField, parseIssueInput, parsePromoteInput, parseSaveInput, type Scalar } from "@/lib/issues/validate";
 import { createClient } from "@/lib/supabase/server";
 
-// Logging, tracking, editing and deleting issues (issue #17). Every write runs
+// Logging, tracking, editing and deleting issues (issue #17, reworked in #112). Every write runs
 // as the signed-in user through RLS (editors, owners and agency admins may
 // write; everyone in the workspace may read). The checks in
 // lib/issues/validate.ts only reject malformed input early; the database
-// checks every enumerated column too. Edits are per-field saves
+// checks every enumerated column too. An issue is created or edited through
+// `public.save_issue`, which writes it with its links, owners and sources in one
+// transaction (one history entry); single fields are per-field saves
 // (docs/adr/0001-per-field-saves.md). Nothing here refreshes the page: the
 // register already shows the change.
 
@@ -36,16 +38,20 @@ const failure = (error: { code?: string; message?: string }) =>
           ? ({ status: "error", message: "Something the issue links to no longer exists." } as const)
           : ({ status: "error", message: "Couldn't save. Try again." } as const);
 
-async function insert(workspaceId: string, row: Record<string, unknown>): Promise<SaveIssueResult> {
+/** What an old-style input says it touches, as links: its step, else its process. */
+const linksOf = (row: { process_id?: string | null; step_id?: string | null }): IssueLinkRef[] =>
+  row.step_id ? [{ process_id: row.process_id ?? null, step_id: row.step_id }] : row.process_id ? [{ process_id: row.process_id, step_id: null }] : [];
+
+async function write(
+  workspaceId: string,
+  args: { id?: string; fields: Record<string, Json | undefined>; links?: IssueLinkRef[]; owners?: string[]; sources?: string[] },
+): Promise<SaveIssueResult> {
   const supabase = await signedInClient();
   if (!supabase) return signedOut;
-  const { data, error } = await supabase
-    .from("issues")
-    .insert({ ...(row as { type: string; title: string }), workspace_id: workspaceId })
-    .select(ISSUE_COLUMNS)
-    .single();
-  if (error) return failure(error);
-  return { status: "ok", issue: data as unknown as IssueRow };
+  const saved = await saveIssue(supabase, { workspaceId, ...args });
+  if ("error" in saved) return failure(saved.error);
+  const issue = await loadIssue(supabase, workspaceId, saved.id);
+  return issue ? { status: "ok", issue } : forbidden;
 }
 
 /** Log an issue by hand (an audit finding). */
@@ -53,7 +59,8 @@ export async function createIssue(workspaceId: unknown, input: unknown): Promise
   if (!isId(workspaceId)) return invalid;
   const parsed = parseIssueInput(input);
   if (!parsed.ok) return { status: "error", message: parsed.error };
-  return insert(workspaceId, { ...parsed.value, source: "manual" });
+  const { process_id, step_id, owner_person_id, ...fields } = parsed.value;
+  return write(workspaceId, { fields: { ...fields, source: "manual" }, links: linksOf({ process_id, step_id }), owners: owner_person_id ? [owner_person_id] : [] });
 }
 
 /** Track a detected issue. Its key is unique per workspace, so tracking it twice is refused. */
@@ -61,8 +68,43 @@ export async function promoteIssue(workspaceId: unknown, input: unknown): Promis
   if (!isId(workspaceId)) return invalid;
   const parsed = parsePromoteInput(input);
   if (!parsed.ok) return { status: "error", message: parsed.error };
-  const { evidence_metrics, ...rest } = parsed.value;
-  return insert(workspaceId, { ...rest, evidence_metrics: evidence_metrics as Json, source: "promoted", status: rest.status ?? "open" });
+  const { process_id, step_id, owner_person_id, evidence_metrics, ...rest } = parsed.value;
+  return write(workspaceId, {
+    fields: { ...rest, evidence_metrics: evidence_metrics as Json, source: "promoted", status: rest.status ?? "open" },
+    links: linksOf({ process_id, step_id }),
+    owners: owner_person_id ? [owner_person_id] : [],
+  });
+}
+
+/**
+ * The Acknowledge dialog (new issue, acknowledge an insight, edit): creates or edits an issue with what it touches,
+ * its owners and its sources in one transaction, so the history gets one entry.
+ */
+export async function saveIssueFromDialog(workspaceId: unknown, input: unknown): Promise<SaveIssueResult> {
+  if (!isId(workspaceId)) return invalid;
+  const parsed = parseSaveInput(input);
+  if (!parsed.ok) return { status: "error", message: parsed.error };
+  const v = parsed.value;
+  const fields: Record<string, Json | undefined> = {
+    title: v.title,
+    severity: v.severity,
+    evidence: v.evidence ?? null,
+    target_measure: v.target_measure,
+    target_now: v.target_now,
+    target_goal: v.target_goal,
+  };
+  if (v.id) {
+    if (v.status) fields.status = v.status;
+  } else {
+    fields.type = v.type ?? "manual";
+    if (v.from) {
+      const { evidence_metrics, ...from } = v.from;
+      Object.assign(fields, from, { evidence_metrics: evidence_metrics as Json, source: "promoted" });
+    } else {
+      fields.source = "manual";
+    }
+  }
+  return write(workspaceId, { id: v.id, fields, links: v.links, owners: v.owner_ids, sources: v.source_ids });
 }
 
 /** Save one field of an issue if its stored value is still `base`. */

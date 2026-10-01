@@ -47,6 +47,8 @@ describe("migrating existing issues", () => {
       "insert into steps (id, revision_id, workspace_id, process_id, name, kind, work_hours, x, y) values ($1, $2, $3, $4, 'Check fit', 'task', 1, 0, 0)",
       [stepA, rev, ws, proc],
     );
+    await client.query("update process_revisions set status = 'published' where id = $1", [rev]);
+    await client.query("update processes set live_revision_id = $1 where id = $2", [rev, proc]);
     await client.query("insert into people (id, workspace_id, name) values ($1, $2, 'Rosa')", [person, ws]);
     await client.query("insert into sources (id, workspace_id, title) values ($1, $2, 'Interview')", [source, ws]);
     const cites = JSON.stringify([{ source_id: source, speaker: "Rosa", quote: "q" }, { source_id: randomUUID(), quote: "a source that is gone" }]);
@@ -58,7 +60,7 @@ describe("migrating existing issues", () => {
     // The step names no process; the issue is critical and in progress, owned, citing a source.
     await ins(ids.a, "2026-09-01T09:00:00Z", { step_id: stepA, severity: "critical", status: "in_progress", owner_person_id: person, evidence_sources: cites, title: "A" });
     await ins(ids.b, "2026-09-02T09:00:00Z", { process_id: proc, severity: "info", status: "done", title: "B" });
-    await ins(ids.c, "2026-09-03T09:00:00Z", { type: "spof", source: "promoted", detected_key: `spof:step:${stepA}`, severity: "serious", status: "dismissed", title: "C" });
+    await ins(ids.c, "2026-09-03T09:00:00Z", { process_id: proc, type: "spof", source: "promoted", detected_key: `spof:step:${stepA}`, severity: "serious", status: "dismissed", title: "C" });
     await ins(ids.d, "2026-09-04T09:00:00Z", { type: "idea", severity: "warning", status: "open", title: "D" });
     before = Object.fromEntries((await client.query("select * from issues")).rows.map((r) => [r.id, r]));
     await client.query(readFileSync(dir(`../supabase/migrations/${MIGRATION}`), "utf8"));
@@ -78,7 +80,7 @@ describe("migrating existing issues", () => {
     const now = await after();
     expect(Object.keys(now).sort()).toEqual(Object.keys(before).sort());
     for (const [id, old] of Object.entries(before)) {
-      const { status: _s, number: _n, target_measure: _a, target_now: _b, target_goal: _c, ...rest } = now[id] as Record<string, unknown>;
+      const { status: _s, number: _n, target_measure: _a, target_now: _b, target_goal: _c, dismissed_revision_id: _d, ...rest } = now[id] as Record<string, unknown>;
       const { status: _os, ...oldRest } = old;
       expect(rest, id).toEqual(oldRest);
     }
@@ -101,7 +103,7 @@ describe("migrating existing issues", () => {
     const of = (id: string) => links.filter((l) => l.issue_id === id).map(({ process_id, step_id }) => ({ process_id, step_id }));
     expect(of(ids.a)).toEqual([{ process_id: proc, step_id: stepA }]);
     expect(of(ids.b)).toEqual([{ process_id: proc, step_id: null }]);
-    expect(of(ids.c)).toEqual([]);
+    expect(of(ids.c)).toEqual([{ process_id: proc, step_id: null }]);
     expect(of(ids.d)).toEqual([]);
   });
 
@@ -110,11 +112,17 @@ describe("migrating existing issues", () => {
     expect((await client.query("select issue_id, source_id from issue_sources")).rows).toEqual([{ issue_id: ids.a, source_id: source }]);
   });
 
-  it("numbers them 1 to 4, oldest first, and carries on from there", async () => {
+  it("numbers the issues 1 to 3, oldest first, gives the dismissed insight none, and carries on from there", async () => {
     const now = await after();
-    expect([ids.a, ids.b, ids.c, ids.d].map((i) => now[i].number)).toEqual([1, 2, 3, 4]);
+    expect([ids.a, ids.b, ids.c, ids.d].map((i) => now[i].number)).toEqual([1, 2, null, 3]);
     const next = (await client.query("insert into issues (workspace_id, type, title) values ($1, 'idea', 'New') returning number", [ws])).rows[0].number;
-    expect(next).toBe(5);
+    expect(next).toBe(4);
+  });
+
+  it("dismisses a migrated insight against its process's live revision, so it lasts until the next published version", async () => {
+    const now = await after();
+    expect(now[ids.c].dismissed_revision_id).toBe(rev);
+    expect([ids.a, ids.b, ids.d].map((i) => now[i].dismissed_revision_id)).toEqual([null, null, null]);
   });
 
   it("starts each one's history: created, plus resolved for the closed one", async () => {
@@ -122,6 +130,7 @@ describe("migrating existing issues", () => {
     const kinds = (id: string) => events.filter((e) => e.issue_id === id).map((e) => e.kind);
     expect(kinds(ids.a)).toEqual(["created"]);
     expect(kinds(ids.b)).toEqual(["created", "resolved"]);
+    expect(kinds(ids.c)).toEqual([]);
     expect(kinds(ids.d)).toEqual(["created"]);
   });
 });
@@ -151,7 +160,7 @@ afterAll(async () => {
 
 type Client = pg.Client;
 const save = async (c: Client, workspace: string, id: string | null, fields: Record<string, unknown>, links: unknown = null, owners: string[] | null = null, sources: string[] | null = null) =>
-  (await c.query("select public.save_issue($1, $2, $3, $4, $5, $6) as r", [workspace, id, JSON.stringify(fields), links === null ? null : JSON.stringify(links), owners, sources])).rows[0].r as Record<string, any>;
+  (await c.query("select public.save_issue($1, $2, $3, $4, $5, $6) as r", [workspace, id, JSON.stringify(fields), links === null ? null : JSON.stringify(links), owners, sources])).rows[0].r as { id: string; number: number; type: string; [column: string]: unknown };
 /** Expect `run` to fail with `pattern`, inside the caller's transaction (a savepoint keeps it usable). */
 const fails = async (c: Client, run: () => Promise<unknown>, pattern: RegExp) => {
   await c.query("savepoint s");
@@ -246,6 +255,56 @@ describe("save_issue", () => {
     await db.as(users.editor!.claims, async (c) => {
       await fails(c, () => save(c, ws, null, { title: "t", target_goal: "x".repeat(201) }), /issues_target_lengths/);
       await fails(c, () => save(c, ws, null, { title: "t", status: "done" }), /issues_status/);
+    });
+  });
+});
+
+describe("dismissed insights", () => {
+  const rev1 = randomUUID();
+  const rev2 = randomUUID();
+  const key = `wait:step:${audit}`;
+  beforeAll(async () => {
+    for (const [id, n] of [[rev1, 91], [rev2, 92]] as const) {
+      await db.client.query("insert into process_revisions (id, workspace_id, process_id, number, status) values ($1, $2, $3, $4, 'superseded')", [id, ws, NORTHBEAM_PROCESS_ID, n]);
+    }
+  });
+  const dismiss = (c: Client, revision: string) =>
+    save(c, ws, null, { title: "Wait at Audit", type: "delay", source: "promoted", detected_key: key, status: "dismissed", dismissed_revision_id: revision }, [{ process_id: NORTHBEAM_PROCESS_ID, step_id: audit }]);
+
+  it("is stored against the live revision, with no number, no history and no number used up", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      const next = (await save(c, ws, null, { title: "A real one" })).number;
+      const row = await dismiss(c, rev1);
+      expect(row).toMatchObject({ status: "dismissed", number: null, dismissed_revision_id: rev1 });
+      expect(await events(c, row.id)).toEqual([]);
+      expect((await save(c, ws, null, { title: "The next real one" })).number).toBe(Number(next) + 1);
+    });
+  });
+
+  it("can be dismissed again against a newer revision without a history entry", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      const row = await dismiss(c, rev1);
+      const again = await save(c, ws, row.id, { status: "dismissed", dismissed_revision_id: rev2 });
+      expect(again).toMatchObject({ status: "dismissed", number: null, dismissed_revision_id: rev2 });
+      expect(await events(c, row.id)).toEqual([]);
+    });
+  });
+
+  it("becomes an issue when acknowledged: it gets the next number, a created event, and forgets the revision", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      const row = await dismiss(c, rev1);
+      const before = (await save(c, ws, null, { title: "Marker" })).number as number;
+      const issue = await save(c, ws, row.id, { status: "open", title: "Wait at Audit, acknowledged" }, [{ process_id: NORTHBEAM_PROCESS_ID, step_id: audit }], [rosa], []);
+      expect(issue).toMatchObject({ status: "open", number: before + 1, dismissed_revision_id: null });
+      expect(await kinds(c, row.id)).toEqual(["created"]);
+      expect((await events(c, row.id))[0]!.detail).toMatchObject({ acknowledged: true });
+    });
+  });
+
+  it("keeps the revision only while the row is dismissed", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      const row = await save(c, ws, null, { title: "Open with a stray revision", dismissed_revision_id: rev1 });
+      expect(row.dismissed_revision_id).toBeNull();
     });
   });
 });
@@ -433,7 +492,9 @@ describe("row-level security on the new tables", () => {
     const r = await db.as(users.editor!.claims, async (c) => {
       const row = await save(c, ws, null, { title: "Gone" }, [{ process_id: NORTHBEAM_PROCESS_ID, step_id: audit }], [rosa], [northbeamSourceIds.salesNotes]);
       await c.query("delete from issues where id = $1", [row.id]);
-      return Promise.all(tables.map((t) => c.query(`select count(*)::int as n from ${t} where issue_id = $1`, [row.id]).then((x) => x.rows[0].n)));
+      const counts: number[] = [];
+      for (const t of tables) counts.push((await c.query(`select count(*)::int as n from ${t} where issue_id = $1`, [row.id])).rows[0].n);
+      return counts;
     });
     expect(r).toEqual([0, 0, 0, 0]);
   });

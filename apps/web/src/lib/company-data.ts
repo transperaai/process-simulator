@@ -98,7 +98,7 @@ export const shellCounts = cache(async (workspaceId: string): Promise<{ processe
   const supabase = await createClient();
   const [processes, issues] = await Promise.all([
     supabase.from("processes").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId),
-    supabase.from("issues").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId).in("status", ["open", "in_progress"]),
+    supabase.from("issues").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId).in("status", ["open", "testing"]),
   ]);
   if (processes.error) throw processes.error;
   if (issues.error) throw issues.error;

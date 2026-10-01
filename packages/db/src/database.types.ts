@@ -705,11 +705,12 @@ export type Database = {
           created_at: string
           created_by: string | null
           detected_key: string | null
+          dismissed_revision_id: string | null
           evidence: string | null
           evidence_metrics: Json
           evidence_sources: Json
           id: string
-          number: number
+          number: number | null
           owner_person_id: string | null
           person_id: string | null
           process_id: string | null
@@ -733,11 +734,12 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           detected_key?: string | null
+          dismissed_revision_id?: string | null
           evidence?: string | null
           evidence_metrics?: Json
           evidence_sources?: Json
           id?: string
-          number?: number
+          number?: number | null
           owner_person_id?: string | null
           person_id?: string | null
           process_id?: string | null
@@ -761,11 +763,12 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           detected_key?: string | null
+          dismissed_revision_id?: string | null
           evidence?: string | null
           evidence_metrics?: Json
           evidence_sources?: Json
           id?: string
-          number?: number
+          number?: number | null
           owner_person_id?: string | null
           person_id?: string | null
           process_id?: string | null
@@ -790,6 +793,13 @@ export type Database = {
             columns: ["client_id", "workspace_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "issues_dismissed_revision_id_workspace_id_fkey"
+            columns: ["dismissed_revision_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "process_revisions"
             referencedColumns: ["id", "workspace_id"]
           },
           {

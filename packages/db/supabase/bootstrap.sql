@@ -12605,7 +12605,13 @@ revoke all on public.blocks from anon;
 --     so a person writes it the way they say it.
 --   * `issues.number`: a stable number per workspace (Issue #12), assigned by a trigger from `private.issue_counters`
 --     (one row per workspace, `update ... returning` takes the row lock, so two inserts never share a number). A
---     number is never reused, even after the issue is deleted, and can't be changed.
+--     number is never reused, even after the issue is deleted, and can't be changed. A dismissed insight is not an
+--     issue, so it has no number (null) and uses none up; it gets one if it is acknowledged later.
+--   * `issues.dismissed_revision_id`: the process's live revision a dismissed insight was dismissed against. A
+--     dismissal lasts until the process's next published version: the app lists a dismissed insight again once its
+--     process's live revision is no longer this one and the analysis still detects it, and a re-dismiss writes the new
+--     revision here. Null for rows migrated from before this column whose process can't be worked out: those stay
+--     hidden. The trigger clears it when the row stops being dismissed.
 --   * Statuses: `open`, `testing` (Testing solutions), `resolved`, `wont_fix` (Won't fix), and `dismissed`.
 --     Existing rows map `in_progress` -> `testing`, `done` -> `resolved`; `open` and `dismissed` stay.
 --     `dismissed` is not one of the four statuses a person sees: it is what A45 stores for an insight someone
@@ -12613,7 +12619,8 @@ revoke all on public.blocks from anon;
 --     the counts and the insight list leave `status = 'dismissed'` out, and nothing in the app lets a person pick it.
 --     `resolved_at` is set for `resolved`, `wont_fix` and `dismissed`, as it was for `done` and `dismissed`.
 --   * `issue_events`: the history log. created, edited, solution_tested, resolved, reopened, each with a date
---     (`at`) and who (`actor`, null for a system change), and a `detail` (changed fields, status from and to).
+--     (`at`) and who (`actor`, null for a system change), and a `detail` (changed fields, status from and to). A
+--     dismissed insight writes none (it is not an issue yet); acknowledging it writes `created`.
 --     Written only by triggers (security definer) on `issues` and on the three link tables, so every change logs
 --     whichever way it is made (the app's actions, `save_fields`, a direct update, the MCP server) and nobody can
 --     edit or forge a row. A link change is not logged again when the same transaction already logged that issue.
@@ -12625,8 +12632,9 @@ revoke all on public.blocks from anon;
 --
 -- Existing issues are migrated in place: their step and process become `issue_links` rows (a step's process looked
 -- up from `steps` when the issue didn't name one), their owner an `issue_owners` row, their cited sources
--- `issue_sources` rows, they get numbers in the order they were logged (oldest first), and each gets a `created`
--- event at its `created_at` (plus `resolved` at `resolved_at` for the closed ones).
+-- `issue_sources` rows, they get numbers in the order they were logged (oldest first; a dismissed one gets none), and
+-- each gets a `created` event at its `created_at` (plus `resolved` at `resolved_at` for the closed ones). A migrated
+-- dismissed row takes the live revision of its process (`dismissed_revision_id`) where that can be worked out.
 --
 -- `save_fields` is not redefined: `issues` is already in its allow-list, and a status edit through it now logs too.
 --
@@ -12659,7 +12667,8 @@ revoke all on public.blocks from anon;
 --     when 'wont_fix' then 'dismissed' else status end;
 --   alter table public.issues add constraint issues_status check (status in ('open', 'in_progress', 'done', 'dismissed'));
 --   alter table public.issues drop constraint issues_target_lengths;
---   alter table public.issues drop column number, drop column target_measure, drop column target_now, drop column target_goal;
+--   alter table public.issues drop column number, drop column target_measure, drop column target_now, drop column target_goal,
+--     drop column dismissed_revision_id;
 --   alter table public.issues enable trigger set_updated_at;
 --   -- restore private.issues_before_write() from 20261005000000_issues.sql (create or replace; its done/dismissed logic), then:
 --   alter table public.issues enable trigger issues_before_write;
@@ -12675,6 +12684,9 @@ alter table public.issues
   add column target_measure text,
   add column target_now text,
   add column target_goal text,
+  add column dismissed_revision_id uuid,
+  add constraint issues_dismissed_revision_fkey foreign key (dismissed_revision_id, workspace_id)
+    references public.process_revisions (id, workspace_id) on delete set null (dismissed_revision_id),
   add constraint issues_target_lengths check (
     char_length(target_measure) <= 200 and char_length(target_now) <= 200 and char_length(target_goal) <= 200);
 
@@ -12717,8 +12729,13 @@ begin
     if new.source is distinct from old.source or new.detected_key is distinct from old.detected_key then
       raise exception 'issues: source and detected_key cannot be changed' using errcode = '23514';
     end if;
-    if old.number is not null and new.number is distinct from old.number then
-      raise exception 'issues: the number cannot be changed' using errcode = '23514';
+    if old.number is not null then
+      if new.number is distinct from old.number then
+        raise exception 'issues: the number cannot be changed' using errcode = '23514';
+      end if;
+    else
+      -- A dismissed insight has no number; it gets the next one when it becomes an issue.
+      new.number := case when new.status <> 'dismissed' then private.next_issue_number(new.workspace_id) end;
     end if;
     if new.status in ('resolved', 'wont_fix', 'dismissed') then
       new.resolved_at := case when old.status in ('resolved', 'wont_fix', 'dismissed') then old.resolved_at else now() end;
@@ -12726,8 +12743,12 @@ begin
       new.resolved_at := null;
     end if;
   else
-    new.number := private.next_issue_number(new.workspace_id);
+    new.number := case when new.status <> 'dismissed' then private.next_issue_number(new.workspace_id) end;
     new.resolved_at := case when new.status in ('resolved', 'wont_fix', 'dismissed') then now() else null end;
+  end if;
+  -- A dismissal's revision means something only while the row is dismissed.
+  if new.status <> 'dismissed' then
+    new.dismissed_revision_id := null;
   end if;
   return new;
 end;
@@ -12811,8 +12832,19 @@ declare
   fields text[];
 begin
   if tg_op = 'INSERT' then
-    insert into public.issue_events (issue_id, workspace_id, kind, actor, detail)
-      values (new.id, new.workspace_id, 'created', auth.uid(), jsonb_build_object('status', new.status));
+    -- A dismissed insight is not an issue: nothing to log until it is acknowledged.
+    if new.status <> 'dismissed' then
+      insert into public.issue_events (issue_id, workspace_id, kind, actor, detail)
+        values (new.id, new.workspace_id, 'created', auth.uid(), jsonb_build_object('status', new.status));
+    end if;
+    return null;
+  end if;
+  if old.status = 'dismissed' then
+    -- Dismissed again (a new revision), or acknowledged: the issue is born now.
+    if new.status <> 'dismissed' then
+      insert into public.issue_events (issue_id, workspace_id, kind, actor, detail)
+        values (new.id, new.workspace_id, 'created', auth.uid(), jsonb_build_object('status', new.status, 'acknowledged', true));
+    end if;
     return null;
   end if;
 
@@ -12865,7 +12897,7 @@ declare
   row_issue uuid := coalesce(new.issue_id, old.issue_id);
   row_workspace uuid := coalesce(new.workspace_id, old.workspace_id);
 begin
-  if exists (select 1 from public.issues where id = row_issue)
+  if exists (select 1 from public.issues where id = row_issue and status <> 'dismissed')
      and not exists (select 1 from public.issue_events where issue_id = row_issue and tx = txid_current()) then
     insert into public.issue_events (issue_id, workspace_id, kind, actor, detail)
       values (row_issue, row_workspace, 'edited', auth.uid(), jsonb_build_object('linked', tg_argv[0]));
@@ -12901,13 +12933,19 @@ alter table public.issues add constraint issues_status check (status in ('open',
 
 -- Numbers, oldest first.
 with ranked as (
-  select id, row_number() over (partition by workspace_id order by created_at, id) as n from public.issues
+  select id, row_number() over (partition by workspace_id order by created_at, id) as n from public.issues where status <> 'dismissed'
 )
 update public.issues i set number = ranked.n from ranked where i.id = ranked.id;
 insert into private.issue_counters (workspace_id, last_number)
-  select workspace_id, max(number) from public.issues group by workspace_id;
-alter table public.issues alter column number set not null;
+  select workspace_id, max(number) from public.issues where number is not null group by workspace_id;
 alter table public.issues add constraint issues_workspace_number_key unique (workspace_id, number);
+
+-- A dismissed insight stays dismissed until its process's next published version: it is dismissed against the live
+-- revision of the process it is on now (its process, else its step's), where there is one.
+update public.issues i set dismissed_revision_id = p.live_revision_id
+  from public.processes p
+  where i.status = 'dismissed' and p.workspace_id = i.workspace_id and p.live_revision_id is not null
+    and p.id = coalesce(i.process_id, (select s.process_id from public.steps s where s.id = i.step_id and s.workspace_id = i.workspace_id limit 1));
 
 -- What each touches: its step (with the step's process when the issue didn't name one), else its process.
 insert into public.issue_links (issue_id, workspace_id, process_id, step_id)
@@ -12935,7 +12973,8 @@ insert into public.issue_sources (issue_id, source_id, workspace_id)
 
 -- Their history so far: created, and resolved for the closed ones. (actor: the creator; the resolver isn't recorded.)
 insert into public.issue_events (issue_id, workspace_id, kind, at, actor, detail, tx)
-  select id, workspace_id, 'created', created_at, created_by, jsonb_build_object('status', status, 'migrated', true), null from public.issues;
+  select id, workspace_id, 'created', created_at, created_by, jsonb_build_object('status', status, 'migrated', true), null from public.issues
+  where status <> 'dismissed';
 insert into public.issue_events (issue_id, workspace_id, kind, at, actor, detail, tx)
   select id, workspace_id, 'resolved', resolved_at, null, jsonb_build_object('to', status, 'migrated', true), null
   from public.issues where status in ('resolved', 'wont_fix') and resolved_at is not null;
@@ -13003,7 +13042,7 @@ set search_path = ''
 as $$
 declare
   settable constant text[] := array['title', 'type', 'severity', 'evidence', 'status', 'scenario_id', 'role_id', 'person_id',
-    'client_id', 'target_measure', 'target_now', 'target_goal'];
+    'client_id', 'target_measure', 'target_now', 'target_goal', 'dismissed_revision_id'];
   creatable constant text[] := array['source', 'detected_key', 'evidence_metrics'];
   field text;
   cols text;
@@ -13106,7 +13145,13 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --     so a person writes it the way they say it.
 --   * `issues.number`: a stable number per workspace (Issue #12), assigned by a trigger from `private.issue_counters`
 --     (one row per workspace, `update ... returning` takes the row lock, so two inserts never share a number). A
---     number is never reused, even after the issue is deleted, and can''t be changed.
+--     number is never reused, even after the issue is deleted, and can''t be changed. A dismissed insight is not an
+--     issue, so it has no number (null) and uses none up; it gets one if it is acknowledged later.
+--   * `issues.dismissed_revision_id`: the process''s live revision a dismissed insight was dismissed against. A
+--     dismissal lasts until the process''s next published version: the app lists a dismissed insight again once its
+--     process''s live revision is no longer this one and the analysis still detects it, and a re-dismiss writes the new
+--     revision here. Null for rows migrated from before this column whose process can''t be worked out: those stay
+--     hidden. The trigger clears it when the row stops being dismissed.
 --   * Statuses: `open`, `testing` (Testing solutions), `resolved`, `wont_fix` (Won''t fix), and `dismissed`.
 --     Existing rows map `in_progress` -> `testing`, `done` -> `resolved`; `open` and `dismissed` stay.
 --     `dismissed` is not one of the four statuses a person sees: it is what A45 stores for an insight someone
@@ -13114,7 +13159,8 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --     the counts and the insight list leave `status = ''dismissed''` out, and nothing in the app lets a person pick it.
 --     `resolved_at` is set for `resolved`, `wont_fix` and `dismissed`, as it was for `done` and `dismissed`.
 --   * `issue_events`: the history log. created, edited, solution_tested, resolved, reopened, each with a date
---     (`at`) and who (`actor`, null for a system change), and a `detail` (changed fields, status from and to).
+--     (`at`) and who (`actor`, null for a system change), and a `detail` (changed fields, status from and to). A
+--     dismissed insight writes none (it is not an issue yet); acknowledging it writes `created`.
 --     Written only by triggers (security definer) on `issues` and on the three link tables, so every change logs
 --     whichever way it is made (the app''s actions, `save_fields`, a direct update, the MCP server) and nobody can
 --     edit or forge a row. A link change is not logged again when the same transaction already logged that issue.
@@ -13126,8 +13172,9 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --
 -- Existing issues are migrated in place: their step and process become `issue_links` rows (a step''s process looked
 -- up from `steps` when the issue didn''t name one), their owner an `issue_owners` row, their cited sources
--- `issue_sources` rows, they get numbers in the order they were logged (oldest first), and each gets a `created`
--- event at its `created_at` (plus `resolved` at `resolved_at` for the closed ones).
+-- `issue_sources` rows, they get numbers in the order they were logged (oldest first; a dismissed one gets none), and
+-- each gets a `created` event at its `created_at` (plus `resolved` at `resolved_at` for the closed ones). A migrated
+-- dismissed row takes the live revision of its process (`dismissed_revision_id`) where that can be worked out.
 --
 -- `save_fields` is not redefined: `issues` is already in its allow-list, and a status edit through it now logs too.
 --
@@ -13160,7 +13207,8 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --     when ''wont_fix'' then ''dismissed'' else status end;
 --   alter table public.issues add constraint issues_status check (status in (''open'', ''in_progress'', ''done'', ''dismissed''));
 --   alter table public.issues drop constraint issues_target_lengths;
---   alter table public.issues drop column number, drop column target_measure, drop column target_now, drop column target_goal;
+--   alter table public.issues drop column number, drop column target_measure, drop column target_now, drop column target_goal,
+--     drop column dismissed_revision_id;
 --   alter table public.issues enable trigger set_updated_at;
 --   -- restore private.issues_before_write() from 20261005000000_issues.sql (create or replace; its done/dismissed logic), then:
 --   alter table public.issues enable trigger issues_before_write;
@@ -13176,6 +13224,9 @@ alter table public.issues
   add column target_measure text,
   add column target_now text,
   add column target_goal text,
+  add column dismissed_revision_id uuid,
+  add constraint issues_dismissed_revision_fkey foreign key (dismissed_revision_id, workspace_id)
+    references public.process_revisions (id, workspace_id) on delete set null (dismissed_revision_id),
   add constraint issues_target_lengths check (
     char_length(target_measure) <= 200 and char_length(target_now) <= 200 and char_length(target_goal) <= 200);
 
@@ -13218,8 +13269,13 @@ begin
     if new.source is distinct from old.source or new.detected_key is distinct from old.detected_key then
       raise exception ''issues: source and detected_key cannot be changed'' using errcode = ''23514'';
     end if;
-    if old.number is not null and new.number is distinct from old.number then
-      raise exception ''issues: the number cannot be changed'' using errcode = ''23514'';
+    if old.number is not null then
+      if new.number is distinct from old.number then
+        raise exception ''issues: the number cannot be changed'' using errcode = ''23514'';
+      end if;
+    else
+      -- A dismissed insight has no number; it gets the next one when it becomes an issue.
+      new.number := case when new.status <> ''dismissed'' then private.next_issue_number(new.workspace_id) end;
     end if;
     if new.status in (''resolved'', ''wont_fix'', ''dismissed'') then
       new.resolved_at := case when old.status in (''resolved'', ''wont_fix'', ''dismissed'') then old.resolved_at else now() end;
@@ -13227,8 +13283,12 @@ begin
       new.resolved_at := null;
     end if;
   else
-    new.number := private.next_issue_number(new.workspace_id);
+    new.number := case when new.status <> ''dismissed'' then private.next_issue_number(new.workspace_id) end;
     new.resolved_at := case when new.status in (''resolved'', ''wont_fix'', ''dismissed'') then now() else null end;
+  end if;
+  -- A dismissal''s revision means something only while the row is dismissed.
+  if new.status <> ''dismissed'' then
+    new.dismissed_revision_id := null;
   end if;
   return new;
 end;
@@ -13312,8 +13372,19 @@ declare
   fields text[];
 begin
   if tg_op = ''INSERT'' then
-    insert into public.issue_events (issue_id, workspace_id, kind, actor, detail)
-      values (new.id, new.workspace_id, ''created'', auth.uid(), jsonb_build_object(''status'', new.status));
+    -- A dismissed insight is not an issue: nothing to log until it is acknowledged.
+    if new.status <> ''dismissed'' then
+      insert into public.issue_events (issue_id, workspace_id, kind, actor, detail)
+        values (new.id, new.workspace_id, ''created'', auth.uid(), jsonb_build_object(''status'', new.status));
+    end if;
+    return null;
+  end if;
+  if old.status = ''dismissed'' then
+    -- Dismissed again (a new revision), or acknowledged: the issue is born now.
+    if new.status <> ''dismissed'' then
+      insert into public.issue_events (issue_id, workspace_id, kind, actor, detail)
+        values (new.id, new.workspace_id, ''created'', auth.uid(), jsonb_build_object(''status'', new.status, ''acknowledged'', true));
+    end if;
     return null;
   end if;
 
@@ -13366,7 +13437,7 @@ declare
   row_issue uuid := coalesce(new.issue_id, old.issue_id);
   row_workspace uuid := coalesce(new.workspace_id, old.workspace_id);
 begin
-  if exists (select 1 from public.issues where id = row_issue)
+  if exists (select 1 from public.issues where id = row_issue and status <> ''dismissed'')
      and not exists (select 1 from public.issue_events where issue_id = row_issue and tx = txid_current()) then
     insert into public.issue_events (issue_id, workspace_id, kind, actor, detail)
       values (row_issue, row_workspace, ''edited'', auth.uid(), jsonb_build_object(''linked'', tg_argv[0]));
@@ -13402,13 +13473,19 @@ alter table public.issues add constraint issues_status check (status in (''open'
 
 -- Numbers, oldest first.
 with ranked as (
-  select id, row_number() over (partition by workspace_id order by created_at, id) as n from public.issues
+  select id, row_number() over (partition by workspace_id order by created_at, id) as n from public.issues where status <> ''dismissed''
 )
 update public.issues i set number = ranked.n from ranked where i.id = ranked.id;
 insert into private.issue_counters (workspace_id, last_number)
-  select workspace_id, max(number) from public.issues group by workspace_id;
-alter table public.issues alter column number set not null;
+  select workspace_id, max(number) from public.issues where number is not null group by workspace_id;
 alter table public.issues add constraint issues_workspace_number_key unique (workspace_id, number);
+
+-- A dismissed insight stays dismissed until its process''s next published version: it is dismissed against the live
+-- revision of the process it is on now (its process, else its step''s), where there is one.
+update public.issues i set dismissed_revision_id = p.live_revision_id
+  from public.processes p
+  where i.status = ''dismissed'' and p.workspace_id = i.workspace_id and p.live_revision_id is not null
+    and p.id = coalesce(i.process_id, (select s.process_id from public.steps s where s.id = i.step_id and s.workspace_id = i.workspace_id limit 1));
 
 -- What each touches: its step (with the step''s process when the issue didn''t name one), else its process.
 insert into public.issue_links (issue_id, workspace_id, process_id, step_id)
@@ -13436,7 +13513,8 @@ insert into public.issue_sources (issue_id, source_id, workspace_id)
 
 -- Their history so far: created, and resolved for the closed ones. (actor: the creator; the resolver isn''t recorded.)
 insert into public.issue_events (issue_id, workspace_id, kind, at, actor, detail, tx)
-  select id, workspace_id, ''created'', created_at, created_by, jsonb_build_object(''status'', status, ''migrated'', true), null from public.issues;
+  select id, workspace_id, ''created'', created_at, created_by, jsonb_build_object(''status'', status, ''migrated'', true), null from public.issues
+  where status <> ''dismissed'';
 insert into public.issue_events (issue_id, workspace_id, kind, at, actor, detail, tx)
   select id, workspace_id, ''resolved'', resolved_at, null, jsonb_build_object(''to'', status, ''migrated'', true), null
   from public.issues where status in (''resolved'', ''wont_fix'') and resolved_at is not null;
@@ -13504,7 +13582,7 @@ set search_path = ''''
 as $$
 declare
   settable constant text[] := array[''title'', ''type'', ''severity'', ''evidence'', ''status'', ''scenario_id'', ''role_id'', ''person_id'',
-    ''client_id'', ''target_measure'', ''target_now'', ''target_goal''];
+    ''client_id'', ''target_measure'', ''target_now'', ''target_goal'', ''dismissed_revision_id''];
   creatable constant text[] := array[''source'', ''detected_key'', ''evidence_metrics''];
   field text;
   cols text;
@@ -14206,10 +14284,10 @@ Tom: clients take a week to decide, sometimes longer.', null, '2026-09-29T09:00:
 
 -- Issues register: audit findings and a promoted detection
 
-insert into public.issues (target_measure, target_now, target_goal, workspace_id, process_id, role_id, person_id, client_id, evidence_metrics, owner_person_id, scenario_id, detected_key, created_at, updated_at, id, step_id, type, severity, title, evidence, status, source) values
-  ('Hands-on time per proposal', '6 hours', 'under 3 hours', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000002', null, null, '{}', '90000000-0000-4000-8000-00000000000b', '50000000-0000-4000-8000-000000000002', null, '2026-09-29T09:00:00Z', '2026-09-29T09:00:00Z', '40000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000003', 'manual', 'serious', 'Every proposal is built by hand', 'Audit interview, 12 Sep: 5–8 hours per proposal, and 15% go back for rework after sales review.', 'open', 'manual'),
-  (null, null, null, 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000003', null, '{}', '90000000-0000-4000-8000-00000000000b', '50000000-0000-4000-8000-000000000001', 'spof:step:e0000000-0000-4000-8000-000000000003', '2026-09-29T09:00:00Z', '2026-09-29T09:00:00Z', '40000000-0000-4000-8000-000000000002', 'e0000000-0000-4000-8000-000000000003', 'spof', 'serious', 'Only Maya Collins can do Audit & proposal', 'Detected: nobody else can pick up audits when Maya is away. Proposals stalled for 9 days in July.', 'testing', 'promoted'),
-  (null, null, null, 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', null, null, '{}', '90000000-0000-4000-8000-000000000001', null, null, '2026-09-29T09:00:00Z', '2026-09-29T09:00:00Z', '40000000-0000-4000-8000-000000000003', 'e0000000-0000-4000-8000-000000000001', 'idea', 'info', 'Lead scoring could skip unqualified discovery calls', '45% of leads drop out at qualification but still get a 4-hour response.', 'open', 'manual');
+insert into public.issues (target_measure, target_now, target_goal, workspace_id, process_id, role_id, person_id, client_id, evidence_metrics, owner_person_id, scenario_id, detected_key, dismissed_revision_id, created_at, updated_at, id, step_id, type, severity, title, evidence, status, source) values
+  ('Hands-on time per proposal', '6 hours', 'under 3 hours', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000002', null, null, '{}', '90000000-0000-4000-8000-00000000000b', '50000000-0000-4000-8000-000000000002', null, null, '2026-09-29T09:00:00Z', '2026-09-29T09:00:00Z', '40000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000003', 'manual', 'serious', 'Every proposal is built by hand', 'Audit interview, 12 Sep: 5–8 hours per proposal, and 15% go back for rework after sales review.', 'open', 'manual'),
+  (null, null, null, 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000003', null, '{}', '90000000-0000-4000-8000-00000000000b', '50000000-0000-4000-8000-000000000001', 'spof:step:e0000000-0000-4000-8000-000000000003', null, '2026-09-29T09:00:00Z', '2026-09-29T09:00:00Z', '40000000-0000-4000-8000-000000000002', 'e0000000-0000-4000-8000-000000000003', 'spof', 'serious', 'Only Maya Collins can do Audit & proposal', 'Detected: nobody else can pick up audits when Maya is away. Proposals stalled for 9 days in July.', 'testing', 'promoted'),
+  (null, null, null, 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', null, null, '{}', '90000000-0000-4000-8000-000000000001', null, null, null, '2026-09-29T09:00:00Z', '2026-09-29T09:00:00Z', '40000000-0000-4000-8000-000000000003', 'e0000000-0000-4000-8000-000000000001', 'idea', 'info', 'Lead scoring could skip unqualified discovery calls', '45% of leads drop out at qualification but still get a 4-hour response.', 'open', 'manual');
 
 insert into public.issue_links (issue_id, workspace_id, process_id, step_id) values
   ('40000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000003'),

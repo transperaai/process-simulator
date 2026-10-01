@@ -132,8 +132,12 @@ describe("demoNav", () => {
     expect(g.map((x) => x.items.map((i) => i.key))).toEqual([
       ["overview", "processes"],
       ["issues", "solutions", "library", "suggestions"],
-      ["sources"],
+      ["sources", "rules"],
     ]);
+  });
+  it("marks Analysis rules active on its page", () => {
+    expect(active(d("/demo/settings/rules"))).toEqual(["rules"]);
+    expect(item(d("/demo"), "rules")?.href).toBe("/demo/settings/rules");
   });
   it("marks the active page", () => {
     expect(active(d("/demo"))).toEqual(["processes"]);

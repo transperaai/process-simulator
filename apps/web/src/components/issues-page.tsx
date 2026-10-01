@@ -7,7 +7,7 @@ import { useMemo, useState } from "react";
 import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow } from "@transpera-flow/db";
 import { detectBrokenScenarios, type AnalysisSettings } from "@transpera-flow/engine";
 import { perceptionGapDetections } from "@/lib/issues/perception";
-import { rerate } from "@/lib/rules/edit";
+import { rerate, visibleFindings } from "@/lib/rules/edit";
 import { useRatingSettings } from "@/lib/rules/use-rating-settings";
 import { useIssues } from "@/lib/issues/use-issues";
 import { retiredSteps } from "@/lib/scenarios/broken";
@@ -50,7 +50,7 @@ export function IssuesPage({
   // A change to the rules re-rates this run; it is not simulated again.
   const rules = useRatingSettings(mode === "demo", analysisRules);
   const detected = useMemo(
-    () => (model && result ? [...broken, ...rerate(model, result, rules, bundle.process.id), ...gaps] : model ? null : gaps),
+    () => (model && !result ? null : visibleFindings(rules, model && result ? [...broken, ...rerate(model, result, rules, bundle.process.id), ...gaps] : gaps)),
     [model, result, broken, gaps, rules, bundle.process.id],
   );
   const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);

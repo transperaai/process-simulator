@@ -21,7 +21,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
-import { KIND_NAMES, RULES_UI, SETTING_HELP, bandsOf, fromDisplay, shown, toDisplay } from "@/lib/rules/catalogue";
+import { KIND_NAMES, OLD_LOGIC, RULES_UI, SETTING_HELP, bandsOf, fromDisplay, shown, toDisplay } from "@/lib/rules/catalogue";
 import { addOverride, removeOverride, resetRule, setRuleEnabled, setRuleInputs } from "@/lib/rules/edit";
 import { BandChips, subjectLabel, type Subjects } from "./controls";
 
@@ -38,6 +38,7 @@ function CutoffBoxes({
   disabled,
   withDefaults,
   idPrefix,
+  errorId,
 }: {
   rule: AnalysisRuleId;
   texts: string[];
@@ -45,6 +46,8 @@ function CutoffBoxes({
   disabled: boolean;
   withDefaults: boolean;
   idPrefix: string;
+  /** The id of the message that says what is wrong with the boxes, when something is. */
+  errorId?: string;
 }) {
   const ui = RULES_UI[rule];
   const defaults = toDisplay(rule, ANALYSIS_RULE_SPECS[rule].defaults);
@@ -64,6 +67,8 @@ function CutoffBoxes({
               min={0}
               value={texts[i] ?? ""}
               disabled={disabled}
+              aria-invalid={errorId ? true : undefined}
+              aria-describedby={errorId}
               className="w-20 text-right tabular-nums"
               onChange={(e) => onChange(texts.map((t, k) => (k === i ? e.target.value : t)))}
             />
@@ -138,12 +143,14 @@ export function RuleDialog({
 
         {spec.engine === null && (
           <p className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-            This check isn&apos;t rated by the simulation yet. What you set here is saved with the workspace and applies as soon as it is.
+            {OLD_LOGIC.has(rule)
+              ? "This check uses its old cut-offs for now. Switching it off works now; the cut-offs you set here are saved and apply once it moves to the new ratings."
+              : "This check isn't rated by the simulation yet. What you set here is saved with the workspace and applies as soon as it is."}
           </p>
         )}
 
         <label className="flex items-center gap-2 text-sm font-medium">
-          <Switch checked={current.enabled} disabled={!canEdit} onCheckedChange={(on) => update(setRuleEnabled(settings, rule, on))} aria-label={`Use ${ui.name}`} />
+          <Switch checked={current.enabled} disabled={!canEdit} onCheckedChange={(on) => update(setRuleEnabled(settings, rule, on))} />
           Use this rule
         </label>
 
@@ -153,10 +160,10 @@ export function RuleDialog({
               Cut-offs
               <Help {...SETTING_HELP.cutoffs} />
             </h3>
-            <CutoffBoxes rule={rule} texts={texts} onChange={edit} disabled={!canEdit || !current.enabled} withDefaults idPrefix={`cut-${rule}`} />
-            {problem && stored && (
-              <p role="alert" className="text-xs text-destructive">
-                {problem} Nothing is saved until the cut-offs are in order.
+            <CutoffBoxes rule={rule} texts={texts} onChange={edit} disabled={!canEdit || !current.enabled} withDefaults idPrefix={`cut-${rule}`} errorId={problem ? `cut-${rule}-error` : undefined} />
+            {problem && (
+              <p id={`cut-${rule}-error`} role="alert" className="text-xs text-destructive">
+                {problem} Nothing is saved until this is fixed.
               </p>
             )}
           </section>
@@ -328,7 +335,7 @@ function OverridesSection({
             <Input value={why} maxLength={200} placeholder="Only strategist; keep her lower" onChange={(e) => setWhy(e.target.value)} />
           </label>
           <label className="flex items-center gap-2 text-xs">
-            <Switch checked={off} onCheckedChange={setOff} aria-label="Switch this rule off for it" />
+            <Switch checked={off} onCheckedChange={setOff} />
             Don&apos;t use this rule for it
           </label>
           {error && (

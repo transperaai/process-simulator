@@ -11,6 +11,7 @@ import {
   resolveMoney,
   simulate,
   toRatingConfig,
+  withoutDisabledRules,
   type AnalysisSettings,
   type EngineModel,
 } from "../src";
@@ -197,5 +198,29 @@ describe("re-rating a stored run without simulating again", () => {
     rate({ rules: { busy: { enabled: false } } });
     rate({});
     expect(JSON.stringify(result)).toBe(before);
+  });
+});
+
+describe("money settings from other tickets", () => {
+  it("keeps keys it doesn't know, so saving never strips them", () => {
+    const doc = { money: { capMonths: 6, costPerMonth: { basis: "mrr", months: 3 } } } as AnalysisSettings;
+    const r = parseAnalysisSettings(doc);
+    expect(r).toEqual({ ok: true, value: doc });
+    expect(parseAnalysisSettings(r.value)).toEqual(r);
+  });
+});
+
+describe("findings of switched-off rules", () => {
+  it("are dropped by rule, whatever detector made them", () => {
+    const f = [
+      { key: "spof:step:a", type: "spof" },
+      { key: "capacity:role:r", type: "capacity" },
+      { key: "churn_risk:client:c", type: "churn_risk" },
+      { key: "manual:1", type: "manual" },
+    ];
+    const keys = (s: AnalysisSettings) => withoutDisabledRules(s, f).map((x) => x.key);
+    expect(keys({})).toHaveLength(4);
+    expect(keys({ rules: { spof: { enabled: false } } })).toEqual(["capacity:role:r", "churn_risk:client:c", "manual:1"]);
+    expect(keys({ rules: { health: { enabled: false } } })).not.toContain("churn_risk:client:c");
   });
 });

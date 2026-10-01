@@ -16,6 +16,8 @@ import {
   type Rating,
   type RatingRuleId,
   type SimulationResult,
+  ruleOfFinding,
+  withoutDisabledRules,
 } from "@transpera-flow/engine";
 
 const clean = (s: AnalysisSettings): AnalysisSettings => parseAnalysisSettings(s).value;
@@ -60,8 +62,19 @@ export const setMoney = (s: AnalysisSettings, patch: Partial<Omit<AnalysisMoney,
   clean({ ...s, money: { ...s.money, ...patch, waitHours: patch.waitHours ? { ...s.money?.waitHours, ...patch.waitHours } : s.money?.waitHours } });
 
 /** The rule an issue's detector belongs to; null for findings that aren't from a rule on the rating model. */
-const RULE_OF_DETECTOR: Record<string, RatingRuleId> = { capacity: "busy", overtime: "overtime", queue: "queue", wait: "wait", rework: "rework", sla: "sla" };
-export const ruleOfIssue = (i: Pick<DetectedIssue, "key">): RatingRuleId | null => RULE_OF_DETECTOR[i.key.split(":")[0]!] ?? null;
+const RATED = new Set<string>(["busy", "overtime", "queue", "wait", "rework", "sla"]);
+export const ruleOfIssue = (i: Pick<DetectedIssue, "key">): RatingRuleId | null => {
+  const rule = ruleOfFinding(i);
+  return rule && RATED.has(rule) ? (rule as RatingRuleId) : null;
+};
+
+/**
+ * Everything the Issues screens list for a run, under these rules: the rules' own findings, broken solutions and
+ * perception gaps, without those of rules switched off (rules the engine doesn't rate yet still switch off).
+ */
+export function visibleFindings(settings: AnalysisSettings, findings: readonly DetectedIssue[]): DetectedIssue[] {
+  return withoutDisabledRules(settings, findings);
+}
 
 /**
  * Rate a run again under these settings. No simulation: `result` is the run already made, and the same run serves

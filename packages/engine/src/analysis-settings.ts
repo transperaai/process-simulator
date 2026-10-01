@@ -133,6 +133,8 @@ export interface AnalysisMoney {
   absencesPerYear?: number;
   /** Rule 5's normal wait for a person, in hours, for sales steps and for client work. */
   waitHours?: { pipeline?: number; servicing?: number };
+  /** Money settings added by later tickets (e.g. the cost per month): kept as stored, never validated or dropped here. */
+  [other: string]: unknown;
 }
 
 export interface AnalysisSettings {
@@ -264,6 +266,9 @@ export function parseAnalysisSettings(input: unknown): AnalysisSettingsResult {
       }
       if (Object.keys(w).length) m.waitHours = w;
     } else if (input.money.waitHours !== undefined) errors.push("waitHours must be an object.");
+    // Keys this version doesn't know are another ticket's money settings: pass them through untouched.
+    const known = new Set(["capMonths", "absenceWeeks", "absencesPerYear", "waitHours"]);
+    for (const [k, v] of Object.entries(input.money)) if (!known.has(k) && v !== undefined) m[k] = v;
     if (Object.keys(m).length) out.money = m;
   } else if (input.money !== undefined) errors.push("money must be an object.");
 
@@ -385,4 +390,33 @@ export function toRatingConfig(settings: AnalysisSettings | null | undefined, ho
   if (hoursPerDay > 0 && w?.pipeline !== undefined) config.expectedWaitDays.pipeline = w.pipeline / hoursPerDay;
   if (hoursPerDay > 0 && w?.servicing !== undefined) config.expectedWaitDays.servicing = w.servicing / hoursPerDay;
   return config;
+}
+
+const RULE_OF_KEY_PREFIX: Record<string, AnalysisRuleId> = {
+  capacity: "busy",
+  overtime: "overtime",
+  queue: "queue",
+  wait: "wait",
+  spof: "spof",
+  rework: "rework",
+  sla: "sla",
+  churn_risk: "health",
+  broken_scenario: "broken",
+  perception_gap: "sources",
+};
+
+/** The analysis rule a finding comes from, by its key (`capacity:role:<id>`, `spof:step:<id>`, ...); null for ones no rule owns. */
+export function ruleOfFinding(finding: { key: string; type?: string }): AnalysisRuleId | null {
+  return RULE_OF_KEY_PREFIX[finding.key.split(":")[0]!] ?? (finding.type ? (RULE_OF_KEY_PREFIX[finding.type] ?? null) : null);
+}
+
+/** Findings without those of rules the workspace has switched off (the whole rule; switches for one subject are the detectors' job). */
+export function withoutDisabledRules<T extends { key: string; type?: string }>(settings: AnalysisSettings | null | undefined, findings: readonly T[]): T[] {
+  const parsed = parseAnalysisSettings(settings).value;
+  const off = new Set(ANALYSIS_RULE_IDS.filter((id) => !resolveAnalysisRule(parsed, id).enabled));
+  if (!off.size) return [...findings];
+  return findings.filter((f) => {
+    const rule = ruleOfFinding(f);
+    return !rule || !off.has(rule);
+  });
 }

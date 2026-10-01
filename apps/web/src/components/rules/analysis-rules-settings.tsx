@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { RULES_UI, SETTING_HELP, bandsOf, shown } from "@/lib/rules/catalogue";
+import { OLD_LOGIC, RULES_UI, SETTING_HELP, bandsOf, shown } from "@/lib/rules/catalogue";
 import { getDemoAnalysisRules, setDemoAnalysisRules } from "@/lib/rules/demo-store";
 import { rerate, resetAll, setEscalator, setMoney, setRuleEnabled, tally } from "@/lib/rules/edit";
 import { useSimulation } from "@/lib/sim/use-simulation";
@@ -168,6 +168,9 @@ export function AnalysisRulesSettings({
               size="sm"
               variant="outline"
               onClick={() => {
+                if (timer.current) clearTimeout(timer.current);
+                timer.current = null;
+                dirty.current = false;
                 version.current = state.theirs.version;
                 latest.current = state.theirs.settings;
                 setSettings(state.theirs.settings);
@@ -243,8 +246,10 @@ export function AnalysisRulesSettings({
                   disabled={!canEdit}
                   onChange={(v) => update(setMoney(settings, { capMonths: v }))}
                 />
-                months of fees
-                <Help {...SETTING_HELP.cap} />
+                <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                  months of fees
+                  <Help {...SETTING_HELP.cap} />
+                </span>
               </dd>
               <dt>Someone away</dt>
               <dd className="flex flex-wrap items-center gap-1.5">
@@ -268,8 +273,10 @@ export function AnalysisRulesSettings({
                   disabled={!canEdit}
                   onChange={(v) => update(setMoney(settings, { absencesPerYear: v }))}
                 />
-                times a year
-                <Help {...SETTING_HELP.absence} />
+                <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                  times a year
+                  <Help {...SETTING_HELP.absence} />
+                </span>
               </dd>
               <dt>Normal wait</dt>
               <dd className="flex flex-wrap items-center gap-1.5">
@@ -293,8 +300,10 @@ export function AnalysisRulesSettings({
                   disabled={!canEdit}
                   onChange={(v) => update(setMoney(settings, { waitHours: { servicing: v } }))}
                 />
-                h
-                <Help {...SETTING_HELP.wait} />
+                <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                  h
+                  <Help {...SETTING_HELP.wait} />
+                </span>
               </dd>
               <dt>Currency</dt>
               <dd className="flex flex-wrap items-center gap-1.5">
@@ -425,7 +434,9 @@ function RuleName({ id, counts }: { id: AnalysisRuleId; counts: ReturnType<typeo
         <b className="font-medium">{ui.name}</b>
         <Help label={ui.name} {...ui.help} />
         {n !== null && n > 0 && <span className="ml-1.5 rounded-full bg-muted px-1.5 text-2xs text-muted-foreground">{n} flagged</span>}
-        {engine === null && <span className="ml-1.5 rounded-full bg-muted px-1.5 text-2xs text-muted-foreground">not rated yet</span>}
+        {engine === null && (
+          <span className="ml-1.5 rounded-full bg-muted px-1.5 text-2xs text-muted-foreground">{OLD_LOGIC.has(id) ? "old cut-offs for now" : "not rated yet"}</span>
+        )}
       </span>
       <div className="text-xs text-muted-foreground">{ui.rates}</div>
     </div>
@@ -447,8 +458,11 @@ function EscalatorRow({
 }) {
   return (
     <div className="flex items-center gap-2 text-sm">
-      <Switch checked={checked} disabled={disabled} onCheckedChange={onChange} aria-label={help.label} />
-      <span>{label}</span>
+      {/* The switch is named by the visible text, so the two never differ. */}
+      <label className="flex items-center gap-2">
+        <Switch checked={checked} disabled={disabled} onCheckedChange={onChange} />
+        <span>{label}</span>
+      </label>
       <Help label={help.label} description={help.description} example={help.example} />
     </div>
   );

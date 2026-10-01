@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { ANALYSIS_RULE_IDS, ANALYSIS_RULE_SPECS, northbeamModel, simulate, type AnalysisSettings } from "@transpera-flow/engine";
+import { ANALYSIS_RULE_IDS, ANALYSIS_RULE_SPECS, detectIssues, northbeamModel, northbeamWithServicing, simulate, type AnalysisSettings } from "@transpera-flow/engine";
 import { RULES_UI, bandsOf, fromDisplay, toDisplay } from "@/lib/rules/catalogue";
-import { addOverride, removeOverride, rerate, resetAll, resetRule, ruleOfIssue, setEscalator, setMoney, setRuleEnabled, setRuleInputs, tally } from "@/lib/rules/edit";
+import { addOverride, removeOverride, rerate, resetAll, resetRule, ruleOfIssue, setEscalator, setMoney, setRuleEnabled, setRuleInputs, tally, visibleFindings } from "@/lib/rules/edit";
 
 // Settings -> Analysis rules (issue #109): how each rule reads, editing the document, and re-rating a run.
 
@@ -101,7 +101,9 @@ describe("re-rating the latest run", () => {
   const result = simulate(model, 8, 1);
 
   it("matches the engine's default rating with no settings", () => {
-    expect(rerate(model, result, {}).length).toBeGreaterThan(0);
+    const base = rerate(model, result, {});
+    expect(base.length).toBeGreaterThan(0);
+    expect(base).toEqual(detectIssues(model, result));
   });
 
   it("moves ratings when a cut-off changes, with no further simulation", () => {
@@ -130,5 +132,33 @@ describe("re-rating the latest run", () => {
     expect(ruleOfIssue({ key: "capacity:role:r" })).toBe("busy");
     expect(ruleOfIssue({ key: "wait:step:a" })).toBe("wait");
     expect(ruleOfIssue({ key: "spof:step:a" })).toBeNull();
+  });
+});
+
+describe("switching off a rule whose detector already runs", () => {
+  // Northbeam with servicing has one-person steps and client churn risks.
+  const model = northbeamWithServicing();
+  const result = simulate(model, 8, 1);
+  const all = rerate(model, result, {});
+  const keys = (list: { key: string }[], prefix: string) => list.filter((i) => i.key.startsWith(prefix));
+
+  it("removes spof findings when Only one person can do it is off, and keeps the rest", () => {
+    const off = visibleFindings(setRuleEnabled({}, "spof", false), all);
+    expect(keys(all, "spof:").length).toBeGreaterThan(0);
+    expect(keys(off, "spof:")).toEqual([]);
+    expect(off.length).toBe(all.length - keys(all, "spof:").length);
+  });
+
+  it("removes churn findings when Client health is off, broken solutions and perception gaps with theirs", () => {
+    const churn = [{ key: "churn_risk:client:c1", type: "churn_risk" }] as never[];
+    expect(visibleFindings(setRuleEnabled({}, "health", false), churn)).toEqual([]);
+    expect(visibleFindings({}, churn)).toHaveLength(1);
+    const extra = [
+      { key: "broken_scenario:scenario:x", type: "broken_scenario" },
+      { key: "perception_gap:step:y", type: "perception_gap" },
+    ] as never[];
+    expect(visibleFindings(setRuleEnabled({}, "broken", false), extra)).toHaveLength(1);
+    expect(visibleFindings(setRuleEnabled(setRuleEnabled({}, "broken", false), "sources", false), extra)).toHaveLength(0);
+    expect(visibleFindings({}, extra)).toHaveLength(2);
   });
 });

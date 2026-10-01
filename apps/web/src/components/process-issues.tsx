@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { IssueRow, ProcessBundle, ScenarioRow } from "@transpera-flow/db";
 import { detectBrokenScenarios, type AnalysisSettings, type EngineModel, type RetiredSteps, type SimulationResult } from "@transpera-flow/engine";
 import { perceptionGapDetections } from "@/lib/issues/perception";
-import { rerate } from "@/lib/rules/edit";
+import { rerate, visibleFindings } from "@/lib/rules/edit";
 import { useRatingSettings } from "@/lib/rules/use-rating-settings";
 import { entryView, promoteInput, registerEntries, stepBadges } from "@/lib/issues/register";
 import { useIssues } from "@/lib/issues/use-issues";
@@ -65,12 +65,12 @@ export function useProcessIssues({
 
   // Saved scenarios whose targets no longer resolve raise a broken_scenario issue each (issue #16).
   const broken = useMemo(() => (model ? detectBrokenScenarios(model, scenarios, retired) : []), [model, scenarios, retired]);
-  // Perception gaps from the steps' evidence (issue #21).
-  const gaps = useMemo(() => perceptionGapDetections(bundle.steps), [bundle.steps]);
-  // A change to the rules re-rates this run; it is not simulated again.
+  // A change to the rules re-rates this run (and drops what a switched-off rule found); it is not simulated again.
   const rules = useRatingSettings(mode === "demo", analysisRules);
+  // Perception gaps from the steps' evidence (issue #21), unless that rule is off.
+  const gaps = useMemo(() => visibleFindings(rules, perceptionGapDetections(bundle.steps)), [bundle.steps, rules]);
   const detected = useMemo(
-    () => (model && result ? [...broken, ...rerate(model, result, rules, bundle.process.id), ...gaps] : null),
+    () => (model && result ? visibleFindings(rules, [...broken, ...rerate(model, result, rules, bundle.process.id), ...gaps]) : null),
     [model, result, broken, gaps, rules, bundle.process.id],
   );
   const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);

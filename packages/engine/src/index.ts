@@ -2,6 +2,7 @@ export * from "./model";
 export { ENGINE_VERSION } from "./version";
 export { DEFAULT_AVAILABILITY_FLOOR, initialState, pct, resolvePeople, runOnce, simulate, stat } from "./simulate";
 export { checkDemand, demandFactor, isFlatDemand, WEEKS_PER_CALENDAR_MONTH } from "./demand";
+export * from "./market";
 export { mulberry32 } from "./random";
 export {
   NORTHBEAM_FALLBACK_LOAD,

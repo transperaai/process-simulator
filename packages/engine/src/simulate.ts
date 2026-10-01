@@ -25,6 +25,7 @@ import {
   servicingStepIds,
 } from "./servicing";
 import { arrivalTimes as drawArrivals } from "./demand";
+import { activeMarket, marketAt } from "./market";
 import { EventQueue } from "./event-queue";
 import type {
   ClientReplication,
@@ -243,6 +244,8 @@ interface ServiceState {
   /** Expected value of one client: price × tenure (retainer), price (one-off), nothing (hourly). */
   value: number;
   counts: ServiceCounts;
+  /** Wins in the measured window, each weighted by the market's price factor in its month (market.ts); equals `counts.won` with no market. */
+  wonUnits: number;
 }
 
 /**
@@ -275,6 +278,7 @@ function resolveServices(model: EngineModel): ServiceState[] {
     entry: s.entry ?? model.entry,
     value: s.pricingModel === "retainer" ? s.price * s.tenureMonths : s.pricingModel === "one_off" ? s.price : 0,
     counts: { arrivals: 0, won: 0, lost: 0 },
+    wonUnits: 0,
   }));
 }
 
@@ -295,6 +299,32 @@ function routeFor(edges: EngineEdge[], tags: string[]): Route {
   const untagged = edges.filter((n) => n.tag === undefined);
   if (untagged.length) return { next: untagged, total: sum(untagged), targets: [] };
   return { next: edges, total: 1, targets: [] };
+}
+
+/**
+ * Pick an edge when the market scales "enquiries that sign" by `conv`: the
+ * edges that lead to a won end have their probability scaled (to at most the
+ * edges' total), and the others share what is left in proportion. With no won
+ * edge, or only won edges, there is nothing to shift, so the edges are picked
+ * as entered. Uses the same single draw `u` (in 0..total).
+ */
+function pickWithSigning(next: EngineEdge[], targets: Target[], u: number, conv: number): number {
+  let win = 0;
+  let total = 0;
+  for (let i = 0; i < next.length; i++) {
+    total += next[i]!.p;
+    if (targets[i]!.end?.outcome === "won") win += next[i]!.p;
+  }
+  const other = total - win;
+  const newWin = Math.min(total, win * conv);
+  const winScale = win > 0 && other > 0 ? newWin / win : 1;
+  const otherScale = win > 0 && other > 0 ? (total - newWin) / other : 1;
+  let acc = 0;
+  for (let i = 0; i < next.length; i++) {
+    acc += next[i]!.p * (targets[i]!.end?.outcome === "won" ? winScale : otherScale);
+    if (u < acc) return i;
+  }
+  return next.length - 1;
 }
 
 /** Repeated duration draws with the given mean (same values as `sampleDuration`). */
@@ -448,6 +478,9 @@ export function runOnce(
   const peopleModel = resolvePeople(model);
   const services = resolveServices(model);
   const hasServices = services[0]!.id !== null;
+  // Market conditions (market.ts); null when the model has none or they are all Stable, which leaves every path below as it was.
+  const market = activeMarket(model);
+  const mkt = (t: number) => marketAt(model, t);
   for (const sv of services) {
     if (!(sv.s.mixShare >= 0)) throw new Error(`Service '${sv.s.name}' needs a mix share of 0 or more`);
   }
@@ -806,7 +839,7 @@ export function runOnce(
       assignments[rid] = pool[i % pool.length]!.person;
       nextAssignee[rid] = i + 1;
     }
-    const weeklyBill = svc.s.pricingModel === "retainer" ? svc.s.price / WEEKS_PER_MONTH : 0;
+    const weeklyBill = svc.s.pricingModel === "retainer" ? (svc.s.price * (market ? mkt(t).price : 1)) / WEEKS_PER_MONTH : 0;
     addClient(`won:${++wonClients}`, { services, assignments }, t, false, weeklyBill);
   };
   /**
@@ -816,17 +849,18 @@ export function runOnce(
    */
   const churnTick = (t: number) => {
     if (!roster) {
-      active = Math.max(0, active - active * (model.churnMonthly / WEEKS_PER_MONTH));
+      active = Math.max(0, active - active * ((model.churnMonthly * (market ? mkt(t).churn : 1)) / WEEKS_PER_MONTH));
       setPooledLoads(t);
       return;
     }
     // Tasks whose deadline passed before this tick count as missed first (one at the tick itself comes after it).
     if (servicing) for (const rc of rosterClients) settleMisses(rc, t, false);
     const staying: RosterClient[] = [];
+    const churnFactor = market ? mkt(t).churn : 1;
     for (const rc of rosterClients) {
       rc.trajectory?.push(rc.health);
       // Not clamped: a monthly rate above 1 means certain churn at the first tick.
-      const weekly = (rc.churnBase * (1 + rc.sensitivity * ((100 - rc.health) / 100))) / WEEKS_PER_MONTH;
+      const weekly = (rc.churnBase * (1 + rc.sensitivity * ((100 - rc.health) / 100)) * churnFactor) / WEEKS_PER_MONTH;
       if (rc.rng() < weekly) {
         removeClient(rc, t);
         rc.churned = true;
@@ -985,6 +1019,7 @@ export function runOnce(
     if (outcome === "won") {
       won++;
       sv.counts.won++;
+      sv.wonUnits += market ? mkt(t).price : 1;
       cycle.push(t - e.t0);
       // A one-off job doesn't become an ongoing client.
       if (sv.s.pricingModel !== "one_off") {
@@ -997,9 +1032,9 @@ export function runOnce(
       }
       // With a roster, the new client bills week by week until it churns (see `bill`).
       if (sv.s.pricingModel === "retainer" && !roster) {
-        billed += (sv.s.price / WEEKS_PER_MONTH) * weeksBilled(t, sv.s.churnMonthly);
+        billed += ((sv.s.price * (market ? mkt(t).price : 1)) / WEEKS_PER_MONTH) * weeksBilled(t, sv.s.churnMonthly * (market ? mkt(t).churn : 1));
       } else if (sv.s.pricingModel === "one_off") {
-        billed += sv.s.price;
+        billed += sv.s.price * (market ? mkt(t).price : 1);
       }
     } else if (outcome === "lost") {
       lost++;
@@ -1165,7 +1200,9 @@ export function runOnce(
       p.freeSince = t;
       p.completed++;
     }
-    const w = st.wait ? st.wait() : 0;
+    let w = st.wait ? st.wait() : 0;
+    // "Time to decide": the market stretches or shortens external waits in the pipeline, not servicing.
+    if (market && w > 0 && !st.assigned) w *= mkt(t).cycle;
     // With no wait and nothing else pending at `t`, its leave event would be
     // the very next one handled (whatever `takeNext` schedules comes after
     // it), so it's handled here instead, in exactly that order.
@@ -1200,11 +1237,16 @@ export function runOnce(
     }
     let acc = 0;
     let k = next.length - 1;
-    for (let i = 0; i < next.length; i++) {
-      acc += next[i]!.p;
-      if (u < acc) {
-        k = i;
-        break;
+    const conv = market ? mkt(t).conv : 1;
+    if (conv !== 1) {
+      k = pickWithSigning(next, targets, u, conv);
+    } else {
+      for (let i = 0; i < next.length; i++) {
+        acc += next[i]!.p;
+        if (u < acc) {
+          k = i;
+          break;
+        }
       }
     }
     enterTarget(e, targets[k]!, t);
@@ -1219,7 +1261,10 @@ export function runOnce(
     lost = 0;
     done = 0;
     billed = 0;
-    for (const sv of services) sv.counts = { arrivals: 0, won: 0, lost: 0 };
+    for (const sv of services) {
+      sv.counts = { arrivals: 0, won: 0, lost: 0 };
+      sv.wonUnits = 0;
+    }
     cycle.length = 0;
     // Nothing is won or churns during the warm-up, so the clients are as they started.
     churned = 0;
@@ -1450,8 +1495,9 @@ export function runOnce(
   const serviceOut: Record<string, ServiceCounts> = {};
   for (const sv of services) {
     const { won: w, lost: l } = sv.counts;
-    if (sv.s.pricingModel === "retainer") newMrr += w * sv.s.price;
-    ltvAdded += w * sv.value;
+    const units = market ? sv.wonUnits : w;
+    if (sv.s.pricingModel === "retainer") newMrr += units * sv.s.price;
+    ltvAdded += units * sv.value;
     lostRevenue += l * sv.value;
     if (sv.id !== null) serviceOut[sv.id] = sv.counts;
   }

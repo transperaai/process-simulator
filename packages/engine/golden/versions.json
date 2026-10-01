@@ -10,5 +10,11 @@
     "date": "2026-10-01",
     "note": "Rating model (issue #106): detected issues carry a four-level rating (great/good/bad/risk) instead of four severities, rated with the expected wait defaulting to 1 or 2 working days of the model's week; the golden outputs now lock every issue's rating and how it was reached. StepResult gains a p90 field; no simulated number changed.",
     "digest": "sha256:c7133e374de92920ec175088767ea9d7fa76397a74a0e46c4d3f71250d26e029"
+  },
+  {
+    "version": "1.2.0",
+    "date": "2026-10-01",
+    "note": "Market conditions (A57): the engine can apply a 24-month market schedule. No golden number moved; Stable or no market simulates exactly as before.",
+    "digest": "sha256:c7133e374de92920ec175088767ea9d7fa76397a74a0e46c4d3f71250d26e029"
   }
 ]

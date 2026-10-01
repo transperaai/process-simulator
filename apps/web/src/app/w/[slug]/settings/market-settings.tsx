@@ -3,7 +3,7 @@
 import { useActionState, useState, useTransition } from "react";
 import type { MarketConditionRow } from "@transpera-flow/db";
 import { TextField } from "@/components/fields";
-import { Help } from "@/components/help";
+import { Help, HelpLabel } from "@/components/help";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import type { WorkspaceSettingsData } from "@/lib/data";
@@ -365,7 +365,7 @@ function AddChange({
   return (
     <form action={action} className="flex flex-wrap items-end gap-2 rounded-lg bg-panel-2 p-3">
       <label className="flex min-w-36 flex-1 flex-col gap-1 text-xs font-medium text-fg-2">
-        Market
+        <HelpLabel label="Market" description="The market conditions that apply over these months. Pick one of the four presets or one of your own." example="Soft from month 7 to month 14: fewer enquiries and slower decisions for those 8 months." />
         <NativeSelect name="condition_id" defaultValue={soft?.id} required>
           {conditions.map((c) => (
             <option key={c.id} value={c.id}>
@@ -375,7 +375,7 @@ function AddChange({
         </NativeSelect>
       </label>
       <label className="flex w-24 flex-col gap-1 text-xs font-medium text-fg-2">
-        From month
+        <HelpLabel label="From month" description="The first month of the change. Month 1 is the first month of the run." example="M7 starts the change in the seventh month." />
         <NativeSelect name="from_month" defaultValue={firstFree}>
           {months.map((m) => (
             <option key={m} value={m}>
@@ -385,7 +385,7 @@ function AddChange({
         </NativeSelect>
       </label>
       <label className="flex w-24 flex-col gap-1 text-xs font-medium text-fg-2">
-        To month
+        <HelpLabel label="To month" description="The last month the change applies. After the last month in the schedule the final market carries on." example="M14 ends it after the fourteenth month." />
         <NativeSelect name="to_month" defaultValue={MARKET_MONTHS}>
           {months.map((m) => (
             <option key={m} value={m}>

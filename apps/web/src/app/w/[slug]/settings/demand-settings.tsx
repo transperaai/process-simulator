@@ -3,7 +3,7 @@
 import { useActionState, useState, useTransition } from "react";
 import { seasonalityCurve, type LeadSourceRow, type ProvenanceMap } from "@transpera-flow/db";
 import { NumberField, TextField } from "@/components/fields";
-import { Help } from "@/components/help";
+import { Help, HelpLabel } from "@/components/help";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SettingsSection } from "./section";
@@ -112,15 +112,15 @@ function AddLeadSource({ workspaceId }: { workspaceId: string }) {
   return (
     <form action={action} className="mb-4 flex flex-wrap items-end gap-2">
       <label className="flex min-w-0 flex-col gap-1">
-        <span className="text-xs font-medium text-fg-2">Name</span>
+        <HelpLabel label="Name" description="Where these leads come from." example="Website enquiries" />
         <Input name="name" required maxLength={200} placeholder="e.g. Website enquiries" />
       </label>
       <label className="flex w-32 flex-col gap-1">
-        <span className="text-xs font-medium text-fg-2">Leads a week</span>
+        <HelpLabel label="Leads a week" description="How many new leads this source brings in a typical week. Simulations draw new leads at this rate." example="6 means about 6 new leads a week from this source." />
         <Input name="volume_week" type="number" inputMode="decimal" min={0} max={MAX_VOLUME_WEEK} step="any" required className="tabular-nums" />
       </label>
       <label className="flex w-32 flex-col gap-1">
-        <span className="text-xs font-medium text-fg-2">Qualified (%)</span>
+        <HelpLabel label="Qualified (%)" description="The share of these leads worth pursuing. Only qualified leads enter the sales process." example="At 40%, 10 leads a week give 4 qualified ones." />
         <Input
           name="conversion_pct"
           type="number"
@@ -173,7 +173,7 @@ function LeadSourceItem({ source: src, disabled }: { source: LeadSourceRow; disa
         disabled={disabled}
         hint={<ProvenanceBadge provenance={src.provenance} field="conversion_to_qualified" />} help={{ description: "The share of these leads worth pursuing. Only qualified leads enter the sales process.", example: "At 40%, 10 leads a week give 4 qualified ones." }} />
       <div className="flex flex-col gap-1">
-        <span className="text-xs font-medium text-fg-2">Qualified a week</span>
+        <HelpLabel label="Qualified a week" description="Leads a week times the share qualified: how many leads a week actually enter the sales process. Worked out for you." example="10 leads a week at 40% qualified is 4 a week." />
         <span className="py-1.5 tabular-nums">{formatNumber(qualified, 2)}</span>
         {!disabled && <RemoveLeadSource sourceId={src.id} name={src.name} />}
       </div>
@@ -269,6 +269,7 @@ function Seasonality({ data }: { data: WorkspaceSettingsData }) {
               step={0.05}
               disabled={!canEdit}
               hint={<ProvenanceBadge provenance={rowFor.get(month)?.provenance} field="multiplier" />}
+              help={{ description: "A multiplier on leads for this calendar month. 1 is a normal month, 1.3 is 30% busier, 0 means none.", example: `Set ${MONTH_NAMES[i]} to 0.5 if you only get half the usual enquiries in it.` }}
             />
           );
         })}

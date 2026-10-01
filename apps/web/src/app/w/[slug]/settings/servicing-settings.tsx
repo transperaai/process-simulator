@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import type { RecurrenceJson, ServiceRow } from "@transpera-flow/db";
 import { NumberField, SelectField } from "@/components/fields";
+import { Help } from "@/components/help";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { SettingsSection } from "./section";
@@ -100,6 +101,12 @@ export function ServicingLinks({ service: sv, data }: { service: ServiceRow; dat
                 </option>
               ))}
             </NativeSelect>
+            <Help
+              label="Servicing process to link"
+              description="A servicing process is the ongoing work you do for a client of this service. Linking it makes each client's simulated work follow its steps instead of a flat number of hours."
+              example="Link Monthly SEO reporting to the SEO retainer, so every SEO client gets the reporting work."
+              className="self-center"
+            />
             <Button variant="outline" size="sm"
               type="button"
               disabled={pending || !adding}

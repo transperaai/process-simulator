@@ -3,7 +3,7 @@
 import { useActionState, useState, useTransition } from "react";
 import { DEFAULT_AVAILABILITY_FLOOR } from "@transpera-flow/engine";
 import { ChecklistField, DateField, NumberField, TextField, ToggleField } from "@/components/fields";
-import { Help } from "@/components/help";
+import { Help, HelpLabel } from "@/components/help";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -115,11 +115,11 @@ function AddPerson({ data }: { data: WorkspaceSettingsData }) {
   return (
     <form action={action} className="mb-4 flex flex-wrap items-end gap-2">
       <label className="flex flex-col gap-1">
-        <span className="text-xs font-medium text-fg-2">Name</span>
+        <HelpLabel label="Name" description="The person's name, as it appears across the app." example="Maya Collins" />
         <Input name="name" required maxLength={200} />
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs font-medium text-fg-2">Role</span>
+        <HelpLabel label="Role" description="The kind of work they do. A step that needs a role can be done by anyone who has it. You can add more roles later." example="Strategist, if Maya runs the strategy steps." />
         <NativeSelect name="role_id">
           <option value="">No role yet</option>
           {selectableRoles(data.roles).map((r) => (
@@ -306,15 +306,15 @@ function Leave({
       {!disabled && (
         <form action={action} className="mt-2 flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-fg-2">First day</span>
+            <HelpLabel label="First day" description="The first day of the leave." example="Monday 14 July." />
             <Input type="date" name="start_date" required />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-fg-2">Last day</span>
+            <HelpLabel label="Last day" description="The last day of the leave. Leave blank for a single day." example="Friday 25 July, for a two-week holiday." />
             <Input type="date" name="end_date" />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-fg-2">Note</span>
+            <HelpLabel label="Note" description="Anything worth remembering about this leave. Not used by the simulation." example="Annual leave." />
             <Input name="note" maxLength={200} />
           </label>
           <Button variant="outline" size="sm"

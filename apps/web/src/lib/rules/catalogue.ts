@@ -301,6 +301,31 @@ export const SETTING_HELP = {
     description: "The numbers that split a result into Great, Good, Bad and Operational risk. The default is shown beside each one.",
     example: "Too busy: Great under 70%, Good up to 85%, Bad up to 95%.",
   },
+  useRule: {
+    label: "Use this rule",
+    description: "Switch a rule off and the app stops rating things with it. Your numbers for it are kept.",
+    example: "Turn off Spare time if you don't want to look for people with free hours.",
+  },
+  cutoff: {
+    label: "Cut-off",
+    description: "Where one rating stops and the next starts. The agreed default is shown beside the box.",
+    example: "Too busy, Great up to 70%: anyone busy under 70% of their week is rated Great.",
+  },
+  overrideTarget: {
+    label: "What it applies to",
+    description: "Pick the one role, person, step, service or process that needs different cut-offs from everyone else.",
+    example: "Pick Maya Collins to give her a lower busy limit than the rest of the team.",
+  },
+  overrideWhy: {
+    label: "Why",
+    description: "A note for your team on why this one is different. Optional.",
+    example: "Only strategist; keep her lower.",
+  },
+  overrideOff: {
+    label: "Don't use this rule for it",
+    description: "Skips this rule for just this one subject, so it is never rated by it.",
+    example: "Don't rate rework on the kickoff call, where doing it twice is normal.",
+  },
   expectedWait: {
     label: "Expected wait",
     description: "How long work should sit before someone starts it, for this one subject. It replaces the normal wait.",

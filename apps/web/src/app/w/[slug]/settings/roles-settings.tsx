@@ -3,6 +3,7 @@
 import { useActionState, useState, useTransition } from "react";
 import type { RoleRow } from "@transpera-flow/db";
 import { TextField, ToggleField } from "@/components/fields";
+import { HelpLabel } from "@/components/help";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SettingsSection } from "./section";
@@ -52,7 +53,7 @@ function AddRole({ workspaceId }: { workspaceId: string }) {
   return (
     <form action={action} className="mb-4 flex flex-wrap items-end gap-2">
       <label className="flex min-w-0 flex-col gap-1">
-        <span className="text-xs font-medium text-fg-2">Name</span>
+        <HelpLabel label="Name" description="The kind of work, as your team says it. Steps, people and clients name roles." example="Strategist" />
         <Input name="name" required maxLength={200} />
       </label>
       <Button type="submit" disabled={pending}>

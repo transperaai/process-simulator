@@ -6,23 +6,35 @@
 // map), and a block can be put in as many times as you like.
 
 import { ancestorsOf, isGroup, type BlockBundle, type BlockEdge, type BlockStep, type EdgeRow, type ProcessBundle, type StepRow } from "@transpera-flow/db";
-import { GROUP_PADDING } from "@/lib/map/groups";
+import { GROUP_PADDING, openGroupSize } from "@/lib/map/groups";
 import { deleteSteps, newId } from "@/lib/editor/commands";
-import { edgeRow, freeSpot, groupRow } from "@/lib/editor/groups";
+import { edgeRow, groupRow } from "@/lib/editor/groups";
 import { applyEdit, type Edit, type Op, type RowChange } from "@/lib/editor/ops";
 
 /** How much of a block's name the group keeps. */
 const NAME_MAX = 200;
 
+/** The columns of a step a block keeps; anything else in a stored document is ignored. */
+const STEP_KEYS = [
+  "id", "name", "kind", "outcome", "role_id", "person_id", "work_hours", "work_dist", "work_params", "wait_hours", "wait_dist", "wait_params",
+  "rework_rate", "rework_to_step_id", "tool", "notes", "sla_hours", "expected_wait_hours", "lost_per_day_waiting", "dropoff_benchmark",
+  "target_cycle_hours", "current_wip", "x", "y", "parent_step_id", "entry_step_id", "child_process_id", "assumption", "conflict", "provenance",
+] as const;
+const EDGE_KEYS = ["id", "from_step_id", "to_step_id", "probability", "condition_tag", "label"] as const;
+/** Numbers a step holds; the database refuses anything else. */
+const STEP_NUMBERS = ["work_hours", "wait_hours", "rework_rate", "x", "y"] as const;
+
+function pickKeys<T extends object>(row: object, keys: readonly string[]): T {
+  const out: Record<string, unknown> = {};
+  for (const k of keys) if (k in row) out[k] = (row as Record<string, unknown>)[k];
+  return out as T;
+}
+
 /** A step as a block keeps it: no revision, workspace or process, and nothing that belongs to the process it came from. */
 function toBlockStep(s: StepRow): BlockStep {
-  const row: Partial<StepRow> = structuredClone(s);
-  delete row.revision_id;
-  delete row.workspace_id;
-  delete row.process_id;
-  delete row.replaced_by;
+  const row = structuredClone(pickKeys<BlockStep>(s, STEP_KEYS));
   // A child process belongs to one holder step, and nothing is sitting at a step that has just been saved.
-  return { ...(row as BlockStep), child_process_id: null, current_wip: null };
+  return { ...row, child_process_id: null, current_wip: null };
 }
 
 function toBlockEdge(e: EdgeRow): BlockEdge {
@@ -70,40 +82,53 @@ export function blockStepCount(block: BlockBundle): number {
 
 /** Why a bundle can't be a block (or be put in), or null. Also what the database's `steps` column is checked against in the app. */
 export function blockProblem(block: unknown): string | null {
+  const bad = "That block's steps aren't valid.";
   const b = block as Partial<BlockBundle> | null;
-  if (!b || typeof b !== "object" || !Array.isArray(b.steps) || !Array.isArray(b.edges)) return "That block's steps aren't valid.";
+  if (!b || typeof b !== "object" || !Array.isArray(b.steps) || !Array.isArray(b.edges)) return bad;
   if (!b.steps.length) return "Add at least one step to the block first.";
   const ids = new Set<string>();
   for (const s of b.steps) {
-    if (!s || typeof s !== "object" || typeof s.id !== "string" || typeof s.name !== "string" || typeof s.kind !== "string") return "That block's steps aren't valid.";
-    if (ids.has(s.id)) return "That block's steps aren't valid.";
+    if (!s || typeof s !== "object" || typeof s.id !== "string" || typeof s.name !== "string" || typeof s.kind !== "string") return bad;
+    if (ids.has(s.id)) return bad;
     ids.add(s.id);
   }
+  const byId = new Map(b.steps.map((s) => [s.id, s]));
   for (const s of b.steps) {
     if (s.kind === "start" || s.kind === "end") return "The start and end steps stay in the process: a block can't hold them.";
     const parent = s.parent_step_id ?? null;
-    if (parent !== null && !ids.has(parent)) return "That block's steps aren't valid.";
-    if (s.entry_step_id && !ids.has(s.entry_step_id)) return "That block's steps aren't valid.";
+    if (parent !== null && !ids.has(parent)) return bad;
+    if (s.entry_step_id && !ids.has(s.entry_step_id)) return bad;
+    for (const k of STEP_NUMBERS) if (k in s && !Number.isFinite(Number(s[k])) ) return bad;
+    if (s.kind === "group" && (s.role_id || s.person_id || Number(s.work_hours ?? 0) || Number(s.wait_hours ?? 0) || Number(s.rework_rate ?? 0))) {
+      return "A group can't hold work of its own: its steps do the work.";
+    }
+    // Walk up the parent chain with a visited set of our own: a loop never reaches the top.
+    const seen = new Set<string>([s.id]);
+    for (let p = parent; p !== null; p = byId.get(p)?.parent_step_id ?? null) {
+      if (seen.has(p)) return bad;
+      seen.add(p);
+    }
   }
-  const byId = new Map(b.steps.map((s) => [s.id, s]));
-  if (b.steps.some((s) => ancestorsOf(s.id, byId).includes(s.id))) return "That block's steps aren't valid.";
-  if (b.edges.some((e) => !e || !ids.has(e.from_step_id) || !ids.has(e.to_step_id) || typeof e.id !== "string")) return "That block's steps aren't valid.";
-  if (b.entry_step_id !== null && b.entry_step_id !== undefined && !b.steps.some((s) => s.id === b.entry_step_id && (s.parent_step_id ?? null) === null)) {
-    return "That block's steps aren't valid.";
+  for (const e of b.edges) {
+    if (!e || typeof e.id !== "string" || !ids.has(e.from_step_id) || !ids.has(e.to_step_id)) return bad;
+    if (!Number.isFinite(Number(e.probability ?? 1))) return bad;
   }
+  if (b.entry_step_id !== null && b.entry_step_id !== undefined && !b.steps.some((s) => s.id === b.entry_step_id && (s.parent_step_id ?? null) === null)) return bad;
   return null;
 }
 
 /** A block read from the database, made safe to put in: a malformed document reads as an empty block. */
 export function readBlock(value: unknown): BlockBundle {
   const raw = value as Partial<BlockBundle> | null;
-  const block: BlockBundle = {
-    steps: Array.isArray(raw?.steps) ? raw.steps : [],
-    edges: Array.isArray(raw?.edges) ? raw.edges : [],
-    entry_step_id: typeof raw?.entry_step_id === "string" ? raw.entry_step_id : null,
-  };
-  const normal = { ...block, steps: block.steps.map((s) => ({ ...s, parent_step_id: s.parent_step_id ?? null, entry_step_id: s.entry_step_id ?? null })) };
-  return blockProblem(normal) === "That block's steps aren't valid." ? { steps: [], edges: [], entry_step_id: null } : normal;
+  const steps = (Array.isArray(raw?.steps) ? raw.steps : []).map((s) => {
+    const row = pickKeys<BlockStep>(s && typeof s === "object" ? s : {}, STEP_KEYS);
+    return { ...row, parent_step_id: row.parent_step_id ?? null, entry_step_id: row.entry_step_id ?? null };
+  });
+  const edges = (Array.isArray(raw?.edges) ? raw.edges : []).map((e) => pickKeys<BlockEdge>(e && typeof e === "object" ? e : {}, EDGE_KEYS));
+  const normal: BlockBundle = { steps, edges, entry_step_id: typeof raw?.entry_step_id === "string" ? raw.entry_step_id : null };
+  const problem = blockProblem(normal);
+  // An empty block reads as empty; anything else wrong with it reads as nothing at all.
+  return problem && problem !== "Add at least one step to the block first." ? { steps: [], edges: [], entry_step_id: null } : normal;
 }
 
 /** Parents before the steps inside them, so a group is always written before its steps. */
@@ -128,12 +153,14 @@ function materialize(
   const { revision } = bundle;
   const owner = { revision_id: revision.id, workspace_id: revision.workspace_id, process_id: revision.process_id };
   const ids = new Map(block.steps.map((s) => [s.id, newId()]));
+  const roles = new Set(bundle.roles.map((r) => r.id));
+  const people = new Set(bundle.people.map((p) => p.id));
   const base = groupRow(bundle, x, y, parent);
   const entry = block.entry_step_id ?? entryOf(block.steps, block.edges);
   const group: StepRow = { ...base, name: name.trim().slice(0, NAME_MAX) || "Block", entry_step_id: entry ? (ids.get(entry) ?? null) : null };
   const steps = parentsFirst(block.steps).map(
     (s): StepRow => ({
-      ...s,
+      ...pickKeys<BlockStep>(s, STEP_KEYS),
       ...owner,
       id: ids.get(s.id)!,
       parent_step_id: s.parent_step_id === null || s.parent_step_id === undefined ? group.id : ids.get(s.parent_step_id)!,
@@ -145,10 +172,29 @@ function materialize(
       // Fresh copies: nothing is sitting at them, and none holds a child process.
       current_wip: null,
       child_process_id: null,
+      // A role or person deleted since the block was saved would fail the foreign key.
+      role_id: s.role_id && roles.has(s.role_id) ? s.role_id : null,
+      person_id: s.person_id && people.has(s.person_id) ? s.person_id : null,
     }),
   );
-  const edges = block.edges.map((e): EdgeRow => ({ ...e, ...owner, id: newId(), from_step_id: ids.get(e.from_step_id)!, to_step_id: ids.get(e.to_step_id)! }));
+  const edges = block.edges.map((e): EdgeRow => ({ ...pickKeys<BlockEdge>(e, EDGE_KEYS), ...owner, id: newId(), from_step_id: ids.get(e.from_step_id)!, to_step_id: ids.get(e.to_step_id)! }));
   return { group, steps, edges };
+}
+
+/** A step card's rough size on the map. */
+const CARD = { w: 200, h: 90 };
+
+/** The first spot at or below (x, y) where a box of this size touches none of the siblings in `parent`. */
+function freeSpotFor(bundle: ProcessBundle, parent: string | null, x: number, y: number, size: { width: number; height: number }): { x: number; y: number } {
+  const boxes = bundle.steps
+    .filter((s) => (s.parent_step_id ?? null) === parent)
+    .map((s) => {
+      const { width, height } = isGroup(s) ? openGroupSize(bundle.steps, s.id, "all") : { width: CARD.w, height: CARD.h };
+      return { x: Number(s.x), y: Number(s.y), w: width, h: height };
+    });
+  const clash = (py: number) => boxes.some((b) => x < b.x + b.w && b.x < x + size.width && py < b.y + b.h && b.y < py + size.height);
+  for (let i = 0; i < 60 && clash(y); i++) y += 40;
+  return { x, y };
 }
 
 const stepOf = (bundle: ProcessBundle, id: string | null) => (id ? bundle.steps.find((s) => s.id === id) : undefined);
@@ -169,8 +215,10 @@ export function insertBlock(bundle: ProcessBundle, selectedId: string | null, bl
   const branches = outgoing.length > 1;
   const x0 = sel ? Number(sel.x) + (branches ? 0 : 240) : siblings.reduce((m, s) => Math.max(m, Number(s.x) + 240), 0);
   const y0 = sel ? Number(sel.y) + (branches ? 120 : 0) : siblings.length ? Number(siblings[siblings.length - 1]!.y) : 0;
-  const at = freeSpot(bundle, parent, x0, y0);
-  const made = materialize(bundle, block, name, parent, at.x, at.y);
+  // Build it once to measure the box it needs, then put the group where that box fits.
+  const probe = materialize(bundle, block, name, parent, 0, 0);
+  const at = freeSpotFor(bundle, parent, x0, y0, openGroupSize([probe.group, ...probe.steps], probe.group.id, "all"));
+  const made = { ...probe, group: { ...probe.group, x: at.x, y: at.y } };
 
   const ops: Op[] = [];
   const rows = [made.group, ...made.steps];
@@ -198,23 +246,39 @@ export function replaceProblem(bundle: ProcessBundle, selectedId: string | null)
 
 /**
  * Swap the selected step or group for a block: a new group named after the block takes its place. Everything that led
- * into the selection leads into the block, everything that led out of it leads out of the block, and a group whose first
- * step it was now starts at the block. The selection, and the steps inside it if it is a group, are removed (undo brings
+ * into the selection (or into a step inside it) leads into the block, what led out of it (or out of one step inside it)
+ * leads out of the block, and a group whose first step it was now starts at the block. The selection, and the steps inside it if it is a group, are removed (undo brings
  * them back). The block's steps are new rows, so they show as added.
  */
-export function replaceWithBlock(bundle: ProcessBundle, selectedId: string, block: BlockBundle, name: string): { edit: Edit; id: string } | null {
+export function replaceWithBlock(bundle: ProcessBundle, selectedId: string, block: BlockBundle, name: string): { edit: Edit; id: string; note?: string } | null {
   if (blockProblem(block) || replaceProblem(bundle, selectedId)) return null;
   const sel = stepOf(bundle, selectedId)!;
   const parent = sel.parent_step_id ?? null;
   const made = materialize(bundle, block, name, parent, Number(sel.x), Number(sel.y));
 
+  // The selection and everything inside it: a group's connections usually start or end at a step inside it.
+  const byId = new Map(bundle.steps.map((s) => [s.id, s]));
+  const subtree = new Set([sel.id, ...bundle.steps.filter((s) => ancestorsOf(s.id, byId).includes(sel.id)).map((s) => s.id)]);
+  const crossing = bundle.edges.filter((e) => subtree.has(e.from_step_id) !== subtree.has(e.to_step_id));
+  const going = crossing.filter((e) => subtree.has(e.to_step_id));
+  const leaving = crossing.filter((e) => subtree.has(e.from_step_id));
+  // Exits can leave from several steps inside a group; sending all of them out of the block would make the shares add up
+  // to more than 100%, so keep those of one step (the selection itself if it has any, else the leftmost) and say so.
+  const sources = [...new Set(leaving.map((e) => e.from_step_id))];
+  const keep = sources.includes(sel.id)
+    ? sel.id
+    : [...sources].sort((a, c) => Number(byId.get(a)!.x) - Number(byId.get(c)!.x) || Number(byId.get(a)!.y) - Number(byId.get(c)!.y))[0];
+  const kept = leaving.filter((e) => e.from_step_id === keep);
+  const note =
+    sources.length > 1
+      ? `${sel.name} had exits from ${sources.length} steps. The block leaves where ${byId.get(keep!)!.name} did: connect the other exits yourself.`
+      : undefined;
+
   const ops: Op[] = [{ kind: "insert", steps: [made.group, ...made.steps], edges: made.edges }];
-  // Connections to the selection itself (not to steps inside it, which go with it) now go to the block.
-  const changes: RowChange[] = [];
-  for (const e of bundle.edges) {
-    if (e.to_step_id === sel.id && e.from_step_id !== sel.id) changes.push({ table: "edges", id: e.id, before: { to_step_id: sel.id }, after: { to_step_id: made.group.id } });
-    else if (e.from_step_id === sel.id && e.to_step_id !== sel.id) changes.push({ table: "edges", id: e.id, before: { from_step_id: sel.id }, after: { from_step_id: made.group.id } });
-  }
+  const changes: RowChange[] = [
+    ...going.map((e): RowChange => ({ table: "edges", id: e.id, before: { to_step_id: e.to_step_id }, after: { to_step_id: made.group.id } })),
+    ...kept.map((e): RowChange => ({ table: "edges", id: e.id, before: { from_step_id: e.from_step_id }, after: { from_step_id: made.group.id } })),
+  ];
   if (changes.length) ops.push({ kind: "update", changes });
   const holder = stepOf(bundle, parent);
   if (holder && holder.entry_step_id === sel.id) {
@@ -223,5 +287,5 @@ export function replaceWithBlock(bundle: ProcessBundle, selectedId: string, bloc
   const moved = applyEdit(bundle, { label: "", ops });
   const removal = deleteSteps(moved, [sel.id]);
   if (removal) ops.push(...removal.ops);
-  return { edit: { label: `Replaced ${sel.name} with ${made.group.name}`, ops }, id: made.group.id };
+  return { edit: { label: `Replaced ${sel.name} with ${made.group.name}`, ops }, id: made.group.id, ...(note ? { note } : {}) };
 }

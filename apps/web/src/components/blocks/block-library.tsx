@@ -64,7 +64,14 @@ export function BlockLibrary({ blocks, mode, newHref }: { blocks: BlockRow[]; mo
                 <Card className="h-full" data-block={b.id}>
                   <div className="flex flex-col gap-2 px-(--card-spacing)">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <Badge variant={b.type === "ai" ? "default" : "outline"}>{TYPE_LABEL[b.type]}</Badge>
+                      <span className="flex items-center">
+                        <Badge variant={b.type === "ai" ? "default" : "outline"}>{TYPE_LABEL[b.type]}</Badge>
+                        <Help
+                          label="Block type"
+                          description="“By hand” blocks were built or saved by a person. “AI” blocks were made by the AI's solution ideas. Both are inserted the same way."
+                          example="“Client sign-off” is by hand; an “AI lead qualifier” the AI suggested is marked AI."
+                        />
+                      </span>
                       <span className="flex items-center text-xs text-muted-foreground">
                         {usageText(0)}
                         <Help

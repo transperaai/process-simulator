@@ -7,7 +7,7 @@ import { blockProblem } from "./blocks";
 
 export const MAX_NAME = 200;
 export const MAX_DESCRIPTION = 2000;
-/** The table refuses a bundle over 1,000,000 characters of JSON. */
+/** The table refuses a bundle over 1,000,000 bytes of JSON (`octet_length`). */
 export const MAX_BUNDLE = 1_000_000;
 
 /** What the Editor sends to save a block. Blocks saved by hand are always "manual"; AI blocks come from A52. */
@@ -31,6 +31,6 @@ export function parseBlockInput(input: unknown): { ok: true; value: BlockInput }
   const problem = blockProblem(i.bundle);
   if (problem) return { ok: false, error: problem };
   const bundle = i.bundle as BlockBundle;
-  if (JSON.stringify(bundle).length > MAX_BUNDLE) return { ok: false, error: "That block is too big to save." };
+  if (new TextEncoder().encode(JSON.stringify(bundle)).length > MAX_BUNDLE) return { ok: false, error: "That block is too big to save." };
   return { ok: true, value: { name, description, bundle: { steps: bundle.steps, edges: bundle.edges, entry_step_id: bundle.entry_step_id ?? null } } };
 }

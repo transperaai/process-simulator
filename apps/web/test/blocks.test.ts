@@ -5,6 +5,7 @@ import { DEMO_GROUP_IDS, withDemoGroups } from "@/lib/demo/nested";
 import { blockFromGroup, blockFromSteps, blockProblem, blockStepCount, insertBlock, readBlock, replaceProblem, replaceWithBlock } from "@/lib/blocks/blocks";
 import { stepWarnings } from "@/lib/editor/commands";
 import { diffBundles } from "@/lib/drafts/diff";
+import { openGroupSize } from "@/lib/map/groups";
 import { groupSteps } from "@/lib/editor/groups";
 import { applyEdit, invertEdit } from "@/lib/editor/ops";
 import { demoBundle } from "@/lib/sources/demo";
@@ -57,6 +58,18 @@ describe("saving a group as a block", () => {
     expect(block.steps.filter((s) => s.parent_step_id === inner)).toHaveLength(2);
     expect(blockStepCount(block)).toBe(3);
     expect(blockProblem(block)).toBeNull();
+  });
+
+  it("refuses a parent loop, work on a group, and numbers that aren't numbers", () => {
+    const ok = sales();
+    const [a, c] = ok.steps;
+    const loop = { ...ok, steps: [{ ...a!, parent_step_id: c!.id }, { ...c!, parent_step_id: a!.id }], entry_step_id: null };
+    expect(blockProblem(loop)).not.toBeNull();
+    const self = { ...ok, steps: [{ ...a!, parent_step_id: a!.id }], edges: [], entry_step_id: null };
+    expect(blockProblem(self)).not.toBeNull();
+    const group = { ...ok, steps: [{ ...a!, kind: "group" as const, work_hours: 3 }], edges: [], entry_step_id: a!.id };
+    expect(blockProblem(group)).toMatch(/group can't hold work/);
+    expect(blockProblem({ ...ok, steps: [{ ...a!, work_hours: "lots" as unknown as number }], edges: [], entry_step_id: a!.id })).not.toBeNull();
   });
 
   it("is only for groups", () => {
@@ -180,6 +193,34 @@ describe("inserting a block after the selection", () => {
     expect(afterEnd.note).toMatch(/end step/);
   });
 
+  it("copies only the known columns, and clears a role or person that no longer exists", () => {
+    const live = flat();
+    const block = sales();
+    const odd = { ...block, steps: block.steps.map((x, i) => ({ ...x, role_id: "e1111111-0000-4000-8000-00000000dead", person_id: i ? "e1111111-0000-4000-8000-00000000beef" : x.person_id, stray: "x" })) };
+    const after = applyEdit(live, insertBlock(live, ids.audit, odd as unknown as BlockBundle, "X")!.edit);
+    const added = after.steps.filter((x) => !live.steps.some((o) => o.id === x.id) && x.kind !== "group");
+    expect(added).toHaveLength(2);
+    for (const x of added) {
+      expect(x).not.toHaveProperty("stray");
+      expect(x.role_id).toBeNull();
+      expect(x.person_id).toBeNull();
+    }
+    expect(readBlock(odd).steps[0]).not.toHaveProperty("stray");
+  });
+
+  it("puts the group clear of its neighbours, whatever their size", () => {
+    const b = nested();
+    const placed = insertBlock(b, ids.audit, nestedBlock().block, "Set-up again")!;
+    const after = applyEdit(b, placed.edit);
+    const g = stepOf(after, placed.id);
+    const size = openGroupSize(after.steps, g.id, "all");
+    for (const o of after.steps.filter((x) => (x.parent_step_id ?? null) === null && x.id !== g.id && x.kind !== "start" && x.kind !== "end")) {
+      const os = o.kind === "group" ? openGroupSize(after.steps, o.id, "all") : { width: 200, height: 90 };
+      const overlap = Number(g.x) < Number(o.x) + os.width && Number(o.x) < Number(g.x) + size.width && Number(g.y) < Number(o.y) + os.height && Number(o.y) < Number(g.y) + size.height;
+      expect(overlap, o.name).toBe(false);
+    }
+  });
+
   it("refuses a block that can't be put in", () => {
     expect(insertBlock(flat(), ids.audit, { steps: [], edges: [], entry_step_id: null }, "Empty")).toBeNull();
   });
@@ -219,8 +260,8 @@ describe("replacing the selection with a block", () => {
     const { edit, id } = replaceWithBlock(live, DEMO_GROUP_IDS.setup, sales(), "Sales conversation")!;
     const after = applyEdit(live, edit);
     for (const g of [DEMO_GROUP_IDS.setup, ...goneKids]) expect(after.steps.some((s) => s.id === g)).toBe(false);
-    expect(into(after, id).length).toBe(into(live, DEMO_GROUP_IDS.setup).length);
-    expect(from(after, id).length).toBe(from(live, DEMO_GROUP_IDS.setup).length);
+    expect(into(after, id).length).toBeGreaterThan(0);
+    expect(from(after, id).length).toBeGreaterThan(0);
     // No connection is left pointing at a step that is gone.
     const present = new Set(after.steps.map((s) => s.id));
     expect(after.edges.every((e) => present.has(e.from_step_id) && present.has(e.to_step_id))).toBe(true);
@@ -242,6 +283,37 @@ describe("replacing the selection with a block", () => {
     const result = applyEdit(deep, again.edit);
     expect(stepOf(result, again.id).parent_step_id).toBe(inner);
     expect(stepOf(result, inner).entry_step_id).toBe(again.id);
+  });
+
+  it("keeps a group's connections, which start and end at steps inside it, so the process can still run", () => {
+    for (const group of [DEMO_GROUP_IDS.conversation, DEMO_GROUP_IDS.setup]) {
+      const live = nested();
+      const { edit, id } = replaceWithBlock(live, group, sales(), "Sales conversation")!;
+      const after = applyEdit(live, edit);
+      expect(into(after, id).length, group).toBeGreaterThan(0);
+      expect(from(after, id).length, group).toBeGreaterThan(0);
+      // Nothing is left pointing at a step that is gone, nothing is flagged as a dead end, and the model builds and runs.
+      const present = new Set(after.steps.map((x) => x.id));
+      expect(after.edges.every((e) => present.has(e.from_step_id) && present.has(e.to_step_id))).toBe(true);
+      expect([...stepWarnings(after).values()].filter((w) => /Nothing leaves|no outgoing/.test(w)), group).toEqual([]);
+      const model = toEngineModel(after, { startDate: START });
+      expect(() => simulate(model, 2, 1)).not.toThrow();
+      // Undo brings the group and its connections back exactly.
+      const undone = applyEdit(after, invertEdit(edit));
+      expect(undone.edges.map((e) => [e.id, e.from_step_id, e.to_step_id]).sort()).toEqual(live.edges.map((e) => [e.id, e.from_step_id, e.to_step_id]).sort());
+      expect(undone.steps.map((x) => x.id).sort()).toEqual(live.steps.map((x) => x.id).sort());
+    }
+  });
+
+  it("keeps the exits of one step, and says so, when a group is left from several", () => {
+    const b = nested();
+    const extra = { ...from(b, ids.discovery)[0]!, id: "e9999999-0000-4000-8000-000000000001", from_step_id: ids.qualify, probability: 0.1 };
+    const many = { ...b, edges: [...b.edges, extra] };
+    const placed = replaceWithBlock(many, DEMO_GROUP_IDS.conversation, sales(), "Sales conversation")!;
+    expect(placed.note).toMatch(/exits from 2 steps/);
+    const after = applyEdit(many, placed.edit);
+    const total = from(after, placed.id).reduce((t, e) => t + Number(e.probability), 0);
+    expect(total).toBeLessThanOrEqual(1.0001);
   });
 
   it("can be undone", () => {

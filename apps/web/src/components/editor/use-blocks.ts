@@ -95,13 +95,15 @@ export function useBlockTools({
   const replace = (block: BlockRow) => {
     if (!only || replaceWhy) return setNote({ kind: "place", tone: "problem", text: replaceWhy ?? "Select the step or group the block should replace." });
     let id: string | null = null;
+    let said: string | undefined;
     const ran = editor.run((b) => {
       const made = replaceWithBlock(b, only, readBlock(block.steps), block.name);
       id = made?.id ?? null;
+      said = made?.note;
       return made?.edit ?? null;
     });
     if (!ran || !id) return setNote({ kind: "place", tone: "problem", text: `${block.name} has no steps to put in.` });
-    setNote({ kind: "place", tone: "ok", text: `Replaced the selection with ${block.name}.` });
+    setNote({ kind: "place", tone: said ? "problem" : "ok", text: said ?? `Replaced the selection with ${block.name}.` });
     setSelection({ steps: [id], edges: [] });
   };
 

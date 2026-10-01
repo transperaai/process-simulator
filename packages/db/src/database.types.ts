@@ -541,6 +541,164 @@ export type Database = {
           },
         ]
       }
+      issue_events: {
+        Row: {
+          actor: string | null
+          at: string
+          detail: Json
+          id: string
+          issue_id: string
+          kind: string
+          seq: number
+          tx: number | null
+          workspace_id: string
+        }
+        Insert: {
+          actor?: string | null
+          at?: string
+          detail?: Json
+          id?: string
+          issue_id: string
+          kind: string
+          seq?: never
+          tx?: number | null
+          workspace_id: string
+        }
+        Update: {
+          actor?: string | null
+          at?: string
+          detail?: Json
+          id?: string
+          issue_id?: string
+          kind?: string
+          seq?: never
+          tx?: number | null
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "issue_events_issue_id_workspace_id_fkey"
+            columns: ["issue_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "issues"
+            referencedColumns: ["id", "workspace_id"]
+          },
+        ]
+      }
+      issue_links: {
+        Row: {
+          created_at: string
+          id: string
+          issue_id: string
+          process_id: string | null
+          step_id: string | null
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          issue_id: string
+          process_id?: string | null
+          step_id?: string | null
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          issue_id?: string
+          process_id?: string | null
+          step_id?: string | null
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "issue_links_issue_id_workspace_id_fkey"
+            columns: ["issue_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "issues"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "issue_links_process_id_workspace_id_fkey"
+            columns: ["process_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id", "workspace_id"]
+          },
+        ]
+      }
+      issue_owners: {
+        Row: {
+          created_at: string
+          issue_id: string
+          person_id: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          issue_id: string
+          person_id: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          issue_id?: string
+          person_id?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "issue_owners_issue_id_workspace_id_fkey"
+            columns: ["issue_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "issues"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "issue_owners_person_id_workspace_id_fkey"
+            columns: ["person_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id", "workspace_id"]
+          },
+        ]
+      }
+      issue_sources: {
+        Row: {
+          created_at: string
+          issue_id: string
+          source_id: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          issue_id: string
+          source_id: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          issue_id?: string
+          source_id?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "issue_sources_issue_id_workspace_id_fkey"
+            columns: ["issue_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "issues"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "issue_sources_source_id_workspace_id_fkey"
+            columns: ["source_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "sources"
+            referencedColumns: ["id", "workspace_id"]
+          },
+        ]
+      }
       issues: {
         Row: {
           client_id: string | null
@@ -551,6 +709,7 @@ export type Database = {
           evidence_metrics: Json
           evidence_sources: Json
           id: string
+          number: number
           owner_person_id: string | null
           person_id: string | null
           process_id: string | null
@@ -561,6 +720,9 @@ export type Database = {
           source: string
           status: string
           step_id: string | null
+          target_goal: string | null
+          target_measure: string | null
+          target_now: string | null
           title: string
           type: string
           updated_at: string
@@ -575,6 +737,7 @@ export type Database = {
           evidence_metrics?: Json
           evidence_sources?: Json
           id?: string
+          number?: number
           owner_person_id?: string | null
           person_id?: string | null
           process_id?: string | null
@@ -585,6 +748,9 @@ export type Database = {
           source?: string
           status?: string
           step_id?: string | null
+          target_goal?: string | null
+          target_measure?: string | null
+          target_now?: string | null
           title: string
           type: string
           updated_at?: string
@@ -599,6 +765,7 @@ export type Database = {
           evidence_metrics?: Json
           evidence_sources?: Json
           id?: string
+          number?: number
           owner_person_id?: string | null
           person_id?: string | null
           process_id?: string | null
@@ -609,6 +776,9 @@ export type Database = {
           source?: string
           status?: string
           step_id?: string | null
+          target_goal?: string | null
+          target_measure?: string | null
+          target_now?: string | null
           title?: string
           type?: string
           updated_at?: string
@@ -2221,6 +2391,17 @@ export type Database = {
       }
       save_fields: {
         Args: { base: Json; changes: Json; key: Json; target: string }
+        Returns: Json
+      }
+      save_issue: {
+        Args: {
+          p_fields: Json
+          p_id: string
+          p_links: Json
+          p_owners: string[]
+          p_sources: string[]
+          p_workspace: string
+        }
         Returns: Json
       }
       save_links: {

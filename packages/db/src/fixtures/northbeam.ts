@@ -675,7 +675,7 @@ export function northbeamIssues(): IssueRow[] {
   } satisfies Partial<IssueRow>;
   const scenario = (n: number) => northbeamScenarios()[n - 1]!.id;
   const person = (name: string) => northbeamPersonIds[name]!;
-  return [
+  const issues: Omit<IssueRow, "number" | "target_measure" | "target_now" | "target_goal" | "links" | "owner_ids" | "source_ids">[] = [
     {
       ...base,
       id: id("4", 1),
@@ -701,7 +701,7 @@ export function northbeamIssues(): IssueRow[] {
       title: "Only Maya Collins can do Audit & proposal",
       evidence: "Detected: nobody else can pick up audits when Maya is away. Proposals stalled for 9 days in July.",
       owner_person_id: person("Rosa Diaz"),
-      status: "in_progress",
+      status: "testing",
       scenario_id: scenario(1),
       source: "promoted",
       detected_key: `spof:step:${northbeamStepIds.audit}`,
@@ -720,4 +720,15 @@ export function northbeamIssues(): IssueRow[] {
       source: "manual",
     },
   ];
+  return issues.map((issue, n) => ({
+    number: n + 1,
+    target_measure: n === 0 ? "Hands-on time per proposal" : null,
+    target_now: n === 0 ? "6 hours" : null,
+    target_goal: n === 0 ? "under 3 hours" : null,
+    ...issue,
+    // What it touches and who owns it, as the link tables hold them: the first step (else the process), the first owner.
+    links: [{ process_id: issue.process_id, step_id: issue.step_id }],
+    owner_ids: issue.owner_person_id ? [issue.owner_person_id] : [],
+    source_ids: n === 0 ? [northbeamSourceIds.strategyInterview] : [],
+  }));
 }

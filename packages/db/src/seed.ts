@@ -85,7 +85,13 @@ export function seedSql(
   if (issues.length) {
     out.push("-- Issues register: audit findings and a promoted detection\n");
     // resolved_at is set by the table's trigger from the status.
-    out.push(insert("issues", issues.map(({ resolved_at: _resolved, ...r }) => ({ ...r }))));
+    // number is assigned by the table's trigger, in insert order (the fixtures are numbered the same way); the links,
+    // owners and sources go in their own tables.
+    out.push(insert("issues", issues.map(({ resolved_at: _resolved, number: _number, links: _l, owner_ids: _o, source_ids: _s, ...r }) => ({ ...r }))));
+    const rel = <T extends Record<string, unknown>>(pick: (i: IssueRow) => T[]) => issues.flatMap((i) => pick(i).map((r) => ({ issue_id: i.id, workspace_id: i.workspace_id, ...r })));
+    out.push(insert("issue_links", rel((i) => i.links.map((l) => ({ ...l })))));
+    out.push(insert("issue_owners", rel((i) => i.owner_ids.map((person_id) => ({ person_id })))));
+    out.push(insert("issue_sources", rel((i) => i.source_ids.map((source_id) => ({ source_id })))));
   }
   return out.join("\n");
 }

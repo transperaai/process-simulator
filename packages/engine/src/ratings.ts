@@ -111,21 +111,21 @@ export interface RatingConfig {
     /** A finding on the current bottleneck (step, role or person) is raised one level. */
     bottleneck: boolean;
   };
-  /** Rule 5's default expected wait for a person, in hours, when a step sets none. */
-  expectedWaitHours: { pipeline: number; servicing: number };
+  /** Rule 5's default expected wait for a person, in working days of the model's week (`hoursPerWeek / 5`), when nothing sets one. */
+  expectedWaitDays: { pipeline: number; servicing: number };
 }
 
 /** What a caller passes: any part of the config; the rest takes the defaults. */
 export interface RatingConfigInput {
   rules?: { [R in RatingRuleId]?: Partial<RatingRuleConfig> };
   escalators?: Partial<RatingConfig["escalators"]>;
-  expectedWaitHours?: Partial<RatingConfig["expectedWaitHours"]>;
+  expectedWaitDays?: Partial<RatingConfig["expectedWaitDays"]>;
 }
 
 export function defaultRatingConfig(): RatingConfig {
   const rules = {} as Record<RatingRuleId, RatingRuleConfig>;
   for (const id of RATING_RULE_IDS) rules[id] = { enabled: true, cutoffs: DEFAULT_RATING_CUTOFFS[id], overrides: [] };
-  return { rules, escalators: { badMonth: true, bottleneck: true }, expectedWaitHours: { pipeline: 8, servicing: 16 } };
+  return { rules, escalators: { badMonth: true, bottleneck: true }, expectedWaitDays: { pipeline: 1, servicing: 2 } };
 }
 
 export const DEFAULT_RATING_CONFIG: RatingConfig = defaultRatingConfig();
@@ -137,7 +137,7 @@ export function resolveRatingConfig(input: RatingConfigInput = {}): RatingConfig
   return {
     rules: base.rules,
     escalators: { ...base.escalators, ...input.escalators },
-    expectedWaitHours: { ...base.expectedWaitHours, ...input.expectedWaitHours },
+    expectedWaitDays: { ...base.expectedWaitDays, ...input.expectedWaitDays },
   };
 }
 
@@ -156,8 +156,10 @@ export interface RatingSubject {
 export interface ResolvedRule {
   enabled: boolean;
   cutoffs: Cutoffs;
-  /** Rule 5: an override's expected wait, when one sets it. */
+  /** Rule 5: an override's expected wait in hours, when one sets it. */
   expectedWaitHours: number | null;
+  /** The kind of the override that set `expectedWaitHours`. */
+  expectedWaitFrom: OverrideKind | null;
 }
 
 /**
@@ -190,6 +192,7 @@ export function resolveRule(config: RatingConfig, rule: RatingRuleId, subject: R
     enabled: first((o) => o.enabled) ?? r.enabled,
     cutoffs: first((o) => o.cutoffs) ?? r.cutoffs,
     expectedWaitHours: first((o) => o.expectedWaitHours) ?? null,
+    expectedWaitFrom: matching.find((o) => o.expectedWaitHours !== undefined)?.kind ?? null,
   };
 }
 

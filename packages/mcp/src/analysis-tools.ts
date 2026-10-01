@@ -23,7 +23,7 @@ import {
   type ProcessBundle,
   type ScenarioRow,
 } from "@transpera-flow/db";
-import { applyPatches, detectIssues, ENGINE_VERSION, isBlocking, ISSUE_TYPES, MAX_PATCHES, PATCH_OPS, RATINGS, ratingOfStored, simulate, storedOfRating, type EngineModel } from "@transpera-flow/engine";
+import { applyPatches, detectIssues, ENGINE_VERSION, isBlocking, ISSUE_TYPES, MAX_PATCHES, PATCH_OPS, RATINGS, STORED_SEVERITIES, ratingOfStored, simulate, storedOfRating, type EngineModel } from "@transpera-flow/engine";
 import { bottleneckReport, checkScenarioRobustness, compareScenarios, matchNamed, type NamedScenario } from "./analysis";
 import { resolveProcess, resolveWorkspace, revisionIdFor, type ProcessWithDraft, type ToolContext, type WorkspaceRef } from "./context";
 import { runTool, ToolError } from "./result";
@@ -355,6 +355,10 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
         title: z.string().trim().min(1).max(MAX_TITLE),
         type: z.enum(ISSUE_TYPES),
         rating: z.enum(RATINGS).optional().describe("great, good (could improve), bad (not urgent) or risk (operational risk). Default good."),
+        severity: z
+          .enum(STORED_SEVERITIES)
+          .optional()
+          .describe("Deprecated: use rating. critical = risk, serious = bad, warning = good, info = great. Ignored when rating is given."),
         evidence: z.string().max(MAX_EVIDENCE).optional().describe("What was seen or said, and where."),
         process: z.string().optional().describe("Process the issue is about (id or name)."),
         step: z.string().optional().describe("Step id or name."),
@@ -386,14 +390,16 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
           ? matchNamed(check(await ctx.db.from("roles").select("id, name").eq("workspace_id", ws.id).order("name")), args.role, "role", ` in '${ws.name}'`)
           : null;
         const scenario = args.scenario ? matchNamed(await loadScenarios(ctx.db, ws.id), args.scenario, "saved scenario", ` in '${ws.name}'`) : null;
-        if (!args.rating) assumptions.push("rating defaulted to good (could improve).");
+        const rating = args.rating ?? (args.severity ? ratingOfStored(args.severity) : "good");
+        if (!args.rating && args.severity) assumptions.push(`severity '${args.severity}' is deprecated; read as rating '${rating}'.`);
+        else if (!args.rating) assumptions.push("rating defaulted to good (could improve).");
         const { data, error } = await ctx.db
           .from("issues")
           .insert({
             workspace_id: ws.id,
             title: args.title.trim(),
             type: args.type,
-            severity: storedOfRating(args.rating ?? "good"),
+            severity: storedOfRating(rating),
             evidence: args.evidence?.trim() || null,
             status: args.status ?? "open",
             source: "manual",

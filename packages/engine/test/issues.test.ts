@@ -6,6 +6,7 @@ import {
   northbeamModel,
   northbeamWithServicing,
   RATINGS,
+  pct,
   simulate,
   type DetectedIssue,
   type EngineModel,
@@ -13,6 +14,7 @@ import {
   type EngineStep,
   type RatingConfigInput,
 } from "../src";
+import { SEED_STRIDE } from "../src/simulate";
 
 // Detected issues (issue #17): one small, hand-checkable model per detector,
 // Northbeam as it is and overloaded, and stable keys.
@@ -153,14 +155,14 @@ describe("waiting too long (rule 5)", () => {
     // ~8 h against 8 h expected is about 1x: Great or just into Good, nowhere near Bad.
     expect(["great", "good"]).toContain(wait({})?.rating ?? "great");
     // A 4 h expected wait makes it ~2x: Bad (1.5-3x).
-    const issue = wait({ expectedWaitHours: { pipeline: 4 } })!;
+    const issue = wait({ expectedWaitDays: { pipeline: 0.5 } })!;
     expect(issue.type).toBe("delay");
     expect(issue.rating).toBe("bad");
     expect(issue.metrics.expected_wait_hours).toBe(4);
     expect(issue.metrics.wait_ratio).toBeGreaterThan(1.5);
     expect(issue.title).toMatch(/^Work waits [\d.]+ working days? for Step a$/);
     // A 2 h expected wait: ~4x, Operational risk.
-    expect(wait({ expectedWaitHours: { pipeline: 2 } })?.rating).toBe("risk");
+    expect(wait({ expectedWaitDays: { pipeline: 0.25 } })?.rating).toBe("risk");
   });
 
   it("takes the expected wait from the step, or an override, before the default", () => {
@@ -172,14 +174,32 @@ describe("waiting too long (rule 5)", () => {
     expect(find(detectIssues(withStep, r, override), "wait:step:a")).toBeUndefined();
   });
 
-  it("defaults to 8 h for pipeline steps and 16 h for servicing steps", () => {
-    const pipeline = line(8, [{ id: "a", work: 4 }]);
-    const r = simulate(pipeline, 12, 1);
-    const asServicing: EngineModel = { ...pipeline, servicingProcesses: { sp: { name: "Monthly report", entry: "a", steps: ["a"] } } };
-    // The same long wait (100 h) held to each default.
+  it("defaults to 1 working day for pipeline steps and 2 for servicing steps, of the model's week", () => {
+    for (const hoursPerWeek of [40, 37.5]) {
+      const day = hoursPerWeek / 5;
+      const pipeline = { ...line(8, [{ id: "a", work: 4 }]), hoursPerWeek };
+      const r = simulate(pipeline, 4, 1);
+      const asServicing: EngineModel = { ...pipeline, servicingProcesses: { sp: { name: "Monthly report", entry: "a", steps: ["a"] } } };
+      // The same long wait held to each default.
+      const slow = { ...r, steps: { a: { ...r.steps.a!, avgWait: 100, p90: undefined } } };
+      expect(find(detectIssues(pipeline, slow, NO_ESC), "wait:step:a")?.metrics.expected_wait_hours).toBeCloseTo(day);
+      expect(find(detectIssues(asServicing, slow, NO_ESC), "wait:step:a")?.metrics.expected_wait_hours).toBeCloseTo(2 * day);
+    }
+  });
+
+  it("takes the most specific expected wait: person/step override, the step's own, role/service/process override, default", () => {
+    const base = line(8, [{ id: "a", work: 4, expectedWaitHours: 20 }], { r: 1 });
+    const r = simulate(base, 4, 1);
     const slow = { ...r, steps: { a: { ...r.steps.a!, avgWait: 100, p90: undefined } } };
-    expect(find(detectIssues(pipeline, slow, NO_ESC), "wait:step:a")?.metrics.expected_wait_hours).toBe(8);
-    expect(find(detectIssues(asServicing, slow, NO_ESC), "wait:step:a")?.metrics.expected_wait_hours).toBe(16);
+    const expected = (m: EngineModel, overrides: NonNullable<RatingConfigInput["rules"]>["wait"] extends infer W ? (W extends { overrides?: infer O } ? O : never) : never) =>
+      find(detectIssues(m, slow, { ...NO_ESC, rules: { wait: { overrides } } }), "wait:step:a")?.metrics.expected_wait_hours;
+    const noOwn = line(8, [{ id: "a", work: 4 }], { r: 1 });
+    // A role override loses to the step's own setting, but beats the default.
+    expect(expected(base, [{ kind: "role", id: "r", expectedWaitHours: 30 }])).toBe(20);
+    expect(expected(noOwn, [{ kind: "role", id: "r", expectedWaitHours: 30 }])).toBe(30);
+    expect(expected(noOwn, [{ kind: "process", id: "p", expectedWaitHours: 30 }])).toBe(8);
+    // A step override beats the step's own setting.
+    expect(expected(base, [{ kind: "role", id: "r", expectedWaitHours: 30 }, { kind: "step", id: "a", expectedWaitHours: 10 }])).toBe(10);
   });
 });
 
@@ -380,7 +400,7 @@ describe("a bad month (P90) and the bottleneck on steps", () => {
     const m = line(8, [{ id: "a", work: 4 }]);
     const r = simulate(m, 12, 1);
     // Held to a 6 h expected wait (~1.3x): Good. P90 over 1.5x makes it Bad; a single step is the bottleneck step too.
-    const cfg = { expectedWaitHours: { pipeline: 6 } };
+    const cfg = { expectedWaitDays: { pipeline: 0.75 } };
     const step = r.steps.a!;
     const fake = (avgWait: number, p90: number, bn: string | null) => ({ ...r, bnStep: bn, steps: { a: { ...step, avgWait, p90: { ...step.p90!, avgWait: p90 } } } });
     const wait = (res: typeof r, c: RatingConfigInput = cfg) => find(detectIssues(m, res, c), "wait:step:a")!;
@@ -422,5 +442,22 @@ describe("stable keys", () => {
     const before = JSON.stringify([m, r]);
     detectIssues(m, r);
     expect(JSON.stringify([m, r])).toBe(before);
+  });
+});
+
+describe("StepResult.p90", () => {
+  it("is pct of the per-replication values across the replications", () => {
+    const m = line(8, [{ id: "a", work: 4, rework: 0.3, sla: 8 }]);
+    const reps = 12;
+    const r = simulate(m, reps, 1);
+    // Rebuild the per-replication values from the same seeds, one run at a time.
+    const singles = Array.from({ length: reps }, (_, i) => simulate(m, 1, 1 + i * SEED_STRIDE).steps.a!);
+    const share = (n: number, d: number) => (d > 0 ? Math.min(1, n / d) : 0);
+    expect(r.steps.a!.p90).toEqual({
+      avgWait: pct(singles.map((x) => x.avgWait), 0.9),
+      reworkShare: pct(singles.map((x) => share(x.reworks, x.departures)), 0.9),
+      slaBreachShare: pct(singles.map((x) => share(x.slaBreaches, x.departures)), 0.9),
+    });
+    expect(r.steps.a!.p90!.avgWait).toBeGreaterThan(0);
   });
 });

@@ -36,7 +36,7 @@ describe("defaults match docs/analysis-rules.md", () => {
       rework: [0.05, 0.1, 0.2],
       sla: [0.05, 0.1, 0.25],
     });
-    expect(DEFAULT_RATING_CONFIG.expectedWaitHours).toEqual({ pipeline: 8, servicing: 16 });
+    expect(DEFAULT_RATING_CONFIG.expectedWaitDays).toEqual({ pipeline: 1, servicing: 2 });
     expect(DEFAULT_RATING_CONFIG.escalators).toEqual({ badMonth: true, bottleneck: true });
     for (const id of RATING_RULE_IDS) expect(DEFAULT_RATING_CONFIG.rules[id]).toMatchObject({ enabled: true, overrides: [] });
   });
@@ -223,17 +223,17 @@ describe("overrides", () => {
       },
     });
     const both = resolveRule(c2, "wait", { stepId: "reply", processId: "proc" });
-    expect(both).toEqual({ enabled: false, cutoffs: [2, 3, 4], expectedWaitHours: 2 });
+    expect(both).toEqual({ enabled: false, cutoffs: [2, 3, 4], expectedWaitHours: 2, expectedWaitFrom: "step" });
     expect(resolveRule(c2, "wait", { stepId: "other" }).enabled).toBe(true);
   });
 });
 
 describe("config", () => {
   it("fills in defaults for what a caller leaves out and doesn't share state", () => {
-    const c = resolveRatingConfig({ rules: { rework: { cutoffs: [0.01, 0.02, 0.03] } }, expectedWaitHours: { pipeline: 4 } });
+    const c = resolveRatingConfig({ rules: { rework: { cutoffs: [0.01, 0.02, 0.03] } }, expectedWaitDays: { pipeline: 0.5 } });
     expect(c.rules.rework.cutoffs).toEqual([0.01, 0.02, 0.03]);
     expect(c.rules.busy.cutoffs).toEqual([0.7, 0.85, 0.95]);
-    expect(c.expectedWaitHours).toEqual({ pipeline: 4, servicing: 16 });
+    expect(c.expectedWaitDays).toEqual({ pipeline: 0.5, servicing: 2 });
     c.rules.busy.overrides.push({ kind: "role", id: "x" });
     expect(DEFAULT_RATING_CONFIG.rules.busy.overrides).toEqual([]);
   });

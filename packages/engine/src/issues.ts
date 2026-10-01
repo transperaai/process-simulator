@@ -293,8 +293,12 @@ export function detectIssues(
       // A growing queue's wait is unbounded; that issue covers it. Wait means
       // time queued for a person, not the step's built-in wait.
       const resolved = resolveRule(config, "wait", subject);
-      const expected =
-        resolved.expectedWaitHours ?? s.expectedWaitHours ?? (servicing.has(s.id) ? config.expectedWaitHours.servicing : config.expectedWaitHours.pipeline);
+      // Expected wait, most specific first: a person or step override, the
+      // step's own setting, a role, service or process override, then the
+      // default: 1 working day for pipeline steps, 2 for servicing steps.
+      const specific = resolved.expectedWaitFrom === "person" || resolved.expectedWaitFrom === "step";
+      const defaultDays = servicing.has(s.id) ? config.expectedWaitDays.servicing : config.expectedWaitDays.pipeline;
+      const expected = (specific ? resolved.expectedWaitHours : null) ?? s.expectedWaitHours ?? resolved.expectedWaitHours ?? defaultDays * hoursPerDay;
       if (resolved.enabled && expected > 0) {
         const outcome = rateRule(config, "wait", resolved, {
           average: st.avgWait / expected,

@@ -218,7 +218,16 @@ export function stepRatingOf(badges: Record<string, StepBadge>): (stepId: string
   };
 }
 
-/** Open issues per step, for the badges on the map. */
+/**
+ * The red badges on the map (issue #99): open issues somebody has confirmed, that is, tracked in the register.
+ * What a run only detected (an insight nobody has acknowledged yet) colours the step through its rating but
+ * never adds to a badge.
+ */
+export function confirmedBadges(entries: readonly RegisterEntry[]): Record<string, StepBadge> {
+  return stepBadges(entries.filter((e) => e.kind === "tracked"));
+}
+
+/** Open findings per step: each step's count and worst rating, whether tracked or only detected. */
 export function stepBadges(entries: readonly RegisterEntry[]): Record<string, StepBadge> {
   const out: Record<string, StepBadge> = {};
   for (const e of entries) {

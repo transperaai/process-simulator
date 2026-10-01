@@ -11,7 +11,7 @@ export interface SwitcherWorkspace {
 }
 
 /** The current workspace at the top of the sidebar; opens the list of workspaces (or, on the demo, the two sample agencies). */
-export function WorkspaceSwitcher({ current, workspaces, allHref = "/" }: { current: string; workspaces: SwitcherWorkspace[]; allHref?: string }) {
+export function WorkspaceSwitcher({ current, subtitle, workspaces, allHref = "/" }: { current: string; subtitle: string; workspaces: SwitcherWorkspace[]; allHref?: string }) {
   const { isMobile } = useSidebar();
   const monogram = current.trim().charAt(0).toUpperCase() || "T";
   return (
@@ -25,7 +25,7 @@ export function WorkspaceSwitcher({ current, workspaces, allHref = "/" }: { curr
               </span>
               <span className="grid min-w-0 flex-1 text-left leading-tight">
                 <span className="truncate text-sm font-semibold text-fg">{current}</span>
-                <span className="truncate text-2xs text-muted-foreground">Transpera Flow</span>
+                <span className="truncate text-2xs text-muted-foreground">{subtitle}</span>
               </span>
               <ChevronsUpDown className="ml-auto text-muted-foreground" />
             </SidebarMenuButton>

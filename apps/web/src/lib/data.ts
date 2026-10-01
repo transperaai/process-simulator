@@ -85,6 +85,11 @@ export async function loadProcessNames(workspaceId: string): Promise<{ id: strin
   return (await listProcesses(await createClient(), workspaceId)).map((p) => ({ id: p.id, name: p.name }));
 }
 
+/** The workspace's processes with their kind, in creation order, for the Processes page. */
+export async function loadProcessList(workspaceId: string): Promise<{ id: string; name: string; kind: string }[]> {
+  return (await listProcesses(await createClient(), workspaceId)).map((p) => ({ id: p.id, name: p.name, kind: p.kind }));
+}
+
 /** The workspace's saved scenarios, oldest first (RLS: everyone in the workspace can read them). */
 export async function loadWorkspaceScenarios(workspaceId: string): Promise<ScenarioRow[]> {
   return loadScenarios(await createClient(), workspaceId);

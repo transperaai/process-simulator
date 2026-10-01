@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EDITOR_MODES, MODE_INFO, exitHref, isEditorPath, parseEditorMode, parseHorizon, withHorizon } from "@/lib/editor/modes";
+import { EDITOR_MODES, MODE_INFO, SOLUTION_FOR_ISSUE, exitHref, isEditorPath, parseEditorMode, parseHorizon, parseIssueParam, withHorizon } from "@/lib/editor/modes";
 
 // The Editor's modes and where it lives (issue #104).
 
@@ -27,8 +27,16 @@ describe("editor modes", () => {
     expect(MODE_INFO.draft.save.map((s) => s.label)).toEqual(["Save draft", "Publish…"]);
     expect(MODE_INFO.solution.save.map((s) => s.label)).toEqual(["Save solution"]);
     expect(MODE_INFO.block.save.map((s) => s.label)).toEqual(["Save to library"]);
-    // The draft and the block are built; solutions plug in later.
-    expect(EDITOR_MODES.filter((m) => MODE_INFO[m].available)).toEqual(["draft", "block"]);
+    // All three modes are built (solutions: A49).
+    expect(EDITOR_MODES.filter((m) => MODE_INFO[m].available)).toEqual(["draft", "solution", "block"]);
+    expect(MODE_INFO.solution.hint).toMatch(/never change the live map/);
+    expect(MODE_INFO.solution.title("Lead to live")).toBe("New solution · Lead to live");
+    expect(SOLUTION_FOR_ISSUE.title({ number: 12, title: "Strategist bottleneck" })).toBe("Solution for #12 · Strategist bottleneck");
+    expect(SOLUTION_FOR_ISSUE.title({ number: null, title: "Slow" })).toBe("Solution for issue · Slow");
+    expect(SOLUTION_FOR_ISSUE.hint).toMatch(/red outline is the area this issue touches/);
+    expect(parseIssueParam("3f1c2b4a-0000-4000-8000-000000000001")).toBe("3f1c2b4a-0000-4000-8000-000000000001");
+    expect(parseIssueParam("not-an-id")).toBeNull();
+    expect(parseIssueParam(undefined)).toBeNull();
     expect(MODE_INFO.draft.title("Lead to live")).toBe("Draft of Lead to live");
   });
 

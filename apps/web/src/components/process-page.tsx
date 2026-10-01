@@ -31,6 +31,7 @@ import { HorizonPicker } from "./horizon-picker";
 import { LeverPanel } from "./lever-panel";
 import { HeadlineCards } from "./overview/headline-cards";
 import { ProcessCanvas } from "./process-canvas";
+import { ProcessSolutions, type SolutionsData } from "./solutions/process-solutions";
 import { useProcessIssues } from "./process-issues";
 import { useEngineModel, type EditMode } from "./process-view";
 import { ServicingBanner } from "./servicing-banner";
@@ -69,6 +70,7 @@ export function ProcessPage({
   settingsHref,
   editHref,
   historyHref,
+  solutions,
   inside = [],
   firstPrinciples,
   processPicker,
@@ -98,6 +100,11 @@ export function ProcessPage({
   editHref?: string;
   /** The History page (A40, not built yet): a plain link to its route. */
   historyHref: string;
+  /**
+   * This process's solutions and where the Editor lives for them (A49): `base` is `/w/<slug>` or `/demo`. The section lists them,
+   * and offers New solution and Build solution to those who can edit.
+   */
+  solutions?: { data: SolutionsData; base: string };
   /** Processes inside this one. */
   inside?: ChildProcess[];
   /** The version's first principles for the card at the top (A54); on the demo the answers edited in this tab replace `doc`. */
@@ -369,10 +376,20 @@ export function ProcessPage({
           id="solutions"
           title="Solutions"
           hint="Bundles of steps tested against an issue. They never change the live map."
+          help={{
+            label: "Solutions",
+            description: "A solution is a copy of this process with some steps changed. It is tested against an issue's target and never changes the live map. A process can have many.",
+            example: "“AI lead qualifier” replaces Check fit and Enrich lead with an AI step, and passes the target of first contact under 4 hours.",
+          }}
         >
-          <div className="rounded-token border border-dashed border-line p-4 text-sm text-fg-2" data-testid="solutions-placeholder">
-            No solutions yet. They will appear here once they can be built from an issue.
-          </div>
+          <ProcessSolutions
+            processId={bundle.process.id}
+            base={solutions?.base ?? (mode === "demo" ? "/demo" : "")}
+            demo={mode === "demo"}
+            canEdit={mode !== "readonly" && !old && !!solutions?.base}
+            data={solutions?.data ?? { solutions: [], links: [] }}
+            issues={issues}
+          />
         </Section>
 
         <Section id="supporting-data" title="Supporting data" hint="From the latest run.">

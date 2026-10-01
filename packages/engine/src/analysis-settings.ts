@@ -427,6 +427,8 @@ const RULE_OF_KEY_PREFIX: Record<string, AnalysisRuleId> = {
 
 /** The analysis rule a finding comes from, by its key (`capacity:role:<id>`, `spof:step:<id>`, ...); null for ones no rule owns. */
 export function ruleOfFinding(finding: { key: string; type?: string }): AnalysisRuleId | null {
+  // A driver causing a share of a group's churn (rule 10) is a churn_risk issue too, but not rule 9's.
+  if (finding.key.startsWith("churn_risk:driver:")) return "driver";
   return RULE_OF_KEY_PREFIX[finding.key.split(":")[0]!] ?? (finding.type ? (RULE_OF_KEY_PREFIX[finding.type] ?? null) : null);
 }
 

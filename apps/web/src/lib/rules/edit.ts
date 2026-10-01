@@ -63,7 +63,7 @@ export const setMoney = (s: AnalysisSettings, patch: Partial<Omit<AnalysisMoney,
   clean({ ...s, money: { ...s.money, ...patch, waitHours: patch.waitHours ? { ...s.money?.waitHours, ...patch.waitHours } : s.money?.waitHours } });
 
 /** The rule an issue's detector belongs to; null for findings that aren't from a rule on the rating model. */
-const RATED = new Set<string>(["busy", "overtime", "queue", "wait", "rework", "sla", "spare", "spof", "dropoff", "cycle", "success"]);
+const RATED = new Set<string>(["busy", "overtime", "queue", "wait", "rework", "sla", "spare", "spof", "dropoff", "cycle", "success", "driver"]);
 export const ruleOfIssue = (i: Pick<DetectedIssue, "key">): RatingRuleId | null => {
   const rule = ruleOfFinding(i);
   return rule && RATED.has(rule) ? (rule as RatingRuleId) : null;

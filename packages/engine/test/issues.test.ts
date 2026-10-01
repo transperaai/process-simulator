@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  absenceCandidates,
+  absenceTest,
   applyPatches,
   detectIssues,
   isBlocking,
@@ -203,29 +205,38 @@ describe("waiting too long (rule 5)", () => {
   });
 });
 
-describe("single point of failure", () => {
-  it("flags a step only one person can do, and not one two people can do", () => {
-    const m = line(2, [{ id: "a", role: "solo" }, { id: "b", role: "pair" }], { solo: 1, pair: 2 });
-    const issues = run(m);
-    const issue = find(issues, "spof:step:a")!;
+describe("single point of failure (rule 8, the absence test; see new-rules.test.ts for the rating)", () => {
+  /** The same run, with the absence test beside it. */
+  const runWithAbsence = (m: EngineModel, reps = 12) => detectIssues(m, simulate(m, reps, 1), {}, { absence: absenceTest(m, { reps: 6 }) });
+
+  it("tests a person who is the only one for a step, and not a step two people can do", () => {
+    const m = line(2, [{ id: "a", role: "solo", work: 18 }, { id: "b", role: "pair", work: 1 }], { solo: 1, pair: 2 });
+    expect(absenceCandidates(m)).toEqual([{ personId: "solo#1", stepIds: ["a"] }]);
+    const issues = runWithAbsence(m);
+    const issue = find(issues, "spof:person:solo#1")!;
     expect(issue.type).toBe("spof");
-    expect(issue.rating).toBe("good");
     expect(issue.title).toBe("Only one Role solo can do Step a");
     expect(issue.fix?.patch).toEqual([{ path: "roles.solo.headcount", op: "add", value: 1 }]);
-    expect(keys(issues)).not.toContain("spof:step:b");
+    expect(keys(issues).filter((k) => k.startsWith("spof"))).toEqual(["spof:person:solo#1"]);
+  });
+
+  it("raises nothing without an absence test, however structural the single point is", () => {
+    const m = line(2, [{ id: "a", role: "solo", work: 18 }], { solo: 1 });
+    expect(keys(run(m)).filter((k) => k.startsWith("spof"))).toEqual([]);
   });
 
   it("counts skills: two people in the role but only one with the skill", () => {
-    const m = line(2, [{ id: "a" }], { r: 2 }, {
+    const m = line(2, [{ id: "a", work: 18 }], { r: 2 }, {
       people: { ann: person(["r"], { name: "Ann", skills: ["a"] }), bob: person(["r"], { name: "Bob", skills: [] }) },
     });
-    expect(find(run(m), "spof:step:a")?.title).toBe("Only Ann can do Step a");
+    expect(absenceCandidates(m)).toEqual([{ personId: "ann", stepIds: ["a"] }]);
+    expect(find(runWithAbsence(m), "spof:person:ann")?.title).toBe("Only Ann can do Step a");
   });
 
-  it("ignores steps nothing reaches and unstaffed steps", () => {
+  it("ignores unstaffed steps", () => {
     const m = line(2, [{ id: "a", role: null, work: 0 }, { id: "b", role: "solo" }], { solo: 1 });
-    m.steps[0]!.next = [{ to: "won", p: 1 }];
-    expect(keys(run(m)).filter((k) => k.startsWith("spof"))).toEqual([]);
+    m.steps[0]!.next = [{ to: "b", p: 1 }];
+    expect(absenceCandidates(m).map((c) => c.stepIds)).toEqual([["b"]]);
   });
 });
 
@@ -323,13 +334,14 @@ describe("Northbeam", () => {
     expect(keys(detectIssues(m, r))).toContain("capacity:role:strat");
   });
 
-  it("as seeded: the strategist is the only one who can do audits and kickoffs", () => {
+  it("absence test: the strategist is the only one who can do audits and kickoffs, and is a risk when away", () => {
     const m = northbeamModel();
-    const issues = run(m, 30);
-    expect(keys(issues)).toEqual(expect.arrayContaining(["spof:step:audit", "spof:step:kickoff"]));
-    const audit = find(issues, "spof:step:audit")!;
-    expect(audit.title).toBe("Only one Strategist can do Audit & proposal");
-    expect(audit.fix?.name).toBe("Hire another Strategist");
+    const issues = detectIssues(m, simulate(m, 30, 1), {}, { absence: absenceTest(m) });
+    const strat = issues.filter((i) => i.type === "spof");
+    expect(strat.map((i) => i.key)).toEqual(["spof:person:strat#1"]);
+    expect(strat[0]!.title).toBe("One Strategist is the only one who can do 2 steps");
+    expect(strat[0]!.rating).toBe("risk");
+    expect(strat[0]!.fix?.name).toBe("Hire another Strategist");
     fixesApply(m, issues);
   });
 
@@ -457,6 +469,7 @@ describe("StepResult.p90", () => {
       avgWait: pct(singles.map((x) => x.avgWait), 0.9),
       reworkShare: pct(singles.map((x) => share(x.reworks, x.departures)), 0.9),
       slaBreachShare: pct(singles.map((x) => share(x.slaBreaches, x.departures)), 0.9),
+      lostShare: pct(singles.map((x) => share(x.lostHere ?? 0, x.departures)), 0.9),
     });
     expect(r.steps.a!.p90!.avgWait).toBeGreaterThan(0);
   });

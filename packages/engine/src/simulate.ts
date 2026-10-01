@@ -51,6 +51,7 @@ import type {
   Touchpoints,
   TraceEntity,
   TraceSegment,
+  WeeklySamples,
 } from "./model";
 import { expo, lognormal, lognormalSampler, StreamLabels, Streams, triangular, type Rng } from "./random";
 import { ENGINE_VERSION } from "./version";
@@ -136,6 +137,8 @@ interface StepStat {
   qAreaLate: number;
   departures: number;
   slaBreaches: number;
+  /** Visits that went straight to a lost end (a lead lost at this step). */
+  lostHere: number;
 }
 
 /** A first-in, first-out queue of items waiting at a step. */
@@ -436,6 +439,7 @@ export function runOnce(
   seed: number,
   keepTrace: boolean,
   start: InitialState = initialState(model),
+  sampleWeekly = false,
 ): ReplicationResult {
   const streams = new Streams(seed);
   let labels = streamLabels.get(model);
@@ -494,6 +498,7 @@ export function runOnce(
         qAreaLate: 0,
         departures: 0,
         slaBreaches: 0,
+        lostHere: 0,
       },
       queue: new Fifo(),
       people: [],
@@ -1207,7 +1212,10 @@ export function runOnce(
         break;
       }
     }
-    enterTarget(e, targets[k]!, t);
+    const target = targets[k]!;
+    // A visit sent straight to a lost end is work lost at this step (rule 12).
+    if (target.end && target.end.outcome === "lost" && !e.task && e.outcome !== "won" && t >= 0) st.stat.lostHere++;
+    enterTarget(e, target, t);
   }
 
   /**
@@ -1235,6 +1243,7 @@ export function runOnce(
         qAreaLate: 0,
         departures: 0,
         slaBreaches: 0,
+        lostHere: 0,
       });
     }
     for (const rid in roleAcc) {
@@ -1306,6 +1315,9 @@ export function runOnce(
   // With servicing, people going on leave hand their assigned tasks to the role's pool.
   if (servicing) for (const p of people) for (const [a] of p.leave ?? []) if (a > -W && a < H) schedule(a, "away", null, null, p);
   if (start.kind === "wip") seedWip();
+  // Optional weekly samples (the absence test, absence.ts): queue lengths and completions at each weekly tick.
+  const weekly: WeeklySamples | null = sampleWeekly ? { queue: {}, completed: [] } : null;
+  if (weekly) for (const st of stepList) weekly.queue[st.s.id] = [];
 
   for (let ev = events.pop(); ev; ev = events.pop()) {
     if (ev.t > H) break;
@@ -1337,6 +1349,10 @@ export function runOnce(
       for (const q of peers) takeNext(q, ev.t);
     } else {
       churnTick(ev.t);
+      if (weekly) {
+        for (const st of stepList) weekly.queue[st.s.id]!.push(st.stat.qLen);
+        weekly.completed.push(won + done + allTouch.onTime + allTouch.late);
+      }
     }
     // Handled: recycle it (nothing keeps a reference to an event after it runs).
     pool.push(ev);
@@ -1362,6 +1378,7 @@ export function runOnce(
       queueGrowth: halfWeeks > 0 ? ((st.qAreaLate - (st.qArea - st.qAreaLate)) / half) / halfWeeks : 0,
       departures: st.departures,
       slaBreaches: st.slaBreaches,
+      lostHere: st.lostHere,
     };
   }
   // Ongoing load is reported from the live client count, integrated over the
@@ -1476,6 +1493,7 @@ export function runOnce(
     roles: roleOut,
     people: peopleOut,
     entities: keepTrace ? entities.map(toTrace) : null,
+    ...(weekly ? { weekly } : {}),
     H,
     warmupHours: W,
     activeEnd: active,
@@ -1640,10 +1658,12 @@ export function simulate(model: EngineModel, reps = 30, seed = 1): SimulationRes
       queueGrowth: avg((r) => r.steps[s.id]!.queueGrowth),
       departures: avg((r) => r.steps[s.id]!.departures),
       slaBreaches: avg((r) => r.steps[s.id]!.slaBreaches),
+      lostHere: avg((r) => r.steps[s.id]!.lostHere ?? 0),
       p90: {
         avgWait: pct(runs.map((r) => r.steps[s.id]!.avgWait), 0.9),
         reworkShare: pct(runs.map((r) => visitShare(r.steps[s.id]!.reworks, r.steps[s.id]!.departures)), 0.9),
         slaBreachShare: pct(runs.map((r) => visitShare(r.steps[s.id]!.slaBreaches, r.steps[s.id]!.departures)), 0.9),
+        lostShare: pct(runs.map((r) => visitShare(r.steps[s.id]!.lostHere ?? 0, r.steps[s.id]!.departures)), 0.9),
       },
     };
   }

@@ -35,14 +35,20 @@ describe("defaults match docs/analysis-rules.md", () => {
       wait: [1, 1.5, 3],
       rework: [0.05, 0.1, 0.2],
       sla: [0.05, 0.1, 0.25],
+      spare: [0.4, 0, 0],
+      absence: [0.05, 0.05, 0.2],
+      dropoff: [1, 1.25, 1.5],
+      cycle: [1, 1.25, 1.5],
+      goals: [0.8, 0.5, 0.2],
     });
+    expect(DEFAULT_RATING_CONFIG.absence).toEqual({ weeks: 2, perYear: 2, recoveryCutoffs: [1, 1, 4] });
     expect(DEFAULT_RATING_CONFIG.expectedWaitDays).toEqual({ pipeline: 1, servicing: 2 });
     expect(DEFAULT_RATING_CONFIG.escalators).toEqual({ badMonth: true, bottleneck: true });
     for (const id of RATING_RULE_IDS) expect(DEFAULT_RATING_CONFIG.rules[id]).toMatchObject({ enabled: true, overrides: [] });
   });
 
   it("numbers the rules as the doc does", () => {
-    expect(RATING_RULE_IDS.map((id) => RATING_RULES[id].number)).toEqual([1, 3, 4, 5, 6, 7]);
+    expect(RATING_RULE_IDS.map((id) => RATING_RULES[id].number)).toEqual([1, 3, 4, 5, 6, 7, 2, 8, 12, 13, 11]);
   });
 });
 
@@ -71,6 +77,26 @@ describe("band boundaries", () => {
     sla: [
       [0, "great"], [0.05 - eps, "great"], [0.05, "good"], [0.1 - eps, "good"], [0.1, "bad"], [0.25 - eps, "bad"], [0.25, "risk"], [1, "risk"],
     ],
+    // Rule 2: utilisation, lower is worse. Under 40% is a Good opportunity; 40% itself is Great. No Bad or Risk band.
+    spare: [
+      [0, "good"], [0.2, "good"], [0.4 - eps, "good"], [0.4, "great"], [0.9, "great"], [1.2, "great"],
+    ],
+    // Rule 8: the share of work lost. Under 5% Great, 5-20% Bad (no Good band), 20% or more Risk.
+    absence: [
+      [0, "great"], [0.05 - eps, "great"], [0.05, "bad"], [0.2 - eps, "bad"], [0.2, "risk"], [1, "risk"],
+    ],
+    // Rule 12: lost share / the step's benchmark. At or better than the benchmark is Great; a value on a cut-off stays in the lower band.
+    dropoff: [
+      [0, "great"], [1, "great"], [1 + eps, "good"], [1.25, "good"], [1.25 + eps, "bad"], [1.5, "bad"], [1.5 + eps, "risk"], [5, "risk"],
+    ],
+    // Rule 13: cycle time / the process's target. Same bands.
+    cycle: [
+      [0, "great"], [1, "great"], [1 + eps, "good"], [1.25, "good"], [1.25 + eps, "bad"], [1.5, "bad"], [1.5 + eps, "risk"], [5, "risk"],
+    ],
+    // Rule 11: the share of runs that meet the measure. 80% or more Great, 50-80% Good, 20-50% Bad, under 20% Risk.
+    goals: [
+      [1, "great"], [0.8, "great"], [0.8 - eps, "good"], [0.5, "good"], [0.5 - eps, "bad"], [0.2, "bad"], [0.2 - eps, "risk"], [0, "risk"],
+    ],
   };
 
   for (const rule of RATING_RULE_IDS) {
@@ -78,6 +104,12 @@ describe("band boundaries", () => {
       for (const [value, expected] of table[rule]) expect({ value, rating: rate(rule, value).rating }).toEqual({ value, rating: expected });
     });
   }
+
+  it("rates the weeks an absence takes to recover on its own cut-offs: within 1 week Great, up to 4 Bad, longer Risk", () => {
+    const c = resolveRatingConfig();
+    const weeks = (w: number) => rateValue(c.absence.recoveryCutoffs, { average: w }, { upperInclusive: true, badMonth: false, bottleneck: false }).rating;
+    expect([0, 1, 1 + eps, 4, 4 + eps, 9].map(weeks)).toEqual(["great", "great", "bad", "bad", "risk", "risk"]);
+  });
 
   it("bandOf counts the cut-offs a value reaches", () => {
     expect(bandOf([0.7, 0.85, 0.95], 0.9, false)).toBe(2);

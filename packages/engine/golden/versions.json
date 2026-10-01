@@ -10,5 +10,11 @@
     "date": "2026-10-01",
     "note": "Rating model (issue #106): detected issues carry a four-level rating (great/good/bad/risk) instead of four severities, rated with the expected wait defaulting to 1 or 2 working days of the model's week; the golden outputs now lock every issue's rating and how it was reached. StepResult gains a p90 field; no simulated number changed.",
     "digest": "sha256:c7133e374de92920ec175088767ea9d7fa76397a74a0e46c4d3f71250d26e029"
+  },
+  {
+    "version": "1.2.0",
+    "date": "2026-10-01",
+    "note": "New analysis rules (issue #107): detected issues now include spare time, work lost at a step, too slow overall, goals met and the absence test (which replaces flagging every one-person step); the golden outputs also lock the absence test's results and the visits each step sends straight to a lost end. StepResult gains lostHere (and p90.lostShare); no simulated number changed.",
+    "digest": "sha256:6833edc65c3ed135cbc78678f53f933ae63980067cb468808a32626733ff0084"
   }
 ]

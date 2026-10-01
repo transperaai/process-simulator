@@ -72,7 +72,7 @@ export function SimulationSettings({ data }: { data: WorkspaceSettingsData }) {
           disabled={!canManage}
           hint={ownersOnly ?? "Leave blank for no overtime."}
           help={{
-            description: "How much extra, beyond a normal week, people work to keep up when their client work is more than their week. The simulation counts the extra hours and their cost. Past this limit, people show as too busy and a critical issue is raised.",
+            description: "How much extra, beyond a normal week, people work to keep up when their client work is more than their week. The simulation counts the extra hours and their cost. Past this limit, people show as too busy and an Operational risk is raised.",
             example: "At 10%, someone with a 40-hour week can work up to 4 hours extra before they count as overloaded.",
           }}
         />

@@ -3,7 +3,7 @@
 // narrow its check-constrained text and jsonb columns, and the checks at the
 // bottom fail the typecheck if they drift from it.
 
-import type { IssueSeverity, IssueType, ScenarioPatch } from "@transpera-flow/engine";
+import type { IssueType, ScenarioPatch, StoredSeverity } from "@transpera-flow/engine";
 import type { Database } from "./database.types";
 
 export type MembershipRole = "agency_admin" | "owner" | "editor" | "member" | "viewer";
@@ -497,7 +497,8 @@ export interface IssueRow {
   /** The client it is about (issue #18). */
   client_id: string | null;
   type: IssueType;
-  severity: IssueSeverity;
+  /** The stored value of the issue's rating (great = info, good = warning, bad = serious, risk = critical; see `ratingOfStored`). */
+  severity: StoredSeverity;
   title: string;
   evidence: string | null;
   /** Numbers behind the finding, e.g. a promoted detection's metrics. */

@@ -3,7 +3,7 @@
 // database checks every enumerated column again, and RLS decides who may write.
 
 import type { IssueStatus } from "@transpera-flow/db";
-import { ISSUE_SEVERITIES, ISSUE_TYPES, type IssueSeverity, type IssueType } from "@transpera-flow/engine";
+import { ISSUE_TYPES, STORED_SEVERITIES, type IssueType, type StoredSeverity } from "@transpera-flow/engine";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Same shape as the table's check: <detector>:<subject kind>:<id>. */
@@ -19,7 +19,8 @@ export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 export const isId = (v: unknown): v is string => typeof v === "string" && UUID.test(v);
 const optionalId = (v: unknown) => v === undefined || v === null || isId(v);
 const isType = (v: unknown): v is IssueType => (ISSUE_TYPES as readonly unknown[]).includes(v);
-const isSeverity = (v: unknown): v is IssueSeverity => (ISSUE_SEVERITIES as readonly unknown[]).includes(v);
+/** The stored severity values: the four ratings, as the database keeps them (see `ratingOfStored`). */
+const isSeverity = (v: unknown): v is StoredSeverity => (STORED_SEVERITIES as readonly unknown[]).includes(v);
 const isStatus = (v: unknown): v is IssueStatus => (ISSUE_STATUSES as readonly unknown[]).includes(v);
 const isTitle = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0 && v.trim().length <= MAX_TITLE;
 const isEvidence = (v: unknown) => v === null || (typeof v === "string" && v.length <= MAX_EVIDENCE);
@@ -31,7 +32,7 @@ type Links = Record<(typeof LINKS)[number], string | null>;
 /** A manually logged issue: what the "Log an issue" form sends. */
 export interface IssueInput extends Links {
   type: IssueType;
-  severity: IssueSeverity;
+  severity: StoredSeverity;
   title: string;
   evidence: string | null;
   status: IssueStatus;
@@ -41,7 +42,7 @@ export interface IssueInput extends Links {
 export interface PromoteInput extends Links {
   detected_key: string;
   type: IssueType;
-  severity: IssueSeverity;
+  severity: StoredSeverity;
   title: string;
   evidence: string | null;
   evidence_metrics: Record<string, number>;
@@ -68,7 +69,7 @@ export function parseIssueInput(input: unknown): Parsed<IssueInput> {
   if (!o) return { ok: false, error: "That issue isn't valid." };
   if (!isTitle(o.title)) return { ok: false, error: `Give the issue a title of up to ${MAX_TITLE} characters.` };
   if (!isType(o.type)) return { ok: false, error: "Pick a type." };
-  if (!isSeverity(o.severity)) return { ok: false, error: "Pick a severity." };
+  if (!isSeverity(o.severity)) return { ok: false, error: "Pick a rating." };
   const status = o.status ?? "open";
   if (!isStatus(status)) return { ok: false, error: "Pick a status." };
   const evidence = o.evidence === undefined ? null : o.evidence;

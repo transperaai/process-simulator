@@ -257,21 +257,22 @@ describe("overtime and the floor (decision D7)", () => {
   it("client work over capacity raises a critical capacity issue; within the cap, an overtime finding instead", () => {
     const none = detectIssues(overloaded(0), simulate(overloaded(0), 3, 1));
     const critical = none.find((i) => i.key === "capacity:person:ann")!;
-    expect(critical.severity).toBe("critical");
+    expect(critical.rating).toBe("risk");
     expect(critical.title).toBe("Ann: client work alone exceeds capacity");
     expect(none.some((i) => i.key.startsWith("overtime:"))).toBe(false);
 
     const within = detectIssues(overloaded(0.2), simulate(overloaded(0.2), 3, 1));
-    expect(within.find((i) => i.key === "capacity:person:ann")?.severity).not.toBe("critical");
+    expect(within.find((i) => i.key === "capacity:person:ann")?.title).not.toContain("client work alone");
     const ot = within.find((i) => i.key === "overtime:person:ann")!;
     expect(ot.type).toBe("capacity");
     expect(ot.title).toBe("Ann works 4 h/wk overtime");
-    expect(ot.severity).toBe("warning");
+    // 4 of 8 cap hours: Bad on the average; raised to Operational risk because Ann is the bottleneck.
+    expect(ot).toMatchObject({ rating: "risk", escalation: { base: "bad", bottleneck: true } });
     expect(ot.metrics.overtime_cost).toBeCloseTo(4 * 10 * 50, 6);
 
     const beyond = detectIssues(overloaded(0.05), simulate(overloaded(0.05), 3, 1));
     expect(beyond.find((i) => i.key === "capacity:person:ann")!.title).toBe("Ann: client work alone exceeds capacity even with overtime");
-    expect(beyond.find((i) => i.key === "overtime:person:ann")!.severity).toBe("serious");
+    expect(beyond.find((i) => i.key === "overtime:person:ann")!.rating).toBe("risk");
   });
 
   it("never blocks a run: a roster far beyond everyone's capacity still simulates", () => {

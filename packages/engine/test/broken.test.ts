@@ -156,7 +156,8 @@ describe("detectBrokenScenarios", () => {
       {
         key: brokenScenarioKey("s2"),
         type: "broken_scenario",
-        severity: "serious",
+        rating: "bad",
+        escalation: { base: "bad", badMonth: false, bottleneck: false },
         title: "Scenario “Automate proposals” needs attention",
         evidence:
           "Its only change no longer resolves against the model: “Audit & proposal” (hands-on time) was split into Audit and Proposal. " +

@@ -7,11 +7,11 @@
 
 import { useState, type FormEvent, type ReactNode } from "react";
 import type { IssueRow, IssueSource, IssueStatus, ScenarioRow } from "@transpera-flow/db";
-import { ISSUE_SEVERITIES, ISSUE_TYPES, type DetectedIssue, type IssueSeverity, type IssueType } from "@transpera-flow/engine";
+import { ISSUE_TYPES, RATING_LABELS, STORED_SEVERITIES, ratingOfStored, type DetectedIssue, type IssueType, type Rating, type StoredSeverity } from "@transpera-flow/engine";
 import type { Saver } from "@/lib/fields/field-controller";
 import {
   NO_FILTERS,
-  SEVERITY_LABELS,
+  RATINGS_WORST_FIRST,
   SOURCE_LABELS,
   STATUS_LABELS,
   TYPE_LABELS,
@@ -37,17 +37,17 @@ export interface Named {
   name: string;
 }
 
-const SEVERITY_STRIPE: Record<IssueSeverity, string> = {
-  critical: "before:bg-crit",
-  serious: "before:bg-serious",
-  warning: "before:bg-warn",
-  info: "before:bg-accent",
+const RATING_STRIPE: Record<Rating, string> = {
+  risk: "before:bg-crit",
+  bad: "before:bg-serious",
+  good: "before:bg-warn",
+  great: "before:bg-accent",
 };
-const SEVERITY_CHIP: Record<IssueSeverity, string> = {
-  critical: "border-crit bg-crit-soft",
-  serious: "border-serious bg-crit-soft/60",
-  warning: "border-warn bg-warn-soft",
-  info: "border-line bg-panel-2",
+const RATING_CHIP: Record<Rating, string> = {
+  risk: "border-crit bg-crit-soft",
+  bad: "border-serious bg-crit-soft/60",
+  good: "border-warn bg-warn-soft",
+  great: "border-line bg-panel-2",
 };
 
 const chip = "rounded-full border border-border px-2 py-px text-xs whitespace-nowrap";
@@ -56,7 +56,9 @@ const primary = buttonVariants({ size: "xs" });
 
 const options = (list: readonly Named[]): SelectOption[] => list.map((x) => ({ value: x.id, label: x.name }));
 const typeOptions = ISSUE_TYPES.map((t) => ({ value: t, label: TYPE_LABELS[t] }));
-const severityOptions = ISSUE_SEVERITIES.map((s) => ({ value: s, label: SEVERITY_LABELS[s] }));
+// Filters pick a rating. Stored issues keep the database's four values, so the edit and log forms send those, labelled with the rating each stands for.
+const ratingOptions = RATINGS_WORST_FIRST.map((r) => ({ value: r, label: RATING_LABELS[r] }));
+const storedRatingOptions = STORED_SEVERITIES.map((s) => ({ value: s, label: RATING_LABELS[ratingOfStored(s)] }));
 const statusOptions = ISSUE_STATUSES.map((s) => ({ value: s, label: STATUS_LABELS[s] }));
 
 export function IssuesRegister({
@@ -98,7 +100,7 @@ export function IssuesRegister({
   const entries = registerEntries(state.issues, detected ?? []);
   const shown = filterEntries(entries, { ...filters, step: stepFilter }, processId);
   const active = entries.filter((e) => entryView(e).open);
-  const count = (s: IssueSeverity) => active.filter((e) => entryView(e).severity === s).length;
+  const count = (r: Rating) => active.filter((e) => entryView(e).rating === r).length;
   const names = {
     step: new Map(steps.map((s) => [s.id, s.name])),
     person: new Map(people.map((p) => [p.id, p.name])),
@@ -125,15 +127,15 @@ export function IssuesRegister({
         <strong className="text-fg">
           {active.length} open issue{active.length === 1 ? "" : "s"}
         </strong>
-        {count("critical") ? ` · ${count("critical")} critical` : ""}
-        {count("serious") ? ` · ${count("serious")} serious` : ""}.{" "}
+        {count("risk") ? ` · ${count("risk")} operational risk` : ""}
+        {count("bad") ? ` · ${count("bad")} bad` : ""}.{" "}
         {detected === null || running ? "Checking the latest run…" : "Detected issues refresh on every run; tracked ones stay until you close them."}
       </p>
 
       <div className={`grid gap-1.5 ${layout === "page" ? "grid-cols-2 sm:grid-cols-5" : "grid-cols-2"}`}>
         {processes.length > 1 && filterSelect("Process", "process", options(processes), "All processes")}
         {filterSelect("Person", "person", options(people), "Anyone")}
-        {filterSelect("Severity", "severity", severityOptions, "Any severity")}
+        {filterSelect("Rating", "rating", ratingOptions, "Any rating")}
         {filterSelect(
           "Source",
           "source",
@@ -256,8 +258,8 @@ function IssueItem({
     <span key="type" className={chip}>
       {TYPE_LABELS[v.type]}
     </span>,
-    <span key="sev" className={`${chip} ${SEVERITY_CHIP[v.severity]}`}>
-      {SEVERITY_LABELS[v.severity]}
+    <span key="sev" className={`${chip} ${RATING_CHIP[v.rating]}`}>
+      {RATING_LABELS[v.rating]}
     </span>,
   ];
   if (v.status) meta.push(<span key="status" className={chip}>{STATUS_LABELS[v.status]}</span>);
@@ -279,7 +281,7 @@ function IssueItem({
     <li
       data-issue={v.id}
       data-source={v.source}
-      className={`relative rounded-lg border border-line bg-panel py-2 pr-2 pl-3.5 before:absolute before:inset-y-0 before:left-0 before:w-1 before:rounded-l-lg ${SEVERITY_STRIPE[v.severity]}`}
+      className={`relative rounded-lg border border-line bg-panel py-2 pr-2 pl-3.5 before:absolute before:inset-y-0 before:left-0 before:w-1 before:rounded-l-lg ${RATING_STRIPE[v.rating]}`}
     >
       <p className="text-sm font-semibold">{v.title}</p>
       {v.evidence && <p className="mt-0.5 text-xs text-fg-2">{v.evidence}</p>}
@@ -352,7 +354,7 @@ function IssueFields({
       <TextField label="Title" value={issue.title} save={save("title")} />
       <div className="grid grid-cols-2 gap-2">
         <SelectField label="Status" value={issue.status} save={save("status")} options={statusOptions} />
-        <SelectField label="Severity" value={issue.severity} save={save("severity")} options={severityOptions} />
+        <SelectField label="Rating" value={issue.severity} save={save("severity")} options={storedRatingOptions} />
         <SelectField label="Type" value={issue.type} save={save("type")} options={typeOptions} />
         <SelectField label="Owner" value={issue.owner_person_id} save={save("owner_person_id")} options={options(people)} noneLabel="No owner" />
         <SelectField label="Step" value={issue.step_id} save={save("step_id")} options={options(steps)} noneLabel="No step" />
@@ -400,7 +402,7 @@ function LogIssueForm({
     void onSubmit({
       title,
       type: get("type") as IssueType,
-      severity: get("severity") as IssueSeverity,
+      severity: get("severity") as StoredSeverity,
       status: "open" as IssueStatus,
       evidence: get("evidence").trim() || null,
       process_id: processId,
@@ -432,7 +434,7 @@ function LogIssueForm({
       </label>
       <div className="grid grid-cols-2 gap-2">
         {select("type", "Type", typeOptions, undefined, "manual")}
-        {select("severity", "Severity", severityOptions, undefined, "warning")}
+        {select("severity", "Rating", storedRatingOptions, undefined, "warning")}
         {select("step_id", "Step", options(steps), "No step", defaultStep)}
         {select("person_id", "Person", options(people), "Nobody")}
         {select("owner_person_id", "Owner", options(people), "No owner")}

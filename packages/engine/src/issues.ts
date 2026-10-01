@@ -20,7 +20,7 @@ import { eligible, type AbsenceTest } from "./absence";
 import type { EngineModel, EngineStep, SimulationResult } from "./model";
 import { pct as percentile } from "./simulate";
 import { checkSuccessMeasures, NO_SUCCESS_MEASURES, type SuccessMeasureSource } from "./success";
-import { churnRiskIssues } from "./churn-issues";
+import { churnCauseIssues, churnRiskIssues } from "./churn-issues";
 import { clientChurnMonthly, withClientGroups } from "./clients";
 import {
   WEEKS_PER_MONTH,
@@ -763,8 +763,10 @@ export function detectIssues(
     }
   }
 
-  // --- Clients whose health ends the run below 50 (docs/PRD.md §6.3.5). Not yet on the rating model (rules 9 and 10).
+  // --- Clients whose health ends the run below 50 (docs/PRD.md §6.3.5). Not yet on the rating model (rule 9).
   for (const issue of churnRiskIssues(model, result, money)) out.push({ detector: "churn", ...issue });
+  // --- Rule 10: a driver that causes 30% or more of a client group's churn.
+  for (const issue of churnCauseIssues(model, result, config, money)) out.push({ detector: "churn", ...issue });
 
   const rank = (i: { detector: Detector }) => DETECTORS.indexOf(i.detector);
   return out

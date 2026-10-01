@@ -1,7 +1,8 @@
 "use client";
 
 // The Editor's left column (issue #104): the step palette (adds after the selected step, inside its group if it is in
-// one), grouping, and a place for blocks (the block library, A51).
+// one), grouping, and the block library (issue #116): each saved block with its step count, to insert after the selection
+// or to put in place of the selected step or group.
 
 import { useState, type Dispatch, type SetStateAction } from "react";
 import { isGroup, type ProcessBundle } from "@transpera-flow/db";
@@ -9,7 +10,10 @@ import { Help } from "@/components/help";
 import { Button } from "@/components/ui/button";
 import type { Selection } from "@/components/process-canvas";
 import type { ProcessEditor } from "@/lib/editor/editor";
+import { blockStepCount, readBlock } from "@/lib/blocks/blocks";
 import { addAfter, groupProblem, groupSteps, ungroup, type PaletteKind } from "@/lib/editor/groups";
+import { Badge } from "@/components/ui/badge";
+import type { BlockTools } from "./use-blocks";
 
 const PALETTE: { kind: PaletteKind; label: string }[] = [
   { kind: "task", label: "+ Step" },
@@ -23,11 +27,14 @@ export function Palette({
   editor,
   selected,
   setSelection,
+  blocks,
 }: {
   bundle: ProcessBundle;
   editor: ProcessEditor;
   selected: Selection;
   setSelection: Dispatch<SetStateAction<Selection>>;
+  /** The block library as the Editor uses it. */
+  blocks: BlockTools;
 }) {
   const only = selected.steps.length === 1 ? bundle.steps.find((s) => s.id === selected.steps[0]) : undefined;
   // What the last add left for the person to do ("connect the new step yourself").
@@ -123,7 +130,54 @@ export function Palette({
             example="Save your “Client sign-off” group once, then insert it into every onboarding process."
           />
         </h2>
-        <p className="text-xs text-muted-foreground">Saved blocks will show here, to insert or to replace the selected group.</p>
+        <p className="text-xs text-muted-foreground">
+          Each block has <strong className="font-semibold text-fg-2">Insert</strong>
+          <Help
+            label="Insert"
+            description="Adds a copy of the block's steps right after the step you have selected, joined in, as a new group named after the block. The new steps show as added."
+            example="Select “Discovery call”, press Insert on “Client sign-off”, and its three steps appear after it."
+          />{" "}
+          and <strong className="font-semibold text-fg-2">Replace selected</strong>
+          <Help
+            label="Replace selected"
+            description="Swaps the step or group you have selected for a copy of the block. What led into the selection leads into the block, and what led out of it leads out of the block."
+            example="Select a hand-written “Chase client” step and replace it with the “Client sign-off” block."
+          />
+          .
+        </p>
+        {blocks.library.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No blocks saved yet. Select a group and press “Save this group as a block” on the right.</p>
+        ) : (
+          <ul className="flex flex-col gap-2" aria-label="Saved blocks">
+            {blocks.library.map((b) => {
+              const steps = blockStepCount(readBlock(b.steps));
+              return (
+                <li key={b.id} data-block={b.id} className="flex flex-col gap-1.5 rounded-token border border-line bg-bg px-2.5 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <b className="min-w-0 truncate text-xs">{b.name}</b>
+                    <Badge variant={b.type === "ai" ? "default" : "outline"}>{b.type === "ai" ? "AI" : "By hand"}</Badge>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {steps} {steps === 1 ? "step" : "steps"}
+                  </span>
+                  <div className="flex gap-1.5">
+                    <Button type="button" variant="outline" size="xs" disabled={!!blocks.replaceWhy} title={blocks.replaceWhy ?? undefined} onClick={() => blocks.replace(b)}>
+                      Replace selected
+                    </Button>
+                    <Button type="button" variant="outline" size="xs" onClick={() => blocks.insert(b)}>
+                      Insert
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {blocks.note?.kind === "place" && (
+          <p role="status" className={`rounded-token border px-2 py-1 text-xs ${blocks.note.tone === "ok" ? "border-good bg-good-soft" : "border-warn bg-warn-soft"}`}>
+            {blocks.note.text}
+          </p>
+        )}
       </section>
     </>
   );

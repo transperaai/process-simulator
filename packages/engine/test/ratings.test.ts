@@ -40,6 +40,7 @@ describe("defaults match docs/analysis-rules.md", () => {
       dropoff: [1, 1.25, 1.5],
       cycle: [1, 1.25, 1.5],
       success: [0.8, 0.5, 0.2],
+      driver: [0.3, 0.3, 50],
     });
     expect(DEFAULT_RATING_CONFIG.absence).toEqual({ weeks: 2, perYear: 2, recoveryCutoffs: [1, 1, 4] });
     expect(DEFAULT_RATING_CONFIG.expectedWaitDays).toEqual({ pipeline: 1, servicing: 2 });
@@ -48,7 +49,7 @@ describe("defaults match docs/analysis-rules.md", () => {
   });
 
   it("numbers the rules as the doc does", () => {
-    expect(RATING_RULE_IDS.map((id) => RATING_RULES[id].number)).toEqual([1, 3, 4, 5, 6, 7, 2, 8, 12, 13, 11]);
+    expect(RATING_RULE_IDS.map((id) => RATING_RULES[id].number)).toEqual([1, 3, 4, 5, 6, 7, 2, 8, 12, 13, 11, 10]);
   });
 });
 
@@ -96,6 +97,11 @@ describe("band boundaries", () => {
     // Rule 11: the share of runs that meet the measure. 80% or more Great, 50-80% Good, 20-50% Bad, under 20% Risk.
     success: [
       [1, "great"], [0.8, "great"], [0.8 - eps, "good"], [0.5, "good"], [0.5 - eps, "bad"], [0.2, "bad"], [0.2 - eps, "risk"], [0, "risk"],
+    ],
+    // Rule 10: a driver's share of a group's churn. Under 30% Great (nothing to report), 30% or more Bad; the last cut-off is
+    // the group health (0 to 100) below which it is Operational risk, so as a plain share it never reaches it.
+    driver: [
+      [0, "great"], [0.3 - eps, "great"], [0.3, "bad"], [1, "bad"], [50, "risk"],
     ],
   };
 

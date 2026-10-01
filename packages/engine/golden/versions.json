@@ -34,5 +34,11 @@
     "date": "2026-10-01",
     "note": "Cost per month (issue #108): detected issues carry an estimated cost per month and sort by it within a rating; the golden outputs now lock each issue's cost, and Northbeam's audit step carries a 5% lost-per-day of waiting so its wait insight is costed. The absence test also records wins lost (a weekly won series) for the cost. No simulated number changed.",
     "digest": "sha256:2558de26778528a781a223e79c1707acfd110467f7eec7f1da0639c014860071"
+  },
+  {
+    "version": "1.6.0",
+    "date": "2026-10-01",
+    "note": "Churn drivers (A56): each driver's share of churn, pressure and measured value is now reported and locked (churnCauses), rule 10 raises issues with a cost, and a northbeam-drivers golden model runs all ten drivers. No existing simulated number moved: with the default drivers the churn maths is bit-for-bit the old one. Per-client churnMonthly now includes the switched-on drivers and the market's churn factor, so A43's churn-risk costs rise under a market schedule or once a driver is on (northbeam-downturn ratings/costs); load reads only finished work, and onboarding only counts clients with servicing.",
+    "digest": "sha256:8ebb2e033f8c654ea90369a9817f5d7aab8e7dc56bd53ff4c1df809a256bd6d4"
   }
 ]

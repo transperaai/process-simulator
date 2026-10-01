@@ -5,6 +5,8 @@ import type { CitingRow } from "./evidence";
 import { partitionSteps } from "./retired";
 import type { RunRow } from "./runs";
 import type {
+  BlockRow,
+  ChurnDriverRow,
   ClientAssignmentRow,
   ClientGroupRow,
   ClientRow,
@@ -148,6 +150,16 @@ export async function loadClientGroups(db: Db, workspaceId: string): Promise<Cli
   return (rows(r) ?? []) as ClientGroupRow[];
 }
 
+/** The `ChurnDriverRow` columns. */
+export const CHURN_DRIVER_COLUMNS = "id, workspace_id, driver, name, description, example, weight, enabled, value, month, provenance" as const;
+
+/** The churn drivers a workspace has set, built-ins first (by creation order), then its own by name. */
+export async function loadChurnDrivers(db: Db, workspaceId: string): Promise<ChurnDriverRow[]> {
+  const r = await db.from("churn_drivers").select(CHURN_DRIVER_COLUMNS).eq("workspace_id", workspaceId).order("created_at").order("id");
+  // driver is check-constrained to ChurnDriverKey; provenance is jsonb.
+  return (rows(r) ?? []) as ChurnDriverRow[];
+}
+
 /** The `LeadSourceRow`, `SeasonalityRow` and `DemandSettingsRow` columns. */
 export const LEAD_SOURCE_COLUMNS = "id, workspace_id, name, volume_week, conversion_to_qualified, provenance" as const;
 export const SEASONALITY_COLUMNS = "id, workspace_id, month, multiplier, provenance" as const;
@@ -178,7 +190,7 @@ export async function loadProcessBundle(
   revisionId: string,
 ): Promise<ProcessBundle> {
   const ws = workspace.id;
-  const [revision, roles, steps, edges, people, personRoles, personSkills, personLeave, services, leadSources, seasonality, demand, roster, clientGroups, servicing, market, settingsProvenance] =
+  const [revision, roles, steps, edges, people, personRoles, personSkills, personLeave, services, leadSources, seasonality, demand, roster, clientGroups, churnDrivers, servicing, market, settingsProvenance] =
     await Promise.all([
       db.from("process_revisions").select("id, workspace_id, process_id, number, status").eq("id", revisionId).single(),
       db.from("roles").select("*").eq("workspace_id", ws),
@@ -195,6 +207,7 @@ export async function loadProcessBundle(
       db.from("demand_settings").select(DEMAND_SETTINGS_COLUMNS).eq("workspace_id", ws).maybeSingle(),
       loadClients(db, ws),
       loadClientGroups(db, ws),
+      loadChurnDrivers(db, ws),
       loadServicingContext(db, ws, process),
       loadMarket(db, ws),
       db.from("workspaces").select("provenance").eq("id", ws).maybeSingle(),
@@ -231,6 +244,7 @@ export async function loadProcessBundle(
     demand: rows(demand) as DemandSettingsRow | null,
     ...roster,
     clientGroups,
+    churnDrivers,
     ...servicing,
     ...market,
   };
@@ -333,6 +347,15 @@ export async function loadScenarios(db: Db, workspaceId: string): Promise<Scenar
   const r = await db.from("scenarios").select(SCENARIO_COLUMNS).eq("workspace_id", workspaceId).order("created_at").order("name");
   // The database checks patch's shape (private.is_scenario_patch).
   return rows(r) as unknown as ScenarioRow[];
+}
+
+export const BLOCK_COLUMNS = "id, workspace_id, name, description, type, steps, created_at, updated_at" as const;
+
+/** A workspace's block library, oldest first. */
+export async function loadBlocks(db: Db, workspaceId: string): Promise<BlockRow[]> {
+  const r = await db.from("blocks").select(BLOCK_COLUMNS).eq("workspace_id", workspaceId).order("created_at").order("id");
+  // The database checks that steps is an object with steps and edges arrays; type is check-constrained to BlockType.
+  return (rows(r) ?? []) as unknown as BlockRow[];
 }
 
 export const ISSUE_COLUMNS =

@@ -3,7 +3,7 @@
 // The Editor's right column (issue #104): the inspector for the selected step (today's Step tab), what a selected
 // group adds (first step, ungroup, save as a block), the loose ends the editor can see, and a first-principles reminder.
 
-import { useMemo, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { isGroup, type EvidenceStamp, type ProcessBundle, type SourceRow, type StepRow } from "@transpera-flow/db";
 import { Help } from "@/components/help";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { deleteSelection, stepWarnings } from "@/lib/editor/commands";
 import type { ProcessEditor } from "@/lib/editor/editor";
 import { membersOf, setGroupEntry, ungroup } from "@/lib/editor/groups";
 import type { EditorMode } from "@/lib/editor/modes";
+import type { BlockTools } from "./use-blocks";
 
 export function Inspector({
   bundle,
@@ -27,6 +28,7 @@ export function Inspector({
   sourcesHref,
   mode,
   draft,
+  blocks,
 }: {
   bundle: ProcessBundle;
   editor: ProcessEditor;
@@ -40,6 +42,8 @@ export function Inspector({
   mode: EditorMode;
   /** How the draft changes a step against live, as the inspector shows it; null when there is no draft. */
   draft: ((step: StepRow) => DraftInfo) | null;
+  /** The block library as the Editor uses it: a selected group can be saved as a block. */
+  blocks: BlockTools;
 }) {
   const step = selected.steps.length === 1 && !selected.edges.length ? bundle.steps.find((s) => s.id === selected.steps[0]) : undefined;
   const warnings = useMemo(() => stepWarnings(bundle), [bundle]);
@@ -65,7 +69,7 @@ export function Inspector({
             sourcesHref={sourcesHref}
             draft={draft ? draft(step) : null}
           />
-          {isGroup(step) && <GroupPanel bundle={bundle} editor={editor} group={step} setSelection={setSelection} />}
+          {isGroup(step) && <GroupPanel bundle={bundle} editor={editor} group={step} setSelection={setSelection} blocks={blocks} />}
           {warnings.get(step.id) && <p role="note" className="rounded-token border border-warn bg-warn-soft px-2 py-1.5 text-xs">{warnings.get(step.id)}</p>}
         </>
       ) : (
@@ -130,13 +134,16 @@ function GroupPanel({
   editor,
   group,
   setSelection,
+  blocks,
 }: {
   bundle: ProcessBundle;
   editor: ProcessEditor;
   group: StepRow;
   setSelection: Dispatch<SetStateAction<Selection>>;
+  blocks: BlockTools;
 }): ReactNode {
   const members = membersOf(bundle, group.id);
+  const [saving, setSaving] = useState(false);
   const entry = members.some((m) => m.id === group.entry_step_id) ? group.entry_step_id! : "";
   return (
     <section aria-label={`Group: ${group.name}`} className="flex flex-col gap-2 border-t border-line pt-3">
@@ -181,12 +188,27 @@ function GroupPanel({
           type="button"
           variant="outline"
           size="sm"
-          disabled
-          title="Saving a group as a block arrives with the block library."
+          disabled={!members.length || saving}
+          title={members.length ? undefined : "Put at least one step in the group first."}
+          onClick={async () => {
+            setSaving(true);
+            await blocks.saveGroup(group.id);
+            setSaving(false);
+          }}
         >
-          Save as a block
+          {saving ? "Saving…" : "Save this group as a block"}
         </Button>
+        <Help
+          label="Save this group as a block"
+          description="Saves this group's steps and the connections between them in the block library, named after the group, so you can drop a copy into any process later. The group on the map is left as it is."
+          example="Save your “Sales conversation” group, then insert it into the next client's onboarding process."
+        />
       </div>
+      {blocks.note?.kind === "save" && (
+        <p role="status" className={`rounded-token border px-2 py-1 text-xs ${blocks.note.tone === "ok" ? "border-good bg-good-soft" : "border-warn bg-warn-soft"}`}>
+          {blocks.note.text}
+        </p>
+      )}
     </section>
   );
 }

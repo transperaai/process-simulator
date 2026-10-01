@@ -465,6 +465,34 @@ export interface MarketConditionRow {
 
 export type MarketPreset = "boom" | "stable" | "soft" | "downturn";
 
+/** The ten built-in churn drivers (docs/PRD.md decision D28; A56). The engine's `BUILTIN_CHURN_DRIVER_IDS`. */
+export type ChurnDriverKey = "late" | "resp" | "onb" | "rework" | "load" | "handoff" | "results" | "tenure" | "price" | "market";
+
+/**
+ * A churn driver you have set (A56): a built-in's weight and switch, or one of
+ * your own with a name, description and example. A built-in with no row is at
+ * its default. One row per built-in per workspace.
+ */
+export interface ChurnDriverRow {
+  id: string;
+  workspace_id: string;
+  /** The built-in it sets; null for your own. */
+  driver: ChurnDriverKey | null;
+  /** Your own drivers only. */
+  name: string | null;
+  description: string | null;
+  example: string | null;
+  /** 0 to 3: 1 is normal, 0 ignores the cause. */
+  weight: number;
+  enabled: boolean;
+  /** What you enter, where the driver takes a number (the engine's `ChurnDriverSpec.valueLabel`). */
+  value: number | null;
+  /** Price changes: the month of the run the rise takes effect. */
+  month: number | null;
+  /** Provenance of weight, enabled, value and month. */
+  provenance: ProvenanceMap;
+}
+
 /** One change on the 24-month schedule: a condition from month `from_month` to `to_month` (1-based, inclusive). */
 export interface MarketScheduleRow {
   id: string;
@@ -543,6 +571,11 @@ export interface ProcessBundle {
   marketConditions?: MarketConditionRow[];
   marketSchedule?: MarketScheduleRow[];
   /**
+   * Churn drivers you have set (A56). With none, drivers are at their
+   * defaults, which is how clients churned before drivers existed.
+   */
+  churnDrivers?: ChurnDriverRow[];
+  /**
    * The client roster (issue #18). With any clients, ongoing load is per
    * client and assigned person; with none (or omitted), the interim
    * `settings.active_clients` × the roles' hours per client, as before.
@@ -578,6 +611,38 @@ export interface ScenarioRow {
   description: string | null;
   patch: ScenarioPatch[];
   parent_scenario_id: string | null;
+}
+
+/** By hand (built or saved by a person) or made by the AI ideas (A52). */
+export type BlockType = "manual" | "ai";
+
+/** A step of a block: a process's step without the revision, workspace and process it sits in (a block belongs to none). */
+export type BlockStep = Omit<StepRow, "revision_id" | "workspace_id" | "process_id">;
+/** A connection between two steps of a block. */
+export type BlockEdge = Omit<EdgeRow, "revision_id" | "workspace_id" | "process_id">;
+
+/**
+ * The steps, connections and groups of a block (`blocks.steps`). Ids are local to the bundle: inserting it into a process
+ * gives everything fresh ids. Groups are steps of kind `group` with `parent_step_id` set, as in a process; steps with no
+ * parent are the block's top level.
+ */
+export interface BlockBundle {
+  steps: BlockStep[];
+  edges: BlockEdge[];
+  /** The top-level step the block is entered at; null when it has none to choose. */
+  entry_step_id: string | null;
+}
+
+/** A saved bundle of steps that can be reused in any process or solution (A51). */
+export interface BlockRow {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description: string;
+  type: BlockType;
+  steps: BlockBundle;
+  created_at: string;
+  updated_at: string;
 }
 
 export type IssueStatus = "open" | "in_progress" | "done" | "dismissed";
@@ -731,6 +796,8 @@ export type _SchemaDriftChecks = [
   // preset is check-constrained to MarketPreset.
   Assert<Matches<Omit<MarketConditionRow, "preset">, "market_conditions">>,
   Assert<Matches<MarketScheduleRow, "market_schedule">>,
+  // driver is check-constrained to ChurnDriverKey; provenance is jsonb.
+  Assert<Matches<Omit<ChurnDriverRow, "driver" | "provenance">, "churn_drivers">>,
   Assert<Matches<WorkspaceDomainRow, "workspace_domains">>,
   Assert<Matches<AccessEmailRow, "workspace_access_emails">>,
   // patch is jsonb; ScenarioPatch[] is its checked shape.
@@ -738,6 +805,8 @@ export type _SchemaDriftChecks = [
   // evidence_metrics is jsonb; Record<string, number> is its app-side shape.
   Assert<Matches<Omit<IssueRow, "evidence_metrics">, "issues">>,
   Assert<Matches<SourceRow, "sources">>,
+  // steps is jsonb; BlockBundle is its checked shape, and the check constraint limits type to BlockType.
+  Assert<Matches<Omit<BlockRow, "steps" | "type">, "blocks">>,
   // patch, evidence and applied are jsonb; the check constraints limit the text columns.
   Assert<Matches<Omit<SuggestionRow, "patch" | "evidence" | "applied">, "suggestions">>,
 ];

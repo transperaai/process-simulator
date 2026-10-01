@@ -113,6 +113,7 @@ export {
 export {
   CHURN_DRIVER_COLUMNS,
   CLIENT_ASSIGNMENT_COLUMNS,
+  BLOCK_COLUMNS,
   CLIENT_GROUP_COLUMNS,
   CLIENT_COLUMNS,
   CLIENT_SERVICE_COLUMNS,
@@ -136,6 +137,7 @@ export {
   UNPUBLISHED_REVISION_ID,
   SERVICE_SERVICING_COLUMNS,
   type ProcessListing,
+  loadBlocks,
   loadScenarios,
   loadSources,
   loadCitingRows,

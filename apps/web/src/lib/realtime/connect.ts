@@ -23,6 +23,11 @@ export interface Connection {
 /** How long the demo's in-memory Realtime takes to deliver, like a network. */
 const DEMO_LATENCY_MS = 250;
 
+/** Block mode (issue #116): edits live in memory only, with no Realtime and no simulated colleague. Nothing is saved until the block is. */
+export function connectScratch(live: ProcessBundle): Connection {
+  return { backend: new MemoryDraftBackend(live, null), transport: null, colleague: null };
+}
+
 export function connect(mode: "live" | "demo" | "readonly", live: ProcessBundle): Connection {
   const processId = live.process.id;
   if (mode === "demo") {

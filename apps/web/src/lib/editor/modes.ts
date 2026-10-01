@@ -1,6 +1,6 @@
 // The Editor's three modes (issue #104): one screen, with the hint under the title and the save buttons depending on
-// what is being edited. Only `draft` is built here. `solution` (A49) and `block` (A51) plug into the same screen:
-// they fill in `available` and their save handlers when they land.
+// what is being edited. `draft` and `block` (A51) are built; `solution` (A49) plugs into the same screen: it
+// fills in `available` and its save handler when it lands.
 
 import { isHorizonMonths } from "@/lib/horizon";
 
@@ -41,8 +41,7 @@ export const MODE_INFO: Record<EditorMode, ModeInfo> = {
     title: () => "New block",
     hint: "Build a bundle of steps. Save it to the library and reuse it in any solution or process.",
     save: [{ id: "save-block", label: "Save to library", primary: true }],
-    available: false,
-    arrivesWith: "The block library",
+    available: true,
   },
 };
 

@@ -5,6 +5,7 @@ import type { CitingRow } from "./evidence";
 import { partitionSteps } from "./retired";
 import type { RunRow } from "./runs";
 import type {
+  BlockRow,
   ChurnDriverRow,
   ClientAssignmentRow,
   ClientGroupRow,
@@ -346,6 +347,15 @@ export async function loadScenarios(db: Db, workspaceId: string): Promise<Scenar
   const r = await db.from("scenarios").select(SCENARIO_COLUMNS).eq("workspace_id", workspaceId).order("created_at").order("name");
   // The database checks patch's shape (private.is_scenario_patch).
   return rows(r) as unknown as ScenarioRow[];
+}
+
+export const BLOCK_COLUMNS = "id, workspace_id, name, description, type, steps, created_at, updated_at" as const;
+
+/** A workspace's block library, oldest first. */
+export async function loadBlocks(db: Db, workspaceId: string): Promise<BlockRow[]> {
+  const r = await db.from("blocks").select(BLOCK_COLUMNS).eq("workspace_id", workspaceId).order("created_at").order("id");
+  // The database checks that steps is an object with steps and edges arrays; type is check-constrained to BlockType.
+  return (rows(r) ?? []) as unknown as BlockRow[];
 }
 
 export const ISSUE_COLUMNS =

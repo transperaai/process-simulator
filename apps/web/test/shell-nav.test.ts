@@ -60,7 +60,7 @@ describe("workspaceNav: the active item", () => {
     for (const [path, key] of [
       ["/w/s/issues", "issues"],
       ["/w/s/solutions", "solutions"],
-      ["/w/s/library", "library"],
+      ["/w/s/blocks", "library"],
       ["/w/s/suggestions", "suggestions"],
       ["/w/s/sources", "sources"],
     ] as const)
@@ -86,7 +86,7 @@ describe("workspaceNav: hrefs", () => {
       "/w/s/processes",
       "/w/s/issues",
       "/w/s/solutions",
-      "/w/s/library",
+      "/w/s/blocks",
       "/w/s/suggestions",
       "/w/s/sources",
       "/w/s/people",
@@ -98,7 +98,6 @@ describe("workspaceNav: hrefs", () => {
     const soon = flatItems(nav("/w/s")).filter((i) => i.soon).map((i) => [i.key, i.soon]);
     expect(soon).toEqual([
       ["solutions", "A49"],
-      ["library", "A51"],
     ]);
   });
 });

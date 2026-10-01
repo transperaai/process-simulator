@@ -29,7 +29,7 @@ import { useRealtime } from "@/lib/realtime/use-realtime";
 import { newlyBroken, retiredSteps } from "@/lib/scenarios/broken";
 import { useSimulation } from "@/lib/sim/use-simulation";
 import { simulate as runSimulation, type EngineModel } from "@transpera-flow/engine";
-import { verdictArea, type SolutionIssue } from "@/lib/solutions/area";
+import { currentArea, verdictArea, type SolutionIssue } from "@/lib/solutions/area";
 import { changedStepIds, solutionCopy } from "@/lib/solutions/bundle";
 import { addDemoSolution } from "@/lib/solutions/demo";
 import { parseSolutionInput, type SaveSolutionResult } from "@/lib/solutions/save";
@@ -167,7 +167,9 @@ export function EditorView({
   const [solutionName, setSolutionName] = useState("");
   const [solutionSaving, setSolutionSaving] = useState(false);
   const [solutionError, setSolutionError] = useState<string | null>(null);
-  const area = useMemo(() => (issue ? verdictArea(working.steps, issue) : []), [issue, working.steps]);
+  const added = useMemo(() => [...diff.steps.values()].filter((c) => c.kind === "added").map((c) => c.id), [diff]);
+  const outlined = useMemo(() => (solutionMode && issue ? currentArea(issue, working.steps, added) : null), [solutionMode, issue, working.steps, added]);
+  const area = useMemo(() => (issue ? verdictArea(working.steps, issue, added) : []), [issue, working.steps, added]);
   const saveSolution = async () => {
     setSolutionError(null);
     if (!solutionName.trim()) return setSolutionError("Name the solution first.");
@@ -182,7 +184,7 @@ export function EditorView({
     if (issue) {
       const model = workingModel.model;
       const current = pair?.draft.result && !stale ? pair.draft.result : null;
-      auto = model ? checkTarget({ target: issue.target, model, result: current ?? runSimulation(model, 30, 1), area: verdictArea(now.steps, issue) }) : null;
+      auto = model ? checkTarget({ target: issue.target, model, result: current ?? runSimulation(model, 30, 1), area: verdictArea(now.steps, issue, changedStepIds(changes).filter((id) => changes.steps.get(id)?.kind === "added")) }) : null;
     }
     const input = {
       name: solutionName,
@@ -239,10 +241,12 @@ export function EditorView({
   const stale = !!asked && (asked.draftKey !== workingKey || asked.liveKey !== liveKey);
 
   // Solution mode: the automatic verdict for the run on screen, against the issue's target.
+  const draftResult = draftSim.status === "done" ? draftSim.run.result : null;
+  const liveResult = liveSim.status === "done" ? liveSim.run.result : null;
   const verdict = useMemo(() => {
-    if (!solutionMode || !issue || stale || !pair?.draft.result || !pair.live?.result) return null;
-    return { issue, result: checkTarget({ target: issue.target, model: pair.draft.model, result: pair.draft.result, area }) };
-  }, [solutionMode, issue, stale, pair, area]);
+    if (!solutionMode || !issue || stale || !asked || !draftResult || !asked.live || !liveResult) return null;
+    return { issue, result: checkTarget({ target: issue.target, model: asked.draft, result: draftResult, area }) };
+  }, [solutionMode, issue, stale, asked, draftResult, liveResult, area]);
 
   const breaks = useMemo(
     () =>
@@ -316,7 +320,7 @@ export function EditorView({
       <div className="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-[264px_minmax(0,1fr)_320px] lg:grid-rows-[minmax(0,1fr)]">
         <aside aria-label="Palette" className="flex flex-col gap-4 border-b border-line bg-panel p-3.5 lg:overflow-y-auto lg:border-r lg:border-b-0">
           <Palette bundle={working} editor={editor} selected={selected} setSelection={setSelection} blocks={blockTools} />
-          {solutionMode && <IssueArea issue={issue} steps={working.steps} onSelect={select} />}
+          {solutionMode && <IssueArea issue={issue} steps={[...live.steps, ...working.steps]} present={new Set(working.steps.map((s) => s.id))} onSelect={select} />}
           {mode === "demo" && (
             <p role="note" className="text-xs text-muted-foreground">
               {blockMode
@@ -357,7 +361,7 @@ export function EditorView({
               onSelectionChange={setSelection}
               commands={commands}
               diff={marksChanges ? diff : null}
-              highlight={solutionMode && issue ? issue.stepIds : null}
+              highlight={outlined}
               onRestore={restore}
               savedLabel={scratch ? "Edited" : hasDraft ? "Saved to draft" : "Saved"}
               hideAdd

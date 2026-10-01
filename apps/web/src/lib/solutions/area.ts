@@ -58,7 +58,27 @@ export function leafIds(steps: readonly Pick<StepRow, "id" | "kind" | "parent_st
   return [...out];
 }
 
-/** The steps the verdict reads: the issue's own, or (an issue about the whole process) every working step. */
-export function verdictArea(steps: readonly Pick<StepRow, "id" | "kind" | "parent_step_id">[], issue: Pick<SolutionIssue, "stepIds" | "whole">): string[] {
-  return leafIds(steps, issue.whole ? steps.filter((s) => s.parent_step_id === null).map((s) => s.id) : issue.stepIds);
+/**
+ * The steps that are the issue's area right now. They are the issue's own steps while they are in the map. When the solution
+ * has taken one out (replaced it with a block, say), what the solution added stands in for it, so the outline and the verdict
+ * follow the area to what now does that work.
+ */
+export function currentArea(
+  issue: Pick<SolutionIssue, "stepIds" | "whole">,
+  steps: readonly Pick<StepRow, "id">[],
+  added: readonly string[],
+): string[] {
+  if (issue.whole) return [];
+  const here = new Set(steps.map((s) => s.id));
+  const present = issue.stepIds.filter((id) => here.has(id));
+  return present.length === issue.stepIds.length ? present : [...new Set([...present, ...added.filter((id) => here.has(id))])];
+}
+
+/** The steps the verdict reads: the issue's area, or (an issue about the whole process) every working step. */
+export function verdictArea(
+  steps: readonly Pick<StepRow, "id" | "kind" | "parent_step_id">[],
+  issue: Pick<SolutionIssue, "stepIds" | "whole">,
+  added: readonly string[] = [],
+): string[] {
+  return leafIds(steps, issue.whole ? steps.filter((s) => s.parent_step_id === null).map((s) => s.id) : currentArea(issue, steps, added));
 }

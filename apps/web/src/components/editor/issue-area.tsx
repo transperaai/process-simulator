@@ -10,10 +10,13 @@ import type { SolutionIssue } from "@/lib/solutions/area";
 export function IssueArea({
   issue,
   steps,
+  present,
   onSelect,
 }: {
   issue: SolutionIssue | null;
   steps: readonly Pick<StepRow, "id" | "name">[];
+  /** The steps still in the solution's map: one it has replaced can't be selected. */
+  present?: ReadonlySet<string>;
   /** Select a step on the map. */
   onSelect: (stepId: string) => void;
 }) {
@@ -44,7 +47,9 @@ export function IssueArea({
                 <li key={id}>
                   <button
                     type="button"
-                    className="rounded-full border border-crit px-2 py-0.5 text-xs text-crit hover:bg-crit-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-crit"
+                    className="rounded-full border border-crit px-2 py-0.5 text-xs text-crit hover:bg-crit-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-crit disabled:line-through disabled:opacity-60"
+                    disabled={present ? !present.has(id) : false}
+                    title={present && !present.has(id) ? "Your solution has replaced this step." : undefined}
                     onClick={() => onSelect(id)}
                   >
                     {names.get(id) ?? "Step"}

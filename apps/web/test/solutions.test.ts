@@ -4,10 +4,10 @@ import { simulate, SEED_STRIDE } from "@transpera-flow/engine";
 import { diffBundles } from "@/lib/drafts/diff";
 import { withDemoGroups, DEMO_GROUP_IDS } from "@/lib/demo/nested";
 import { buildSolutionHref, newSolutionHref, solutionEditorHref } from "@/lib/solutions/links";
-import { issueProcessId, leafIds, solutionIssueOf, verdictArea } from "@/lib/solutions/area";
+import { currentArea, issueProcessId, leafIds, solutionIssueOf, verdictArea } from "@/lib/solutions/area";
 import { bundleFromSolution, changedStepIds, solutionCopy, solutionProblem } from "@/lib/solutions/bundle";
 import { parseSolutionInput } from "@/lib/solutions/save";
-import { checkTarget, formatSpan, measureKind, parseGoal } from "@/lib/solutions/verdict";
+import { checkTarget, formatSpan, formatSpanLike, measureKind, parseGoal } from "@/lib/solutions/verdict";
 import { demoBundle } from "@/lib/sources/demo";
 
 // Solutions (issue #114, A49): the automatic verdict, the stored copy, the issue area and the links into the Editor.
@@ -47,6 +47,14 @@ describe("reading a goal", () => {
     expect(measureKind("Reports past the 5th working day", false)).toBeNull();
     expect(measureKind("", true)).toBeNull();
     expect(measureKind(null, true)).toBeNull();
+  });
+
+  it("shows a time in the unit the goal was written in", () => {
+    expect(formatSpanLike(9, 40, "hours")).toBe("9 h");
+    expect(formatSpanLike(9, 40, "days")).toBe("1.1 d");
+    expect(formatSpanLike(0.5, 40, "minutes")).toBe("30 min");
+    expect(formatSpanLike(80, 40, "weeks")).toBe("2 w");
+    expect(formatSpanLike(9, 40, "none")).toBe("1.1 d");
   });
 
   it("shows a span as hours under a working day, and days after", () => {
@@ -161,6 +169,19 @@ describe("the issue area", () => {
     expect(leafIds(nested.steps, [ids.start, ids.won])).toEqual([]);
     expect(verdictArea(nested.steps, { stepIds: [DEMO_GROUP_IDS.conversation], whole: false }).sort()).toEqual([ids.qualify, ids.discovery].sort());
     expect(verdictArea(nested.steps, { stepIds: [], whole: true }).length).toBeGreaterThan(5);
+  });
+
+  it("follows the area to what the solution put in place of a step it took out", () => {
+    const base = { stepIds: [ids.audit], whole: false };
+    // Nothing taken out: the issue's own steps.
+    expect(currentArea(base, nested.steps, ["new1"])).toEqual([ids.audit]);
+    // The step was replaced: what the solution added stands in for it (only what is in the map).
+    const without = nested.steps.filter((s) => s.id !== ids.audit);
+    const added = { ...nested.steps[0]!, id: "new1" };
+    expect(currentArea(base, [...without, added], ["new1", "gone"])).toEqual(["new1"]);
+    expect(verdictArea([...without, added], base, ["new1"])).toEqual(["new1"]);
+    // An issue about the whole process has no particular steps to outline.
+    expect(currentArea({ stepIds: [], whole: true }, nested.steps, ["new1"])).toEqual([]);
   });
 
   it("takes the issue's process from its first link", () => {

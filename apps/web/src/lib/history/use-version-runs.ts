@@ -25,7 +25,7 @@ export function useVersionRuns({
   /** The projection length in weeks, or null for each model's own. */
   weeks: number | null;
   loadModel?: (revisionId: string) => Promise<VersionModel>;
-}): { entries: Record<string, RunEntry>; run: (revisionId: string) => void; horizonWeeks: number | null } {
+}): { entries: Record<string, RunEntry>; run: (revisionId: string) => void } {
   const [results, setResults] = useState<Record<string, RunEntry>>({});
   const [asked, setAsked] = useState<string[]>([]);
   const [fetched, setFetched] = useState<Record<string, VersionModel>>({});
@@ -51,8 +51,10 @@ export function useVersionRuns({
     if (!next) return;
     busy.current = true;
     const k = key(next);
-    setResults((r) => ({ ...r, [k]: { status: "running" } }));
     void (async () => {
+      // Marked running once the effect has returned, so the rows say so while it works.
+      await Promise.resolve();
+      if (alive.current) setResults((r) => ({ ...r, [k]: { status: "running" } }));
       let entry: RunEntry;
       let cancelled = false;
       try {
@@ -95,5 +97,5 @@ export function useVersionRuns({
     }
     return out;
   }, [results, weeks]);
-  return { entries, run, horizonWeeks: weeks };
+  return { entries, run };
 }

@@ -98,7 +98,8 @@ export async function loadVersionModel(processId: string, revisionId: string): P
   if (!workspace) return null;
   const row = (await listProcesses(db, workspace.id)).find((p) => p.id === processId);
   if (!row) return null;
-  const { draft_revision_id: _draft, ...processRow } = row;
+  const { draft_revision_id: draftId, ...processRow } = row;
+  void draftId;
   const bundle = await loadProcessBundle(db, workspace, processRow, revisionId);
   return modelOf(bundle, { id: revisionId, number: revision.number }, [...bundle.steps, ...(bundle.retired ?? [])], bundle.edges);
 }

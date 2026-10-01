@@ -127,3 +127,10 @@ Checked against PGlite (PostgreSQL 17 compiled to WASM) and against Postgres 16 
 ## Cost per month (issue #108, migration 20261113000000)
 
 Verified only against plain Postgres (the db test harness), not against Supabase: `public.create_workspace` now defaults new workspaces to `AUD`. It is `security invoker`, as before, and was redefined with `create or replace` from the 20261021000000 copy, so the migration re-applies its grants.
+
+## Process history (issue #105, migration 20261118000000)
+
+Verified only against plain Postgres (the db test harness, `process-history.test.ts`), not against Supabase:
+
+- `revision_history` is `security definer` and reads `auth.users` and `audit_log` (both closed to ordinary members). It checks `can_read_workspace` itself and shows an email only to someone who manages the workspace. On Supabase, check that the function owner can read `auth.users`.
+- `restore_version` and `duplicate_version` are `security invoker` and copy rows with `jsonb_populate_record`, like `open_draft`. The deferred nesting trigger (`nesting_is_a_tree`) runs at commit, so a bad copy is refused when the RPC's transaction commits.

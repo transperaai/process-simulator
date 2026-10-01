@@ -1,6 +1,6 @@
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { detectIssues, simulate } from "@transpera-flow/engine";
+import { absenceTest, detectIssues, simulate } from "@transpera-flow/engine";
 import {
   NORTHBEAM_PROCESS_ID,
   NORTHBEAM_WORKSPACE_ID,
@@ -70,7 +70,7 @@ describe("seed", () => {
 
   it("the promoted issue's key is one the engine detects on Northbeam", () => {
     const model = toEngineModel(northbeamBundle(), { startDate: "2026-10-05" });
-    const keys = detectIssues(model, simulate(model, 30, 1)).map((i) => i.key);
+    const keys = detectIssues(model, simulate(model, 30, 1), {}, { absence: absenceTest(model) }).map((i) => i.key);
     for (const issue of northbeamIssues().filter((i) => i.detected_key)) expect(keys).toContain(issue.detected_key);
   });
 });

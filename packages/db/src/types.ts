@@ -159,6 +159,14 @@ export interface StepRow {
   notes: string | null;
   /** Target hours for one visit to the step (queue + hands-on + wait); visits over it are SLA breaches. */
   sla_hours: number | null;
+  /** How long an item may queue for a person before it counts as waiting too long, in hours; null: the workspace default for the step's kind. */
+  expected_wait_hours: number | null;
+  /** The share of items that go cold for each working day they wait here (0 to 1); null: none assumed. For the cost of waiting. */
+  lost_per_day_waiting: number | null;
+  /** The share of the items leaving the step that may be lost here and still be fine (0 to 1); null: the step isn't rated for work lost. */
+  dropoff_benchmark: number | null;
+  /** Set on the process's start step: how long an item should take end to end, in working hours; null: the process isn't rated. */
+  target_cycle_hours: number | null;
   /** Items sitting at this step now; null when not entered (docs/PRD.md §6.3.1). */
   current_wip: number | null;
   x: number;

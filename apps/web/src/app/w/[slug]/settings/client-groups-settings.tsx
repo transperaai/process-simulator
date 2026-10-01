@@ -109,6 +109,7 @@ export function ClientGroupsSettings({ data }: { data: WorkspaceSettingsData }) 
                   <NumberField
                     label={`${sv.name}: ${HELP[GROUP_FIELD[f]].label}`}
                     hideLabel
+                    help={HELP[GROUP_FIELD[f]]}
                     value={group ? Number(group[f]) : null}
                     save={saver(sv, f)}
                     scale={scale}
@@ -148,6 +149,7 @@ export function ClientGroupsSettings({ data }: { data: WorkspaceSettingsData }) 
         <div className="grid max-w-md gap-4 sm:grid-cols-2">
           <NumberField
             label="From"
+            help={{ description: "The low end of the client health that is normal for a business like yours.", example: "70 for a small SEO and PPC agency." }}
             value={workspace.settings.client_health_benchmark_low ?? null}
             save={(base, next) => saveClientHealthBenchmark(workspace.id, "low", base, next)}
             optional
@@ -159,6 +161,7 @@ export function ClientGroupsSettings({ data }: { data: WorkspaceSettingsData }) 
           />
           <NumberField
             label="To"
+            help={{ description: "The high end of the client health that is normal for a business like yours.", example: "80 for a small SEO and PPC agency." }}
             value={workspace.settings.client_health_benchmark_high ?? null}
             save={(base, next) => saveClientHealthBenchmark(workspace.id, "high", base, next)}
             optional

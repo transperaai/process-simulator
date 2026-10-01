@@ -21,7 +21,17 @@ touchpoints, the bottleneck role, step and person, utilisation per role (total w
 pipeline, client, servicing and overtime shares) and per person, each step's arrivals, departures, queue, wait,
 WIP and SLA breaches, each roster client's final health, churn and at-risk shares, and the rating of every detected
 issue with how it was reached (the average's band, a bad month, the bottleneck), so a moved cut-off or escalator shows
-as a baseline change.
+as a baseline change. They also lock the absence test (`absenceTest` at its defaults: who is tested, work lost, weeks
+to recover, missed client tasks) and each step's visits sent straight to a lost end.
+
+### The absence test and the performance targets
+
+The absence test (docs/analysis-rules.md rule 8) is a separate pass, not part of `simulate`, so the baseline stays
+inside docs/PRD.md §6.7. It costs (people tested + 1) × 10 replications: about 60% of a baseline run for the seeded
+Northbeam (two people tested: ~160 ms beside a ~270 ms baseline on a loaded machine) and 90% for Larkspur (four).
+It is limited to people who are the sole holder of a step, at most 8, and runs in its own worker after the baseline
+(`apps/web/src/lib/sim/absence.ts`), so the insight panel shows the other rules first and adds "only one person can do
+it" when the pass returns. `new-rules.test.ts` checks the pass alone stays under the seeded target (250 ms).
 
 The baselines are `packages/engine/golden/<model>.json`, one metric per line so a diff reads as a list of what
 moved. `golden/versions.json` is the ledger: every approved version, the date, why the numbers moved, and a sha256

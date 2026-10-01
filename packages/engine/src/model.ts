@@ -239,10 +239,23 @@ export interface EngineStep {
   /**
    * How long an item may queue for a person before it counts as waiting too
    * long, in hours (docs/analysis-rules.md rule 5). Omitted: the rating
-   * config's default for the step's kind (8 h for pipeline steps, 16 h for
-   * servicing steps). It rates the report; it doesn't change the simulation.
+   * config's default for the step's kind (1 working day for pipeline steps, 2
+   * for servicing steps). It rates the report; it doesn't change the simulation.
    */
   expectedWaitHours?: number;
+  /**
+   * The share of items that go cold for each working day they wait here
+   * (0.05 is 5% a day), for the cost of waiting (docs/analysis-rules.md rule
+   * 5, A43). It prices the report; it doesn't change the simulation.
+   */
+  lostPerDayWaiting?: number;
+  /**
+   * The share of the items leaving this step that may be lost here and still
+   * be fine (0.3 is 30%), for "work lost at a step" (rule 12). Omitted: the
+   * rule doesn't rate this step. It rates the report; it doesn't change the
+   * simulation.
+   */
+  dropoffBenchmark?: number;
   next: EngineEdge[];
 }
 
@@ -367,6 +380,12 @@ export interface EngineModel {
    */
   warmupWeeks?: number;
   /**
+   * How long an item should take end to end, in working hours (rule 13, "too
+   * slow overall"). Omitted: the rule doesn't rate this process. It rates the
+   * report; it doesn't change the simulation.
+   */
+  targetCycleHours?: number;
+  /**
    * Groups by id (see `EngineGroup`), for steps inside groups or child
    * processes. Omitted: a flat model, simulated exactly as before groups existed.
    */
@@ -432,12 +451,18 @@ export interface StepResult {
   /** Of those, visits that took longer than the step's `sla` (0 when it has none). */
   slaBreaches: number;
   /**
+   * Visits that went straight from this step to a lost end (work lost here,
+   * docs/analysis-rules.md rule 12). Divided by `departures`. Absent from runs
+   * saved before the rule.
+   */
+  lostHere?: number;
+  /**
    * The 90th percentile across replications of the step's average wait, of its
    * share of visits repeated (`reworks / departures`) and of its share of
    * visits over the SLA: a bad month, for the rating model's escalator
    * (ratings.ts). Absent from runs saved before the rating model.
    */
-  p90?: { avgWait: number; reworkShare: number; slaBreachShare: number };
+  p90?: { avgWait: number; reworkShare: number; slaBreachShare: number; lostShare?: number };
 }
 
 /**
@@ -511,6 +536,14 @@ export interface ServiceCounts {
   lost: number;
 }
 
+/** Weekly samples of one replication, taken at each weekly tick when asked for (the absence test). */
+export interface WeeklySamples {
+  /** Queue length at each step at the end of week 1, 2, ... */
+  queue: Record<string, number[]>;
+  /** Cumulative completed items (won, done, and servicing tasks on time or late) at the end of each week. */
+  completed: number[];
+}
+
 export interface ReplicationResult {
   /** Entities reaching their first `won` end. */
   won: number;
@@ -547,6 +580,8 @@ export interface ReplicationResult {
    * during the warm-up or as starting WIP have negative times.
    */
   entities: TraceEntity[] | null;
+  /** Present only when the run was asked to sample weekly (see `WeeklySamples`). */
+  weekly?: WeeklySamples;
   H: number;
   /** Warm-up simulated before t = 0 and discarded. */
   warmupHours: number;

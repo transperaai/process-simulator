@@ -54,9 +54,9 @@ run their old logic, mapped onto ratings until their tickets land. Choices the s
 - The new findings reuse the stored issue types: spare time is `capacity`, absence `spof`, work lost and goals
   `failure`, too slow `delay`. No migration to the `issues.type` check.
 
-### To confirm with Austin
+### Confirmed by Austin (1 Oct)
 
-Choices made while building A41 that the spec didn't settle:
+Choices made while building A41 and A42 that the spec didn't settle, all confirmed:
 
 - (a) A value exactly on a cut-off goes to the higher band, so exactly 70% busy is Good and exactly 95%, 20% or 25% is
   Operational risk. Rule 5 is the exception ("within 1x", "up to 1.5x"): a value on a cut-off stays in the lower band.

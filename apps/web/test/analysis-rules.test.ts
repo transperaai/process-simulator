@@ -110,7 +110,7 @@ describe("re-rating the latest run", () => {
     const base = tally(rerate(model, result, {}));
     // Switch every rating-model rule off: those findings go; the legacy detectors' findings stay.
     let off: AnalysisSettings = {};
-    for (const id of ["busy", "overtime", "queue", "wait", "rework", "sla"] as const) off = setRuleEnabled(off, id, false);
+    for (const id of ["busy", "overtime", "queue", "wait", "rework", "sla", "spare", "spof", "dropoff", "cycle", "success"] as const) off = setRuleEnabled(off, id, false);
     const none = tally(rerate(model, result, off));
     expect(Object.values(none.byRule).reduce((a, b) => a + (b ?? 0), 0)).toBe(0);
     expect(none.total).toBeLessThan(base.total);

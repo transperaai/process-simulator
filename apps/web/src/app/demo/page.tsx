@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { bundleForProcess, northbeamIssues, northbeamScenarios, processesOf } from "@transpera-flow/db";
 import { Info } from "lucide-react";
 import { ProcessNav } from "@/components/process-nav";
-import { ProcessView } from "@/components/process-view";
+import { ProcessPage } from "@/components/process-page";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { withDemoGroups } from "@/lib/demo/nested";
 import { demoBundle, demoSources } from "@/lib/sources/demo";
@@ -19,25 +19,28 @@ export default async function DemoPage(props: PageProps<"/demo">) {
   const pipeline = nested === "1" ? withDemoGroups(demoBundle()) : demoBundle();
   const bundle = typeof process === "string" ? bundleForProcess(pipeline, process) : pipeline;
   if (!bundle) notFound();
-  const processes = processesOf(pipeline).map((p) => ({ id: p.id, name: p.name, kind: p.kind, live: true, draft: false }));
+  const processes = processesOf(pipeline).map((p) => ({ id: p.id, name: p.name, kind: p.kind, live: true, draft: false, parentId: p.parent_process_id }));
   const hrefs = Object.fromEntries(processes.map((p) => [p.id, p.id === pipeline.process.id ? "/demo" : `/demo?process=${p.id}`]));
+  const query = typeof process === "string" ? `?process=${process}` : nested === "1" ? "?nested=1" : "";
   return (
-    <ProcessView
+    <ProcessPage
       key={bundle.process.id}
-      live={bundle}
-      draft={null}
+      bundle={bundle}
+      liveVersion={bundle.revision.number}
       mode="demo"
       scenarios={northbeamScenarios()}
       issues={northbeamIssues()}
       sources={demoSources()}
-      editHref={`/demo/edit${typeof process === "string" ? `?process=${process}` : nested === "1" ? "?nested=1" : ""}`}
+      editHref={`/demo/edit${query}`}
+      historyHref={`/demo/history${query}`}
+      inside={processes.filter((p) => p.parentId === bundle.process.id).map((p) => ({ id: p.id, name: p.name, href: hrefs[p.id]! }))}
       processPicker={<ProcessNav processes={processes} current={bundle.process.id} hrefs={hrefs} />}
       notice={
         <Alert role="note">
           <Info />
           <AlertDescription className="text-xs leading-relaxed">
             <p>
-              Demo mode: sample data from the seed fixtures, not a database. This map is for reading: press Edit process to open the
+              Demo mode: sample data from the seed fixtures, not a database. This page is for reading: press Open in Editor to open the
               Editor, where edits go into a draft you can simulate against live, publish or discard. Move levers, save scenarios and log
               issues here too. Everything stays in this tab and is gone when you reload.
             </p>

@@ -81,6 +81,7 @@ const statusOptions = ISSUE_STATUSES.map((s) => ({ value: s, label: STATUS_LABEL
 
 export function IssuesRegister({
   layout,
+  view = "all",
   state,
   detected,
   running,
@@ -100,6 +101,12 @@ export function IssuesRegister({
   currency: string;
   /** `rail`: narrow, beside the map; `page`: the full register screen. */
   layout: "rail" | "page";
+  /**
+   * `all`: insights and issues together, with filters (the register and the map's rail). `insights`: only what the run
+   * found and nobody has confirmed. `issues`: only confirmed ones, with a button to log one by hand. The last two are
+   * the process page's sections: they list this process's, with no filters.
+   */
+  view?: "all" | "insights" | "issues";
   state: IssuesState;
   /** This run's detections; null until the first run finishes. */
   detected: DetectedIssue[] | null;
@@ -121,8 +128,9 @@ export function IssuesRegister({
 }) {
   const [filters, setFilters] = useState<IssueFilters>(NO_FILTERS);
   const [logging, setLogging] = useState(false);
-  const entries = registerEntries(state.issues, detected ?? []);
-  const shown = filterEntries(entries, { ...filters, step: stepFilter }, processId);
+  const sectioned = view !== "all";
+  const entries = registerEntries(state.issues, detected ?? []).filter((e) => !sectioned || e.kind === (view === "insights" ? "detected" : "tracked"));
+  const shown = filterEntries(entries, { ...filters, step: stepFilter, ...(sectioned ? { process: processId } : {}) }, processId);
   const active = entries.filter((e) => entryView(e).open);
   const count = (r: Rating) => active.filter((e) => entryView(e).rating === r).length;
   const names = {
@@ -148,14 +156,27 @@ export function IssuesRegister({
   return (
     <section aria-label="Issues register" className="flex min-w-0 flex-col gap-2" data-issues-register>
       <p className="text-xs text-fg-2" aria-live="polite">
-        <strong className="text-fg">
-          {active.length} open issue{active.length === 1 ? "" : "s"}
-        </strong>
-        {count("risk") ? ` · ${count("risk")} operational risk` : ""}
-        {count("bad") ? ` · ${count("bad")} bad` : ""}.{" "}
-        {detected === null || running ? "Checking the latest run…" : "Detected issues refresh on every run; tracked ones stay until you close them."}
+        {sectioned ? (
+          <>
+            <strong className="text-fg">
+              {shown.filter((e) => entryView(e).open).length} {view === "insights" ? "insight" : "open issue"}
+              {shown.filter((e) => entryView(e).open).length === 1 ? "" : "s"}
+            </strong>
+            {detected === null || running ? ". Checking the latest run…" : view === "insights" ? " from the latest run, not confirmed yet." : "."}
+          </>
+        ) : (
+          <>
+            <strong className="text-fg">
+              {active.length} open issue{active.length === 1 ? "" : "s"}
+            </strong>
+            {count("risk") ? ` · ${count("risk")} operational risk` : ""}
+            {count("bad") ? ` · ${count("bad")} bad` : ""}.{" "}
+            {detected === null || running ? "Checking the latest run…" : "Detected issues refresh on every run; tracked ones stay until you close them."}
+          </>
+        )}
       </p>
 
+      {!sectioned && (
       <div className={`grid gap-1.5 ${layout === "page" ? "grid-cols-2 sm:grid-cols-5" : "grid-cols-2"}`}>
         {processes.length > 1 && filterSelect("Process", "process", options(processes), "All processes")}
         {filterSelect("Person", "person", options(people), "Anyone")}
@@ -179,6 +200,7 @@ export function IssuesRegister({
           </NativeSelect>
         </label>
       </div>
+      )}
       {stepFilter && (
         <p className="flex items-center gap-2 text-xs">
           <span className={chip}>On {names.step.get(stepFilter) ?? "a removed step"}</span>
@@ -197,7 +219,7 @@ export function IssuesRegister({
         </p>
       )}
 
-      {canEdit &&
+      {canEdit && view !== "insights" &&
         (logging ? (
           <LogIssueForm
             steps={steps}
@@ -213,7 +235,7 @@ export function IssuesRegister({
           />
         ) : (
           <button type="button" className={`${button} self-start`} onClick={() => setLogging(true)}>
-            + Log an issue
+            {view === "issues" ? "+ New issue" : "+ Log an issue"}
           </button>
         ))}
 

@@ -60,7 +60,7 @@ function groups(base: string, rest: string, counts: NavCounts, extra: { people: 
   ];
   // People is a section of Settings until it gets its own page, so it never shows as the current page.
   if (extra.people) company.push({ key: "people", label: "People", href: extra.people, active: false, icon: "people" });
-  if (extra.settings) company.push(item({ key: "settings", label: "Settings", path: "/settings", icon: "settings", active: rest === "/settings" }));
+  if (extra.settings) company.push(item({ key: "settings", label: "Settings", path: "/settings", icon: "settings", active: rest === "/settings" || rest === "/settings/rules" }));
   if (extra.access) company.push(item({ key: "access", label: "Access", path: "/settings/access", icon: "access" }));
   return [
     {

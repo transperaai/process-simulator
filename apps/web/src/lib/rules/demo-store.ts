@@ -20,6 +20,9 @@ export function setDemoAnalysisRules(next: AnalysisSettings): void {
   for (const l of listeners) l();
 }
 
+/** The demo's rules as they are now, for a page that starts from them. */
+export const getDemoAnalysisRules = (): AnalysisSettings => state;
+
 /** The demo's rules, re-rendering when they change. */
 export function useDemoAnalysisRules(): AnalysisSettings {
   return useSyncExternalStore(subscribe, () => state, () => EMPTY);

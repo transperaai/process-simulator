@@ -54,6 +54,7 @@ describe("workspaceNav: the active item", () => {
   });
   it("is Overview on its own page", () => expect(active(nav("/w/s/overview"))).toEqual(["overview"]));
   it("is Settings on exactly /settings", () => expect(active(nav("/w/s/settings"))).toEqual(["settings"]));
+  it("is Settings on /settings/rules (Analysis rules)", () => expect(active(nav("/w/s/settings/rules"))).toEqual(["settings"]));
   it("is Access, not Settings, on /settings/access", () => expect(active(nav("/w/s/settings/access"))).toEqual(["access"]));
   it("is the matching item on each of the other pages", () => {
     for (const [path, key] of [

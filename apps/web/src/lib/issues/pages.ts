@@ -141,12 +141,15 @@ export function findIssue(issues: readonly IssueRow[], segment: string): IssueRo
   return visible.find((i) => i.id === segment) ?? null;
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
 /** "5 Oct": the short date the prototype uses. A year is added when it is not this one. */
 export function shortDate(iso: string | null | undefined, now: Date = new Date()): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  const day = d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+  // Spelled out here, not by the locale, so "Sep" reads the same everywhere.
+  const day = `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
   return d.getUTCFullYear() === now.getUTCFullYear() ? day : `${day} ${d.getUTCFullYear()}`;
 }
 

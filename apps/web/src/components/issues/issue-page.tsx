@@ -7,21 +7,24 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { IssueEventRow, IssueRow, ProcessBundle, SourceRow } from "@transpera-flow/db";
+import type { StepBadge } from "@/lib/issues/register";
 import { AcknowledgeDialog } from "@/components/acknowledge-dialog";
 import { Help, HelpLabel } from "@/components/help";
 import { ISSUE_PAGE_HELP } from "@/lib/issues/help";
 import { ResolveDialog } from "@/components/issues/resolve-dialog";
 import { StatusChip } from "@/components/issues-page";
 import { RatingPill } from "@/components/overview/rating-pill";
+import { StepIssueBadges } from "@/components/step-issue-badges";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { draftFromIssue, issueFormOptions, toSaveInput } from "@/lib/issues/draft";
-import { historyLines, isOpenIssue, loggedLine, resolvedBar, solutionsOf, type HistoryNames, type SolutionTest } from "@/lib/issues/pages";
+import { historyLines, isOpenIssue, issueHref, loggedLine, resolvedBar, solutionsOf, type HistoryNames, type SolutionTest } from "@/lib/issues/pages";
 import { mapFeed, registerEntries, stepRatingOf } from "@/lib/issues/register";
 import { useIssues } from "@/lib/issues/use-issues";
 import { ratingOfStored } from "@transpera-flow/engine";
@@ -58,6 +61,7 @@ export interface IssuePageProps {
 
 export function IssuePage(props: IssuePageProps) {
   const { bundle, processes, sources, mode, base, buildHref, viewerId } = props;
+  const router = useRouter();
   const state = useIssues(bundle.workspace.id, props.issues, mode, props.liveRevisions ?? { [bundle.process.id]: bundle.revision.id });
   const issue = state.issues.find((i) => i.id === props.issue.id) ?? props.issue;
   const canEdit = mode !== "readonly";
@@ -97,6 +101,12 @@ export function IssuePage(props: IssuePageProps) {
   const rating = useMemo(() => stepRatingOf(feed.ratings), [feed]);
   const stepIds = issue.links.flatMap((l) => (l.step_id ? [l.step_id] : []));
   const highlight = stepIds.length ? stepIds : issue.step_id ? [issue.step_id] : null;
+  // A badge on the map opens an open issue on that step: another one if there is one, else this one.
+  const openBadge = (stepId: string) => {
+    const there = state.issues.filter((i) => isOpenIssue(i) && i.links.some((l) => l.step_id === stepId));
+    const target = there.find((i) => i.id !== issue.id) ?? there[0];
+    if (target && target.id !== issue.id) router.push(issueHref(base, target));
+  };
 
   const solutions: SolutionTest[] = solutionsOf(issue.id);
   const names: HistoryNames = {
@@ -184,7 +194,8 @@ export function IssuePage(props: IssuePageProps) {
               Where this issue sits
               <Help {...ISSUE_PAGE_HELP.where} />
             </h2>
-            <Card className="gap-0 overflow-hidden p-0">
+            {/* A plain block, not a Card: the map sizes itself to the width it is given. */}
+            <MapWithBadges badges={feed.badges} onOpen={openBadge}>
               <ProcessCanvas
                 // The highlight is opened into the map once, at the start.
                 key={`${bundle.process.id}:${(highlight ?? []).join("|")}`}
@@ -197,7 +208,7 @@ export function IssuePage(props: IssuePageProps) {
                 height="auto"
                 legend={false}
               />
-            </Card>
+            </MapWithBadges>
           </section>
 
           <Card className="gap-2 px-4 py-3" data-section="wrong">
@@ -373,6 +384,30 @@ export function IssuePage(props: IssuePageProps) {
         onClose={() => setLinking(false)}
         onSubmit={(sourceId) => state.save(toSaveInput({ ...draftFromIssue(issue), sourceIds: [...issue.source_ids, sourceId] }, options)).then((r) => r && (refresh(), r))}
       />
+    </div>
+  );
+}
+
+/**
+ * The map in a plain block, with the red badges on it. The map is loaded after the page, and the badges find their
+ * steps in it, so they are drawn once it is there.
+ */
+function MapWithBadges({ badges, onOpen, children }: { badges: Record<string, StepBadge>; onOpen: (stepId: string) => void; children: ReactNode }) {
+  const host = useRef<HTMLDivElement>(null);
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const el = host.current;
+    if (!el) return;
+    const check = () => setReady(!!el.querySelector("[data-process-map]"));
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(el, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <div ref={host} className="min-w-0 overflow-hidden rounded-token border bg-card">
+      {children}
+      {ready && <StepIssueBadges badges={badges} onOpen={onOpen} />}
     </div>
   );
 }

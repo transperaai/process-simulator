@@ -78,6 +78,17 @@ way.
    approved, which bumps the version.
 4. Ledger versions only increase, and each has a reason.
 
+## Market conditions (engine 1.2.0)
+
+`EngineModel.market` holds a schedule of seven factors per month (`packages/engine/src/market.ts`, decision D29). A
+model with no market, or with every factor 1 in every month, runs exactly as before: `activeMarket` returns null and
+every code path is the old one, so no golden number moved and 1.2.0 was approved with `golden:approve --bump`.
+Enquiries change the arrival rate month by month (`demand.ts`); enquiries that sign scale the probability of edges
+that lead to a won end; time to decide scales external waits at pipeline steps; prices scale the fee of each client
+won (new MRR, billed, LTV added); clients leaving scale churn. Time to hire and late payments are stored but change
+nothing, as the engine has no hiring or cash-flow model yet. To run a model under one condition (the stress test
+on solution pages): `simulate(withMarketCondition(model, MARKET_PRESETS.downturn.factors), reps, seed)`.
+
 ## Where the version goes
 
 - `SimulationResult.engineVersion` on every run, in the browser worker and on the server.

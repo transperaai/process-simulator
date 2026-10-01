@@ -31,7 +31,7 @@ export default async function DemoPage(props: PageProps<"/demo">) {
       scenarios={northbeamScenarios()}
       issues={northbeamIssues()}
       sources={demoSources()}
-      processPicker={<ProcessNav processes={processes} current={bundle.process.id} hrefs={hrefs} ratings={processRatings(processes, northbeamIssues())} processesHref="/demo/processes" />}
+      processPicker={<ProcessNav processes={processes} current={bundle.process.id} hrefs={hrefs} ratings={processRatings(processes, northbeamIssues(), [...pipeline.steps, ...(pipeline.otherProcesses ?? []).flatMap((p) => p.steps)])} processesHref="/demo/processes" companyMapHref="/demo" />}
       notice={
         <Alert role="note">
           <Info />

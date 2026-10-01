@@ -56,8 +56,9 @@ export async function WorkspaceProcessPage({ slug, processId }: { slug: string; 
           current={live.process.id}
           hrefs={hrefs}
           create={canEdit ? createServicingProcess.bind(null, live.workspace.id, slug) : undefined}
-          ratings={processRatings(processes, issues)}
+          ratings={processRatings(processes, issues, [...live.steps, ...(live.otherProcesses ?? []).flatMap((p) => p.steps)])}
           processesHref={`${base}/processes`}
+          companyMapHref={base}
         />
       }
     />

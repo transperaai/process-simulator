@@ -1,7 +1,7 @@
 import "server-only";
 import { listProcesses, loadIssues, loadProcessBySlug, type IssueRow, type ProcessBundle, type StepRow } from "@transpera-flow/db";
 import { createClient } from "@/lib/supabase/server";
-import { processRows, type LiveVersion, type ProcessRowData } from "./rows";
+import { isOnProcess, processRows, type LiveVersion, type ProcessRowData } from "./rows";
 
 /** What a row's map card needs: the process at its live revision, and its tracked issues (for the map's ratings and badges). */
 export interface ProcessCardData {
@@ -48,6 +48,7 @@ export async function loadProcessCard(slug: string, processId: string): Promise<
   const db = await createClient();
   const found = await loadProcessBySlug(db, slug, { draft: false, processId });
   if (!found || found.live.revision.status !== "published" || found.live.steps.length === 0) return null;
-  const issues = (await loadIssues(db, found.live.workspace.id)).filter((i) => i.process_id === processId);
+  const stepIds = new Set(found.live.steps.map((s) => s.id));
+  const issues = (await loadIssues(db, found.live.workspace.id)).filter((i) => isOnProcess(i, processId, stepIds));
   return { bundle: found.live, issues };
 }

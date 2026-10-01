@@ -75,7 +75,7 @@ export function ProcessesTable({
               Rating
               <Help
                 label="Rating"
-                description="The worst rating among this process's open issues, including the processes inside it. It is the same colour the map uses. Not rated means no open issue has been confirmed yet."
+                description="The worst rating among this process's open issues, including the processes inside it. It is the same colour the map uses. Not rated means it has no open issue worse than Great."
                 example="One open Operational risk issue on a step makes the whole process Operational risk."
               />
             </th>
@@ -135,7 +135,7 @@ export function ProcessesTable({
                   <td className="min-w-20 px-2 py-2.5 sm:min-w-44">
                     <span className="flex min-w-0 flex-wrap items-center gap-x-1.5" style={{ paddingLeft: (r.depth - 1) * 20 }}>
                       {r.depth > 1 && <CornerDownRight aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />}
-                      <span className="min-w-0 break-words font-semibold">{r.name}</span>
+                      <span className="min-w-0 font-semibold">{r.name}</span>
                       {!r.live && (
                         <Badge variant="outline" className="shrink-0 border-warn bg-warn-soft text-fg">
                           not published
@@ -156,10 +156,10 @@ export function ProcessesTable({
                     <Link
                       href={hrefs[r.id] ?? "#"}
                       onClick={(e) => e.stopPropagation()}
-                      className="inline-flex h-7 items-center rounded-md border px-2 text-xs font-medium whitespace-nowrap hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                      className="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs font-medium whitespace-nowrap hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                       aria-label={`Open ${r.name}`}
                     >
-                      <span className="hidden sm:inline">{"Open "}</span>→
+                      <span className="hidden sm:inline">Open</span>→
                     </Link>
                   </td>
                 </tr>

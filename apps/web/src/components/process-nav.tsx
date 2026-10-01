@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { Fragment, useState } from "react";
-import { Check, ChevronRight, ChevronsUpDown, Plus } from "lucide-react";
+import { Check, ChevronRight, ChevronsUpDown, Network, Plus } from "lucide-react";
 import { companyMap, flattenCompanyMap, type ProcessListing } from "@transpera-flow/db";
-import type { Rating } from "@transpera-flow/engine";
+import { RATING_LABELS, type Rating } from "@transpera-flow/engine";
 import type { CreateProcessResult } from "@/app/w/[slug]/process-actions";
 import { NewProcessDialog } from "@/components/new-process-dialog";
 import { RatingDot } from "@/components/processes/rating";
@@ -26,6 +26,7 @@ export function ProcessNav({
   create,
   ratings,
   processesHref,
+  companyMapHref,
 }: {
   processes: ProcessListing[];
   current: string;
@@ -37,6 +38,8 @@ export function ProcessNav({
   ratings?: Record<string, Rating | null>;
   /** The Processes page, for the breadcrumb and the foot of the switcher. */
   processesHref?: string;
+  /** The company map, the same place as the Processes page's Company map button. */
+  companyMapHref?: string;
 }) {
   const [adding, setAdding] = useState(false);
   // The company map's order: top-level processes, each followed by the child processes inside it (issue #102).
@@ -52,15 +55,15 @@ export function ProcessNav({
           Processes
         </Link>
       )}
-      {trail.map((t) => (
+      {trail.map((t, i) => (
         <Fragment key={t.id}>
-          {processesHref && <ChevronRight aria-hidden className="size-3 shrink-0" />}
+          {(processesHref || i > 0) && <ChevronRight aria-hidden className="size-3 shrink-0" />}
           <Link href={hrefs[t.id] ?? "#"} className="max-w-40 truncate hover:text-accent hover:underline">
             {t.name}
           </Link>
         </Fragment>
       ))}
-      {processesHref && <ChevronRight aria-hidden className="size-3 shrink-0" />}
+      {(processesHref || trail.length > 0) && <ChevronRight aria-hidden className="size-3 shrink-0" />}
     </nav>
   );
   if (processes.length <= 1 && !create) {
@@ -83,12 +86,20 @@ export function ProcessNav({
                 <ChevronsUpDown className="text-muted-foreground" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="max-h-[70vh] min-w-64 max-w-[calc(100vw-2rem)]">
+            <DropdownMenuContent align="start" className="max-h-[70vh] min-w-72 max-w-[calc(100vw-2rem)]">
               <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Switch to another process</DropdownMenuLabel>
+              {companyMapHref && (
+                <DropdownMenuItem asChild>
+                  <Link href={companyMapHref} className="font-medium text-accent">
+                    <Network /> Company map
+                  </Link>
+                </DropdownMenuItem>
+              )}
               {ordered.map(({ process: p, depth }) => (
                 <DropdownMenuItem key={p.id} asChild>
                   <Link href={hrefs[p.id]!} aria-current={p.id === current ? "page" : undefined} style={{ paddingLeft: 8 + (depth - 1) * 16 }}>
                     <RatingDot rating={ratings?.[p.id] ?? null} />
+                    <span className="sr-only">{ratings?.[p.id] ? `${RATING_LABELS[ratings[p.id]!]}: ` : "Not rated: "}</span>
                     <span className="min-w-0 flex-1 truncate">{p.name}</span>
                     {p.kind === "servicing" && <Badge variant="secondary">servicing</Badge>}
                     {!p.live && (

@@ -41,6 +41,11 @@ type StepFact = Pick<StepRow, "process_id" | "kind" | "child_process_id"> & { id
 type IssueFact = Pick<IssueRow, "process_id" | "step_id" | "severity" | "status">;
 type Tally = { steps: number; issues: number; rating: Rating | null };
 
+/** An issue belongs to a process when it names it, or (a manual issue with no process) names one of its steps. */
+export function isOnProcess(i: Pick<IssueRow, "process_id" | "step_id">, processId: string, stepIds: ReadonlySet<string>): boolean {
+  return i.process_id === processId || (!i.process_id && !!i.step_id && stepIds.has(i.step_id));
+}
+
 const isWorking = (s: StepFact) => (s.kind === "task" || s.kind === "wait" || s.kind === "decision" || s.kind === "subprocess") && !s.child_process_id;
 
 const worse = (a: Rating | null, b: Rating | null): Rating | null => (a === null ? b : b === null ? a : compareRatingsDesc(b, a) < 0 ? b : a);
@@ -121,10 +126,12 @@ export function trailOf(p: { id: string; parentId: string | null }, byId: Readon
 export function processRatings(
   processes: readonly { id: string; name: string; kind: "pipeline" | "servicing"; parentId?: string | null }[],
   issues: readonly IssueFact[],
+  /** The live steps of every process, so an issue that names only a step still counts toward its process. */
+  steps: readonly StepFact[] = [],
 ): Record<string, Rating | null> {
   const rows = processRows({
     processes: processes.map((p) => ({ ...p, description: null, parentId: p.parentId ?? null, live: true, draft: false })),
-    steps: [],
+    steps,
     issues,
     versions: new Map(),
   });

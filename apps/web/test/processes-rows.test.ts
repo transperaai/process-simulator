@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { processRatings, processRows, shortDate, type ProcessFacts } from "@/lib/processes/rows";
+import { isOnProcess, processRatings, processRows, shortDate, type ProcessFacts } from "@/lib/processes/rows";
 
 // The Processes page's rows (issue #101): company-map order with sub-processes indented, and each row's numbers
 // rolled up over the processes inside it.
@@ -94,6 +94,25 @@ describe("processRatings", () => {
   it("gives each process the worst rating of its open issues and those inside it", () => {
     expect(processRatings([proc("a"), proc("b", "a")], [issue("b", "critical")])).toEqual({ a: "risk", b: "risk" });
     expect(processRatings([proc("a")], [])).toEqual({ a: null });
+  });
+  it("counts an issue that names only a step toward that step's process", () => {
+    const procs = [proc("a"), proc("b")];
+    const issues = [issue(null, "critical", "open", "s1")];
+    expect(processRatings(procs, issues)).toEqual({ a: null, b: null });
+    expect(processRatings(procs, issues, [step("s1", "b")])).toEqual({ a: null, b: "risk" });
+  });
+});
+
+describe("isOnProcess", () => {
+  const ids = new Set(["s1"]);
+  it("keeps issues on the process, and manual issues with no process on one of its steps", () => {
+    expect(isOnProcess({ process_id: "a", step_id: null }, "a", ids)).toBe(true);
+    expect(isOnProcess({ process_id: null, step_id: "s1" }, "a", ids)).toBe(true);
+  });
+  it("drops issues on another process or on a step elsewhere", () => {
+    expect(isOnProcess({ process_id: "b", step_id: "s1" }, "a", ids)).toBe(false);
+    expect(isOnProcess({ process_id: null, step_id: "s9" }, "a", ids)).toBe(false);
+    expect(isOnProcess({ process_id: null, step_id: null }, "a", ids)).toBe(false);
   });
 });
 

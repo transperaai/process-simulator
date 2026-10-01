@@ -11,6 +11,7 @@ import {
   type MarketConditionRow,
   type MarketScheduleRow,
   loadIssues,
+  loadLiveRevisionIds,
   loadLiveProcessBySlug,
   loadProcessBundle,
   loadProcessBySlug,
@@ -83,6 +84,11 @@ export async function loadSourcesPage(
 /** The workspace's first process at its live revision, or null if not visible. */
 export async function loadLiveProcess(slug: string): Promise<ProcessBundle | null> {
   return loadLiveProcessBySlug(await createClient(), slug);
+}
+
+/** Each process's live revision id, which a dismissed insight is measured against. */
+export async function loadWorkspaceLiveRevisionIds(workspaceId: string): Promise<Record<string, string>> {
+  return loadLiveRevisionIds(await createClient(), workspaceId);
 }
 
 /** The workspace's tracked issues, newest first (RLS: everyone in the workspace can read them). */

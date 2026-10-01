@@ -1,4 +1,5 @@
 export * from "./types";
+export * from "./issue-status";
 export type { Database, Json } from "./database.types";
 export {
   ModelError,
@@ -16,8 +17,15 @@ export {
 } from "./model";
 export { loadAnalysisRules, saveAnalysisRules, type AnalysisRules, type SaveAnalysisRulesOutcome } from "./analysis-rules";
 export {
+  AI_DAILY_RUN_LIMIT,
+  AI_RUN_COOLDOWN_SECONDS,
   AI_SETTING_KEYS,
   DEFAULT_AI_SETTINGS,
+  claimMarketPending,
+  markMarketPending,
+  reserveAiRun,
+  type AiAnalysisWithRun,
+  type AiReservation,
   loadAiAnalyses,
   loadAiSettings,
   saveAiAnalysis,
@@ -144,6 +152,13 @@ export {
   CLIENT_SERVICE_COLUMNS,
   DEMAND_SETTINGS_COLUMNS,
   ISSUE_COLUMNS,
+  ISSUE_EVENT_COLUMNS,
+  assembleIssues,
+  loadIssue,
+  loadLiveRevisionIds,
+  loadIssueEvents,
+  saveIssue,
+  type SaveIssueArgs,
   LEAD_SOURCE_COLUMNS,
   listProcesses,
   loadChurnDrivers,

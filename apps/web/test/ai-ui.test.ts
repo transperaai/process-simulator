@@ -32,6 +32,7 @@ const view = (over: Partial<AiAnalysisView> = {}): AiAnalysisView => ({
   model: "claude-opus-5-5",
   at: "2026-10-01T09:00:00.000Z",
   revisionId: "r",
+  runBy: "Ed Itor",
   ...over,
 });
 const data = (over: Partial<AiPanelData> = {}): AiPanelData => ({ view: view(), configured: true, hasFirstPrinciples: true, versionNumber: 3, ...over });
@@ -43,7 +44,7 @@ describe("the AI read", () => {
     const html = read(data());
     expect(html).toContain("AI read of this run");
     expect(html).toContain("The Strategist is the constraint.");
-    expect(html).toContain("Version 3, written 1 Oct 2026 by claude-opus-5-5. 4 numbers checked against the run; 1 item left out");
+    expect(html).toContain("Version 3, written 1 Oct 2026 by claude-opus-5-5. Reviewed by AI · run by Ed Itor. 4 numbers checked against the run; 1 item left out");
     expect(html).toContain("Run again");
     expect(html).toContain("About AI read");
     expect(html).toContain("About Run again");
@@ -96,7 +97,7 @@ describe("the AI review panel", () => {
   });
 
   it("says what it reviewed and how much was checked", () => {
-    expect(panel(data())).toContain("Reviewed version 3 and its first principles. 4 numbers checked against the run; 1 finding left out");
+    expect(panel(data())).toContain("Reviewed by AI · run by Ed Itor. It reviewed version 3 and its first principles. 4 numbers checked against the run; 1 finding left out");
   });
 
   it("replaces the old placeholder: nothing says it isn't switched on", () => {
@@ -146,6 +147,12 @@ describe("Settings -> AI analysis", () => {
     const later = AI_SWITCHES.filter((s) => s.later).map((s) => s.key);
     expect(later).toEqual(["suggest_issues", "suggest_solutions"]);
     for (const s of AI_SWITCHES.filter((x) => x.later)) expect(s.description).toMatch(/built yet.*for now this switch is saved but nothing is suggested.*once/);
+  });
+
+  it("says what is sent whatever the sources switch is", () => {
+    const d = AI_SWITCHES.find((x) => x.key === "read_sources")!.description;
+    expect(d).toMatch(/first principles \(including the source notes on your truths\)/);
+    expect(d).toMatch(/names of the process, its steps and roles/);
   });
 
   it("starts with reading sources off, and says that sending quotes is why", () => {

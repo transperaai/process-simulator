@@ -4,7 +4,7 @@ import { isBlank } from "@transpera-flow/engine";
 import { Overview } from "@/components/overview/overview";
 import { aiConfigured, loadAiViews } from "@/lib/ai/data";
 import { ShellHeader } from "@/components/shell/shell-header";
-import { loadLiveProcess, loadWorkspaceHead, loadWorkspaceIssues, loadWorkspaceOverview } from "@/lib/data";
+import { loadLiveProcess, loadWorkspaceHead, loadWorkspaceIssues, loadWorkspaceOverview, loadWorkspaceSources } from "@/lib/data";
 import { canEditWorkspace } from "@/lib/access-data";
 import { loadLiveFirstPrinciples } from "@/lib/first-principles/data";
 import { loadLiveParts } from "@/lib/overview/data";
@@ -20,9 +20,10 @@ export async function WorkspaceOverview({ slug }: { slug: string }) {
     return <EmptyOverview slug={slug} name={head.name} unpublished={overview?.processes ?? []} />;
   }
   const ws = live.workspace.id;
-  const [parts, issues, rules, canEdit, firstPrinciples, aiViews] = await Promise.all([
+  const [parts, issues, sources, rules, canEdit, firstPrinciples, aiViews] = await Promise.all([
     loadLiveParts(ws),
     loadWorkspaceIssues(ws),
+    loadWorkspaceSources(ws),
     loadWorkspaceAnalysisRules(ws),
     canEditWorkspace(ws),
     loadLiveFirstPrinciples(live.process.id, live.revision.id),
@@ -35,6 +36,7 @@ export async function WorkspaceOverview({ slug }: { slug: string }) {
       live={live}
       parts={parts}
       issues={issues}
+      sources={sources}
       mode={canEdit ? "live" : "readonly"}
       analysisRules={rules.settings}
       firstPrinciples={firstPrinciples}

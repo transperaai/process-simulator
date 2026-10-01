@@ -5,7 +5,9 @@ import type { IssueRow } from "@transpera-flow/db";
 import type { SaveOutcome, Saver } from "@/lib/fields/field-controller";
 import { liveIssueStore } from "./live-store";
 import { MemoryIssueStore, type IssueStore, type SaveIssueResult } from "./store";
-import type { IssueField, IssueInput, PromoteInput, Scalar } from "./validate";
+import type { IssueField, IssueInput, PromoteInput, SaveIssueInput, Scalar } from "./validate";
+
+const NO_REVISIONS: Readonly<Record<string, string>> = {};
 
 export interface IssuesState {
   issues: IssueRow[];
@@ -13,6 +15,12 @@ export interface IssuesState {
   error: string | null;
   create(input: IssueInput): Promise<IssueRow | null>;
   promote(input: PromoteInput): Promise<IssueRow | null>;
+  /** The Acknowledge dialog: create an issue (from an insight or by hand) or edit one. Null when it failed; `error` says why. */
+  save(input: SaveIssueInput): Promise<IssueRow | null>;
+  /** Dismiss an insight again, against the process's current live revision. */
+  redismiss(id: string, revisionId: string | null): Promise<IssueRow | null>;
+  /** A process's live revision id, which a dismissal is measured against; undefined when it isn't known. */
+  revisionOf(processId: string | null | undefined): string | undefined;
   /** A saver for one field of one issue that also updates the list once saved. */
   saver(id: string, field: IssueField): Saver<Scalar>;
   remove(id: string): Promise<boolean>;
@@ -23,7 +31,13 @@ export interface IssuesState {
  * Tracked issues and the writes on them. `live` saves through Server Actions
  * as the signed-in user; `demo` keeps them in memory (lost on reload).
  */
-export function useIssues(workspaceId: string, initial: readonly IssueRow[], mode: "live" | "demo" | "readonly"): IssuesState {
+export function useIssues(
+  workspaceId: string,
+  initial: readonly IssueRow[],
+  mode: "live" | "demo" | "readonly",
+  /** Each process's live revision id: a dismissed insight is hidden until its process's live revision changes. */
+  liveRevisions: Readonly<Record<string, string>> = NO_REVISIONS,
+): IssuesState {
   const [store] = useState<IssueStore>(() => (mode === "live" ? liveIssueStore(workspaceId) : new MemoryIssueStore(workspaceId, initial)));
   const [issues, setIssues] = useState<IssueRow[]>(() => [...initial]);
   const [busy, setBusy] = useState(false);
@@ -66,6 +80,9 @@ export function useIssues(workspaceId: string, initial: readonly IssueRow[], mod
     error,
     create: (input) => add(() => store.create(input)),
     promote: (input) => add(() => store.promote(input)),
+    save: (input) => add(() => store.save(input)),
+    redismiss: (id, revisionId) => add(() => store.redismiss(id, revisionId)),
+    revisionOf: (processId) => (processId ? liveRevisions[processId] : undefined),
     saver,
     remove: async (id) => {
       setBusy(true);

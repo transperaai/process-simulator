@@ -58,6 +58,8 @@ export interface AiAnalysisView {
   at: string;
   /** The version it is of. */
   revisionId: string;
+  /** Who ran it (the name recorded when the run was reserved), if known. AI wrote the text; this person started it. */
+  runBy?: string | null;
 }
 
 export type AiMode = "live" | "readonly" | "demo";
@@ -111,7 +113,7 @@ export function readSummary(json: unknown): string[] {
 }
 
 /** A stored row as the pages use it. */
-export function aiViewFromRow(row: AiAnalysisRow): AiAnalysisView {
+export function aiViewFromRow(row: AiAnalysisRow & { run_by?: string | null }): AiAnalysisView {
   return {
     status: row.status,
     reason: row.reason,
@@ -124,6 +126,7 @@ export function aiViewFromRow(row: AiAnalysisRow): AiAnalysisView {
     model: row.model,
     at: row.updated_at,
     revisionId: row.revision_id,
+    runBy: row.run_by ?? null,
   };
 }
 

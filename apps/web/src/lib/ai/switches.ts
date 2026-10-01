@@ -46,7 +46,7 @@ export const AI_SWITCHES: readonly AiSwitch[] = [
     key: "read_sources",
     label: "Read linked sources and quotes",
     description:
-      "AI reads short quotes from the interview notes and transcripts linked to your steps, and may quote them to explain the numbers. Those quotes are sent to Anthropic, the company behind the AI, so it is off until you turn it on. It never copies a figure out of a quote.",
+      "AI reads short quotes from the interview notes and transcripts linked to your steps, and may quote them to explain the numbers. Those quotes are sent to Anthropic, the company behind the AI, so it is off until you turn it on. It never copies a figure out of a quote. Turning it off does not stop everything else being sent: your first principles (including the source notes on your truths) and the names of the process, its steps and roles are always sent when AI reviews a version. People's names are replaced by labels.",
     example: "Quotes Maya: “Most weeks that's my Sunday.”",
   },
 ] as const;

@@ -94,7 +94,20 @@ const SLASH_DATE = /\b(\d{1,2})\/(\d{1,2})\/(\d{2,4})\b/g;
 const PERCENTILE = /\b(?:P(?:10|50|90)\b|(?:10|50|90)th(?:\s*(?:–|-|to)\s*(?:10|50|90)th)?\s+percentiles?\b)/gi;
 const WEEK_NUMBER = /\b(?:week|wk)\s+(\d{1,3})\b/gi;
 const QUARTER = /\b(?:Q[1-4]|H[12]|FY\s?\d{2,4})\b/g;
-const MULTIPLES = /\b(?:twice|thrice|double[sd]?|doubling|triple[sd]?|tripling|quadruple[sd]?|halve[sd]?|halving|half|(?:two|three|four|five|ten)fold)\b/gi;
+// Fractions and ratios in words or slashes ("a third", "three quarters of", "3/4", "one in ten", "1 in 10", "seven figures"):
+// like "half" and "twice", they state a ratio nobody computed, and the digits or number words in them would otherwise
+// pass for figures.
+const FRACTION_WORD = String.raw`(?:thirds?|fourths?|quarters?|fifths?|sixths?|sevenths?|eighths?|ninths?|tenths?)`;
+const RATIOS = new RegExp(
+  [
+    String.raw`\b(?:a|an|one|two|three|four|five|six|seven|eight|nine)[-\s]${FRACTION_WORD}(?:\s+of)?\b`,
+    String.raw`(?<![\d/.])\d{1,3}\s?/\s?\d{1,3}(?![\d/])`,
+    String.raw`\b(?:one|two|three|four|five|1|2|3|4|5)\s+(?:in|out\s+of)\s+(?:\d[\d,]*|a\s+(?:hundred|thousand|million)|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|forty|fifty|hundred|thousand)\b`,
+    String.raw`\b(?:two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)[-\s]figures?\b`,
+  ].join("|"),
+  "gi",
+);
+const MULTIPLES =/\b(?:twice|thrice|double[sd]?|doubling|triple[sd]?|tripling|quadruple[sd]?|halve[sd]?|halving|half|(?:two|three|four|five|ten)fold)\b/gi;
 
 const SMALL: Record<string, number> = {
   zero: 0, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
@@ -257,6 +270,7 @@ export function scanNumbers(input: string, names: readonly string[] = []): Scan 
   text = blank(text, WEEK_NUMBER, (m) => void periods.push({ text: m[0], week: Number(m[1]) }));
   text = blank(text, QUARTER, (m) => void periods.push({ text: m[0], week: null }));
   const multiples: string[] = [];
+  text = blank(text, RATIOS, (m) => void multiples.push(m[0]));
   text = blank(text, MULTIPLES, (m) => void multiples.push(m[0]));
 
   const tokens: NumberToken[] = [];

@@ -29,7 +29,11 @@ before the text is shown.
   every item (read, each insight's title, evidence and why, each review finding) is matched against the figures the
   engine wrote: the results, the findings' own sentences, the success measures and their pass rates, the rule checks.
   The first principles' and quotes' own digits are **not** facts (a team's "within 4 hours" can't be restated as a
-  figure; its measure can, because the engine wrote "at most 21 working hours, met in 62% of runs"). An item with an
+  figure; its measure can, because the engine wrote "at most 21 working hours, met in 62% of runs"). The rule checks quote
+  the team's answers (“We close 93% of leads within 17 days” has no source), so the checked copy of those texts has the
+  quoted passages cut out, a measure's name is left out of the checked copy, and so is the name in rule 11's "Goal not
+  reliably met: <name>" title. The model still sees all of it. Fractions and ratios in words or slashes ("a third",
+  "three quarters of", "3/4", "one in ten", "seven figures") are refused like "half" and "twice". An item with an
   unmatched number is **dropped**, not corrected; there is no template to fall back to. One redraft is asked for,
   naming each dropped item and the figure that failed, and keeps whatever passed in either draft. A quotation in
   quotation marks must be a passage of the words the model was given (a step, an answer, a source's quote), or its item is
@@ -47,15 +51,30 @@ before the text is shown.
   `publish_process`), and after the market conditions or their schedule change, each handed to Next's `after()` so the
   person who acted never waits and a failure never reaches them; and on "Run again" (the one run that waits). Each is
   gated by its switch in Settings → AI analysis, except "Run again". Without an API key nothing is simulated or stored,
-  and the page says "AI analysis isn't set up". An automatic market run skips a version analysed in the last two
-  minutes (a market field saves on every edit), a version whose facts hash is unchanged, a process with no first
-  principles, and anything past 40 analyses a workspace a day.
+  and the page says "AI analysis isn't set up". A run skips a version whose facts hash is unchanged and a process with no
+  first principles, and the database refuses it past the daily cap or inside the cooldown (above). A market change is
+  **debounced**: it records `ai_settings.market_pending_at`, waits 20 s, and only the change whose mark is still in place
+  claims it and reviews, so a burst of edits makes one review. The review goes through up to 5 live processes one at a
+  time within a 150 s budget (a request has 300 s, a review can take 110 s), logging any it left.
 - **Storage** (`ai_analyses`, one row per process revision; `ai_settings`, one row per workspace; migration
   `20261121000000`). The read, insights and review are stored per version, so a page view never calls the model, and an
   earlier version keeps what AI said about it. Every member reads; owners and editors write, **as themselves**: the
   server writes with the signed-in user's own client (the publisher, the settings editor, the person who clicked), so
-  there is no `SECURITY DEFINER` function and no service key, and a viewer's request writes nothing. The five switches are
-  written one column at a time. Two switches (suggest issues, suggest solution ideas) are stored now for Suggestions
+  there is no service key, and a viewer's request writes nothing. A trigger stamps `created_by` with the caller (it
+  can't be forged), refuses an analysis whose `run_id` isn't a run the caller reserved for that process, and nobody can
+  delete an analysis or a run; the AI read says "Reviewed by AI · run by <name>". The five switches are written one
+  column at a time.
+- **Cost bound** (`ai_runs`, `reserve_ai_run`). Every model call first reserves a run in the database: an
+  append-only `ai_runs` log that authenticated users can read and cannot write. `reserve_ai_run` is the one
+  `SECURITY DEFINER` function (empty `search_path`); it writes no AI content, only counts. It checks `can_edit_workspace`,
+  takes a per-workspace advisory lock, refuses at 40 runs in 24 hours for the workspace or a second run of the same process
+  within 60 seconds, and otherwise logs the run (with the caller's id and display name, which an invoker can't read from
+  `auth.users`). "Run again" and runs that fail reserve too, so the cap can't be reset by deleting rows, re-running or
+  editing. The cooldown also applies to publishes: two publishes of one process within a minute review only the first.
+- **Remaining forgery risk.** The server writes the analysis with the user's own credentials, so an editor with direct
+  database access can still write arbitrary text into an analysis against a run they reserved (it would be marked
+  "Reviewed by AI · run by <them>"). The proper fix is a server-side writer holding a service-role key, which needs a
+  production config change (a Vercel secret) and is a follow-up for Austin to approve. Two switches (suggest issues, suggest solution ideas) are stored now for Suggestions
   (A52) and solution ideas (A49); their (i) says they do nothing yet.
 - **Demo.** `/demo` shows text written in advance for the Northbeam sample (`lib/ai/demo.ts`) and "Run again" waits a moment
   and says nothing was sent. A test runs that text through the real number check against the sample's run.

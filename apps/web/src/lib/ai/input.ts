@@ -84,7 +84,8 @@ export function aiInputForRun(run: AiRunInput): { input: AiInput; findings: Dete
   const steps = processSteps(bundle)
     .filter((s) => s.kind !== "start" && s.kind !== "end")
     .map((s) => ({ id: s.id, name: s.name }));
-  const people = bundle.people.filter((p) => p.active).map((p) => ({ id: p.id, name: p.name }));
+  // Every person, inactive ones too: a name in a first-principles answer or a source quote may be someone who has left.
+  const people = bundle.people.map((p) => ({ id: p.id, name: p.name }));
   const roles = bundle.roles.map((r) => ({ name: r.name }));
   const measures = measuresMetToday(fp, run.model, run.result, bundle.process.id);
   const checks = measures.flatMap((m) => (m.check ? [m.check] : []));

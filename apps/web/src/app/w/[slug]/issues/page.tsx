@@ -5,7 +5,7 @@ import { IssuesPage } from "@/components/issues-page";
 import { loadLiveFirstPrinciples } from "@/lib/first-principles/data";
 import { canEditWorkspace } from "@/lib/access-data";
 import { loadWorkspaceAnalysisRules } from "@/lib/rules/data";
-import { loadLiveProcess, loadProcessNames, loadWorkspaceIssues, loadWorkspaceScenarios } from "@/lib/data";
+import { loadLiveProcess, loadProcessNames, loadWorkspaceIssues, loadWorkspaceLiveRevisionIds, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
 
 /** The issues register (docs/PRD.md §8 screen 9): every tracked issue, and what the live process's latest run detects. */
 export default async function WorkspaceIssuesPage(props: PageProps<"/w/[slug]/issues">) {
@@ -13,12 +13,14 @@ export default async function WorkspaceIssuesPage(props: PageProps<"/w/[slug]/is
   const bundle = await loadLiveProcess(slug);
   if (!bundle) notFound();
   const ws = bundle.workspace.id;
-  const [canEdit, issues, scenarios, processes, rules, firstPrinciples] = await Promise.all([
+  const [canEdit, issues, scenarios, processes, rules, sources, liveRevisions, firstPrinciples] = await Promise.all([
     canEditWorkspace(ws),
     loadWorkspaceIssues(ws),
     loadWorkspaceScenarios(ws),
     loadProcessNames(ws),
     loadWorkspaceAnalysisRules(ws),
+    loadWorkspaceSources(ws),
+    loadWorkspaceLiveRevisionIds(ws),
     loadLiveFirstPrinciples(bundle.process.id, bundle.revision.id),
   ]);
   return (
@@ -40,6 +42,8 @@ export default async function WorkspaceIssuesPage(props: PageProps<"/w/[slug]/is
         issues={issues}
         scenarios={scenarios}
         processes={processes}
+        sources={sources}
+        liveRevisions={liveRevisions}
         analysisRules={rules.settings}
         firstPrinciples={firstPrinciples}
         mode={canEdit ? "live" : "readonly"}

@@ -2,14 +2,15 @@
 // and the in-memory demo store. They only reject malformed input early: the
 // database checks every enumerated column again, and RLS decides who may write.
 
-import type { IssueStatus } from "@transpera-flow/db";
+import { ISSUE_STATUSES, type IssueLinkRef, type IssueStatus } from "@transpera-flow/db";
 import { ISSUE_TYPES, STORED_SEVERITIES, type IssueType, type StoredSeverity } from "@transpera-flow/engine";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Same shape as the table's check: <detector>:<subject kind>:<id>. */
 const DETECTED_KEY = /^[a-z_]+:[a-z_]+:\S{1,200}$/;
 
-export const ISSUE_STATUSES = ["open", "in_progress", "done", "dismissed"] as const satisfies readonly IssueStatus[];
+export { ISSUE_STATUSES };
+/** The status a person can give an issue: the four visible ones. `dismissed` is only ever written for a dismissed insight. */
 export const MAX_TITLE = 200;
 export const MAX_EVIDENCE = 5000;
 const MAX_METRICS = 50;
@@ -21,7 +22,7 @@ const optionalId = (v: unknown) => v === undefined || v === null || isId(v);
 const isType = (v: unknown): v is IssueType => (ISSUE_TYPES as readonly unknown[]).includes(v);
 /** The stored severity values: the four ratings, as the database keeps them (see `ratingOfStored`). */
 const isSeverity = (v: unknown): v is StoredSeverity => (STORED_SEVERITIES as readonly unknown[]).includes(v);
-const isStatus = (v: unknown): v is IssueStatus => (ISSUE_STATUSES as readonly unknown[]).includes(v);
+const isStatus = (v: unknown): v is (typeof ISSUE_STATUSES)[number] => (ISSUE_STATUSES as readonly unknown[]).includes(v);
 const isTitle = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0 && v.trim().length <= MAX_TITLE;
 const isEvidence = (v: unknown) => v === null || (typeof v === "string" && v.length <= MAX_EVIDENCE);
 
@@ -50,6 +51,8 @@ export interface PromoteInput extends Links {
   client_id?: string | null;
   /** Tracked as dismissed in one write (an insight someone dismissed); omitted means open. */
   status?: "open" | "dismissed";
+  /** With `dismissed`: the live revision of the process it was dismissed against; the dismissal lasts until that changes. */
+  dismissed_revision_id?: string | null;
 }
 
 const object = (input: unknown): Record<string, unknown> | null =>
@@ -81,6 +84,125 @@ export function parseIssueInput(input: unknown): Parsed<IssueInput> {
   return { ok: true, value: { ...l, type: o.type, severity: o.severity, title: o.title.trim(), evidence: text(evidence), status } };
 }
 
+/** What the Acknowledge dialog sends: a new issue (no `id`) or the edit of one (with its `id`), with what it touches. */
+export interface SaveIssueInput {
+  /** Set to edit that issue; omit to create. */
+  id?: string;
+  title: string;
+  severity: StoredSeverity;
+  /** A new issue's type; omitted, an issue logged by hand is an audit finding (`manual`). Ignored when editing. */
+  type?: IssueType;
+  evidence?: string | null;
+  /** Only when editing and changing it. */
+  status?: IssueStatus;
+  target_measure: string | null;
+  target_now: string | null;
+  target_goal: string | null;
+  /** What it touches: steps (by stable id), or one link with no step for the whole process. */
+  links: IssueLinkRef[];
+  owner_ids: string[];
+  source_ids: string[];
+  /** Acknowledging an insight: the detection it came from. New issues only. */
+  from?: {
+    detected_key: string;
+    evidence_metrics: Record<string, number>;
+    role_id: string | null;
+    person_id: string | null;
+    client_id: string | null;
+    scenario_id: string | null;
+  };
+}
+
+export const MAX_TARGET = 200;
+const MAX_LINKS = 200;
+const MAX_OWNERS = 20;
+const MAX_SOURCES = 50;
+
+const idList = (v: unknown, max: number): string[] | null => {
+  if (!Array.isArray(v) || v.length > max || !v.every(isId)) return null;
+  return [...new Set(v as string[])];
+};
+const targetText = (v: unknown): string | null | undefined => {
+  if (v === undefined || v === null) return null;
+  if (typeof v !== "string" || v.trim().length > MAX_TARGET) return undefined;
+  return v.trim() || null;
+};
+
+export function parseSaveInput(input: unknown): Parsed<SaveIssueInput> {
+  const o = object(input);
+  if (!o) return { ok: false, error: "That issue isn't valid." };
+  if (!optionalId(o.id)) return { ok: false, error: "That issue isn't valid." };
+  if (!isTitle(o.title)) return { ok: false, error: `Give the issue a title of up to ${MAX_TITLE} characters.` };
+  if (!isSeverity(o.severity)) return { ok: false, error: "Pick how bad it is." };
+  if (o.type !== undefined && !isType(o.type)) return { ok: false, error: "Pick a type." };
+  if (o.status !== undefined && !isStatus(o.status)) return { ok: false, error: "Pick a status." };
+  const evidence = o.evidence === undefined ? null : o.evidence;
+  if (!isEvidence(evidence)) return { ok: false, error: `Keep the evidence to ${MAX_EVIDENCE} characters.` };
+  const [measure, now, goal] = [targetText(o.target_measure), targetText(o.target_now), targetText(o.target_goal)];
+  if (measure === undefined || now === undefined || goal === undefined) return { ok: false, error: `Keep each target to ${MAX_TARGET} characters.` };
+  const rawLinks = o.links;
+  if (!Array.isArray(rawLinks) || rawLinks.length > MAX_LINKS) return { ok: false, error: "That issue links to something that isn't valid." };
+  const links: IssueLinkRef[] = [];
+  for (const raw of rawLinks) {
+    const l = object(raw);
+    if (!l || !optionalId(l.process_id) || !optionalId(l.step_id)) return { ok: false, error: "That issue links to something that isn't valid." };
+    const link = { process_id: (l.process_id as string | null | undefined) ?? null, step_id: (l.step_id as string | null | undefined) ?? null };
+    if (!link.process_id && !link.step_id) return { ok: false, error: "That issue links to something that isn't valid." };
+    if (!links.some((x) => x.process_id === link.process_id && x.step_id === link.step_id)) links.push(link);
+  }
+  // Steps, or the whole process: not both, and not nothing.
+  if (links.length === 0) return { ok: false, error: "Pick at least one step, or choose the whole process." };
+  if (links.some((l) => !l.step_id) && links.some((l) => l.step_id)) return { ok: false, error: "Choose the whole process, or pick steps, not both." };
+  const owners = idList(o.owner_ids ?? [], MAX_OWNERS);
+  const sources = idList(o.source_ids ?? [], MAX_SOURCES);
+  if (!owners || !sources) return { ok: false, error: "That issue links to something that isn't valid." };
+  let from: SaveIssueInput["from"];
+  if (o.from !== undefined) {
+    const f = object(o.from);
+    const metrics = f ? object(f.evidence_metrics ?? {}) : null;
+    if (
+      !f ||
+      typeof f.detected_key !== "string" ||
+      !DETECTED_KEY.test(f.detected_key) ||
+      !metrics ||
+      Object.keys(metrics).length > MAX_METRICS ||
+      !Object.entries(metrics).every(([k, v]) => k.length <= 60 && typeof v === "number" && Number.isFinite(v)) ||
+      !optionalId(f.role_id) ||
+      !optionalId(f.person_id) ||
+      !optionalId(f.client_id) ||
+      !optionalId(f.scenario_id)
+    ) {
+      return { ok: false, error: "That detected issue isn't valid." };
+    }
+    from = {
+      detected_key: f.detected_key,
+      evidence_metrics: metrics as Record<string, number>,
+      role_id: (f.role_id as string | null | undefined) ?? null,
+      person_id: (f.person_id as string | null | undefined) ?? null,
+      client_id: (f.client_id as string | null | undefined) ?? null,
+      scenario_id: (f.scenario_id as string | null | undefined) ?? null,
+    };
+  }
+  return {
+    ok: true,
+    value: {
+      ...(o.id ? { id: o.id as string } : {}),
+      title: o.title.trim(),
+      severity: o.severity,
+      ...(o.type ? { type: o.type } : {}),
+      evidence: text(evidence),
+      ...(o.status ? { status: o.status } : {}),
+      target_measure: measure,
+      target_now: now,
+      target_goal: goal,
+      links,
+      owner_ids: owners,
+      source_ids: sources,
+      ...(from ? { from } : {}),
+    },
+  };
+}
+
 export function parsePromoteInput(input: unknown): Parsed<PromoteInput> {
   const o = object(input);
   if (!o || typeof o.detected_key !== "string" || !DETECTED_KEY.test(o.detected_key)) return { ok: false, error: "That detected issue isn't valid." };
@@ -94,7 +216,7 @@ export function parsePromoteInput(input: unknown): Parsed<PromoteInput> {
   ) {
     return { ok: false, error: "That detected issue isn't valid." };
   }
-  if (!optionalId(o.client_id)) return { ok: false, error: "That detected issue isn't valid." };
+  if (!optionalId(o.client_id) || !optionalId(o.dismissed_revision_id)) return { ok: false, error: "That detected issue isn't valid." };
   // A tracked detection starts open, or dismissed when that is what the person chose; nothing else.
   if (o.status !== undefined && o.status !== "open" && o.status !== "dismissed") return { ok: false, error: "That detected issue isn't valid." };
   const rest: Partial<IssueInput> = { ...base.value };
@@ -107,6 +229,7 @@ export function parsePromoteInput(input: unknown): Parsed<PromoteInput> {
       status: o.status === "dismissed" ? "dismissed" : "open",
       evidence_metrics: metrics as Record<string, number>,
       ...(o.client_id ? { client_id: o.client_id as string } : {}),
+      ...(o.status === "dismissed" && o.dismissed_revision_id ? { dismissed_revision_id: o.dismissed_revision_id as string } : {}),
     },
   };
 }
@@ -118,11 +241,8 @@ export const ISSUE_FIELDS = {
   severity: isSeverity,
   status: isStatus,
   evidence: isEvidence,
-  process_id: optionalId,
-  step_id: optionalId,
   role_id: optionalId,
   person_id: optionalId,
-  owner_person_id: optionalId,
   scenario_id: optionalId,
 } as const satisfies Record<string, (v: unknown) => boolean>;
 

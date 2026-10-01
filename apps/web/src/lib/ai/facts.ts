@@ -115,6 +115,9 @@ export function wordsGiven(payload: unknown): string[] {
   return out;
 }
 
+/** A text with its quoted passages (“…” or "…", the team's own words in the rule checks) left out. */
+export const stripQuoted = (s: string): string => s.replace(/“[^”]*”/g, "“…”").replace(/"[^"]*"/g, '"…"');
+
 const MAX_QUOTES = 12;
 const MAX_QUOTE_CHARS = 220;
 
@@ -178,7 +181,18 @@ export function buildAiInput(args: AiInputArgs): AiInput {
     },
     (s) => applyAliases(s, aliases),
   );
-  const checkPayload = mapStrings(factPayload, (s) => applyAliases(s, aliases));
+  // What the check reads figures from. The model sees the team's words (a measure's name, a quoted answer), but a figure
+  // inside them is theirs, not the run's: so the checked copy has no quoted passages in the rule checks, no measure
+  // names, and none of the measure's name in a "Goal not reliably met" title (rule 11 embeds it).
+  const checkPayload = mapStrings(
+    {
+      ...factPayload,
+      findings: findingsPayload.map((f, i) => (findings[i]!.key.startsWith("success:") ? { ...f, title: "Goal not reliably met" } : f)),
+      firstPrinciplesChecks: checks.map((c) => ({ ...c, text: stripQuoted(c.text) })),
+      successMeasures: measuresPayload.map(({ target, today }) => ({ target, today })),
+    },
+    (s) => applyAliases(s, aliases),
+  );
 
   const names = [args.processName, ...steps.map((s) => s.name), ...args.roles.map((x) => x.name), ...aliases.map((a) => a.label)];
   return {

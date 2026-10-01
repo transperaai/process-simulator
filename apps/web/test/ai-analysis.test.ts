@@ -5,12 +5,14 @@ import { analyseWithAi, quotationProblems, screenOutput, type AiDraftRequest, ty
 import { aiInputForRun, quotesFromBundle } from "@/lib/ai/input";
 import { aiDetections, aiViewFromRow, readInsights } from "@/lib/ai/types";
 import { demoFirstPrinciples } from "@/lib/first-principles/demo-seed";
-import { buildInsights } from "@/lib/insights/insights";
+import { buildInsights, limitInsights } from "@/lib/insights/insights";
 import { registerEntries } from "@/lib/issues/register";
 import { MemoryIssueStore } from "@/lib/issues/store";
 import { parsePromoteInput } from "@/lib/issues/validate";
 import { acknowledgeInsight, dismissInsight } from "@/lib/insights/actions";
 import { NarrationError } from "@/lib/narration/narrate";
+import type { IssuesState } from "@/lib/issues/use-issues";
+import type { IssueRow } from "@transpera-flow/db";
 import { demoBundle } from "@/lib/sources/demo";
 import { northbeamStepIds } from "@transpera-flow/db";
 
@@ -221,6 +223,87 @@ describe("analyseWithAi", () => {
   });
 });
 
+/** The issue state the hooks give, over the in-memory store (as test/insights.test.ts builds it, since A47). */
+function issueState(store: MemoryIssueStore): Pick<IssuesState, "promote" | "save" | "redismiss" | "revisionOf"> {
+  const done = async (run: () => Promise<{ status: "ok"; issue: IssueRow } | { status: "error"; message: string }>) => {
+    const r = await run();
+    return r.status === "ok" ? r.issue : null;
+  };
+  return {
+    promote: (input) => done(() => store.promote(input)),
+    save: (input) => done(() => store.save(input)),
+    redismiss: (id, revision) => done(() => store.redismiss(id, revision)),
+    revisionOf: () => undefined,
+  };
+}
+
+describe("what the team wrote isn't a fact (the probes)", () => {
+  const withFp = (patch: (fp: ReturnType<typeof demoFirstPrinciples>) => void) => {
+    const fp2 = demoFirstPrinciples();
+    patch(fp2);
+    return aiInputForRun({ ...run, firstPrinciples: fp2 })!.input;
+  };
+  const refused = (i: typeof input, text: string) => screenOutput({ read: [text], insights: [], review: [] }, i).readFailed;
+
+  it("an unsourced truth's figures don't pass, though the rule check quotes it", () => {
+    const i = withFp((f) => f.statements.push({ text: "We close 93% of leads within 17 days", kind: "truth", source: "", test: "", linked_parameter: null }));
+    // The model is shown the check ("… is marked as a truth but has no source")…
+    expect(JSON.stringify(i.payload)).toContain("We close 93% of leads within 17 days");
+    // …but cannot state its figures.
+    expect(refused(i, "Your own figure, 93% of leads within 17 days, is not what the run shows.")).toBe(true);
+    expect(refused(i, "Leads are closed within 17 days.")).toBe(true);
+    expect(refused(input, "The Strategist is busy avg 97% of the time (range 85%–101%).")).toBe(false);
+  });
+
+  it("a success measure's name doesn't carry figures either, in the measures or in the rule's title", () => {
+    const i = withFp((f) => f.measures.push({ id: "m9", text: "Revenue up 412% by spring", kpi: "newMrr", comparator: "atLeast", target: 50000, horizon: "" }));
+    expect(JSON.stringify(i.payload)).toContain("Revenue up 412% by spring");
+    expect(refused(i, "Revenue is not up 412% by spring.")).toBe(true);
+    expect(refused(i, "Revenue is 412% short.")).toBe(true);
+  });
+
+  it("the measure's target and pass rate, which the engine wrote, are still facts", () => {
+    const m = (input.payload.successMeasures as { target: string; today: string }[])[0]!;
+    expect(refused(input, `The goal of ${m.target} is ${m.today}.`)).toBe(false);
+  });
+});
+
+describe("words that state a ratio nobody computed are refused", () => {
+  const ok = (text: string) => screenOutput({ read: [text], insights: [], review: [] }, input).readFailed;
+  it("fractions, one in N, and figures-in-words", () => {
+    for (const text of ["About a third of leads are lost.", "Roughly three quarters of runs miss it.", "About 3/4 of the work waits.", "One in ten items is done twice.", "About 1 in 10 items is done twice.", "It is a seven figures problem.", "Two thirds of the time it is busy."]) {
+      expect(ok(text), text).toBe(true);
+    }
+  });
+  it("leaves plain engine wording alone", () => {
+    expect(ok("The Strategist is busy avg 97% of the time (range 85%–101%).")).toBe(false);
+  });
+});
+
+describe("the short list on the Overview", () => {
+  it("never hides every AI insight below the cut", async () => {
+    const rules = Array.from({ length: 8 }, (_, i) => ({ key: `capacity:role:r${i}`, type: "capacity" as const, rating: "risk" as const, escalation: { base: "risk" as const, badMonth: false, bottleneck: false }, cost: { perMonth: 1000 - i, hoursPerMonth: null, method: "" }, title: `Rule ${i}`, evidence: "Busy.", metrics: {}, stepId: null, roleId: null, personId: null, fix: null }));
+    const ai = aiDetections((await analyseWithAi(input, fake(() => good()))).insights);
+    const list = buildInsights(registerEntries([], [...rules, ...ai]));
+    expect(list.findIndex((i) => i.source.kind === "ai"), "sorted after the costed rules").toBeGreaterThanOrEqual(5);
+    const five = limitInsights(list, 5);
+    expect(five).toHaveLength(5);
+    expect(five.some((i) => i.source.kind === "ai")).toBe(true);
+    expect(five.slice(0, 4).map((i) => i.title)).toEqual(list.slice(0, 4).map((i) => i.title));
+    expect(limitInsights(list.filter((i) => i.source.kind !== "ai"), 5).some((i) => i.source.kind === "ai")).toBe(false);
+    expect(limitInsights(list.slice(0, 2), 5)).toHaveLength(2);
+  });
+});
+
+describe("quotations in single quotes are checked too", () => {
+  it("invented ones are refused, real ones and apostrophes are not", () => {
+    expect(quotationProblems("He said 'we never sleep and always chase leads' to us.", input.quotes)).toHaveLength(1);
+    expect(quotationProblems("He said ‘we never sleep and always chase leads’ to us.", input.quotes)).toHaveLength(1);
+    expect(quotationProblems("The Strategist's queue and the client's wait grow.", input.quotes)).toEqual([]);
+    expect(quotationProblems("He said 'Most weeks that's my Sunday, honestly' to us.", input.quotes)).toEqual([]);
+  });
+});
+
 describe("AI insights in the insight list", () => {
   const detections = async () => aiDetections((await analyseWithAi(input, fake(() => good()))).insights);
 
@@ -236,7 +319,7 @@ describe("AI insights in the insight list", () => {
   it("can be acknowledged into an issue, which keeps its key and then reads as that issue", async () => {
     const d = await detections();
     const store = new MemoryIssueStore("w1");
-    const state = { promote: async (i: Parameters<MemoryIssueStore["promote"]>[0]) => { const r = await store.promote(i); return r.status === "ok" ? r.issue : null; } };
+    const state = issueState(store);
     const insight = buildInsights(registerEntries([], d))[0]!;
     const parsed = parsePromoteInput({ ...(await import("@/lib/issues/register")).promoteInput(insight.detection, bundle.process.id, []) });
     expect(parsed.ok, JSON.stringify(parsed)).toBe(true);
@@ -249,7 +332,7 @@ describe("AI insights in the insight list", () => {
   it("can be dismissed, and then stay off the list", async () => {
     const d = await detections();
     const store = new MemoryIssueStore("w1");
-    const state = { promote: async (i: Parameters<MemoryIssueStore["promote"]>[0]) => { const r = await store.promote(i); return r.status === "ok" ? r.issue : null; } };
+    const state = issueState(store);
     const insight = buildInsights(registerEntries([], d))[0]!;
     expect(await dismissInsight(state, insight, { processId: bundle.process.id, scenarios: [] })).toBe(true);
     const issues = [...(store as unknown as { rows: Map<string, never> }).rows.values()];
@@ -264,8 +347,8 @@ describe("AI insights in the insight list", () => {
       "nonsense",
     ];
     expect(readInsights(stored).map((i) => i.title)).toEqual(["Fine"]);
-    const view = aiViewFromRow({ id: "1", workspace_id: "w", process_id: "p", revision_id: "r", status: "ok", reason: null, trigger: "publish", summary: ["One.", 3, ""], insights: stored, review: [{ step: "job", level: "warn", text: "t" }, { step: "x", level: "warn", text: "t" }], checked: 3, dropped: 1, input_hash: "h", model: "m", usage: [], created_at: "2026-10-01T00:00:00Z", updated_at: "2026-10-01T00:00:00Z" });
-    expect(view).toMatchObject({ summary: ["One."], review: [{ step: "job" }], checked: 3, dropped: 1 });
+    const view = aiViewFromRow({ id: "1", workspace_id: "w", process_id: "p", revision_id: "r", status: "ok", reason: null, trigger: "publish", summary: ["One.", 3, ""], insights: stored, review: [{ step: "job", level: "warn", text: "t" }, { step: "x", level: "warn", text: "t" }], checked: 3, dropped: 1, input_hash: "h", model: "m", usage: [], run_id: "run", created_by: "u", created_at: "2026-10-01T00:00:00Z", updated_at: "2026-10-01T00:00:00Z", run_by: "Ed Itor" });
+    expect(view).toMatchObject({ summary: ["One."], review: [{ step: "job" }], checked: 3, dropped: 1, runBy: "Ed Itor" });
     expect(view.review).toHaveLength(1);
   });
 });

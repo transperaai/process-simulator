@@ -213,6 +213,25 @@ research note), such as automation proposed for a step that is still a delete ca
 
 How it is built, what it is given, how every number it writes is checked against the run, and when it runs: [ADR 0013](adr/0013-ai-analysis.md). The switches are on Settings → AI analysis.
 
+## Acknowledge and dismiss
+
+An insight is what a run found. It becomes an **issue** only when someone acknowledges it (the Acknowledge dialog:
+title, how bad it is, what it touches, owners, target, sources). Until then it is not on the map and not in the issues
+register.
+
+**Dismissing** an insight says "this isn't a problem". It lasts **until the process's next published version**, not
+forever:
+
+- The dismissal is stored with the process's live version at the time (`issues.dismissed_revision_id`).
+- While the process is still on that version, the insight stays hidden, run after run.
+- When a newer version of the process is published and the analysis still finds the insight, it is listed again, as an
+  insight, and can be acknowledged or dismissed again. A new dismissal moves the stored version on.
+- If the analysis no longer finds it, nothing is listed.
+- A dismissed insight is never an issue: it is not in the issues register, not on the map, not in the counts, and it
+  has no issue number. It gets a number only if someone acknowledges it later.
+- The version is the live version of the insight's own process (the process its step belongs to), not of the page it was dismissed from.
+- A dismissal made before the process had ever been published has no version on record: it holds until the first publish, then ends like any other. Dismissals recorded before this rule take their process's live version at the time of the migration where that can be worked out, and otherwise end on the next publish.
+
 ## Changes from today
 
 - One rating scale instead of critical / serious / warning / info.

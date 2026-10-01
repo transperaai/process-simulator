@@ -421,7 +421,20 @@ export interface AiSettingsRow {
   suggest_issues: boolean;
   suggest_solutions: boolean;
   read_sources: boolean;
+  /** A market change whose review hasn't started (debounces the market trigger); not a switch. */
+  market_pending_at: string | null;
   updated_at: string;
+}
+
+/** A model run that was started (A46): the log the daily cap and the cooldown count. Written only by `reserve_ai_run`. */
+export interface AiRunRow {
+  id: string;
+  workspace_id: string;
+  process_id: string;
+  trigger: "publish" | "market" | "manual";
+  user_id: string | null;
+  user_name: string | null;
+  started_at: string;
 }
 
 export type AiAnalysisStatus = "ok" | "unavailable" | "failed";
@@ -447,6 +460,9 @@ export interface AiAnalysisRow {
   input_hash: string;
   model: string | null;
   usage: Json;
+  /** The reserved run that wrote it, and so who ran it. */
+  run_id: string;
+  created_by: string;
   created_at: string;
   updated_at: string;
 }
@@ -708,7 +724,43 @@ export interface BlockRow {
   updated_at: string;
 }
 
-export type IssueStatus = "open" | "in_progress" | "done" | "dismissed";
+/**
+ * Open, Testing solutions, Resolved, Won't fix, as the app shows them; the database holds them as the older
+ * `open`, `in_progress`, `done` plus a `resolution` (see issue-status.ts). And `dismissed`, which is not an issue a person sees: it is what an
+ * insight someone dismissed is stored as, so it stays gone. The register, the map and the counts leave it out
+ * (`isVisibleIssue`).
+ */
+export type IssueStatus = "open" | "testing" | "resolved" | "wont_fix" | "dismissed";
+/** The four statuses a person can give an issue. */
+export const ISSUE_STATUSES = ["open", "testing", "resolved", "wont_fix"] as const satisfies readonly IssueStatus[];
+export type VisibleIssueStatus = (typeof ISSUE_STATUSES)[number];
+/**
+ * A dismissed insight stays dismissed until its process's next published version. True while the process's live
+ * revision is the one it was dismissed against. A different live revision means it has expired, and the analysis may
+ * list the insight again. A dismissal with no revision on record was made before the process had any version (or
+ * migrated without one that could be worked out), so it ends on the first publish.
+ */
+export function isDismissalCurrent(i: { status: IssueStatus; dismissed_revision_id: string | null }, liveRevisionId: string | null | undefined): boolean {
+  if (i.status !== "dismissed") return false;
+  // Nothing to compare with (the page doesn't know the process's versions, or it has never been published): it holds.
+  if (!liveRevisionId) return true;
+  // Dismissed before the process had any version: the first publish ends it.
+  if (!i.dismissed_revision_id) return false;
+  return i.dismissed_revision_id === liveRevisionId;
+}
+
+/** True unless the row is a dismissed insight. */
+export const isVisibleIssue = (i: { status: IssueStatus }): boolean => i.status !== "dismissed";
+/** Still to be dealt with: open, or having a solution tested. */
+export const isActiveStatus = (s: IssueStatus): boolean => s === "open" || s === "testing";
+
+/** One thing an issue touches: a step (by stable id) or, with no step, the whole process. */
+export interface IssueLinkRef {
+  process_id: string | null;
+  step_id: string | null;
+}
+
+export type IssueEventKind = "created" | "edited" | "solution_tested" | "resolved" | "reopened";
 /** Logged by hand, detected by a stored run (reserved), or promoted from a detection. */
 export type IssueSource = "manual" | "detected" | "promoted";
 
@@ -740,10 +792,38 @@ export interface IssueRow {
   scenario_id: string | null;
   source: IssueSource;
   detected_key: string | null;
-  /** Set by the database when the status becomes done or dismissed. */
+  /** Set by the database when the status becomes resolved, won't fix or dismissed. */
   resolved_at: string | null;
   created_at: string;
   updated_at: string;
+  /** Stable per workspace, never reused: "Issue #12". Assigned by the database. Null for a dismissed insight, which is not an issue. */
+  number: number | null;
+  /** For a dismissed insight: the live revision of its process it was dismissed against. See `isDismissalCurrent`. */
+  dismissed_revision_id: string | null;
+  /** What is measured ("Wait at Check fit"), its value now ("1.4 d") and the goal ("under 4 hours"). */
+  target_measure: string | null;
+  target_now: string | null;
+  target_goal: string | null;
+  /** What it touches: steps, or (a link with no step) a whole process. `process_id` and `step_id` above are the first. */
+  links: IssueLinkRef[];
+  /** People who own it; `owner_person_id` above is the first. */
+  owner_ids: string[];
+  /** Sources linked to it. */
+  source_ids: string[];
+}
+
+/** One entry of an issue's history. Written by the database; nothing writes it through the API. */
+export interface IssueEventRow {
+  id: string;
+  issue_id: string;
+  workspace_id: string;
+  /** The order entries were written in. */
+  seq: number;
+  kind: IssueEventKind;
+  at: string;
+  actor: string | null;
+  detail: Record<string, unknown>;
+  tx: number | null;
 }
 
 /** The company-model tables a suggestion can change (docs/PRD.md §7.1c). */
@@ -854,6 +934,8 @@ export type _SchemaDriftChecks = [
   Assert<Matches<FirstPrinciplesRow, "first_principles">>,
   Assert<Matches<AiSettingsRow, "ai_settings">>,
   Assert<Matches<AiAnalysisRow, "ai_analyses">>,
+  // trigger is check-constrained to the three triggers.
+  Assert<Matches<Omit<AiRunRow, "trigger">, "ai_runs">>,
   // recurrence and provenance are jsonb; RecurrenceJson and ProvenanceMap are their app-side shapes.
   Assert<Matches<Omit<ServiceServicingRow, "recurrence">, "service_servicing">>,
   Assert<Matches<LeadSourceRow, "lead_sources">>,
@@ -869,7 +951,9 @@ export type _SchemaDriftChecks = [
   // patch is jsonb; ScenarioPatch[] is its checked shape.
   Assert<Matches<Omit<ScenarioRow, "patch">, "scenarios">>,
   // evidence_metrics is jsonb; Record<string, number> is its app-side shape.
-  Assert<Matches<Omit<IssueRow, "evidence_metrics">, "issues">>,
+  // The three relation arrays are embedded from the link tables.
+  Assert<Matches<Omit<IssueRow, "evidence_metrics" | "links" | "owner_ids" | "source_ids" | "status">, "issues">>,
+  Assert<Matches<Omit<IssueEventRow, "kind" | "detail">, "issue_events">>,
   Assert<Matches<SourceRow, "sources">>,
   // steps is jsonb; BlockBundle is its checked shape, and the check constraint limits type to BlockType.
   Assert<Matches<Omit<BlockRow, "steps" | "type">, "blocks">>,

@@ -74,7 +74,9 @@ const oneOf = <T extends string>(v: unknown, all: readonly T[]): T | null => (ty
 /** Words inside quotation marks that the model was given in a source: any other quotation is made up. */
 export function quotationProblems(text: string, quotes: readonly string[]): NumberProblem[] {
   const out: NumberProblem[] = [];
-  const found = squeeze(text).matchAll(/"([^"]{8,})"/g);
+  const squeezed = squeeze(text);
+  // Double quotes, and single quotes (‘…’ and '…', made straight by `squeeze`) that open a word and close one, so an apostrophe never pairs up.
+  const found = [...squeezed.matchAll(/"([^"]{8,})"/g), ...squeezed.matchAll(/(?<![\p{L}\p{N}])'([^']{8,}?)'(?![\p{L}\p{N}])/gu)];
   for (const m of found) {
     const said = m[1]!.trim().replace(/[.,!?;:]+$/, "");
     if (said.split(" ").length < 3) continue;

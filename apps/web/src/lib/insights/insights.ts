@@ -31,6 +31,8 @@ export interface Insight {
   detection: Detection;
   /** The tracked issue it became, if acknowledged. */
   issue: IssueRow | null;
+  /** The row of an earlier dismissal that has expired (the process was published again): acknowledging or dismissing reuses it. */
+  dismissed: IssueRow | null;
 }
 
 /** Why a finding of each type matters, in plain words (the detection itself carries the numbers). */
@@ -89,6 +91,7 @@ export function buildInsights(entries: readonly RegisterEntry[]): Insight[] {
       source: sourceOf(d),
       detection: d,
       issue,
+      dismissed: e.kind === "detected" ? (e.dismissed ?? null) : null,
     });
   }
   const none = noCost("");
@@ -105,3 +108,15 @@ export function ratingCountsOf(insights: readonly Insight[]): { rating: Rating; 
 }
 
 export const filterByRating = (insights: readonly Insight[], rating: Rating | ""): Insight[] => (rating ? insights.filter((i) => i.rating === rating) : [...insights]);
+
+/**
+ * The first `n` insights for a short list (the Overview shows five). AI insights have no cost, so they sort after the
+ * costed rule findings of their rating and could all fall below the cut; if any exists and none is in the first `n`, the
+ * top AI insight takes the last place, so the AI's view is never hidden behind "Show all".
+ */
+export function limitInsights(insights: readonly Insight[], n: number): Insight[] {
+  const head = insights.slice(0, n);
+  if (head.length < n || head.some((i) => i.source.kind === "ai")) return head;
+  const ai = insights.slice(n).find((i) => i.source.kind === "ai");
+  return ai ? [...head.slice(0, n - 1), ai] : head;
+}

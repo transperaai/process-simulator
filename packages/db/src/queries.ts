@@ -1,7 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "./database.types";
+import type { Database, Json } from "./database.types";
 import type { CompanyModel, SnapshotProcess } from "./company";
 import type { CitingRow } from "./evidence";
+import { uiStatus, type StoredIssueStatus } from "./issue-status";
 import { partitionSteps } from "./retired";
 import type { RunRow } from "./runs";
 import type {
@@ -12,6 +13,8 @@ import type {
   ClientRow,
   ClientServiceRow,
   DemandSettingsRow,
+  IssueEventRow,
+  IssueLinkRef,
   IssueRow,
   LeadSourceRow,
   MarketConditionRow,
@@ -359,13 +362,109 @@ export async function loadBlocks(db: Db, workspaceId: string): Promise<BlockRow[
 }
 
 export const ISSUE_COLUMNS =
-  "id, workspace_id, process_id, step_id, role_id, person_id, client_id, type, severity, title, evidence, evidence_metrics, owner_person_id, status, scenario_id, source, detected_key, resolved_at, created_at, updated_at" as const;
+  "id, workspace_id, process_id, step_id, role_id, person_id, client_id, type, severity, title, evidence, evidence_metrics, owner_person_id, status, scenario_id, source, detected_key, resolved_at, created_at, updated_at, number, dismissed_revision_id, resolution, target_measure, target_now, target_goal" as const;
 
-/** A workspace's tracked issues (manual and promoted), newest first. */
+/** The history log's columns. */
+export const ISSUE_EVENT_COLUMNS = "id, issue_id, workspace_id, seq, kind, at, actor, detail, tx" as const;
+
+/** An `issues` row as stored: the status as the check allows it, and the resolution that tells Resolved from Won't fix. */
+type IssueTableRow = Omit<IssueRow, "links" | "owner_ids" | "source_ids" | "status"> & { status: StoredIssueStatus; resolution: string | null };
+
+/** Join issue rows from `issues` with what each links to, who owns it and its sources. */
+export function assembleIssues(
+  issues: readonly IssueTableRow[],
+  links: readonly { issue_id: string; process_id: string | null; step_id: string | null }[],
+  owners: readonly { issue_id: string; person_id: string }[],
+  sources: readonly { issue_id: string; source_id: string }[],
+): IssueRow[] {
+  const by = <T extends { issue_id: string }>(list: readonly T[]) => {
+    const m = new Map<string, T[]>();
+    for (const r of list) {
+      const bucket = m.get(r.issue_id);
+      if (bucket) bucket.push(r);
+      else m.set(r.issue_id, [r]);
+    }
+    return m;
+  };
+  const l = by(links);
+  const o = by(owners);
+  const s = by(sources);
+  return issues.map(({ resolution, status, ...i }) => ({
+    ...i,
+    // The new statuses are held as the old ones plus a resolution (issue-status.ts).
+    status: uiStatus(status, resolution),
+    // In the order they were added (the reads are ordered).
+    links: (l.get(i.id) ?? []).map(({ process_id, step_id }) => ({ process_id, step_id })),
+    owner_ids: (o.get(i.id) ?? []).map((r) => r.person_id),
+    source_ids: (s.get(i.id) ?? []).map((r) => r.source_id),
+  }));
+}
+
+/**
+ * A workspace's tracked issues (manual and promoted, and dismissed insights too: callers leave those out with
+ * `isVisibleIssue`), newest first, each with its links, owners and sources.
+ */
 export async function loadIssues(db: Db, workspaceId: string): Promise<IssueRow[]> {
-  const r = await db.from("issues").select(ISSUE_COLUMNS).eq("workspace_id", workspaceId).order("created_at", { ascending: false }).order("id");
+  const [issues, links, owners, sources] = await Promise.all([
+    db.from("issues").select(ISSUE_COLUMNS).eq("workspace_id", workspaceId).order("created_at", { ascending: false }).order("id"),
+    db.from("issue_links").select("issue_id, process_id, step_id").eq("workspace_id", workspaceId).order("created_at").order("id"),
+    db.from("issue_owners").select("issue_id, person_id").eq("workspace_id", workspaceId).order("created_at").order("person_id"),
+    db.from("issue_sources").select("issue_id, source_id").eq("workspace_id", workspaceId).order("created_at").order("source_id"),
+  ]);
   // Check constraints limit type, severity, status and source to IssueRow's unions.
-  return rows(r) as unknown as IssueRow[];
+  return assembleIssues(rows(issues) as unknown as IssueTableRow[], rows(links), rows(owners), rows(sources));
+}
+
+/** One issue with its relations, or null if it isn't there (or isn't readable). */
+export async function loadIssue(db: Db, workspaceId: string, issueId: string): Promise<IssueRow | null> {
+  const [issues, links, owners, sources] = await Promise.all([
+    db.from("issues").select(ISSUE_COLUMNS).eq("workspace_id", workspaceId).eq("id", issueId),
+    db.from("issue_links").select("issue_id, process_id, step_id").eq("issue_id", issueId).order("created_at").order("id"),
+    db.from("issue_owners").select("issue_id, person_id").eq("issue_id", issueId).order("created_at").order("person_id"),
+    db.from("issue_sources").select("issue_id, source_id").eq("issue_id", issueId).order("created_at").order("source_id"),
+  ]);
+  return assembleIssues(rows(issues) as unknown as IssueTableRow[], rows(links), rows(owners), rows(sources))[0] ?? null;
+}
+
+/** An issue's history, oldest first. */
+export async function loadIssueEvents(db: Db, workspaceId: string, issueId: string): Promise<IssueEventRow[]> {
+  const r = await db.from("issue_events").select(ISSUE_EVENT_COLUMNS).eq("workspace_id", workspaceId).eq("issue_id", issueId).order("seq");
+  return rows(r) as unknown as IssueEventRow[];
+}
+
+/** What `save_issue` takes: the columns to set, and the links, owners and sources to replace (omit to leave as they are). */
+export interface SaveIssueArgs {
+  workspaceId: string;
+  /** Omit to create. */
+  id?: string;
+  fields: Record<string, Json | undefined>;
+  links?: readonly IssueLinkRef[];
+  owners?: readonly string[];
+  sources?: readonly string[];
+}
+
+/** Create or edit an issue with its links, owners and sources in one transaction (one history entry). Returns the stored issue's id. */
+export async function saveIssue(db: Db, args: SaveIssueArgs): Promise<{ id: string } | { error: { code?: string; message?: string } }> {
+  const fields = Object.fromEntries(Object.entries(args.fields).filter(([, v]) => v !== undefined)) as Record<string, Json>;
+  const { data, error } = await db.rpc("save_issue", {
+    p_workspace: args.workspaceId,
+    ...(args.id ? { p_id: args.id } : {}),
+    p_fields: fields,
+    ...(args.links ? { p_links: args.links as unknown as Json } : {}),
+    ...(args.owners ? { p_owners: [...args.owners] } : {}),
+    ...(args.sources ? { p_sources: [...args.sources] } : {}),
+  });
+  if (error) return { error };
+  return { id: (data as { id: string }).id };
+}
+
+/**
+ * Each process's live revision id (processes never published are left out). A dismissed insight is hidden only until
+ * its process's live revision changes, so the screens that list insights compare against this (`isDismissalCurrent`).
+ */
+export async function loadLiveRevisionIds(db: Db, workspaceId: string): Promise<Record<string, string>> {
+  const r = await db.from("processes").select("id, live_revision_id").eq("workspace_id", workspaceId);
+  return Object.fromEntries(rows(r).flatMap((p) => (p.live_revision_id ? [[p.id, p.live_revision_id]] : [])));
 }
 
 /** The `SourceRow` columns. */

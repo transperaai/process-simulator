@@ -1,32 +1,50 @@
 begin;
+set local lock_timeout = '5s';
 
 -- AI analysis (issue #111, A46; docs/analysis-rules.md "What AI does", docs/adr/0013-ai-analysis.md).
 --
 -- AI runs alongside the rules: it reads a published version's results, rule findings, first principles and (if the
 -- workspace lets it) linked sources, and writes a short "AI read of this run", insights marked AI, and a review of the
 -- first principles. Every number in what it writes is checked against the run before it is stored (the narration check,
--- docs/adr/0011-narration.md); this migration only stores the outcome.
+-- docs/adr/0011-narration.md); this migration only stores the outcome and bounds the cost.
 --
--- Two tables:
+-- Three tables and one function:
 --
 --   * `ai_settings`: one row per workspace with the five switches on Settings -> AI analysis. No row means the defaults
 --     (the column defaults). Written per switch (an upsert of one column), so two people flipping different switches
---     can't undo each other.
+--     can't undo each other. `market_pending_at` debounces the market-change trigger (see below); it is not a switch.
+--   * `ai_runs`: an append-only log of every model run that was started, one row per run, written only by
+--     `reserve_ai_run`. It is what the daily cap and the per-process cooldown count, so they hold whatever else is done:
+--     re-runs, failed runs, deleted analyses. Authenticated users can read it and cannot insert, update or delete.
 --   * `ai_analyses`: one row per process revision (a published or superseded version): the read, the insights, the
 --     first-principles review, the number check's counts and the model. Stored so a page view never calls the model;
---     a re-run (publish, a market change, "Run again") replaces the row.
+--     a re-run replaces the row. Each row names the run that wrote it (`run_id`), and so who ran it.
+--   * `reserve_ai_run(workspace, process, trigger)`: SECURITY DEFINER, with an empty search_path. Justification: the
+--     cost bound must not be something an editor can reset, so `ai_runs` has no write grant for `authenticated`, and
+--     the one thing that may add a row is this function. It writes no AI content: it checks `can_edit_workspace` for
+--     the caller, takes a per-workspace advisory lock (so two parallel reservations can't both squeeze under the cap),
+--     refuses at 40 runs in 24 hours for the workspace or a second run of the same process within 60 seconds, and
+--     otherwise inserts the run (recording the caller's id and display name, which an invoker can't read from
+--     `auth.users`) and returns its id.
 --
--- Access: every member reads; owners and editors write, as the user (the server writes after a publish or a click with
--- the signed-in user's own client, so no SECURITY DEFINER function and no service key is involved). `anon` has nothing.
+-- Access: every member reads; owners and editors write the switches and the analyses as themselves. A trigger stamps
+-- `ai_analyses.created_by` with the caller (it can't be forged) and refuses a row whose `run_id` is not a run the caller
+-- reserved for that process, so an editor can only store an analysis against a reservation they paid for. No delete for
+-- `authenticated` (analyses go with their revision or workspace). `anon` has nothing.
 --
--- Strictly additive: two tables, `set_updated_at` triggers, row-level security and policies. `save_fields`,
+-- Known limit: an editor with direct database access can still write arbitrary text into an analysis of their own
+-- reserved run, because the server writes with the user's own credentials. The fix is a server-side writer with a
+-- service-role key (a production config change); until then the AI read shows who ran it. See ADR 0013.
+--
+-- Strictly additive: three tables, one function, triggers, row-level security and policies. `save_fields`,
 -- `publish_process` and every existing table are unchanged.
 --
 -- Preflight (run with `bash packages/db/scripts/prod-sql.sh -c "..."`):
 --
---   1. The tables must not exist yet. Expect 0 rows:
+--   1. The tables and function must not exist yet. Expect 0 rows:
 --        select table_name from information_schema.tables
---        where table_schema = 'public' and table_name in ('ai_settings', 'ai_analyses');
+--        where table_schema = 'public' and table_name in ('ai_settings', 'ai_analyses', 'ai_runs');
+--        select proname from pg_proc where pronamespace = 'public'::regnamespace and proname = 'reserve_ai_run';
 --   2. The unique index first_principles added on process_revisions exists. Expect 1 row:
 --        select indexname from pg_indexes where indexname = 'process_revisions_id_process_workspace_key';
 --   3. Nothing of ours is applied past this one. Expect 0 rows:
@@ -35,8 +53,11 @@ begin;
 -- Rollback (run as one transaction):
 --
 --   begin;
+--   drop function if exists public.reserve_ai_run(uuid, uuid, text);
 --   drop table if exists public.ai_analyses;
+--   drop table if exists public.ai_runs;
 --   drop table if exists public.ai_settings;
+--   drop function if exists private.ai_analyses_stamp();
 --   delete from supabase_migrations.schema_migrations where version = '20261121000000';
 --   commit;
 --
@@ -54,6 +75,9 @@ create table public.ai_settings (
   suggest_solutions boolean not null default true,
   -- Read the sources linked to a process, and quote them. Off until someone turns it on: it sends interview text to the model.
   read_sources boolean not null default false,
+  -- A market change was made at this time and its review hasn't started: each change moves it, and the one run that
+  -- claims it (sets it back to null) is the last change's, so a burst of edits makes one run, not one per edit.
+  market_pending_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   created_by uuid references auth.users (id) on delete set null default auth.uid()
@@ -75,6 +99,80 @@ create policy "delete ai_settings" on public.ai_settings for delete to authentic
 
 grant select, insert, update, delete on public.ai_settings to authenticated;
 revoke all on public.ai_settings from anon;
+
+-- Every started run, append-only. Only reserve_ai_run writes it.
+create table public.ai_runs (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  process_id uuid not null references public.processes (id) on delete cascade,
+  trigger text not null check (trigger in ('publish', 'market', 'manual')),
+  -- Who started it, and the name to show for them (null only if the user is later deleted).
+  user_id uuid references auth.users (id) on delete set null,
+  user_name text check (user_name is null or char_length(user_name) <= 200),
+  started_at timestamptz not null default now()
+);
+
+create index on public.ai_runs (workspace_id, started_at);
+create index on public.ai_runs (process_id, started_at);
+
+alter table public.ai_runs enable row level security;
+
+create policy "read ai_runs" on public.ai_runs for select to authenticated
+  using (public.can_read_workspace(workspace_id));
+
+-- Read only: no insert, update or delete for authenticated (no policy and no grant). reserve_ai_run is the one writer.
+revoke all on public.ai_runs from anon, authenticated;
+grant select on public.ai_runs to authenticated;
+
+create function public.reserve_ai_run(p_workspace uuid, p_process uuid, p_trigger text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := auth.uid();
+  used integer;
+  recent timestamptz;
+  new_id uuid;
+  who text;
+begin
+  if uid is null or p_trigger is null or p_trigger not in ('publish', 'market', 'manual') then
+    return jsonb_build_object('status', 'forbidden');
+  end if;
+  if not coalesce(public.can_edit_workspace(p_workspace), false) then
+    return jsonb_build_object('status', 'forbidden');
+  end if;
+  if not exists (select 1 from public.processes where id = p_process and workspace_id = p_workspace) then
+    return jsonb_build_object('status', 'forbidden');
+  end if;
+
+  -- One reservation at a time per workspace, so the count below can't be raced past.
+  perform pg_advisory_xact_lock(hashtextextended('ai_runs:' || p_workspace::text, 0));
+
+  select count(*) into used from public.ai_runs
+    where workspace_id = p_workspace and started_at > now() - interval '24 hours';
+  if used >= 40 then
+    return jsonb_build_object('status', 'limit', 'limit', 40);
+  end if;
+
+  select max(started_at) into recent from public.ai_runs
+    where process_id = p_process and started_at > now() - interval '60 seconds';
+  if recent is not null then
+    return jsonb_build_object('status', 'cooldown', 'retry_after_seconds', greatest(1, ceil(extract(epoch from (recent + interval '60 seconds' - now())))::integer));
+  end if;
+
+  select coalesce(nullif(u.raw_user_meta_data ->> 'full_name', ''), nullif(u.raw_user_meta_data ->> 'name', ''), u.email)
+    into who from auth.users u where u.id = uid;
+  insert into public.ai_runs (workspace_id, process_id, trigger, user_id, user_name)
+    values (p_workspace, p_process, p_trigger, uid, left(who, 200))
+    returning id into new_id;
+  return jsonb_build_object('status', 'ok', 'id', new_id);
+end;
+$$;
+
+revoke all on function public.reserve_ai_run(uuid, uuid, text) from public, anon;
+grant execute on function public.reserve_ai_run(uuid, uuid, text) to authenticated;
 
 create table public.ai_analyses (
   id uuid primary key default gen_random_uuid(),
@@ -108,9 +206,12 @@ create table public.ai_analyses (
   model text check (model is null or char_length(model) <= 200),
   usage jsonb not null default '[]' check (jsonb_typeof(usage) = 'array' and jsonb_array_length(usage) <= 10),
 
+  -- The run that wrote it (reserve_ai_run), so the page can say who ran it.
+  run_id uuid not null references public.ai_runs (id) on delete cascade,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  created_by uuid references auth.users (id) on delete set null default auth.uid(),
+  -- Stamped by the trigger below with the caller: never what the client sent.
+  created_by uuid not null default auth.uid(),
 
   -- One analysis per version.
   unique (revision_id),
@@ -123,18 +224,37 @@ create index on public.ai_analyses (process_id);
 create trigger set_updated_at before update on public.ai_analyses
   for each row execute function public.set_updated_at();
 
+-- security invoker: reads ai_runs under the caller's own RLS (members read it).
+create function private.ai_analyses_stamp() returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  new.created_by := auth.uid();
+  if not exists (
+    select 1 from public.ai_runs r
+    where r.id = new.run_id and r.user_id = auth.uid() and r.process_id = new.process_id and r.workspace_id = new.workspace_id
+  ) then
+    raise exception 'ai_analyses: run_id must be a run you reserved for this process' using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger ai_analyses_stamp before insert or update on public.ai_analyses
+  for each row execute function private.ai_analyses_stamp();
+
 alter table public.ai_analyses enable row level security;
 
 create policy "read ai_analyses" on public.ai_analyses for select to authenticated
   using (public.can_read_workspace(workspace_id));
 create policy "insert ai_analyses" on public.ai_analyses for insert to authenticated
-  with check (public.can_edit_workspace(workspace_id));
+  with check (public.can_edit_workspace(workspace_id) and created_by = auth.uid());
 create policy "update ai_analyses" on public.ai_analyses for update to authenticated
-  using (public.can_edit_workspace(workspace_id)) with check (public.can_edit_workspace(workspace_id));
-create policy "delete ai_analyses" on public.ai_analyses for delete to authenticated
-  using (public.can_edit_workspace(workspace_id));
+  using (public.can_edit_workspace(workspace_id)) with check (public.can_edit_workspace(workspace_id) and created_by = auth.uid());
 
-grant select, insert, update, delete on public.ai_analyses to authenticated;
+-- No delete for authenticated: an analysis goes with its revision or workspace.
+grant select, insert, update on public.ai_analyses to authenticated;
 revoke all on public.ai_analyses from anon;
 
 insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261121000000', 'ai_analysis', array[$mig$-- AI analysis (issue #111, A46; docs/analysis-rules.md "What AI does", docs/adr/0013-ai-analysis.md).
@@ -142,28 +262,45 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 -- AI runs alongside the rules: it reads a published version's results, rule findings, first principles and (if the
 -- workspace lets it) linked sources, and writes a short "AI read of this run", insights marked AI, and a review of the
 -- first principles. Every number in what it writes is checked against the run before it is stored (the narration check,
--- docs/adr/0011-narration.md); this migration only stores the outcome.
+-- docs/adr/0011-narration.md); this migration only stores the outcome and bounds the cost.
 --
--- Two tables:
+-- Three tables and one function:
 --
 --   * `ai_settings`: one row per workspace with the five switches on Settings -> AI analysis. No row means the defaults
 --     (the column defaults). Written per switch (an upsert of one column), so two people flipping different switches
---     can't undo each other.
+--     can't undo each other. `market_pending_at` debounces the market-change trigger (see below); it is not a switch.
+--   * `ai_runs`: an append-only log of every model run that was started, one row per run, written only by
+--     `reserve_ai_run`. It is what the daily cap and the per-process cooldown count, so they hold whatever else is done:
+--     re-runs, failed runs, deleted analyses. Authenticated users can read it and cannot insert, update or delete.
 --   * `ai_analyses`: one row per process revision (a published or superseded version): the read, the insights, the
 --     first-principles review, the number check's counts and the model. Stored so a page view never calls the model;
---     a re-run (publish, a market change, "Run again") replaces the row.
+--     a re-run replaces the row. Each row names the run that wrote it (`run_id`), and so who ran it.
+--   * `reserve_ai_run(workspace, process, trigger)`: SECURITY DEFINER, with an empty search_path. Justification: the
+--     cost bound must not be something an editor can reset, so `ai_runs` has no write grant for `authenticated`, and
+--     the one thing that may add a row is this function. It writes no AI content: it checks `can_edit_workspace` for
+--     the caller, takes a per-workspace advisory lock (so two parallel reservations can't both squeeze under the cap),
+--     refuses at 40 runs in 24 hours for the workspace or a second run of the same process within 60 seconds, and
+--     otherwise inserts the run (recording the caller's id and display name, which an invoker can't read from
+--     `auth.users`) and returns its id.
 --
--- Access: every member reads; owners and editors write, as the user (the server writes after a publish or a click with
--- the signed-in user's own client, so no SECURITY DEFINER function and no service key is involved). `anon` has nothing.
+-- Access: every member reads; owners and editors write the switches and the analyses as themselves. A trigger stamps
+-- `ai_analyses.created_by` with the caller (it can't be forged) and refuses a row whose `run_id` is not a run the caller
+-- reserved for that process, so an editor can only store an analysis against a reservation they paid for. No delete for
+-- `authenticated` (analyses go with their revision or workspace). `anon` has nothing.
 --
--- Strictly additive: two tables, `set_updated_at` triggers, row-level security and policies. `save_fields`,
+-- Known limit: an editor with direct database access can still write arbitrary text into an analysis of their own
+-- reserved run, because the server writes with the user's own credentials. The fix is a server-side writer with a
+-- service-role key (a production config change); until then the AI read shows who ran it. See ADR 0013.
+--
+-- Strictly additive: three tables, one function, triggers, row-level security and policies. `save_fields`,
 -- `publish_process` and every existing table are unchanged.
 --
 -- Preflight (run with `bash packages/db/scripts/prod-sql.sh -c "..."`):
 --
---   1. The tables must not exist yet. Expect 0 rows:
+--   1. The tables and function must not exist yet. Expect 0 rows:
 --        select table_name from information_schema.tables
---        where table_schema = 'public' and table_name in ('ai_settings', 'ai_analyses');
+--        where table_schema = 'public' and table_name in ('ai_settings', 'ai_analyses', 'ai_runs');
+--        select proname from pg_proc where pronamespace = 'public'::regnamespace and proname = 'reserve_ai_run';
 --   2. The unique index first_principles added on process_revisions exists. Expect 1 row:
 --        select indexname from pg_indexes where indexname = 'process_revisions_id_process_workspace_key';
 --   3. Nothing of ours is applied past this one. Expect 0 rows:
@@ -172,8 +309,11 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 -- Rollback (run as one transaction):
 --
 --   begin;
+--   drop function if exists public.reserve_ai_run(uuid, uuid, text);
 --   drop table if exists public.ai_analyses;
+--   drop table if exists public.ai_runs;
 --   drop table if exists public.ai_settings;
+--   drop function if exists private.ai_analyses_stamp();
 --   delete from supabase_migrations.schema_migrations where version = '20261121000000';
 --   commit;
 --
@@ -191,6 +331,9 @@ create table public.ai_settings (
   suggest_solutions boolean not null default true,
   -- Read the sources linked to a process, and quote them. Off until someone turns it on: it sends interview text to the model.
   read_sources boolean not null default false,
+  -- A market change was made at this time and its review hasn't started: each change moves it, and the one run that
+  -- claims it (sets it back to null) is the last change's, so a burst of edits makes one run, not one per edit.
+  market_pending_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   created_by uuid references auth.users (id) on delete set null default auth.uid()
@@ -212,6 +355,80 @@ create policy "delete ai_settings" on public.ai_settings for delete to authentic
 
 grant select, insert, update, delete on public.ai_settings to authenticated;
 revoke all on public.ai_settings from anon;
+
+-- Every started run, append-only. Only reserve_ai_run writes it.
+create table public.ai_runs (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  process_id uuid not null references public.processes (id) on delete cascade,
+  trigger text not null check (trigger in ('publish', 'market', 'manual')),
+  -- Who started it, and the name to show for them (null only if the user is later deleted).
+  user_id uuid references auth.users (id) on delete set null,
+  user_name text check (user_name is null or char_length(user_name) <= 200),
+  started_at timestamptz not null default now()
+);
+
+create index on public.ai_runs (workspace_id, started_at);
+create index on public.ai_runs (process_id, started_at);
+
+alter table public.ai_runs enable row level security;
+
+create policy "read ai_runs" on public.ai_runs for select to authenticated
+  using (public.can_read_workspace(workspace_id));
+
+-- Read only: no insert, update or delete for authenticated (no policy and no grant). reserve_ai_run is the one writer.
+revoke all on public.ai_runs from anon, authenticated;
+grant select on public.ai_runs to authenticated;
+
+create function public.reserve_ai_run(p_workspace uuid, p_process uuid, p_trigger text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := auth.uid();
+  used integer;
+  recent timestamptz;
+  new_id uuid;
+  who text;
+begin
+  if uid is null or p_trigger is null or p_trigger not in ('publish', 'market', 'manual') then
+    return jsonb_build_object('status', 'forbidden');
+  end if;
+  if not coalesce(public.can_edit_workspace(p_workspace), false) then
+    return jsonb_build_object('status', 'forbidden');
+  end if;
+  if not exists (select 1 from public.processes where id = p_process and workspace_id = p_workspace) then
+    return jsonb_build_object('status', 'forbidden');
+  end if;
+
+  -- One reservation at a time per workspace, so the count below can't be raced past.
+  perform pg_advisory_xact_lock(hashtextextended('ai_runs:' || p_workspace::text, 0));
+
+  select count(*) into used from public.ai_runs
+    where workspace_id = p_workspace and started_at > now() - interval '24 hours';
+  if used >= 40 then
+    return jsonb_build_object('status', 'limit', 'limit', 40);
+  end if;
+
+  select max(started_at) into recent from public.ai_runs
+    where process_id = p_process and started_at > now() - interval '60 seconds';
+  if recent is not null then
+    return jsonb_build_object('status', 'cooldown', 'retry_after_seconds', greatest(1, ceil(extract(epoch from (recent + interval '60 seconds' - now())))::integer));
+  end if;
+
+  select coalesce(nullif(u.raw_user_meta_data ->> 'full_name', ''), nullif(u.raw_user_meta_data ->> 'name', ''), u.email)
+    into who from auth.users u where u.id = uid;
+  insert into public.ai_runs (workspace_id, process_id, trigger, user_id, user_name)
+    values (p_workspace, p_process, p_trigger, uid, left(who, 200))
+    returning id into new_id;
+  return jsonb_build_object('status', 'ok', 'id', new_id);
+end;
+$$;
+
+revoke all on function public.reserve_ai_run(uuid, uuid, text) from public, anon;
+grant execute on function public.reserve_ai_run(uuid, uuid, text) to authenticated;
 
 create table public.ai_analyses (
   id uuid primary key default gen_random_uuid(),
@@ -245,9 +462,12 @@ create table public.ai_analyses (
   model text check (model is null or char_length(model) <= 200),
   usage jsonb not null default '[]' check (jsonb_typeof(usage) = 'array' and jsonb_array_length(usage) <= 10),
 
+  -- The run that wrote it (reserve_ai_run), so the page can say who ran it.
+  run_id uuid not null references public.ai_runs (id) on delete cascade,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  created_by uuid references auth.users (id) on delete set null default auth.uid(),
+  -- Stamped by the trigger below with the caller: never what the client sent.
+  created_by uuid not null default auth.uid(),
 
   -- One analysis per version.
   unique (revision_id),
@@ -260,18 +480,37 @@ create index on public.ai_analyses (process_id);
 create trigger set_updated_at before update on public.ai_analyses
   for each row execute function public.set_updated_at();
 
+-- security invoker: reads ai_runs under the caller's own RLS (members read it).
+create function private.ai_analyses_stamp() returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  new.created_by := auth.uid();
+  if not exists (
+    select 1 from public.ai_runs r
+    where r.id = new.run_id and r.user_id = auth.uid() and r.process_id = new.process_id and r.workspace_id = new.workspace_id
+  ) then
+    raise exception 'ai_analyses: run_id must be a run you reserved for this process' using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger ai_analyses_stamp before insert or update on public.ai_analyses
+  for each row execute function private.ai_analyses_stamp();
+
 alter table public.ai_analyses enable row level security;
 
 create policy "read ai_analyses" on public.ai_analyses for select to authenticated
   using (public.can_read_workspace(workspace_id));
 create policy "insert ai_analyses" on public.ai_analyses for insert to authenticated
-  with check (public.can_edit_workspace(workspace_id));
+  with check (public.can_edit_workspace(workspace_id) and created_by = auth.uid());
 create policy "update ai_analyses" on public.ai_analyses for update to authenticated
-  using (public.can_edit_workspace(workspace_id)) with check (public.can_edit_workspace(workspace_id));
-create policy "delete ai_analyses" on public.ai_analyses for delete to authenticated
-  using (public.can_edit_workspace(workspace_id));
+  using (public.can_edit_workspace(workspace_id)) with check (public.can_edit_workspace(workspace_id) and created_by = auth.uid());
 
-grant select, insert, update, delete on public.ai_analyses to authenticated;
+-- No delete for authenticated: an analysis goes with its revision or workspace.
+grant select, insert, update on public.ai_analyses to authenticated;
 revoke all on public.ai_analyses from anon;
 $mig$]);
 

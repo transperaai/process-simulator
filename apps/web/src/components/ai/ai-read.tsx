@@ -48,7 +48,7 @@ export function AiRead({
         <p className="text-xs text-muted-foreground" data-ai-read-footer>
           {versionNumber ? `Version ${versionNumber}, ` : ""}written {when(view.at)}
           {view.model ? ` by ${view.model}` : ""}
-          {demo ? " (written in advance for the demo)" : ""}. {view.checked} number{view.checked === 1 ? "" : "s"} checked against the run
+          {demo ? " (written in advance for the demo)" : ""}. Reviewed by AI{view.runBy ? ` · run by ${view.runBy}` : ""}. {view.checked} number{view.checked === 1 ? "" : "s"} checked against the run
           {view.dropped ? `; ${view.dropped} item${view.dropped === 1 ? "" : "s"} left out for citing a figure the run doesn't have` : ""}.
         </p>
       </>

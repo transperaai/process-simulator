@@ -60,7 +60,7 @@ export function AiReviewPanel({
           <p className="text-xs text-fg-2">Nothing to add on this step.</p>
         )}
         <p className="text-xs text-fg-2" data-ai-review-footer>
-          Reviewed {versionNumber ? `version ${versionNumber}` : "the live version"} and its first principles. {view.checked} number{view.checked === 1 ? "" : "s"} checked against the run
+          Reviewed by AI{view.runBy ? ` · run by ${view.runBy}` : ""}. It reviewed {versionNumber ? `version ${versionNumber}` : "the live version"} and its first principles. {view.checked} number{view.checked === 1 ? "" : "s"} checked against the run
           {view.dropped ? `; ${view.dropped} finding${view.dropped === 1 ? "" : "s"} left out for citing a figure the run doesn't have` : ""}. Edits you are making now are included after you publish.
         </p>
       </>

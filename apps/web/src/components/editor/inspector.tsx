@@ -141,7 +141,7 @@ function GroupPanel({
   return (
     <section aria-label={`Group: ${group.name}`} className="flex flex-col gap-2 border-t border-line pt-3">
       <p className="text-xs text-fg-2">
-        {members.length === 0 ? "Nothing inside yet. Select steps beside it and press Group, or add steps with + Step." : `${members.length} ${members.length === 1 ? "step" : "steps"} inside. Use + on the map to open it.`}
+        {members.length === 0 ? "Nothing inside yet. Select steps beside it and press Group, or add steps with + Step." : `${members.length} ${members.length === 1 ? "step" : "steps"} inside. Groups are open in the Editor so you can edit inside them; use Collapse on the map to close one.`}
       </p>
       <label className="flex flex-col gap-1 text-xs font-semibold">
         <span className="flex items-center">

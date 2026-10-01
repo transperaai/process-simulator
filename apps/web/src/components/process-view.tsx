@@ -120,11 +120,10 @@ export function ProcessView({
     () => ({ at: new Date().toISOString(), by: userId }),
   );
   const editor = session.editor;
-  const canEdit = mode !== "readonly";
   const hasDraft = drafts.draft !== null || drafts.opening;
-  // Editors see the draft by default; everyone else the live model, unless it was never published (issue #76).
+  // The map shows the live model by default, for editors too (the draft is one toggle away, read-only); a process never published has only its draft (issue #76).
   const unpublished = isUnpublished(initialLive);
-  const [view, setView] = useState<DraftView>(canEdit || unpublished ? "draft" : "live");
+  const [view, setView] = useState<DraftView>(unpublished ? "draft" : "live");
   const showingLive = hasDraft && view === "live";
   const working = state.bundle;
   const live = drafts.live;
@@ -355,7 +354,7 @@ export function ProcessView({
     issuesUi.showIssues();
   }
   // A tab that no longer exists (the step was deselected, the draft is hidden) gives way to one that does.
-  const hasTab: Record<PanelTabId, boolean> = { step: editable && !!inspected, draft: !showingLive, insights: !!shownModel, scenarios: !!shownModel };
+  const hasTab: Record<PanelTabId, boolean> = { step: editable && !!inspected, draft: hasDraft && !showingLive, insights: !!shownModel, scenarios: !!shownModel };
   const activeTab: PanelTabId = hasTab[panelTab] ? panelTab : draftHasContent ? "draft" : hasTab.insights ? "insights" : hasTab.draft ? "draft" : "step";
   const panelShown = panelOpen === true || (panelOpen === "auto" && !isNarrow);
 
@@ -388,10 +387,14 @@ export function ProcessView({
           onReview={(id) => select("steps", id)}
           breaks={breaks}
         />
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           {editHref && (
             <>
-              <span className="hidden text-xs text-muted-foreground sm:inline">Viewing{hasDraft ? "" : " live"}. Changes are made in the Editor.</span>
+              <span className="hidden text-xs text-muted-foreground sm:inline">
+                {showingLive || !hasDraft
+                  ? `Viewing live · version ${live.revision.number}`
+                  : `Viewing draft version ${drafts.draft?.number ?? live.revision.number + 1} (read-only)`}
+              </span>
               <Button asChild size="sm" className="bg-edit text-edit-fg hover:bg-edit/90">
                 <Link href={editHref}>{hasDraft ? "✎ Open draft in Editor" : "✎ Edit process"}</Link>
               </Button>

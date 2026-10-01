@@ -31,6 +31,15 @@ describe("editor modes", () => {
     expect(exitHref("https://elsewhere.example/", "/demo")).toBe("/demo");
     expect(exitHref("//elsewhere.example/", "/demo")).toBe("/demo");
     expect(exitHref("/\\elsewhere.example", "/demo")).toBe("/demo");
+    // What a browser strips or rewrites before it follows a link.
+    expect(exitHref("/\t/example.org/phish", "/demo")).toBe("/demo");
+    expect(exitHref("\t//example.org", "/demo")).toBe("/demo");
+    expect(exitHref("/\n/example.org", "/demo")).toBe("/demo");
+    expect(exitHref("\\\\example.org", "/demo")).toBe("/demo");
+    expect(exitHref("javascript:alert(1)", "/demo")).toBe("/demo");
+    // Encoded, it is only a path of this site.
+    expect(exitHref("/%09/example.org/phish", "/demo")).toBe("/%09/example.org/phish");
+    expect(exitHref("/w/acme/issues?x=1#top", "/demo")).toBe("/w/acme/issues?x=1#top");
   });
 
   it("knows which pages are the Editor, which show no sidebar", () => {

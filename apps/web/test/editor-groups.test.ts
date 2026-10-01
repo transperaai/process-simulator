@@ -42,10 +42,14 @@ describe("adding after the selected step", () => {
   it("places the new step unconnected beside a step with branches", () => {
     const b = flat();
     expect(from(b, ids.discovery).length).toBeGreaterThan(1);
-    const { edit, id } = addAfter(b, ids.discovery, "task");
+    const { edit, id, note } = addAfter(b, ids.discovery, "task");
     const after = applyEdit(b, edit);
     expect(after.edges).toHaveLength(b.edges.length);
-    expect(Number(stepsOf(after, id).x)).toBeGreaterThan(Number(stepsOf(b, ids.discovery).x));
+    // Just below the selected step, where it is easy to find, and the person is told to join it in.
+    expect(Number(stepsOf(after, id).y)).toBeGreaterThan(Number(stepsOf(b, ids.discovery).y));
+    expect(Math.abs(Number(stepsOf(after, id).x) - Number(stepsOf(b, ids.discovery).x))).toBeLessThan(100);
+    expect(note).toBe("Discovery call has branches: connect the new step yourself.");
+    expect(addAfter(b, ids.seo, "task").note).toBeUndefined();
   });
 
   it("lands inside the group of the selected step, at any depth", () => {

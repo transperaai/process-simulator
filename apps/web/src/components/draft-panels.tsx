@@ -92,7 +92,7 @@ export function DraftBar({
     <section aria-label="Draft controls" className="contents text-xs">
       {unpublished ? (
         <Badge variant="outline" className="border-warn bg-warn-soft py-1 text-xs text-fg">
-          Not published yet{hasDraft ? ` · Draft · r${draftNumber}` : ""}
+          Not published yet{hasDraft ? ` · Draft · version ${draftNumber}` : ""}
         </Badge>
       ) : hasDraft ? (
         <div role="group" aria-label="Show revision" className="flex overflow-hidden rounded-md border border-input bg-panel shadow-xs">
@@ -104,13 +104,13 @@ export function DraftBar({
               onPressedChange={() => onView(v)}
               className="h-7 rounded-none px-2.5 text-xs font-semibold [&+&]:border-l"
             >
-              {v === "live" ? `Live · r${liveNumber}` : `Draft · r${draftNumber}`}
+              {v === "live" ? `Live · version ${liveNumber}` : `Draft · version ${draftNumber}`}
             </Toggle>
           ))}
         </div>
       ) : (
         <Badge variant="outline" className="py-1 text-xs text-fg">
-          Live · r{liveNumber}
+          Live · version {liveNumber}
         </Badge>
       )}
       <p title={status} className="order-last min-w-0 basis-full truncate text-xs text-muted-foreground xl:order-none xl:basis-0 xl:flex-1" aria-live="polite">
@@ -145,7 +145,7 @@ export function DraftBar({
       {confirming === "discard" && (
         <div role="alertdialog" aria-label="Discard the draft" className="order-last flex basis-full flex-wrap items-center gap-2 rounded-token border border-crit bg-crit-soft p-2 text-xs">
           <p className="grow">
-            Discard all {plural(changes, "change")} in this draft and go back to live (r{liveNumber})? This can&apos;t be undone.
+            Discard all {plural(changes, "change")} in this draft and go back to live (version {liveNumber})? This can&apos;t be undone.
           </p>
           <button
             type="button"
@@ -187,7 +187,7 @@ export function DraftBar({
             </>
           ) : (
             <p>
-              Publish this draft as revision {draftNumber}? It becomes the live model that simulation and forecasts use.
+              Publish this draft as version {draftNumber}? It becomes the live model that simulation and forecasts use.
             </p>
           )}
           <div className="flex flex-wrap gap-2">
@@ -204,7 +204,7 @@ export function DraftBar({
                 ? "Publishing…"
                 : estimates.length
                   ? `Publish, accepting ${plural(estimates.length, "estimate")}`
-                  : `Publish revision ${draftNumber}`}
+                  : `Publish version ${draftNumber}`}
             </button>
             <button
               type="button"
@@ -375,10 +375,10 @@ export function DraftCompare({
                   Measure
                 </th>
                 <th scope="col" className="py-1 pr-3 text-right font-semibold">
-                  Live · r{liveNumber}
+                  Live · version {liveNumber}
                 </th>
                 <th scope="col" className="py-1 pr-3 text-right font-semibold">
-                  Draft · r{draftNumber}
+                  Draft · version {draftNumber}
                 </th>
                 <th scope="col" className="py-1 text-right font-semibold">
                   Change

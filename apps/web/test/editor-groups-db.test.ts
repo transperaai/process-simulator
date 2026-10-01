@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { northbeamStepIds as ids, type ProcessBundle } from "@transpera-flow/db";
 import { DEMO_GROUP_IDS, withDemoGroups } from "@/lib/demo/nested";
 import { addAfter, groupSteps, ungroup } from "@/lib/editor/groups";
-import { applyEdit, saveUnits, type Edit } from "@/lib/editor/ops";
+import { applyEdit, invertEdit, saveUnits, type Edit } from "@/lib/editor/ops";
 import { demoBundle } from "@/lib/sources/demo";
 import { createTestDb, type TestDb } from "../../../packages/db/test/harness";
 
@@ -77,10 +77,16 @@ const expected = (b: ProcessBundle) => ({
   edges: b.edges.map((e) => ({ id: e.id, from: e.from_step_id, to: e.to_step_id })).sort((a, c) => (a.id < c.id ? -1 : 1)),
 });
 
-/** Run an edit through the editor's model and through the database; both must end in the same place. */
+/** Run an edit (then its undo and redo) through the editor's model and through the database; both must end in the same place. */
 async function checks(start: ProcessBundle, build: (b: ProcessBundle) => Edit): Promise<ProcessBundle> {
   const edit = build(start);
   const after = applyEdit(start, edit);
+  const before = expected(start);
+  await save(start, edit);
+  expect(await stored(start)).toEqual(expected(after));
+  // Undo, then redo, are saved the same way and must land back in the same two places.
+  await save(start, invertEdit(edit));
+  expect(await stored(start)).toEqual(before);
   await save(start, edit);
   expect(await stored(start)).toEqual(expected(after));
   return after;

@@ -83,7 +83,7 @@ export function EditorBar({
           <h1 className="min-w-0 truncate text-[17px] font-bold">{info.title(subject)}</h1>
           {mode === "draft" && (
             <span className="rounded-full bg-edit-fg/15 px-2 py-0.5 text-xs font-semibold" aria-live="polite">
-              {unpublished ? "Not published yet" : hasDraft ? `Draft r${draftNumber} · live is r${liveNumber}` : `Editing a new draft (r${draftNumber}) · live is r${liveNumber}`}
+              {unpublished ? "Not published yet" : hasDraft ? `Draft version ${draftNumber} · live is version ${liveNumber}` : `New draft (version ${draftNumber}) · live is version ${liveNumber}`}
               {changes ? ` · ${plural(changes, "change")}` : ""}
             </span>
           )}

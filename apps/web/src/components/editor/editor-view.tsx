@@ -22,6 +22,7 @@ import { useRealtime } from "@/lib/realtime/use-realtime";
 import { newlyBroken, retiredSteps } from "@/lib/scenarios/broken";
 import { useSimulation } from "@/lib/sim/use-simulation";
 import type { EngineModel } from "@transpera-flow/engine";
+import { Button } from "@/components/ui/button";
 import { NO_SELECTION, ProcessCanvas, type Selection } from "@/components/process-canvas";
 import { PresenceBar } from "@/components/presence-bar";
 import { SaveProblems, useEngineModel, type EditMode } from "@/components/process-view";
@@ -96,7 +97,18 @@ export function EditorView({
   );
 
   // ▶ Simulate: both versions run 30 times, on the models as they were when it was pressed.
-  const [asked, setAsked] = useState<{ draft: EngineModel; live: EngineModel | null } | null>(null);
+  const [pressed, setAsked] = useState<{
+    draft: EngineModel;
+    live: EngineModel | null;
+    draftKey: string;
+    liveKey: string | null;
+    liveId: string;
+    draftId: string | null;
+  } | null>(null);
+  const workingKey = useMemo(() => (workingModel.model ? JSON.stringify(workingModel.model) : null), [workingModel.model]);
+  const liveKey = useMemo(() => (liveModel.model ? JSON.stringify(liveModel.model) : null), [liveModel.model]);
+  // The comparison is dropped when a publish made a new live version, or the draft it described was discarded.
+  const asked = pressed && pressed.liveId === live.revision.id && !(pressed.draftId !== null && drafts.draft === null) ? pressed : null;
   const draftSim = useSimulation(asked?.draft ?? null);
   const liveSim = useSimulation(asked?.live ?? null);
   const simulating = !!asked && (draftSim.status === "running" || (!!asked.live && liveSim.status === "running"));
@@ -107,7 +119,8 @@ export function EditorView({
         live: asked.live ? { model: asked.live, result: liveSim.status === "done" ? liveSim.run.result : null } : null,
       }
     : null;
-  const stale = !!asked && !!workingModel.model && JSON.stringify(workingModel.model) !== JSON.stringify(asked.draft);
+  // Stale: the draft, or the live model, is no longer what was simulated.
+  const stale = !!asked && (asked.draftKey !== workingKey || asked.liveKey !== liveKey);
 
   const breaks = useMemo(
     () =>
@@ -125,9 +138,38 @@ export function EditorView({
         : null;
 
   const simulate = () => {
-    if (workingModel.model) setAsked({ draft: workingModel.model, live: liveModel.model });
+    if (workingModel.model && workingKey) {
+      setAsked({ draft: workingModel.model, live: liveModel.model, draftKey: workingKey, liveKey, liveId: live.revision.id, draftId: drafts.draft?.id ?? null });
+    }
   };
   const select = (id: string) => setSelection({ steps: [id], edges: [] });
+
+  // Solutions (A49) and blocks (A51) aren't built: until they are, nothing on this screen may touch the draft.
+  if (!info.available) {
+    return (
+      <div data-editor={editorMode} className="flex min-h-svh flex-col bg-bg text-fg">
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-edit px-4 py-2.5 text-edit-fg">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="rounded border-[1.5px] border-current px-1.5 py-px font-mono text-[11px] font-semibold tracking-widest uppercase">✎ Editor</span>
+            <h1 className="text-[17px] font-bold">{info.title(live.process.name)}</h1>
+          </div>
+          <Button type="button" variant="outline" size="sm" className="border-edit-fg/50 bg-transparent text-edit-fg hover:bg-edit-fg/15 hover:text-edit-fg dark:bg-transparent" onClick={() => router.push(exitHref)}>
+            Exit editor
+          </Button>
+        </div>
+        <p className="border-b border-line bg-edit-soft px-4 py-1.5 text-[12.5px]" role="note">
+          {info.hint}
+        </p>
+        <main className="mx-auto flex w-full max-w-xl flex-1 flex-col gap-3 p-6">
+          <h2 className="text-base font-bold">Coming soon</h2>
+          <p className="text-sm text-fg-2">
+            {info.arrivesWith} aren&apos;t built yet, so this mode can&apos;t save anything. Nothing here changes {live.process.name} or its draft.
+            To change the process itself, exit and open it in the Editor.
+          </p>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div data-editor={editorMode} className="flex min-h-svh flex-col bg-bg text-fg lg:h-svh">

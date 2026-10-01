@@ -69,7 +69,7 @@ export interface DraftState {
   busy: "publishing" | "discarding" | null;
   /** Steps a refused publish listed as unresolved, until published or dismissed. */
   unresolved: { id: string; name: string }[] | null;
-  /** What just happened ("Published revision 3."), until dismissed. */
+  /** What just happened ("Published version 3."), until dismissed. */
   notice: string | null;
   error: string | null;
 }
@@ -198,7 +198,7 @@ export class DraftSession {
         draft: null,
         busy: null,
         unresolved: null,
-        notice: `Published revision ${r.revision.number}${accepted ? `, with ${accepted} step${accepted === 1 ? "" : "s"} accepted as estimates` : ""}. It is now the live model.`,
+        notice: `Published version ${r.revision.number}${accepted ? `, with ${accepted} step${accepted === 1 ? "" : "s"} accepted as estimates` : ""}. It is now the live model.`,
       });
       this.emit("published", r.revision.id);
     } else if (r.status === "unresolved") {

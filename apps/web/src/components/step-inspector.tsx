@@ -41,9 +41,9 @@ import { formatHours } from "@/lib/format";
 import { selectableRoles } from "@/lib/roles";
 
 const DIST_OPTIONS: SelectOption[] = [
-  { value: "lognormal", label: "Varies (lognormal)" },
-  { value: "triangular", label: "Range (triangular)" },
-  { value: "constant", label: "Always the same (constant)" },
+  { value: "lognormal", label: "Usually about this, sometimes much longer" },
+  { value: "triangular", label: "Somewhere between min and max, most often the middle value" },
+  { value: "constant", label: "Always the same" },
 ];
 
 /** Engine defaults for a lognormal duration's spread (packages/engine simulate.ts). */
@@ -234,8 +234,8 @@ export function StepInspector({
                 save={field("rework_rate")}
               />
               <SelectField
-                label="Rework goes back to"
-                help={{ description: "Which step the work returns to when it needs redoing. “This step” means it is simply repeated.", example: "A rejected proposal goes back to “Write proposal”, not to the start." }}
+                label="Goes back to"
+                help={{ description: "Rework goes back to this step when work has to be redone. “This step” means it is simply repeated.", example: "A rejected proposal goes back to “Write proposal”, not to the start." }}
                 value={step.rework_to_step_id}
                 options={reworkOptions}
                 noneLabel="This step"
@@ -244,8 +244,8 @@ export function StepInspector({
             </div>
             <div className="grid grid-cols-2 gap-2">
               <NumberField
-                label="SLA"
-                help={{ description: "The time you promise to get this step done within. It is recorded here, not simulated yet.", example: "24 h to reply to a new enquiry." }}
+                label="Promised time"
+                help={{ description: "The time you promise to get this step done within, such as in a client agreement. It is kept here for reference; the numbers don't use it yet.", example: "24 h to reply to a new enquiry." }}
                 value={nullableNumber(step.sla_hours)}
                 optional
                 unit="h"
@@ -253,8 +253,8 @@ export function StepInspector({
                 save={field("sla_hours")}
               />
               <NumberField
-                label="Current WIP"
-                help={{ description: "How many items are sitting at this step right now. Entering it on any step starts the run from today's real queue instead of from empty.", example: "7 proposals are waiting for review today, so enter 7." }}
+                label="Work already in progress"
+                help={{ description: "How many items are sitting at this step right now. Fill it in on any step and the simulation starts from today's real queues instead of an empty process.", example: "7 proposals are waiting for review today, so enter 7." }}
                 value={nullableNumber(step.current_wip)}
                 optional
                 min={0}
@@ -265,8 +265,8 @@ export function StepInspector({
               />
             </div>
             <p className="text-xs text-fg-3">
-              Current WIP is what sits at this step now; entering it on any step starts the run from it instead of a
-              warm-up. Rework targets and SLAs are saved but not simulated yet.
+              Work already in progress is what sits at this step now. Where to send rework and the promised time are
+              saved but don&apos;t change the numbers yet.
             </p>
             <TextField
               label="Tool"
@@ -408,8 +408,8 @@ function Duration({
       <SelectField
         label="Time pattern"
         help={{
-          description: "How much the time varies from run to run. “Varies” suits most steps, “Range” lets you set a minimum, most likely and maximum, and “Always the same” never changes.",
-          example: "A discovery call usually takes an hour but sometimes three: pick Range, with 0.5, 1 and 3 hours.",
+          description: "How the time behaves from one run to the next. Pick “Usually about this, sometimes much longer” for most steps, the “between min and max” one when you know the quickest, usual and slowest, and “Always the same” for a fixed time.",
+          example: "A discovery call usually takes an hour but can run to three: pick the “between min and max” pattern with 0.5, 1 and 3 hours.",
         }}
         value={dist}
         options={DIST_OPTIONS}
@@ -423,13 +423,13 @@ function Duration({
             <NumberField label="Max" help={{ description: "The longest it has taken, on a bad day.", example: "3 h when the client keeps asking questions." }} value={range.max} unit="h" min={0} save={point("max")} />
           </div>
           <p className="text-xs text-fg-3">
-            Mean {formatHours(mean)}, from the range. The simulation samples between min and max.
+            Average {formatHours(mean)}, from the range. The simulation samples between min and max.
           </p>
         </>
       ) : (
         <div className="grid grid-cols-2 gap-2">
           <NumberField
-            label="Mean"
+            label="Average"
             help={{
               description: phase === "work" ? "The average hands-on time: how long someone actually works on it each time." : "The average time the item waits after the work, with nobody working on it.",
               example: phase === "work" ? "1.5 h to write a proposal." : "24 h waiting for the client to reply.",

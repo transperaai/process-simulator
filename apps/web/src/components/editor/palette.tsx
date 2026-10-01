@@ -3,7 +3,7 @@
 // The Editor's left column (issue #104): the step palette (adds after the selected step, inside its group if it is in
 // one), grouping, and a place for blocks (the block library, A51).
 
-import type { Dispatch, SetStateAction } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import { isGroup, type ProcessBundle } from "@transpera-flow/db";
 import { Help } from "@/components/help";
 import { Button } from "@/components/ui/button";
@@ -30,13 +30,18 @@ export function Palette({
   setSelection: Dispatch<SetStateAction<Selection>>;
 }) {
   const only = selected.steps.length === 1 ? bundle.steps.find((s) => s.id === selected.steps[0]) : undefined;
+  // What the last add left for the person to do ("connect the new step yourself").
+  const [note, setNote] = useState<string | null>(null);
   const add = (kind: PaletteKind) => {
     let id: string | null = null;
+    let said: string | null = null;
     editor.run((b) => {
       const made = addAfter(b, only?.id ?? null, kind);
       id = made.id;
+      said = made.note ?? null;
       return made.edit;
     });
+    setNote(said);
     if (id) setSelection({ steps: [id], edges: [] });
   };
   const groupWhy = groupProblem(bundle, selected.steps);
@@ -75,7 +80,18 @@ export function Palette({
             </Button>
           ))}
         </div>
-        <p className="text-xs text-muted-foreground">{only ? `Adds after ${only.name}.` : "Adds after the selected step."}</p>
+        <p className="text-xs text-muted-foreground">
+          {only
+            ? `Adds after ${only.name}.`
+            : selected.steps.length > 1
+              ? "Select just one step to add after it. With several selected, the new one goes at the end, unconnected."
+              : "Select a step to add after it, or the new one goes at the end, unconnected."}
+        </p>
+        {note && (
+          <p role="status" className="rounded-token border border-warn bg-warn-soft px-2 py-1 text-xs">
+            {note}
+          </p>
+        )}
       </section>
 
       <section aria-label="Groups" className="flex flex-col gap-2">

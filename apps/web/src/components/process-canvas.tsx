@@ -213,7 +213,7 @@ function Badges({ change, estimate, conflict = false, quote = null }: { change: 
       {label && (
         <span
           aria-hidden
-          className={`${badgeClass} ${change === "removed" ? "border-crit bg-crit-soft text-crit" : "border-accent bg-accent-soft text-fg"}`}
+          className={`${badgeClass} ${change === "removed" ? "border-crit bg-crit-soft text-crit" : "border-edit bg-edit-soft text-fg"}`}
         >
           {label}
         </span>
@@ -273,7 +273,7 @@ function RestoreButton({ table, id, what }: { table: Table; id: string; what: st
 
 /** Card classes for a step's place in the draft. */
 const changeClass = (d: { ghost?: boolean; change: ChangeKind | null }) =>
-  d.ghost ? "opacity-70 !border-dashed !border-crit" : d.change === "added" ? "!border-dashed !border-2 !border-accent" : "";
+  d.ghost ? "opacity-70 !border-dashed !border-crit" : d.change === "added" ? "!border-dashed !border-2 !border-edit" : d.change === "changed" ? "!border-edit" : "";
 
 const handleClass = (editable: boolean) =>
   editable ? "!size-2.5 !border-2 !border-panel !bg-fg-3 hover:!bg-accent" : "!bg-line-2";
@@ -291,7 +291,7 @@ function Warning({ text }: { text: string }) {
   );
 }
 
-const selectedRing = "outline-2 outline-offset-2 outline-accent";
+const selectedRing = "outline-2 outline-offset-2 outline-edit";
 
 const percent = (p: number) => `${Math.round(p * 1000) / 10}%`;
 
@@ -975,7 +975,7 @@ function Canvas({
         const change = e.rolled ? undefined : diff?.edges.get(e.id);
         const relabelled = change?.kind === "changed" && change.fields.some((f) => f.field === "probability" || f.field === "condition_tag");
         const was = relabelled ? labelOf(Number(change.live!.probability), change.live!.condition_tag) : null;
-        const tone = selected.has(e.id) || change ? "var(--accent)" : "var(--line-2)";
+        const tone = selected.has(e.id) || change ? "var(--edit)" : "var(--line-2)";
         return {
           id: e.id,
           source: e.from_step_id,
@@ -1235,7 +1235,7 @@ function Canvas({
               aria-hidden
               className="absolute top-2.5 right-2.5 z-10 hidden rounded-token border border-line bg-panel/95 px-2 py-1 text-[11px] text-fg-2 shadow-token md:block"
             >
-              <span className="mr-1 inline-block h-2.5 w-4 border border-dashed border-accent align-middle" /> new ·{" "}
+              <span className="mr-1 inline-block h-2.5 w-4 border border-dashed border-edit align-middle" /> new ·{" "}
               <s>removed</s> · <s className="text-fg-3">was</s> → now
             </p>
           )}
@@ -1246,7 +1246,8 @@ function Canvas({
             </div>
           )}
           {/* Playback of the run (issue #14), over the foot of the map; before it in the page, for Tab. */}
-          <div className="absolute right-2.5 bottom-2.5 left-2.5 z-10">
+          {/* In the Editor there is nothing to play until Simulate has run. */}
+          {(result || !hideAdd) && <div className="absolute right-2.5 bottom-2.5 left-2.5 z-10">
             <PlaybackBar
               clock={playback.clock}
               H={playback.index?.H ?? null}
@@ -1254,7 +1255,7 @@ function Canvas({
               reps={result?.reps ?? null}
               describe={playback.describe}
             />
-          </div>
+          </div>}
           <ReactFlow
             nodes={nodes}
             edges={edges}

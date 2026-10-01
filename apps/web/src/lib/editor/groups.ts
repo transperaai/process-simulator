@@ -59,12 +59,15 @@ function freeSpot(bundle: ProcessBundle, parent: string | null, x: number, y: nu
  * single next step now leads to the new one, which leads on to that step. A step with branches, or an end step, gets
  * the new one placed beside it, unconnected. With nothing selected, it goes at the end of the top level.
  */
-export function addAfter(bundle: ProcessBundle, selectedId: string | null, kind: PaletteKind): { edit: Edit; id: string } {
+export function addAfter(bundle: ProcessBundle, selectedId: string | null, kind: PaletteKind): { edit: Edit; id: string; note?: string } {
   const sel = selectedId ? stepOf(bundle, selectedId) : undefined;
   const parent = sel ? (sel.parent_step_id ?? null) : null;
   const siblings = bundle.steps.filter((s) => (s.parent_step_id ?? null) === parent);
-  const x0 = sel ? Number(sel.x) + SLOT.x : siblings.reduce((m, s) => Math.max(m, Number(s.x) + SLOT.x), 0);
-  const y0 = sel ? Number(sel.y) : siblings.length ? Number(siblings[siblings.length - 1]!.y) : 0;
+  const outgoing = sel && sel.kind !== "end" ? bundle.edges.filter((e) => e.from_step_id === sel.id) : [];
+  const branches = outgoing.length > 1;
+  // After a step with branches the right is crowded: put the new one just below it, where it is easy to find.
+  const x0 = sel ? Number(sel.x) + (branches ? 0 : SLOT.x) : siblings.reduce((m, s) => Math.max(m, Number(s.x) + SLOT.x), 0);
+  const y0 = sel ? Number(sel.y) + (branches ? 120 : 0) : siblings.length ? Number(siblings[siblings.length - 1]!.y) : 0;
   const { x, y } = freeSpot(bundle, parent, x0, y0);
 
   let added: StepRow;
@@ -91,7 +94,8 @@ export function addAfter(bundle: ProcessBundle, selectedId: string | null, kind:
   } else {
     ops.push({ kind: "insert", steps: [added, ...extra], edges: [] });
   }
-  return { edit: { label: `Added ${added.name}`, ops }, id: added.id };
+  const note = sel && branches ? `${sel.name} has branches: connect the new step yourself.` : sel?.kind === "end" ? `${sel.name} is an end step, so nothing leads on from it: connect the new step yourself.` : undefined;
+  return { edit: { label: `Added ${added.name}`, ops }, id: added.id, ...(note ? { note } : {}) };
 }
 
 /** Steps to group: those picked that aren't inside another picked group (it takes them along). */
@@ -205,6 +209,7 @@ export function ungroup(bundle: ProcessBundle, groupId: string): Edit | null {
   if (retargeted.length) ops.push({ kind: "update", changes: retargeted });
   if (rerouted.length) ops.push({ kind: "insert", steps: [], edges: rerouted });
   // Connections into a group with no step to go to, and the group's own, go with it.
-  ops.push({ kind: "remove", steps: [group], edges: [...(entry ? [] : into), ...outOf] });
+  // The row is removed with no first step (it was cleared above), so undo can bring it back before its steps move in.
+  ops.push({ kind: "remove", steps: [{ ...group, entry_step_id: null }], edges: [...(entry ? [] : into), ...outOf] });
   return { label: `Ungrouped ${group.name}`, ops };
 }

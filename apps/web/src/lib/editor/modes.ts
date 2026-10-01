@@ -56,7 +56,15 @@ export function parseEditorMode(value: string | string[] | undefined): EditorMod
  */
 export function exitHref(from: string | string[] | undefined, fallback: string): string {
   const v = Array.isArray(from) ? from[0] : from;
-  return v && v.startsWith("/") && !v.startsWith("//") && !v.includes("\\") ? v : fallback;
+  if (!v) return fallback;
+  // Resolve the way a browser does (it drops tabs and newlines, reads `\` as `/`), and follow only what stays on this site.
+  const base = "http://self.invalid";
+  try {
+    const u = new URL(v, base);
+    return u.origin === base && u.pathname.startsWith("/") && !u.pathname.startsWith("//") ? u.pathname + u.search + u.hash : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 /** `/demo/edit` and `/w/<workspace>/p/<process>/edit`: the pages that are the Editor, which show no sidebar. */

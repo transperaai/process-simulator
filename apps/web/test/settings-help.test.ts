@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 const SRC = join(__dirname, "..", "src");
 
 /** The screens that hold settings, as paths under src/ (directories are read recursively). */
-const SETTINGS_SOURCES = ["app/w/[slug]/settings", "components/rules", "components/levers", "app/new-workspace-form.tsx", "app/settings"];
+const SETTINGS_SOURCES = ["app/w/[slug]/settings", "components/rules", "components/levers", "app/new-workspace-form.tsx", "app/settings", "components/sources-page.tsx", "components/issues-register.tsx"];
 
 /** Components that draw a label, a control and (when given `help`) its (i). */
 const FIELD_COMPONENTS = new Set(["TextField", "DateField", "NumberField", "SelectField", "ToggleField", "ChecklistField", "Field", "Setting"]);
@@ -40,49 +40,62 @@ const attr = (n: ts.JsxOpeningLikeElement, name: string) =>
 const opening = (n: ts.Node): ts.JsxOpeningLikeElement | null =>
   ts.isJsxSelfClosingElement(n) ? n : ts.isJsxElement(n) ? n.openingElement : null;
 
-/** Does `el` have an (i) among its children (a `<Help>`, or a component given help), one level down? */
-function hasHelpChild(el: ts.JsxElement | ts.JsxFragment): boolean {
-  const found = (n: ts.Node): boolean => {
-    const o = opening(n);
-    if (o && (tagName(o).startsWith("Help") || HELP_BEARERS.has(tagName(o)))) return true;
-    // A fragment or a plain wrapper keeps its children in the same row.
-    if (ts.isJsxFragment(n) || (ts.isJsxElement(n) && /^[a-z]/.test(tagName(n.openingElement)))) return n.children.some(found);
-    return false;
+const isHelp = (n: ts.Node): boolean => {
+  const o = opening(n);
+  return !!o && (tagName(o).startsWith("Help") || HELP_BEARERS.has(tagName(o)));
+};
+
+const isRawControl = (n: ts.Node): boolean => {
+  const o = opening(n);
+  if (!o || !CONTROLS.has(tagName(o)) || attr(o, "help")) return false;
+  const type = attr(o, "type")?.initializer;
+  return !(type && ts.isStringLiteral(type) && NOT_SETTINGS_TYPES.has(type.text));
+};
+
+/** Count the (i)s and the bare controls anywhere inside `root`. */
+function tally(root: ts.Node): { helps: number; controls: number } {
+  let helps = 0;
+  let controls = 0;
+  const walk = (n: ts.Node) => {
+    if (isHelp(n)) helps++;
+    if (isRawControl(n)) controls++;
+    ts.forEachChild(n, walk);
   };
-  return el.children.some(found);
+  ts.forEachChild(root, walk);
+  return { helps, controls };
 }
 
-function hasJsxAncestor(n: ts.Node): boolean {
-  for (let p = n.parent; p; p = p.parent) if (ts.isJsxElement(p) || ts.isJsxFragment(p)) return true;
-  return false;
-}
-
-function problems(file: string): string[] {
-  const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+/** The controls that have no (i) of their own, in TSX source text. `name` is only for messages. */
+export function problemsIn(text: string, name: string): string[] {
+  const source = ts.createSourceFile(name, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const out: string[] = [];
-  const where = (n: ts.Node) => `${relative(SRC, file)}:${source.getLineAndCharacterOfPosition(n.getStart()).line + 1}`;
+  const where = (n: ts.Node) => `${name}:${source.getLineAndCharacterOfPosition(n.getStart()).line + 1}`;
   const visit = (n: ts.Node) => {
     const o = opening(n);
     if (o) {
-      const name = tagName(o);
-      if (FIELD_COMPONENTS.has(name) && !attr(o, "help")) out.push(`${where(n)}: <${name}> has no help`);
-      if (CONTROLS.has(name) && !attr(o, "help")) {
-        const type = attr(o, "type")?.initializer;
-        const typeText = type && ts.isStringLiteral(type) ? type.text : "";
-        if (!NOT_SETTINGS_TYPES.has(typeText)) {
-          // An (i) beside it: one of its nearest JSX ancestors shows one in the same row.
-          // A control at the very root of a component is that component's own internals: its callers are checked.
-          let ok = !hasJsxAncestor(n);
-          let p: ts.Node | undefined = n.parent;
-          for (let levels = 0; p && levels < 4 && !ok; p = p.parent) {
-            if (!ts.isJsxElement(p) && !ts.isJsxFragment(p)) continue;
-            levels++;
-            const po = ts.isJsxElement(p) ? p.openingElement : null;
-            if (po && FIELD_COMPONENTS.has(tagName(po)) && attr(po, "help")) ok = true;
-            else if (hasHelpChild(p)) ok = true;
+      const tag = tagName(o);
+      if (FIELD_COMPONENTS.has(tag) && !attr(o, "help")) out.push(`${where(n)}: <${tag}> has no help`);
+      // A custom field component (anything capitalised given a label) carries its own help, or has a control rule below.
+      if (/(Field|Box|Input|Select|Picker|Widget)$/.test(tag) && attr(o, "label") && !FIELD_COMPONENTS.has(tag) && !CONTROLS.has(tag) && !attr(o, "help")) {
+        out.push(`${where(n)}: <${tag}> has a label but no help`);
+      }
+      if (isRawControl(n)) {
+        // A control at the very root of a component is that component's own internals: its callers are checked.
+        let ok = !hasJsxAncestor(n);
+        // Its own (i): within two JSX levels (its label, then its row or form), a container that holds at least as many (i)s as bare controls, so one
+        // (i) elsewhere in the same form can't stand in for a missing one.
+        let p: ts.Node | undefined = n.parent;
+        for (let levels = 0; p && levels < 2 && !ok; p = p.parent) {
+          if (!ts.isJsxElement(p) && !ts.isJsxFragment(p)) continue;
+          levels++;
+          const po = ts.isJsxElement(p) ? p.openingElement : null;
+          if (po && FIELD_COMPONENTS.has(tagName(po)) && attr(po, "help")) ok = true;
+          else {
+            const t = tally(p);
+            if (t.helps >= 1 && t.helps >= t.controls) ok = true;
           }
-          if (!ok) out.push(`${where(n)}: <${name}> has no (i)`);
         }
+        if (!ok) out.push(`${where(n)}: <${tag}> has no (i)`);
       }
     }
     ts.forEachChild(n, visit);
@@ -90,6 +103,13 @@ function problems(file: string): string[] {
   visit(source);
   return out;
 }
+
+function hasJsxAncestor(n: ts.Node): boolean {
+  for (let p = n.parent; p; p = p.parent) if (ts.isJsxElement(p) || ts.isJsxFragment(p)) return true;
+  return false;
+}
+
+const problems = (file: string) => problemsIn(readFileSync(file, "utf8"), relative(SRC, file));
 
 describe("every setting has an (i)", () => {
   const all = SETTINGS_SOURCES.flatMap(files);
@@ -100,5 +120,27 @@ describe("every setting has an (i)", () => {
 
   it("finds no field or control on a settings screen without help", () => {
     expect(all.flatMap(problems)).toEqual([]);
+  });
+});
+
+describe("the checker catches a missing (i)", () => {
+  const people = readFileSync(join(SRC, "app/w/[slug]/settings/people-settings.tsx"), "utf8");
+
+  it("passes the real source", () => {
+    expect(problemsIn(people, "people-settings.tsx")).toEqual([]);
+  });
+
+  it("fails when the Last day (i) is deleted, even though its neighbours still have theirs", () => {
+    const line = people.split("\n").find((l) => l.includes('<HelpLabel label="Last day"'))!;
+    expect(line).toBeTruthy();
+    const broken = people.replace(line, '            <span className="text-xs text-fg-2">Last day</span>');
+    const found = problemsIn(broken, "people-settings.tsx");
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatch(/<Input> has no \(i\)/);
+  });
+
+  it("fails on a field component with no help, and on a labelled custom component with none", () => {
+    const bad = `export const X = () => (<div><NumberField label="A" value={1} save={f} /><Widget label="B" /></div>);`;
+    expect(problemsIn(bad, "x.tsx")).toEqual(["x.tsx:1: <NumberField> has no help", "x.tsx:1: <Widget> has a label but no help"]);
   });
 });

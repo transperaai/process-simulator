@@ -103,8 +103,8 @@ export function ServicingLinks({ service: sv, data }: { service: ServiceRow; dat
             </NativeSelect>
             <Help
               label="Servicing process to link"
-              description="A servicing process is the ongoing work you do for a client of this service. Linking it makes each client's simulated work follow its steps instead of a flat number of hours."
-              example="Link Monthly SEO reporting to the SEO retainer, so every SEO client gets the reporting work."
+              description="The steps of the regular work you do for each client of this service. Linking it means each client's work follows those steps instead of a flat number of hours."
+              example="Link Monthly SEO reporting to the SEO service, so every SEO client gets the reporting work."
               className="self-center"
             />
             <Button variant="outline" size="sm"

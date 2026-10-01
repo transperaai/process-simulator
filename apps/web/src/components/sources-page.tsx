@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { EVIDENCE_LABELS, formatParameter, isEvidenceColumn, type SourceCitation, type SourceKind, type SourceRow } from "@transpera-flow/db";
 import { DateField, SelectField, TextField } from "@/components/fields";
+import { HelpLabel } from "@/components/help";
 import { buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -15,6 +16,17 @@ import type { Saver } from "@/lib/fields/field-controller";
 import { liveSourceStore } from "@/lib/sources/live-store";
 import { MemorySourceStore, sourceFieldValue, type SourceStore } from "@/lib/sources/store";
 import { SOURCE_KIND_LABELS, SOURCE_KINDS, parseSpeakers, type SourceField } from "@/lib/sources/validate";
+
+/** Plain-English (i) text for a source's fields, with an example (issue #123). */
+const SOURCE_HELP = {
+  kind: { description: "What sort of material this is: an interview transcript, a document, a screenshot, a data export and so on.", example: "Transcript, for the notes from a discovery interview." },
+  title: { description: "A name that tells people what this is.", example: "Discovery interview with Maya." },
+  speakers: { description: "Who is talking or wrote it, separated by commas. Quotes show who said them.", example: "Maya Collins, Rosa Diaz." },
+  date: { description: "When it was recorded or written.", example: "3 October." },
+  link: { description: "Where the original file or recording lives, if you have one.", example: "A link to the recording or screenshot." },
+  body: { description: "The words themselves. Values in the model can quote from here as their evidence.", example: "Maya: \"A proper audit is a day's work.\"" },
+} as const;
+
 
 const button = buttonVariants({ variant: "outline", size: "sm" });
 const primary = buttonVariants({ size: "sm" });
@@ -158,13 +170,14 @@ function SourceItem({
       <details className="mt-2">
         <summary className="cursor-pointer text-fg-2 hover:underline">{canEdit ? "Details and edit" : "Details"}</summary>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
-          <TextField label="Title" value={s.title} save={saver(s.id, "title")} disabled={!canEdit} />
+          <TextField label="Title" value={s.title} save={saver(s.id, "title")} disabled={!canEdit} help={SOURCE_HELP.title} />
           <SelectField
             label="Kind"
             value={s.kind}
             options={kindOptions}
             save={saver(s.id, "kind")}
             disabled={!canEdit}
+            help={SOURCE_HELP.kind}
           />
           <TextField
             label="Speakers"
@@ -173,10 +186,11 @@ function SourceItem({
             save={saver(s.id, "speakers")}
             disabled={!canEdit}
             hint="Comma-separated."
+            help={SOURCE_HELP.speakers}
           />
-          <DateField label="Date" value={s.recorded_at} save={saver(s.id, "recorded_at")} disabled={!canEdit} />
+          <DateField label="Date" value={s.recorded_at} save={saver(s.id, "recorded_at")} disabled={!canEdit} help={SOURCE_HELP.date} />
           <div className="sm:col-span-2">
-            <TextField label="Link (file or recording)" value={s.file_url} optional save={saver(s.id, "file_url")} disabled={!canEdit} />
+            <TextField label="Link (file or recording)" value={s.file_url} optional save={saver(s.id, "file_url")} disabled={!canEdit} help={SOURCE_HELP.link} />
             {s.file_url && (
               <a href={s.file_url} target="_blank" rel="noreferrer noopener" className="text-xs text-accent underline">
                 Open {s.kind === "screenshot" ? "the screenshot" : "the file"}
@@ -184,7 +198,7 @@ function SourceItem({
             )}
           </div>
           <div className="sm:col-span-2">
-            <TextField label="Transcript or notes" value={s.body} optional multiline save={saver(s.id, "body")} disabled={!canEdit} />
+            <TextField label="Transcript or notes" value={s.body} optional multiline save={saver(s.id, "body")} disabled={!canEdit} help={SOURCE_HELP.body} />
           </div>
         </div>
         {canEdit &&
@@ -273,7 +287,7 @@ function AddSource({ onAdd }: { onAdd: (input: { kind: SourceKind; title: string
     >
       <h2 className="text-sm font-bold sm:col-span-4">Add a source</h2>
       <label className="flex flex-col gap-1">
-        <span className="text-xs font-medium text-fg-2">Kind</span>
+        <HelpLabel label="Kind" {...SOURCE_HELP.kind} />
         <NativeSelect name="kind" defaultValue="transcript">
           {kindOptions.map((o) => (
             <option key={o.value} value={o.value}>
@@ -283,23 +297,23 @@ function AddSource({ onAdd }: { onAdd: (input: { kind: SourceKind; title: string
         </NativeSelect>
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs font-medium text-fg-2">Title</span>
+        <HelpLabel label="Title" {...SOURCE_HELP.title} />
         <Input name="title" required maxLength={200} placeholder="Discovery interview" />
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs font-medium text-fg-2">Speakers</span>
+        <HelpLabel label="Speakers" {...SOURCE_HELP.speakers} />
         <Input name="speakers" placeholder="Maya Collins, Rosa Diaz" />
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs font-medium text-fg-2">Date</span>
+        <HelpLabel label="Date" {...SOURCE_HELP.date} />
         <Input name="recorded_at" type="date" />
       </label>
       <label className="flex flex-col gap-1 sm:col-span-4">
-        <span className="text-xs font-medium text-fg-2">Transcript or notes</span>
+        <HelpLabel label="Transcript or notes" {...SOURCE_HELP.body} />
         <Textarea name="body" rows={3} />
       </label>
       <label className="flex flex-col gap-1 sm:col-span-3">
-        <span className="text-xs font-medium text-fg-2">Link to a file or screenshot (optional)</span>
+        <HelpLabel label="Link to a file or screenshot (optional)" {...SOURCE_HELP.link} />
         <Input name="file_url" type="url" placeholder="https://" />
       </label>
       <div className="flex items-end">

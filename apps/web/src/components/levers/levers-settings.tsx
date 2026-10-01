@@ -27,7 +27,7 @@ const SAVE_DELAY_MS = 400;
 const CONTROL_NOTE: Record<LeverKind["control"], string> = {
   slider: "Slider on process pages",
   settings: "Set in Settings",
-  later: "No slider yet",
+  later: "No slider yet. Hiding this has no effect yet.",
 };
 
 export function LeversSettings({
@@ -201,6 +201,7 @@ function LeverRow({ kind, shown, disabled, onChange, settingsBase }: { kind: Lev
         ) : (
           CONTROL_NOTE[kind.control]
         )}
+        {kind.control === "settings" && " Hiding this has no effect yet."}
       </p>
     </div>
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { PanelRight } from "lucide-react";
 import { isUnpublished, ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow, type SourceRow } from "@transpera-flow/db";
 import type { AnalysisSettings, EngineModel } from "@transpera-flow/engine";
@@ -147,8 +147,18 @@ export function ProcessView({
   const names = useMemo(() => namesOf(working, live), [working, live]);
 
   // How far ahead to simulate: 1 to 24 months from the picker, or the workspace's own length until one is picked.
-  const horizonParam = Number(useSearchParams().get("horizon"));
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const horizonParam = Number(searchParams.get("horizon"));
   const [pickedMonths, setPickedMonths] = useState<number | null>(isHorizonMonths(horizonParam) ? horizonParam : null);
+  // A pick goes in the address too, so a reload or a shared link keeps it.
+  const pickHorizon = (months: number) => {
+    setPickedMonths(months);
+    const next = new URLSearchParams(searchParams.toString());
+    next.set("horizon", String(months));
+    router.replace(`${pathname}?${next.toString()}`, { scroll: false });
+  };
   const weeks = pickedMonths === null ? null : horizonWeeks(pickedMonths);
   const hidden = useHiddenLevers(mode === "demo", hiddenLevers);
   const leversHref = settingsHref ? `${settingsHref}/levers` : mode === "demo" ? "/demo/settings/levers" : undefined;
@@ -457,7 +467,7 @@ export function ProcessView({
       </div>
       {shownModel ? (
         <div className="flex flex-col gap-2 px-4 pt-3">
-          <HorizonPicker weeks={shownModel.horizonWeeks} onChange={setPickedMonths} />
+          <HorizonPicker weeks={shownModel.horizonWeeks} onChange={pickHorizon} />
           <KpiStrip model={shownModel} currency={bundle.workspace.settings.currency} result={result} status={sim.status} durationMs={sim.run?.durationMs} />
         </div>
       ) : null}

@@ -163,7 +163,7 @@ function PersonRow({ person: p, data }: { person: PersonDetail; data: WorkspaceS
         <span className={`font-semibold ${p.active ? "" : "text-fg-3 line-through"}`}>{p.name}</span>
         <span className="text-fg-2">{roleNames.join(", ") || "No role"}</span>
         <span className="text-fg-3 tabular-nums">
-          {formatNumber(Number(p.fte), 2)} FTE · {formatNumber(Number(capacity), 1)} h/week
+          {formatNumber(Number(p.fte), 2)} of full time · {formatNumber(Number(capacity), 1)} h/week
         </span>
         {leave.length > 0 && <span className="text-fg-3">{leave.length} leave</span>}
         {!p.active && <span className="rounded-lg bg-panel-2 px-1.5 text-xs text-fg-2">Inactive</span>}
@@ -180,13 +180,13 @@ function PersonRow({ person: p, data }: { person: PersonDetail; data: WorkspaceS
           offLabel="Inactive: left out of simulations"
           disabled={disabled} help={{ description: "Inactive people are left out of simulations, but their record is kept.", example: "Mark someone inactive when they leave. Past data stays; future runs no longer count their time." }} />
         <NumberField
-          label="FTE"
+          label="Working time (1 = full time)"
           value={Number(p.fte)}
           save={personSaver(p.id, "fte")}
           min={0.05}
           max={1.5}
           step={0.1}
-          disabled={disabled} help={{ description: "Full-time equivalent: 1 means full time, 0.5 means half time. It sets how many hours they have each week, unless you type the hours yourself.", example: "At 0.8 with a 40-hour week, they have 32 hours a week." }} />
+          disabled={disabled} help={{ description: "How much of a full week they work: 1 is full time, 0.5 is half time. It sets how many hours they have each week, unless you type the hours yourself.", example: "At 0.8 with a 40-hour week, they have 32 hours a week." }} />
         <NumberField
           label="Capacity"
           value={p.capacity_hours_week === null ? null : Number(p.capacity_hours_week)}
@@ -196,9 +196,9 @@ function PersonRow({ person: p, data }: { person: PersonDetail; data: WorkspaceS
           min={0.5}
           max={80}
           step={0.5}
-          placeholder={`${formatNumber(Number(p.fte) * hoursPerWeek, 1)} from FTE`}
-          hint="Blank: FTE × the workspace week."
-          disabled={disabled} help={{ description: "The hours they can work each week, when that isn't simply FTE times the working week. Leave blank to use FTE.", example: "A full-time person who works four 7.5-hour days: enter 30." }} />
+          placeholder={`${formatNumber(Number(p.fte) * hoursPerWeek, 1)} from working time`}
+          hint="Blank: working time × the workspace week."
+          disabled={disabled} help={{ description: "The hours they can work each week, when that isn't simply their working time times the working week. Leave blank to use working time.", example: "A full-time person who works four 7.5-hour days: enter 30." }} />
         <NumberField
           label="Cost rate"
           value={p.cost_rate === null ? null : Number(p.cost_rate)}

@@ -59,7 +59,7 @@ function CutoffBoxes({
             <label htmlFor={`${idPrefix}-${i}`} className="text-sm">
               {input.label}
             </label>
-            <Help {...SETTING_HELP.cutoff} example={`${ui.name}, ${input.label}: the default is ${shown(defaults[i]!)}${input.unit}.`} />
+            <Help {...SETTING_HELP.cutoff} />
           </span>
           <div className="flex items-center gap-1.5">
             <Input

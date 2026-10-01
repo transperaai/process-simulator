@@ -29,6 +29,23 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { SelectField, TextField, type SelectOption } from "./fields";
+import { HelpLabel } from "./help";
+
+
+/** Plain-English (i) text for the issue fields and filters, with an example (issue #123). */
+const ISSUE_HELP = {
+  title: { description: "A short sentence saying what is wrong.", example: "Proposals wait too long for review." },
+  status: { description: "Where this issue is: new, being worked on, or dealt with.", example: "Open means someone still needs to look at it." },
+  rating: { description: "How serious it is: Great, Good, Bad, or Operational risk (could break delivery or lose clients).", example: "Operational risk for a step only one person can do." },
+  type: { description: "What kind of problem it is.", example: "Manual means you wrote it yourself; detected ones come from the simulation." },
+  owner: { description: "The person who will sort it out.", example: "Maya, if she runs the strategist review." },
+  step: { description: "The step of the process where the problem shows up.", example: "Audit & proposal." },
+  person: { description: "The person it affects, if it is about one person.", example: "Maya Collins, when she is too busy." },
+  fix: { description: "A saved scenario that tries a fix for this issue, so you can see if it helps.", example: "Hire a strategist." },
+  evidence: { description: "What you saw or heard, and where, so others can trust it.", example: "Rosa said in the 3 Oct interview that reviews take 2 days." },
+  process: { description: "Show only issues on one process.", example: "Lead to live." },
+  source: { description: "Show only issues found one way: written by you, spotted by the simulation, or promoted from a spotted one.", example: "Detected shows what the simulation found." },
+} as const;
 
 const NONE: ReadonlySet<string> = new Set();
 
@@ -109,7 +126,7 @@ export function IssuesRegister({
   const set = <K extends keyof IssueFilters>(key: K, value: IssueFilters[K]) => setFilters((f) => ({ ...f, [key]: value }));
   const filterSelect = (label: string, key: keyof IssueFilters, opts: SelectOption[], all: string) => (
     <label className="flex min-w-0 flex-col gap-0.5">
-      <span className="text-xs text-fg-3">{label}</span>
+      <HelpLabel label={label} {...(key === "source" ? ISSUE_HELP.source : key === "process" ? ISSUE_HELP.process : key === "person" ? ISSUE_HELP.person : ISSUE_HELP.rating)} />
       <NativeSelect value={filters[key]} onChange={(e) => set(key, e.target.value as never)} className="h-7 text-sm md:text-sm">
         <option value="">{all}</option>
         {opts.map((o) => (
@@ -143,7 +160,7 @@ export function IssuesRegister({
           "Any source",
         )}
         <label className="flex min-w-0 flex-col gap-0.5">
-          <span className="text-xs text-fg-3">Status</span>
+          <HelpLabel label="Status" {...ISSUE_HELP.status} />
           <NativeSelect value={filters.status} onChange={(e) => set("status", e.target.value as IssueFilters["status"])} className="h-7 text-sm md:text-sm">
             <option value="active">Open and detected</option>
             <option value="">Any status</option>
@@ -351,14 +368,14 @@ function IssueFields({
   const save = (field: IssueField) => state.saver(issue.id, field) as Saver<string | null>;
   return (
     <>
-      <TextField label="Title" value={issue.title} save={save("title")} />
+      <TextField label="Title" value={issue.title} save={save("title")} help={ISSUE_HELP.title} />
       <div className="grid grid-cols-2 gap-2">
-        <SelectField label="Status" value={issue.status} save={save("status")} options={statusOptions} />
-        <SelectField label="Rating" value={issue.severity} save={save("severity")} options={storedRatingOptions} />
-        <SelectField label="Type" value={issue.type} save={save("type")} options={typeOptions} />
-        <SelectField label="Owner" value={issue.owner_person_id} save={save("owner_person_id")} options={options(people)} noneLabel="No owner" />
-        <SelectField label="Step" value={issue.step_id} save={save("step_id")} options={options(steps)} noneLabel="No step" />
-        <SelectField label="Person" value={issue.person_id} save={save("person_id")} options={options(people)} noneLabel="Nobody" />
+        <SelectField label="Status" value={issue.status} save={save("status")} options={statusOptions} help={ISSUE_HELP.status} />
+        <SelectField label="Rating" value={issue.severity} save={save("severity")} options={storedRatingOptions} help={ISSUE_HELP.rating} />
+        <SelectField label="Type" value={issue.type} save={save("type")} options={typeOptions} help={ISSUE_HELP.type} />
+        <SelectField label="Owner" value={issue.owner_person_id} save={save("owner_person_id")} options={options(people)} noneLabel="No owner" help={ISSUE_HELP.owner} />
+        <SelectField label="Step" value={issue.step_id} save={save("step_id")} options={options(steps)} noneLabel="No step" help={ISSUE_HELP.step} />
+        <SelectField label="Person" value={issue.person_id} save={save("person_id")} options={options(people)} noneLabel="Nobody" help={ISSUE_HELP.person} />
       </div>
       <SelectField
         label="Fix (scenario)"
@@ -366,8 +383,9 @@ function IssueFields({
         save={save("scenario_id")}
         options={options(scenarios)}
         noneLabel="No linked scenario"
+        help={ISSUE_HELP.fix}
               />
-      <TextField label="Evidence" value={issue.evidence} save={save("evidence")} optional multiline />
+      <TextField label="Evidence" value={issue.evidence} save={save("evidence")} optional multiline help={ISSUE_HELP.evidence} />
     </>
   );
 }
@@ -413,9 +431,9 @@ function LogIssueForm({
       scenario_id: get("scenario_id") || null,
     });
   };
-  const select = (name: string, label: string, opts: SelectOption[], none?: string, value?: string) => (
+  const select = (name: string, label: string, opts: SelectOption[], help: { description: string; example: string }, none?: string, value?: string) => (
     <label className="flex min-w-0 flex-col gap-0.5">
-      <span className="text-xs font-medium text-fg-2">{label}</span>
+      <HelpLabel label={label} {...help} />
       <NativeSelect name={name} defaultValue={value ?? ""}>
         {none !== undefined && <option value="">{none}</option>}
         {opts.map((o) => (
@@ -429,19 +447,19 @@ function LogIssueForm({
   return (
     <form onSubmit={submit} aria-label="Log an issue" className="grid gap-2 rounded-lg border border-line bg-panel-2 p-2">
       <label className="flex flex-col gap-0.5">
-        <span className="text-xs font-medium text-fg-2">Title</span>
+        <HelpLabel label="Title" {...ISSUE_HELP.title} />
         <Input name="title" required maxLength={MAX_TITLE} placeholder="What's wrong, in a sentence" />
       </label>
       <div className="grid grid-cols-2 gap-2">
-        {select("type", "Type", typeOptions, undefined, "manual")}
-        {select("severity", "Rating", storedRatingOptions, undefined, "warning")}
-        {select("step_id", "Step", options(steps), "No step", defaultStep)}
-        {select("person_id", "Person", options(people), "Nobody")}
-        {select("owner_person_id", "Owner", options(people), "No owner")}
-        {select("scenario_id", "Fix (scenario)", options(scenarios), "None yet")}
+        {select("type", "Type", typeOptions, ISSUE_HELP.type, undefined, "manual")}
+        {select("severity", "Rating", storedRatingOptions, ISSUE_HELP.rating, undefined, "warning")}
+        {select("step_id", "Step", options(steps), ISSUE_HELP.step, "No step", defaultStep)}
+        {select("person_id", "Person", options(people), ISSUE_HELP.person, "Nobody")}
+        {select("owner_person_id", "Owner", options(people), ISSUE_HELP.owner, "No owner")}
+        {select("scenario_id", "Fix (scenario)", options(scenarios), ISSUE_HELP.fix, "None yet")}
       </div>
       <label className="flex flex-col gap-0.5">
-        <span className="text-xs font-medium text-fg-2">Evidence</span>
+        <HelpLabel label="Evidence" {...ISSUE_HELP.evidence} />
         <Textarea name="evidence" rows={2} maxLength={MAX_EVIDENCE} placeholder="What you saw or heard, and where" />
       </label>
       {error && (

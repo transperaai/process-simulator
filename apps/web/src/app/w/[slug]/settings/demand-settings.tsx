@@ -66,7 +66,7 @@ export function DemandSettings({ data }: { data: WorkspaceSettingsData }) {
   const { leadSources, canEdit } = data;
   const summary = demandSummary(leadSources, data.services, data.workspace.settings.leads_per_week);
   return (
-    <SettingsSection id="demand" title="Demand" description={<>Where leads come from and how demand moves through the year. Simulations draw new leads from these.</>}>
+    <SettingsSection id="demand" title="Demand" description={<>Where leads come from and how demand moves through the year. The app uses these to work out how many new leads to expect.</>}>
 
       <p className="mb-4 rounded-lg bg-panel-2 p-2" aria-live="polite">
         <strong className="tabular-nums">{formatNumber(summary.perWeek, 2)}</strong> qualified leads a week
@@ -116,7 +116,7 @@ function AddLeadSource({ workspaceId }: { workspaceId: string }) {
         <Input name="name" required maxLength={200} placeholder="e.g. Website enquiries" />
       </label>
       <label className="flex w-32 flex-col gap-1">
-        <HelpLabel label="Leads a week" description="How many new leads this source brings in a typical week. Simulations draw new leads at this rate." example="6 means about 6 new leads a week from this source." />
+        <HelpLabel label="Leads a week" description="How many new leads this source brings in a typical week. The app assumes about this many a week." example="6 means about 6 new leads a week from this source." />
         <Input name="volume_week" type="number" inputMode="decimal" min={0} max={MAX_VOLUME_WEEK} step="any" required className="tabular-nums" />
       </label>
       <label className="flex w-32 flex-col gap-1">
@@ -160,7 +160,7 @@ function LeadSourceItem({ source: src, disabled }: { source: LeadSourceRow; disa
         max={MAX_VOLUME_WEEK}
         step={1}
         disabled={disabled}
-        hint={<ProvenanceBadge provenance={src.provenance} field="volume_week" />} help={{ description: "How many new leads this source brings in a typical week. Simulations draw new leads at this rate.", example: "6 means about 6 new leads a week from this source." }} />
+        hint={<ProvenanceBadge provenance={src.provenance} field="volume_week" />} help={{ description: "How many new leads this source brings in a typical week. The app assumes about this many a week.", example: "6 means about 6 new leads a week from this source." }} />
       <NumberField
         label="Become qualified"
         value={Number(src.conversion_to_qualified)}
@@ -237,12 +237,12 @@ function Seasonality({ data }: { data: WorkspaceSettingsData }) {
           Seasonality
           <Help
             label="Seasonality"
-            description="A multiplier on leads for each calendar month. 1 is a normal month, 1.3 is 30% busier, 0 means none."
+            description="How busy each calendar month is compared with a normal one. 1 is normal, 1.3 is 30% busier, 0 means no leads."
             example="Set December to 0.5 if you only get half the usual enquiries over the holidays."
           />
         </h3>
         <p className="text-fg-3">
-          A multiplier on leads for each calendar month: 1 is a normal month, 1.3 is 30% busier, 0 is none.
+          How busy each calendar month is compared with a normal one: 1 is normal, 1.3 is 30% busier, 0 is no leads.
         </p>
       </div>
       {/* The saved curve at a glance; the dashed line is a normal month. */}
@@ -269,7 +269,7 @@ function Seasonality({ data }: { data: WorkspaceSettingsData }) {
               step={0.05}
               disabled={!canEdit}
               hint={<ProvenanceBadge provenance={rowFor.get(month)?.provenance} field="multiplier" />}
-              help={{ description: "A multiplier on leads for this calendar month. 1 is a normal month, 1.3 is 30% busier, 0 means none.", example: `Set ${MONTH_NAMES[i]} to 0.5 if you only get half the usual enquiries in it.` }}
+              help={{ description: "How busy this month is compared with a normal one. 1 is normal, 1.3 is 30% busier, 0 means no leads.", example: `Set ${MONTH_NAMES[i]} to 0.5 if you only get half the usual enquiries in it.` }}
             />
           );
         })}

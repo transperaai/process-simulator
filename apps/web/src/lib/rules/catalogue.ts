@@ -301,6 +301,26 @@ export const SETTING_HELP = {
     description: "The numbers that split a result into Great, Good, Bad and Operational risk. The default is shown beside each one.",
     example: "Too busy: Great under 70%, Good up to 85%, Bad up to 95%.",
   },
+  absenceWeeks: {
+    label: "Weeks someone is away",
+    description: "How many weeks to pretend someone is away when testing what happens.",
+    example: "2 means the test takes someone out for a fortnight.",
+  },
+  absenceTimes: {
+    label: "Times a year someone is away",
+    description: "How often that happens in a year, to work out what it costs.",
+    example: "2 means about twice a year.",
+  },
+  waitSales: {
+    label: "Normal wait for sales steps",
+    description: "How many hours work should wait at a sales step where you haven't set your own time.",
+    example: "8 hours is 1 working day.",
+  },
+  waitClient: {
+    label: "Normal wait for client work",
+    description: "How many hours work should wait at a client-work step where you haven't set your own time.",
+    example: "16 hours is 2 working days.",
+  },
   useRule: {
     label: "Use this rule",
     description: "Switch a rule off and the app stops rating things with it. Your numbers for it are kept.",
@@ -308,7 +328,7 @@ export const SETTING_HELP = {
   },
   cutoff: {
     label: "Cut-off",
-    description: "Where one rating stops and the next starts. The agreed default is shown beside the box.",
+    description: "A number where one rating stops and the next starts. The agreed default is shown beside the box.",
     example: "Too busy, Great up to 70%: anyone busy under 70% of their week is rated Great.",
   },
   overrideTarget: {

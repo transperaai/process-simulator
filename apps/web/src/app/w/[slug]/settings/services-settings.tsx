@@ -83,7 +83,7 @@ function AddService({ workspaceId }: { workspaceId: string }) {
         <Input name="name" required maxLength={200} />
       </label>
       <label className="flex flex-col gap-1">
-        <HelpLabel label="Pricing" description="How the service is charged. Only retainers add new monthly revenue; hourly work adds none until servicing work is simulated." example="A retainer of 2,500 a month, or an hourly rate." />
+        <HelpLabel label="Pricing" description="How you charge for this service: a monthly fee, an hourly rate or a one-off price. Only monthly fees add new monthly income for now." example="A monthly fee of 2,500 means each client pays 2,500 every month they stay." />
         <NativeSelect name="pricing_model">
           {pricingOptions.map((o) => (
             <option key={o.value} value={o.value}>
@@ -152,7 +152,7 @@ function ServiceItem({ service: sv, share, data }: { service: ServiceRow; share:
           save={serviceSaver(sv.id, "pricing_model")}
           options={pricingOptions}
           disabled={disabled}
-          hint="Only retainers add new MRR. Hourly services add no revenue until servicing work is simulated." help={{ description: "How the service is charged. Only retainers add new monthly revenue; hourly work adds none until servicing work is simulated.", example: "A retainer of 2,500 a month brings 2,500 each month the client stays." }} />
+          hint="Only monthly fees add new monthly income for now." help={{ description: "How you charge for this service: a monthly fee, an hourly rate or a one-off price. Only monthly fees add new monthly income for now.", example: "A monthly fee of 2,500 brings in 2,500 each month the client stays." }} />
         <NumberField
           label="Price"
           value={Number(sv.price)}

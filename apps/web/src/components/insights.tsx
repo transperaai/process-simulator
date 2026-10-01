@@ -111,7 +111,8 @@ export interface InsightsProps {
   running?: boolean;
 }
 
-const issueHref = (registerHref: string | undefined, issue: IssueRow) => (registerHref ? `${registerHref}#issue-${issue.id}` : null);
+/** An acknowledged insight links to its issue's page, `<issues>/<number>`. */
+const issueHref = (registerHref: string | undefined, issue: IssueRow) => (registerHref ? `${registerHref}/${issue.number ?? issue.id}` : null);
 
 export function Insights(props: InsightsProps) {
   const { insights, currency, stepName, processName, onLight, registerHref, initialLimit, error, running } = props;

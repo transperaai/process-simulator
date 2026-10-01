@@ -10,11 +10,12 @@ import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type Scen
 import { RATING_LABELS, detectBrokenScenarios, ratingOfStored, resolveMoney, type AnalysisSettings, type FirstPrinciples, type IssueCost, type Rating } from "@transpera-flow/engine";
 import { AcknowledgeDialog } from "@/components/acknowledge-dialog";
 import { Help } from "@/components/help";
+import { LIST_HELP } from "@/lib/issues/help";
 import { RatingPill } from "@/components/overview/rating-pill";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { emptyDraft, issueFormOptions, toSaveInput } from "@/lib/issues/draft";
-import { DEFAULT_LIST_STATE, NO_SOLUTIONS, RATINGS_WORST_FIRST, SHOW_FILTERS, SHOW_LABELS, isOpenIssue, issueHref, listIssues, listQuery, ratingCounts, shortDate, showCounts, solutionSummaries, statusLabel, type ListState, type ShowFilter } from "@/lib/issues/pages";
+import { DEFAULT_LIST_STATE, NO_SOLUTIONS, RATINGS_WORST_FIRST, SHOW_FILTERS, SHOW_LABELS, isOpenIssue, issueHref, listIssues, listQuery, ratingCounts, shortDate, showCounts, solutionSummaries, statusLabel, type ListState } from "@/lib/issues/pages";
 import { perceptionGapDetections } from "@/lib/issues/perception";
 import { useIssues } from "@/lib/issues/use-issues";
 import { useDetectedIssues } from "@/lib/issues/use-detected";
@@ -31,34 +32,6 @@ export interface Named {
   name: string;
 }
 
-/** The (i) texts for the list's controls. */
-export const LIST_HELP = {
-  show: {
-    label: "Open, Resolved and All",
-    description: "Open shows issues still to deal with: Open and Testing solutions. Resolved shows the ones you resolved or decided not to fix. The number is how many each holds.",
-    example: "Open 3 means three issues still need work. Resolved issues keep their full history.",
-  },
-  rating: {
-    label: "Filter by rating",
-    description: "Show only the issues with one rating. The number on each button is how many there are among the issues you are looking at. Click it again, or All, to see everything.",
-    example: "Click Operational risk to see only the issues that could break delivery or lose clients.",
-  },
-  table: {
-    label: "Reading the table",
-    description: "Each row is one confirmed issue: its number and title, its rating, the steps it touches, who owns it, where it stands and how many solutions have been tested. The most serious come first, then the costliest.",
-    example: "“#2 Only Maya can do Audit & proposal · Bad · Audit & proposal · Rosa · Testing solutions · 1 tested”.",
-  },
-  solutions: {
-    label: "Solutions tested",
-    description: "How many solutions have been built and tested against this issue, with a tick when one passed. “None yet” means nobody has tried a fix.",
-    example: "“2 tested ✓” means two solutions were tried and one passed.",
-  },
-  newIssue: {
-    label: "New issue",
-    description: "Add a problem you found yourself, such as one from an interview. You say what is wrong, how bad it is, what it touches and who owns it.",
-    example: "“Clients wait too long to hear back”, touching the whole Sales process.",
-  },
-} as const;
 
 export function IssuesPage({
   bundle,

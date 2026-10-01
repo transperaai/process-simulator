@@ -11,6 +11,7 @@ import {
   type MarketConditionRow,
   type MarketScheduleRow,
   loadIssues,
+  loadIssueEvents,
   loadLiveRevisionIds,
   loadLiveProcessBySlug,
   loadProcessBundle,
@@ -29,6 +30,7 @@ import {
   type ChurnDriverRow,
   type ClientGroupRow,
   type DemandSettingsRow,
+  type IssueEventRow,
   type IssueRow,
   type LeadSourceRow,
   type PersonLeaveRow,
@@ -94,6 +96,11 @@ export async function loadWorkspaceLiveRevisionIds(workspaceId: string): Promise
 /** The workspace's tracked issues, newest first (RLS: everyone in the workspace can read them). */
 export async function loadWorkspaceIssues(workspaceId: string): Promise<IssueRow[]> {
   return loadIssues(await createClient(), workspaceId);
+}
+
+/** One issue's history, oldest first (RLS: everyone in the workspace can read it). */
+export async function loadWorkspaceIssueEvents(workspaceId: string, issueId: string): Promise<IssueEventRow[]> {
+  return loadIssueEvents(await createClient(), workspaceId, issueId);
 }
 
 /** The workspace's processes, by id and name, for the register's process filter. */

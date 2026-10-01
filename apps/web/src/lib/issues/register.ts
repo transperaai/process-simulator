@@ -126,8 +126,9 @@ export function entryView(e: RegisterEntry) {
     personId: i.person_id,
     processId: i.process_id,
     processIds,
-    // Marked resolved but detected again: back on the list.
-    open: isOpen(i.status) || (i.status === "resolved" && e.detection !== null),
+    // Marked resolved without a recorded how (resolved before A48) but detected again: back on the list. One resolved
+    // through the Resolve dialog (how recorded) stays resolved: a person said how, and it is off the map and the open list.
+    open: isOpen(i.status) || (i.status === "resolved" && e.detection !== null && i.resolved_how === null),
   };
 }
 

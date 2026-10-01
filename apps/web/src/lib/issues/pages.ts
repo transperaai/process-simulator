@@ -117,7 +117,8 @@ export interface SolutionSummary {
 export const NO_SOLUTIONS: SolutionSummary = { tested: 0, passed: false, ideas: 0 };
 
 /** Solutions tested for one issue. Empty until A49 builds solutions. */
-export function solutionsOf(_issueId: string): SolutionTest[] {
+export function solutionsOf(issueId: string): SolutionTest[] {
+  void issueId;
   return [];
 }
 

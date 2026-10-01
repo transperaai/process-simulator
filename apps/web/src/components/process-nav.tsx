@@ -1,28 +1,31 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState } from "react";
-import { Check, ChevronsUpDown, Plus } from "lucide-react";
+import { Fragment, useState } from "react";
+import { Check, ChevronRight, ChevronsUpDown, Plus } from "lucide-react";
 import { companyMap, flattenCompanyMap, type ProcessListing } from "@transpera-flow/db";
+import type { Rating } from "@transpera-flow/engine";
 import type { CreateProcessResult } from "@/app/w/[slug]/process-actions";
+import { NewProcessDialog } from "@/components/new-process-dialog";
+import { RatingDot } from "@/components/processes/rating";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
+import { trailOf } from "@/lib/processes/rows";
 
 /**
- * The workspace's processes (issue #76): the pipeline and its servicing
- * processes (issue #19), each opening on the canvas, never-published ones in
- * Draft view. It is the page's heading and the process picker in one: the
- * current process's name opens the list. Editors can start a new servicing
- * process from it.
+ * The title of a process page (issues #76, #101): breadcrumbs above it (Processes, then the processes it sits
+ * inside) and the process switcher, which is the title itself. The name opens every process of the workspace,
+ * indented by how deep it sits and marked with its rating, with "All processes" at the foot. Editors can start a
+ * new servicing process from it.
  */
 export function ProcessNav({
   processes,
   current,
   hrefs,
   create,
+  ratings,
+  processesHref,
 }: {
   processes: ProcessListing[];
   current: string;
@@ -30,99 +33,91 @@ export function ProcessNav({
   hrefs: Record<string, string>;
   /** Start a servicing process (signed-in editors only). */
   create?: (prev: CreateProcessResult, form: FormData) => Promise<CreateProcessResult>;
+  /** Each process's rating (the worst of its open issues), by id; none shows a grey dot. */
+  ratings?: Record<string, Rating | null>;
+  /** The Processes page, for the breadcrumb and the foot of the switcher. */
+  processesHref?: string;
 }) {
   const [adding, setAdding] = useState(false);
   // The company map's order: top-level processes, each followed by the child processes inside it (issue #102).
   const ordered = flattenCompanyMap(companyMap(processes));
   const here = processes.find((p) => p.id === current);
   const name = here?.name ?? "Process";
-  if (processes.length <= 1 && !create) return <h1 className="truncate px-1 font-display text-base font-bold">{name}</h1>;
+  const byId = new Map(processes.map((p) => [p.id, { id: p.id, name: p.name, parentId: p.parentId ?? null }]));
+  const trail = here ? trailOf({ id: here.id, parentId: here.parentId ?? null }, byId) : [];
+  const crumbs = (
+    <nav aria-label="Breadcrumb" className="flex min-w-0 flex-wrap items-center gap-x-1 text-xs text-muted-foreground">
+      {processesHref && (
+        <Link href={processesHref} className="hover:text-accent hover:underline">
+          Processes
+        </Link>
+      )}
+      {trail.map((t) => (
+        <Fragment key={t.id}>
+          {processesHref && <ChevronRight aria-hidden className="size-3 shrink-0" />}
+          <Link href={hrefs[t.id] ?? "#"} className="max-w-40 truncate hover:text-accent hover:underline">
+            {t.name}
+          </Link>
+        </Fragment>
+      ))}
+      {processesHref && <ChevronRight aria-hidden className="size-3 shrink-0" />}
+    </nav>
+  );
+  if (processes.length <= 1 && !create) {
+    return (
+      <div className="flex min-w-0 flex-wrap items-center gap-x-1">
+        {crumbs}
+        <h1 className="truncate px-1 font-display text-base font-bold">{name}</h1>
+      </div>
+    );
+  }
   return (
     <>
-      <h1 className="min-w-0 text-base">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="max-w-full gap-1.5 px-2 font-display text-base font-bold" aria-label={`Process: ${name}. Switch process`}>
-              <span className="truncate">{name}</span>
-              <ChevronsUpDown className="text-muted-foreground" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-64">
-            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Processes</DropdownMenuLabel>
-            {ordered.map(({ process: p, depth }) => (
-              <DropdownMenuItem key={p.id} asChild>
-                <Link href={hrefs[p.id]!} aria-current={p.id === current ? "page" : undefined}>
-                  <span className="min-w-0 flex-1 truncate" style={depth > 1 ? { paddingLeft: (depth - 1) * 14 } : undefined}>
-                    {depth > 1 && (
-                      <span aria-hidden className="text-muted-foreground">
-                        ↳{" "}
-                      </span>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-1">
+        {crumbs}
+        <h1 className="min-w-0 text-base">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="max-w-full gap-1.5 px-2 font-display text-base font-bold" aria-label={`Process: ${name}. Switch process`}>
+                <span className="truncate">{name}</span>
+                <ChevronsUpDown className="text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-h-[70vh] min-w-64 max-w-[calc(100vw-2rem)]">
+              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Switch to another process</DropdownMenuLabel>
+              {ordered.map(({ process: p, depth }) => (
+                <DropdownMenuItem key={p.id} asChild>
+                  <Link href={hrefs[p.id]!} aria-current={p.id === current ? "page" : undefined} style={{ paddingLeft: 8 + (depth - 1) * 16 }}>
+                    <RatingDot rating={ratings?.[p.id] ?? null} />
+                    <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                    {p.kind === "servicing" && <Badge variant="secondary">servicing</Badge>}
+                    {!p.live && (
+                      <Badge variant="outline" className="border-warn bg-warn-soft text-fg">
+                        not published
+                      </Badge>
                     )}
-                    {p.name}
-                  </span>
-                  {p.kind === "servicing" && <Badge variant="secondary">servicing</Badge>}
-                  {!p.live && (
-                    <Badge variant="outline" className="border-warn bg-warn-soft text-fg">
-                      not published
-                    </Badge>
-                  )}
-                  {p.id === current && <Check className="text-accent" aria-hidden />}
-                </Link>
-              </DropdownMenuItem>
-            ))}
-            {create && (
-              <>
-                <DropdownMenuSeparator />
+                    {p.id === current && <Check className="text-accent" aria-hidden />}
+                  </Link>
+                </DropdownMenuItem>
+              ))}
+              {(create || processesHref) && <DropdownMenuSeparator />}
+              {create && (
                 <DropdownMenuItem onSelect={() => setAdding(true)}>
                   <Plus /> New servicing process…
                 </DropdownMenuItem>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </h1>
-      {create && (
-        <Dialog open={adding} onOpenChange={setAdding}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>New servicing process</DialogTitle>
-              <DialogDescription>A recurring process for existing clients, such as a monthly report. It simulates beside the pipeline.</DialogDescription>
-            </DialogHeader>
-            <NewServicingProcess create={create} onCancel={() => setAdding(false)} />
-          </DialogContent>
-        </Dialog>
-      )}
+              )}
+              {processesHref && (
+                <DropdownMenuItem asChild>
+                  <Link href={processesHref} className="font-medium text-accent">
+                    All processes →
+                  </Link>
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </h1>
+      </div>
+      {create && <NewProcessDialog open={adding} onOpenChange={setAdding} create={create} />}
     </>
-  );
-}
-
-function NewServicingProcess({
-  create,
-  onCancel,
-}: {
-  create: (prev: CreateProcessResult, form: FormData) => Promise<CreateProcessResult>;
-  onCancel: () => void;
-}) {
-  const [state, action, pending] = useActionState(create, {});
-  return (
-    <form action={action} className="flex flex-col gap-3">
-      <label className="sr-only" htmlFor="new-servicing-name">
-        Name of the servicing process
-      </label>
-      <Input id="new-servicing-name" name="name" required maxLength={120} autoFocus placeholder="e.g. Quarterly review" />
-      {state.error && (
-        <p role="alert" className="text-destructive">
-          {state.error}
-        </p>
-      )}
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={pending}>
-          {pending ? "Creating…" : "Create"}
-        </Button>
-      </DialogFooter>
-    </form>
   );
 }

@@ -5,6 +5,7 @@ import { ProcessNav } from "@/components/process-nav";
 import { ProcessView } from "@/components/process-view";
 import { ShellHeader } from "@/components/shell/shell-header";
 import { canEditWorkspace, currentViewer } from "@/lib/access-data";
+import { processRatings } from "@/lib/processes/rows";
 import { loadWorkspaceAnalysisRules } from "@/lib/rules/data";
 import { loadProcessForEditing, loadWorkspaceIssues, loadWorkspaceOverview, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
 
@@ -52,6 +53,8 @@ export async function WorkspaceProcessPage({ slug, processId }: { slug: string; 
           current={live.process.id}
           hrefs={hrefs}
           create={canEdit ? createServicingProcess.bind(null, live.workspace.id, slug) : undefined}
+          ratings={processRatings(processes, issues)}
+          processesHref={`${base}/processes`}
         />
       }
     />

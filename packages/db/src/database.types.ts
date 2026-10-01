@@ -796,6 +796,8 @@ export type Database = {
           person_id: string | null
           process_id: string | null
           resolution: string | null
+          resolution_note: string | null
+          resolved_how: string | null
           resolved_at: string | null
           role_id: string | null
           scenario_id: string | null
@@ -826,6 +828,8 @@ export type Database = {
           person_id?: string | null
           process_id?: string | null
           resolution?: string | null
+          resolution_note?: string | null
+          resolved_how?: string | null
           resolved_at?: string | null
           role_id?: string | null
           scenario_id?: string | null
@@ -856,6 +860,8 @@ export type Database = {
           person_id?: string | null
           process_id?: string | null
           resolution?: string | null
+          resolution_note?: string | null
+          resolved_how?: string | null
           resolved_at?: string | null
           role_id?: string | null
           scenario_id?: string | null
@@ -2506,6 +2512,16 @@ export type Database = {
           revision_id: string
           status: string
         }[]
+      }
+      resolve_issue: {
+        Args: {
+          p_how: string
+          p_id: string
+          p_note?: string
+          p_status?: string
+          p_workspace: string
+        }
+        Returns: Json
       }
       save_fields: {
         Args: { base: Json; changes: Json; key: Json; target: string }

@@ -706,6 +706,10 @@ export interface IssueLinkRef {
   step_id: string | null;
 }
 
+/** How a resolved issue was resolved: a solution fixed it, the process was changed directly, or it is no longer a problem. */
+export type ResolveHow = "solution" | "process_change" | "not_a_problem";
+export const RESOLVE_HOWS = ["solution", "process_change", "not_a_problem"] as const satisfies readonly ResolveHow[];
+
 export type IssueEventKind = "created" | "edited" | "solution_tested" | "resolved" | "reopened";
 /** Logged by hand, detected by a stored run (reserved), or promoted from a detection. */
 export type IssueSource = "manual" | "detected" | "promoted";
@@ -746,6 +750,10 @@ export interface IssueRow {
   number: number | null;
   /** For a dismissed insight: the live revision of its process it was dismissed against. See `isDismissalCurrent`. */
   dismissed_revision_id: string | null;
+  /** How it was resolved, while it is resolved (cleared on reopen; the history keeps it). Null for an issue resolved before this was recorded. */
+  resolved_how: ResolveHow | null;
+  /** The note written when it was resolved. */
+  resolution_note: string | null;
   /** What is measured ("Wait at Check fit"), its value now ("1.4 d") and the goal ("under 4 hours"). */
   target_measure: string | null;
   target_now: string | null;
@@ -894,7 +902,7 @@ export type _SchemaDriftChecks = [
   Assert<Matches<Omit<ScenarioRow, "patch">, "scenarios">>,
   // evidence_metrics is jsonb; Record<string, number> is its app-side shape.
   // The three relation arrays are embedded from the link tables.
-  Assert<Matches<Omit<IssueRow, "evidence_metrics" | "links" | "owner_ids" | "source_ids" | "status">, "issues">>,
+  Assert<Matches<Omit<IssueRow, "evidence_metrics" | "links" | "owner_ids" | "source_ids" | "status" | "resolved_how">, "issues">>,
   Assert<Matches<Omit<IssueEventRow, "kind" | "detail">, "issue_events">>,
   Assert<Matches<SourceRow, "sources">>,
   // steps is jsonb; BlockBundle is its checked shape, and the check constraint limits type to BlockType.

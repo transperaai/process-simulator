@@ -1,9 +1,11 @@
 "use server";
 
 import { refresh } from "next/cache";
+import type { MarketFactorKey } from "@transpera-flow/engine";
 import type { SaveOutcome } from "@/lib/fields/field-controller";
 import { saveField, saveLinks } from "@/lib/fields/server";
 import { isGrowth, isMonth, isMultiplier, parseLeadSourceField, parseNewLeadSource, type LeadSourceField } from "@/lib/demand";
+import { copyName, parseChange, parseConditionField } from "@/lib/market";
 import { parseNewRole, parseRoleField, type RoleField } from "@/lib/roles";
 import { isTagList, parseNewService, parseServiceField, type ServiceField } from "@/lib/services";
 import { createClient } from "@/lib/supabase/server";
@@ -382,4 +384,90 @@ export async function saveGrowth(workspaceId: string, base: number | null, value
   );
   if (outcome.status === "saved") refresh();
   return outcome;
+}
+
+// Market conditions (A57). Owners and editors manage them; RLS enforces that, and the four presets are read-only.
+
+export interface MarketActionResult extends ActionResult {
+  /** The condition just created, so the screen can select it. */
+  id?: string;
+}
+
+/** Add a condition: a copy of `sourceId` (to customise a preset), or a fresh one starting from Stable. */
+export async function createMarketCondition(workspaceId: string, sourceId: string | null): Promise<MarketActionResult> {
+  if (!isId(workspaceId) || (sourceId !== null && !isId(sourceId))) return { error: "Couldn't save. Try again." };
+  if (!(await signedIn())) return { error: signedOut.message };
+  const supabase = await createClient();
+  const query = supabase
+    .from("market_conditions")
+    .select("name, leads, conv, cycle, price, churn, hire, pay")
+    .eq("workspace_id", workspaceId);
+  const { data: from, error: readError } = await (sourceId ? query.eq("id", sourceId) : query.eq("preset", "stable")).maybeSingle();
+  if (readError) return failure(readError);
+  if (!from) return { error: "That market is gone. Reload the page." };
+  const { name, ...values } = from;
+  const { data, error } = await supabase
+    .from("market_conditions")
+    .insert({ workspace_id: workspaceId, ...values, name: sourceId ? copyName({ name }) : copyName(undefined) })
+    .select("id")
+    .single();
+  if (error) return failure(error);
+  refresh();
+  return { id: data.id };
+}
+
+/** Save one column of one of your own conditions: its name, or a factor as a whole percent. The last save wins. */
+export async function saveMarketField(conditionId: string, field: string, value: string | number): Promise<SaveOutcome<string | number>> {
+  const parsed = parseConditionField(conditionId, field, value);
+  if (!parsed) return invalid;
+  if (!(await signedIn())) return signedOut;
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("market_conditions").update({ [parsed.field]: parsed.value } as { name?: string } & Partial<Record<MarketFactorKey, number>>).eq("id", parsed.id).select("id");
+  if (error) {
+    return { status: "error", message: error.code === "42501" ? "You don't have permission to change this." : "Couldn't save. Try again." };
+  }
+  // A preset, or a row you can't edit, matches no row for an update.
+  if (!data.length) return { status: "not_found" };
+  refresh();
+  return { status: "saved", value: parsed.value };
+}
+
+export async function removeMarketCondition(conditionId: string): Promise<ActionResult> {
+  if (!isId(conditionId)) return { error: "Couldn't remove it. Try again." };
+  if (!(await signedIn())) return { error: signedOut.message };
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("market_conditions").delete().eq("id", conditionId).select("id");
+  if (error) {
+    // 23503: the schedule refers to it.
+    if (error.code === "23503") return { error: "This market is on your schedule. Remove it from the schedule first." };
+    return failure(error);
+  }
+  if (!data.length) return { error: "That market was already removed, or it is a preset, or you can't edit it." };
+  refresh();
+  return {};
+}
+
+export async function addMarketChange(workspaceId: string, _prev: ActionResult, form: FormData): Promise<ActionResult> {
+  const parsed = parseChange(workspaceId, form.get("condition_id"), Number(form.get("from_month")), Number(form.get("to_month")));
+  if ("error" in parsed) return parsed;
+  if (!(await signedIn())) return { error: signedOut.message };
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("market_schedule")
+    .insert({ workspace_id: parsed.workspaceId, condition_id: parsed.conditionId, from_month: parsed.from, to_month: parsed.to });
+  // 23P01: the months overlap another change (the table's trigger).
+  if (error) return error.code === "23P01" ? { error: "Those months overlap another change. Remove it first, or pick other months." } : failure(error);
+  refresh();
+  return {};
+}
+
+export async function removeMarketChange(changeId: string): Promise<ActionResult> {
+  if (!isId(changeId)) return { error: "Couldn't remove it. Try again." };
+  if (!(await signedIn())) return { error: signedOut.message };
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("market_schedule").delete().eq("id", changeId).select("id");
+  if (error) return failure(error);
+  if (!data.length) return { error: "That change was already removed, or you can't edit it." };
+  refresh();
+  return {};
 }

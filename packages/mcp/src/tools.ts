@@ -7,6 +7,7 @@ import { runTool, ToolError } from "./result";
 import { ANALYSIS_TOOL_NAMES, registerAnalysisTools } from "./analysis-tools";
 import { registerSuggestionTools, SUGGESTION_TOOL_NAMES } from "./suggestion-tools";
 import { BUILDING_TOOL_NAMES, registerBuildingTools } from "./building-tools";
+import { FIRST_PRINCIPLES_TOOL_NAMES, registerFirstPrinciplesTools } from "./first-principles-tools";
 
 /** The browser's defaults (apps/web useSimulation): 30 replications, seed 1. */
 export const DEFAULT_REPS = 30;
@@ -22,6 +23,7 @@ export const TOOL_NAMES = [
   ...ANALYSIS_TOOL_NAMES,
   ...SUGGESTION_TOOL_NAMES,
   ...BUILDING_TOOL_NAMES,
+  ...FIRST_PRINCIPLES_TOOL_NAMES,
 ] as const;
 
 const workspaceArg = z
@@ -261,5 +263,6 @@ export function createMcpServer(ctx: ToolContext): McpServer {
   registerAnalysisTools(server, ctx);
   registerSuggestionTools(server, ctx);
   registerBuildingTools(server, ctx);
+  registerFirstPrinciplesTools(server, ctx);
   return server;
 }

@@ -11,4 +11,6 @@ export { SUGGESTION_TOOL_NAMES } from "./suggestion-tools";
 export { buildClientSuggestion, buildCompanySuggestion, buildDemandSuggestions, buildPersonSuggestion, buildRoleSuggestion, buildServiceSuggestion, matchForUpsert } from "./suggesting";
 export { BUILDING_TOOL_NAMES } from "./building-tools";
 export { buildNewStep, buildStepChange, planImport, resolveName, revisionDiff, type ImportInput, type ImportPlan, type RevisionDiff, type StepFields } from "./building";
+export { FIRST_PRINCIPLES_TOOL_NAMES } from "./first-principles-tools";
+export { mergeFirstPrinciples, type FpInput, type FpMergeResult, type FpMode } from "./first-principles";
 export { PROCESS_TEMPLATES, type ProcessTemplate } from "./templates";

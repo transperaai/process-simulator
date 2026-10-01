@@ -247,7 +247,7 @@ function check<T>(r: { data: T | null; error: unknown }): T {
 }
 
 /** A write RLS, a trigger or a check refused, as a ToolError the caller can act on. */
-function writeError(error: { code?: string; message?: string }, what: string): ToolError {
+export function writeError(error: { code?: string; message?: string }, what: string): ToolError {
   if (error.code === "42501") return new ToolError("forbidden", `You don't have permission to ${what} in this workspace (editors and owners can).`);
   if (error.code === "55000") return new ToolError("not_draft", "That revision is no longer a draft (someone published or discarded it); call the tool again to open a new draft.");
   if (error.code === "23514") return new ToolError("invalid_input", `Some of those values aren't allowed: ${error.message ?? ""}`.trim());
@@ -296,7 +296,7 @@ async function openDraft(ctx: ToolContext, proc: { id: string; name: string }): 
   return { revision_id: r.revision_id!, number: r.number!, created: r.created === true };
 }
 
-interface Editing {
+export interface Editing {
   ws: WorkspaceRef;
   proc: ProcessWithDraft;
   draft: Draft;
@@ -310,7 +310,7 @@ async function loadDraft(ctx: ToolContext, ws: WorkspaceRef, proc: ProcessWithDr
 }
 
 /** Resolve the workspace and process, and open (or continue) its draft. */
-async function beginEdit(ctx: ToolContext, args: { workspace?: string; process?: string }, assumptions: string[]): Promise<Editing> {
+export async function beginEdit(ctx: ToolContext, args: { workspace?: string; process?: string }, assumptions: string[]): Promise<Editing> {
   const ws = await resolveWorkspace(ctx, args.workspace, assumptions);
   const proc = await resolveProcess(ctx, ws, args.process, assumptions);
   const draft = await openDraft(ctx, proc);
@@ -340,7 +340,7 @@ async function processForStep(ctx: ToolContext, ws: WorkspaceRef, args: { proces
   return undefined;
 }
 
-const header = (e: Pick<Editing, "ws" | "proc" | "draft">) => ({
+export const header = (e: Pick<Editing, "ws" | "proc" | "draft">) => ({
   workspace: { id: e.ws.id, name: e.ws.name },
   process: { id: e.proc.id, name: e.proc.name },
   draft: { revision_id: e.draft.revision_id, number: e.draft.number, opened_now: e.draft.created },

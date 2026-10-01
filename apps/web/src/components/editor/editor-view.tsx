@@ -5,11 +5,15 @@
 // after Simulate. Edits go to the process's single draft (D18); Publish makes it the next live version.
 //
 // The mode is a parameter (`draft`, `solution`, `block`): the hint and the save buttons change with it. Draft mode is
-// built here; solutions (A49) and blocks (A51) plug into the same screen.
+// built here, and block mode (issue #116: an empty map saved to the block library, nothing of the process touched);
+// solutions (A49) plug into the same screen.
 
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { ProcessBundle, ScenarioRow, SourceRow } from "@transpera-flow/db";
+import type { BlockRow, ProcessBundle, ScenarioRow, SourceRow } from "@transpera-flow/db";
+import { blockFromSteps } from "@/lib/blocks/blocks";
+import { parseBlockInput } from "@/lib/blocks/save";
+import { newStepRow } from "@/lib/editor/commands";
 import { discardChange, revertField } from "@/lib/drafts/discard";
 import { EMPTY_DIFF, diffBundles, unresolvedSteps } from "@/lib/drafts/diff";
 import { useDraftSession } from "@/lib/drafts/use-draft-session";
@@ -17,7 +21,7 @@ import { namesOf } from "@/lib/editor/describe";
 import type { Table } from "@/lib/editor/ops";
 import { horizonWeeks } from "@/lib/horizon";
 import { MODE_INFO, type EditorMode } from "@/lib/editor/modes";
-import { connect } from "@/lib/realtime/connect";
+import { connect, connectScratch } from "@/lib/realtime/connect";
 import type { Viewer } from "@/lib/realtime/transport";
 import { useRealtime } from "@/lib/realtime/use-realtime";
 import { newlyBroken, retiredSteps } from "@/lib/scenarios/broken";
@@ -27,13 +31,20 @@ import { Button } from "@/components/ui/button";
 import { NO_SELECTION, ProcessCanvas, type Selection } from "@/components/process-canvas";
 import { PresenceBar } from "@/components/presence-bar";
 import { SaveProblems, useEngineModel, type EditMode } from "@/components/process-view";
-import { EditorBar } from "./editor-bar";
+import { EditorBar, type BlockForm } from "./editor-bar";
 import { Inspector } from "./inspector";
 import { Palette } from "./palette";
 import { SimulateFooter, type SimulatedPair } from "./simulate-footer";
+import { useBlockTools } from "./use-blocks";
 import { useEditCommands } from "./use-edit-commands";
 
 const DEMO_VIEWER: Viewer = { userId: "demo-you", name: "You", email: null };
+
+/** What block mode edits: the workspace's roles and people (so steps can be given to them), and one new step on an empty map. */
+function blockScratch(base: ProcessBundle): ProcessBundle {
+  const step = { ...newStepRow(base, "task", null, 24, 56), name: "New step" };
+  return { ...base, process: { ...base.process, name: "New block" }, steps: [step], edges: [], retired: [] };
+}
 
 export function EditorView({
   live: initialLive,
@@ -41,6 +52,7 @@ export function EditorView({
   mode,
   editorMode = "draft",
   scenarios = [],
+  blocks = [],
   sources = [],
   userId = null,
   viewer = null,
@@ -56,6 +68,8 @@ export function EditorView({
   editorMode?: EditorMode;
   /** Saved scenarios of the workspace, which publishing could break. */
   scenarios?: ScenarioRow[];
+  /** The workspace's block library (the demo keeps its own). */
+  blocks?: BlockRow[];
   /** Kept for the sources a step cites (issue #21). */
   sources?: SourceRow[];
   userId?: string | null;
@@ -68,11 +82,14 @@ export function EditorView({
 }) {
   const router = useRouter();
   const stamp = useCallback(() => ({ at: new Date().toISOString(), by: userId }), [userId]);
-  const [connection] = useState(() => connect(mode, initialLive));
-  const [session, drafts, state] = useDraftSession(initialLive, initialDraft, () => connection.backend, () => ({ at: new Date().toISOString(), by: userId }));
+  const blockMode = editorMode === "block";
+  // Block mode edits a map of its own, in memory: never the process's live version or its draft.
+  const [seed] = useState(() => (blockMode ? blockScratch(initialLive) : initialLive));
+  const [connection] = useState(() => (blockMode ? connectScratch(seed) : connect(mode, seed)));
+  const [session, drafts, state] = useDraftSession(seed, blockMode ? null : initialDraft, () => connection.backend, () => ({ at: new Date().toISOString(), by: userId }));
   const editor = session.editor;
   const info = MODE_INFO[editorMode];
-  const hasDraft = drafts.draft !== null || drafts.opening;
+  const hasDraft = !blockMode && (drafts.draft !== null || drafts.opening);
   const live = drafts.live;
   const working = state.bundle;
   const [selection, setSelection] = useState<Selection>(NO_SELECTION);
@@ -94,6 +111,37 @@ export function EditorView({
   }, [working, selection]);
 
   const { commands, inspectFocus, clearInspectFocus } = useEditCommands({ editor, bundle: working, selected, setSelection });
+  const blockTools = useBlockTools({
+    mode: mode === "demo" ? "demo" : "live",
+    workspaceId: live.workspace.id,
+    blocks,
+    bundle: working,
+    editor,
+    selected,
+    setSelection,
+    processName: initialLive.process.name,
+  });
+
+  // Block mode: what the block is called, and saving it. Nothing is written until then.
+  const [blockName, setBlockName] = useState("");
+  const [blockDescription, setBlockDescription] = useState("");
+  const [blockSaving, setBlockSaving] = useState(false);
+  const [blockError, setBlockError] = useState<string | null>(null);
+  const saveToLibrary = async () => {
+    setBlockError(null);
+    await editor.settled();
+    const input = { name: blockName, description: blockDescription, bundle: blockFromSteps(session.editor.getState().bundle) };
+    const checked = parseBlockInput(input);
+    if (!checked.ok) return setBlockError(checked.error);
+    setBlockSaving(true);
+    const result = await blockTools.save(checked.value);
+    setBlockSaving(false);
+    if (result.status === "error") return setBlockError(result.message);
+    router.push(exitHref);
+  };
+  const blockForm: BlockForm | undefined = blockMode
+    ? { name: blockName, description: blockDescription, onName: setBlockName, onDescription: setBlockDescription, onSave: saveToLibrary, saving: blockSaving, error: blockError }
+    : undefined;
   const restore = useCallback(
     (table: Table, id: string) => {
       editor.run((b) => discardChange(session.getState().live, b, table, id));
@@ -192,16 +240,20 @@ export function EditorView({
         // The demo lives in this tab, so it stays here to be looked at; a workspace goes back to the map, now live.
         onPublished={() => mode !== "demo" && router.push(exitHref)}
         canSave={info.available}
+        blockForm={blockForm}
       />
       <div className="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-[264px_minmax(0,1fr)_320px] lg:grid-rows-[minmax(0,1fr)]">
         <aside aria-label="Palette" className="flex flex-col gap-4 border-b border-line bg-panel p-3.5 lg:overflow-y-auto lg:border-r lg:border-b-0">
-          <Palette bundle={working} editor={editor} selected={selected} setSelection={setSelection} />
+          <Palette bundle={working} editor={editor} selected={selected} setSelection={setSelection} blocks={blockTools} />
           {mode === "demo" && (
             <p role="note" className="text-xs text-muted-foreground">
-              Demo: your edits live in this tab only. Leaving the Editor or reloading starts the sample again.
+              {blockMode
+                ? "Demo: the block library lives in this tab only. Reloading starts the sample again."
+                : "Demo: your edits live in this tab only. Leaving the Editor or reloading starts the sample again."}
             </p>
           )}
           <div className="mt-auto flex flex-col gap-2 empty:hidden">
+            {!blockMode && (
             <PresenceBar
               variant="compact"
               sync={sync}
@@ -211,11 +263,12 @@ export function EditorView({
               colleague={connection.colleague}
               selectedStep={selected.steps.length === 1 ? selected.steps[0]! : null}
             />
+            )}
           </div>
         </aside>
         <main className="flex min-h-[28rem] min-w-0 flex-col gap-2 bg-bg p-3 lg:min-h-0">
           {(state.conflicts.length > 0 || state.error) && <SaveProblems editor={editor} bundle={working} conflicts={state.conflicts} error={state.error} sync={sync} />}
-          {workingModel.error && (
+          {workingModel.error && !blockMode && (
             <p role="status" className="rounded-token border border-warn bg-warn-soft px-2 py-1.5 text-xs">
               This draft can&apos;t be simulated yet: {workingModel.error}.
             </p>
@@ -231,7 +284,7 @@ export function EditorView({
               commands={commands}
               diff={hasDraft ? diff : null}
               onRestore={restore}
-              savedLabel={hasDraft ? "Saved to draft" : "Saved"}
+              savedLabel={blockMode ? "Edited" : hasDraft ? "Saved to draft" : "Saved"}
               hideAdd
               // Nothing to play until Simulate has run.
               showPlayback={!stale && !!pair?.draft.result}
@@ -250,6 +303,7 @@ export function EditorView({
             stamp={stamp}
             sourcesHref={sourcesHref}
             mode={editorMode}
+            blocks={blockTools}
             draft={
               hasDraft
                 ? (step) => ({
@@ -263,6 +317,7 @@ export function EditorView({
           />
         </aside>
       </div>
+      {!blockMode && (
       <SimulateFooter
         asked={!!asked}
         pair={pair}
@@ -271,6 +326,7 @@ export function EditorView({
         currency={working.workspace.settings.currency}
         liveNumber={live.revision.number}
       />
+      )}
     </div>
   );
 }

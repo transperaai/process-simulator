@@ -32,7 +32,7 @@ export const compareRatingsDesc = (a: Rating, b: Rating): number => ratingRank(b
 export type Cutoffs = readonly [good: number, bad: number, risk: number];
 
 /** The rules this model rates (the numbers are those in docs/analysis-rules.md). */
-export const RATING_RULE_IDS = ["busy", "overtime", "queue", "wait", "rework", "sla", "spare", "spof", "dropoff", "cycle", "success"] as const;
+export const RATING_RULE_IDS = ["busy", "overtime", "queue", "wait", "rework", "sla", "spare", "spof", "dropoff", "cycle", "success", "driver"] as const;
 export type RatingRuleId = (typeof RATING_RULE_IDS)[number];
 
 export interface RatingRuleMeta {
@@ -68,6 +68,7 @@ export const RATING_RULES: Record<RatingRuleId, RatingRuleMeta> = {
   dropoff: { number: 12, name: "Work lost at a step", upperInclusive: true, badMonth: true },
   cycle: { number: 13, name: "Too slow overall", upperInclusive: true, badMonth: true },
   success: { number: 11, name: "Goals met", upperInclusive: true, badMonth: false, lowerIsWorse: true },
+  driver: { number: 10, name: "Cause of clients leaving", upperInclusive: false, badMonth: false },
 };
 
 /**
@@ -86,6 +87,8 @@ export const RATING_RULES: Record<RatingRuleId, RatingRuleMeta> = {
  * - dropoff: share of work lost at a step ÷ the step's benchmark, 1 / 1.25 / 1.5.
  * - cycle: end-to-end time ÷ the process's target, 1 / 1.25 / 1.5.
  * - success: the share of runs that meet a success measure, lower is worse: 80 / 50 / 20%.
+ * - driver: not a three-band number. The first is the share of a client group's churn one driver causes for Bad (30%);
+ *   the last is the group's health below which that is Operational risk (50). See `churnCauseIssues`.
  */
 export const DEFAULT_RATING_CUTOFFS: Record<RatingRuleId, Cutoffs> = {
   busy: [0.7, 0.85, 0.95],
@@ -99,6 +102,7 @@ export const DEFAULT_RATING_CUTOFFS: Record<RatingRuleId, Cutoffs> = {
   dropoff: [1, 1.25, 1.5],
   cycle: [1, 1.25, 1.5],
   success: [0.8, 0.5, 0.2],
+  driver: [0.3, 0.3, 50],
 };
 
 /**

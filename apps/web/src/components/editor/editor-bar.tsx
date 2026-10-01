@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import type { StepRow } from "@transpera-flow/db";
 import { Help } from "@/components/help";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { BreaksWarning } from "@/components/draft-panels";
 import type { DraftSession, DraftState } from "@/lib/drafts/session";
@@ -18,7 +19,19 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** A button on the edit-coloured bar: outlined in its text colour, or solid (the main action). */
 const onBar = "border-edit-fg/50 bg-transparent text-edit-fg hover:bg-edit-fg/15 hover:text-edit-fg dark:bg-transparent dark:hover:bg-edit-fg/15";
-const onBarSolid = "border-edit-fg bg-edit-fg text-edit hover:bg-edit-fg/90 hover:text-edit";
+const onBarSolid = "border-edit-fg bg-edit-fg text-edit hover:bg-edit-fg/90 hover:text-edit dark:bg-edit-fg dark:hover:bg-edit-fg/90";
+
+/** Block mode's form: the name and description the block is saved with, and the save itself. */
+export interface BlockForm {
+  name: string;
+  description: string;
+  onName: (value: string) => void;
+  onDescription: (value: string) => void;
+  onSave: () => void;
+  saving: boolean;
+  /** What went wrong with the last save, in plain English. */
+  error: string | null;
+}
 
 export function EditorBar({
   mode,
@@ -36,6 +49,7 @@ export function EditorBar({
   exitHref,
   onPublished,
   canSave,
+  blockForm,
 }: {
   mode: EditorMode;
   /** What is being edited: the process's name. */
@@ -61,6 +75,8 @@ export function EditorBar({
   onPublished: (revisionNumber: number) => void;
   /** Saving works in this mode: draft mode, or one that has plugged its save in. */
   canSave: boolean;
+  /** Block mode only: the form the block is saved from. */
+  blockForm?: BlockForm;
 }) {
   const info = MODE_INFO[mode];
   const router = useRouter();
@@ -88,19 +104,23 @@ export function EditorBar({
             </span>
           )}
           <span className="text-xs opacity-90" aria-live="polite">
-            {saving ? "Saving…" : hasDraft ? "All changes saved to the draft" : "Nothing changed yet"}
+            {mode === "block" ? "Nothing is saved until you press Save to library" : saving ? "Saving…" : hasDraft ? "All changes saved to the draft" : "Nothing changed yet"}
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          <Button type="button" variant="outline" size="sm" className={onBar} onClick={onSimulate} disabled={simulating || !!blocked} title={blocked ?? undefined}>
-            {simulating ? "Simulating…" : "▶ Simulate"}
-          </Button>
-          <Help
-            label="Simulate"
-            description="Runs this version of the process 30 times and shows how the headline numbers change compared with the live version. Nothing is published."
-            example="Add a faster approval step, press Simulate, and see cycle time drop from 9.6 days to 8.1."
-            className="border-edit-fg bg-transparent text-edit-fg hover:bg-edit-fg hover:text-edit focus-visible:bg-edit-fg focus-visible:text-edit"
-          />
+          {mode !== "block" && (
+            <>
+            <Button type="button" variant="outline" size="sm" className={onBar} onClick={onSimulate} disabled={simulating || !!blocked} title={blocked ?? undefined}>
+              {simulating ? "Simulating…" : "▶ Simulate"}
+            </Button>
+            <Help
+              label="Simulate"
+              description="Runs this version of the process 30 times and shows how the headline numbers change compared with the live version. Nothing is published."
+              example="Add a faster approval step, press Simulate, and see cycle time drop from 9.6 days to 8.1."
+              className="border-edit-fg bg-transparent text-edit-fg hover:bg-edit-fg hover:text-edit focus-visible:bg-edit-fg focus-visible:text-edit"
+            />
+            </>
+          )}
           {info.save.map((s) => {
             const solid = s.primary;
             const cls = solid ? onBarSolid : onBar;
@@ -138,12 +158,27 @@ export function EditorBar({
                 </Button>
               );
             }
+            if (s.id === "save-block" && blockForm) {
+              return (
+                <Button key={s.id} type="button" variant="outline" size="sm" className={cls} disabled={!canSave || blockForm.saving} onClick={blockForm.onSave}>
+                  {blockForm.saving ? "Saving…" : s.label}
+                </Button>
+              );
+            }
             return (
               <Button key={s.id} type="button" variant="outline" size="sm" className={cls} disabled={!canSave} title={arrives}>
                 {s.label}
               </Button>
             );
           })}
+          {mode === "block" && (
+            <Help
+              label="Save to library"
+              description="Saves everything on this map as a block in the library, under the name and description below. You can then insert it into any process, and the map here is left as it is."
+              example="Name it “Client sign-off”, press Save to library, and it shows up on the Block library page."
+              className="border-edit-fg bg-transparent text-edit-fg hover:bg-edit-fg hover:text-edit focus-visible:bg-edit-fg focus-visible:text-edit"
+            />
+          )}
           {mode === "draft" && (
             <Button type="button" variant="outline" size="sm" className={onBar} disabled={busy || !hasDraft} onClick={() => setConfirming("discard")}>
               Discard…
@@ -183,6 +218,37 @@ export function EditorBar({
           </span>
         )}
       </p>
+      {mode === "block" && blockForm && (
+        <div className="flex flex-wrap items-end gap-x-4 gap-y-2 border-b border-line bg-panel px-4 py-2" data-block-form>
+          <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs font-semibold sm:max-w-xs">
+            <span className="flex items-center">
+              Block name
+              <Help
+                label="Block name"
+                description="What the block is called in the library and in the left column. When you insert it, the new group takes this name."
+                example="“Client sign-off” or “AI lead check”."
+              />
+            </span>
+            <Input value={blockForm.name} maxLength={200} placeholder="Block name" onChange={(e) => blockForm.onName(e.target.value)} />
+          </label>
+          <label className="flex min-w-48 flex-[2] flex-col gap-1 text-xs font-semibold sm:max-w-xl">
+            <span className="flex items-center">
+              Description
+              <Help
+                label="Description"
+                description="One line on what the block does and when to use it. It shows on the block's card in the library."
+                example="Send the summary, chase once, and record the client's decision."
+              />
+            </span>
+            <Input value={blockForm.description} maxLength={2000} placeholder="What it does and when to use it (optional)" onChange={(e) => blockForm.onDescription(e.target.value)} />
+          </label>
+          {blockForm.error && (
+            <p role="alert" className="text-xs font-semibold text-crit">
+              {blockForm.error}
+            </p>
+          )}
+        </div>
+      )}
 
       <Dialog open={confirming === "publish"} onOpenChange={(o) => !o && setConfirming(null)}>
         <DialogContent className="max-h-[85svh] overflow-y-auto sm:max-w-md">

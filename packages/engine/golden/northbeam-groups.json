@@ -1,7 +1,7 @@
 {
   "model": "northbeam-groups",
   "description": "Northbeam as the seed loads it since client groups: its clients counted per service (17 SEO clients at health 83, 12 PPC clients at health 52) and simulated as unnamed clients, with the same servicing: a healthy group and one at risk.",
-  "engineVersion": "1.5.0",
+  "engineVersion": "1.6.0",
   "seed": 1,
   "reps": 30,
   "outputs": {
@@ -134,6 +134,7 @@
       "rework:step:ppc": { "rating": "risk", "base": "bad", "badMonth": true, "bottleneck": false, "costPerMonth": 93.33333333333333, "hoursPerMonth": 1.8666666666666665 },
       "capacity:role:strat": { "rating": "risk", "base": "good", "badMonth": true, "bottleneck": true, "costPerMonth": null, "hoursPerMonth": null },
       "spof:step:report_fin": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": null },
+      "churn_risk:driver:ppc:late": { "rating": "bad", "base": "bad", "badMonth": false, "bottleneck": false, "costPerMonth": 31166.694725173198, "hoursPerMonth": null },
       "churn_risk:group:ppc": { "rating": "bad", "base": "bad", "badMonth": false, "bottleneck": false, "costPerMonth": 30639.612480000003, "hoursPerMonth": null },
       "wait:step:audit": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false, "costPerMonth": 14490.240310909874, "hoursPerMonth": null },
       "rework:step:seo": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false, "costPerMonth": 77.77777777777777, "hoursPerMonth": 1.5555555555555554 },
@@ -148,6 +149,32 @@
       "wait:step:report_ppc": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": 122.32244160486565 },
       "capacity:role:am": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": null },
       "capacity:role:seo": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false, "costPerMonth": null, "hoursPerMonth": null }
+    },
+    "churnCauses": {
+      "clients": 5.795230177059274,
+      "normalShare": 0.5785863025577563,
+      "causes": {
+        "late": { "share": 0.4214136974422437, "mrr": 9864.739824480355, "pressure": 0.6685101988907198, "value": 0.12789062831708367 },
+        "resp": { "share": 0, "mrr": 0, "pressure": 0, "value": null },
+        "onb": { "share": 0, "mrr": 0, "pressure": 0.00006130948061978162, "value": 5.364237727996001 },
+        "rework": { "share": 0, "mrr": 0, "pressure": 0, "value": 0 },
+        "load": { "share": 0, "mrr": 0, "pressure": 0.2918141673401695, "value": 0.8319937597300989 },
+        "handoff": { "share": 0, "mrr": 0, "pressure": 0.2999999999999983, "value": 0.3 },
+        "results": { "share": 0, "mrr": 0, "pressure": 0.25, "value": 7 },
+        "tenure": { "share": 0, "mrr": 0, "pressure": 0.11133599984660938, "value": 1.6000000000000008 },
+        "price": { "share": 0, "mrr": 0, "pressure": 0, "value": 0 },
+        "market": { "share": 0, "mrr": 0, "pressure": 0, "value": 1 }
+      },
+      "byService": {
+        "ppc": {
+          "clients": 3.455063895304084,
+          "shares": { "normal": 0.4667424814978546, "late": 0.5332575185021453, "resp": 0, "onb": 0, "rework": 0, "load": 0, "handoff": 0, "results": 0, "tenure": 0, "price": 0, "market": 0 }
+        },
+        "seo": {
+          "clients": 2.3401662817552,
+          "shares": { "normal": 0.7437145462512289, "late": 0.2562854537487712, "resp": 0, "onb": 0, "rework": 0, "load": 0, "handoff": 0, "results": 0, "tenure": 0, "price": 0, "market": 0 }
+        }
+      }
     },
     "rosterClients": {
       "group:ppc:1": { "health": 59.13333333333333, "churned": 0.06666666666666667, "atRisk": 0.16666666666666666 },

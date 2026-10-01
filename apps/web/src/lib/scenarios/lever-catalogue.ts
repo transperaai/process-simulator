@@ -167,7 +167,9 @@ export const LEVER_KINDS: readonly LeverKind[] = [
     label: "Causes of churn",
     description: "How much each cause of leaving matters (Settings → Churn drivers).",
     example: "Late work matters a bit more than normal.",
-    control: "later",
+    control: "settings",
+    settingsPath: "/settings#churn-drivers-heading",
+    settingsLabel: "Settings → Churn drivers",
   },
   // Finances
   {

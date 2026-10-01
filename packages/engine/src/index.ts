@@ -4,6 +4,7 @@ export { ENGINE_VERSION } from "./version";
 export { DEFAULT_AVAILABILITY_FLOOR, initialState, pct, resolvePeople, runOnce, simulate, stat } from "./simulate";
 export { checkDemand, demandFactor, isFlatDemand, WEEKS_PER_CALENDAR_MONTH } from "./demand";
 export * from "./market";
+export * from "./churn-drivers";
 export { mulberry32 } from "./random";
 export {
   NORTHBEAM_CLIENT_GROUPS,
@@ -13,6 +14,7 @@ export {
   NORTHBEAM_TEAM,
   northbeamClientKey,
   northbeamModel,
+  northbeamWithChurnDrivers,
   northbeamWithClientGroups,
   northbeamWithClients,
   northbeamWithServices,
@@ -59,7 +61,7 @@ export {
   servicingStepIds,
   tasksPerWeek,
 } from "./servicing";
-export { churnRiskIssues } from "./churn-issues";
+export { churnCauseIssues, churnRiskIssues } from "./churn-issues";
 export {
   LOAD_WEEKS_PER_MONTH,
   MAX_GROUP_CLIENTS,

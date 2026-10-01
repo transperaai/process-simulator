@@ -27,8 +27,8 @@ describe("editor modes", () => {
     expect(MODE_INFO.draft.save.map((s) => s.label)).toEqual(["Save draft", "Publish…"]);
     expect(MODE_INFO.solution.save.map((s) => s.label)).toEqual(["Save solution"]);
     expect(MODE_INFO.block.save.map((s) => s.label)).toEqual(["Save to library"]);
-    // Only the draft is built; the others plug in later.
-    expect(EDITOR_MODES.filter((m) => MODE_INFO[m].available)).toEqual(["draft"]);
+    // The draft and the block are built; solutions plug in later.
+    expect(EDITOR_MODES.filter((m) => MODE_INFO[m].available)).toEqual(["draft", "block"]);
     expect(MODE_INFO.draft.title("Lead to live")).toBe("Draft of Lead to live");
   });
 

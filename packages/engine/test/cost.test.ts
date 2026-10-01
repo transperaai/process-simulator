@@ -353,7 +353,7 @@ describe("the cost of each insight", () => {
   it("churn risk: the churn above its base rate × what losing it is worth", () => {
     const m = northbeamWithServicing();
     const r = simulate(m, 12, 1);
-    const issues = detectIssues(m, r).filter((i) => i.type === "churn_risk");
+    const issues = detectIssues(m, r).filter((i) => i.key.startsWith("churn_risk:client:"));
     for (const i of issues) {
       const client = m.clients![i.clientId!]!;
       expect(i.cost.perMonth).toBeCloseTo(Math.max(0, i.metrics.churn_monthly! - clientChurnMonthly(m, client)) * clientLossValue(m, client, 12), 6);

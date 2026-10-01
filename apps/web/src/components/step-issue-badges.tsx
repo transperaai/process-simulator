@@ -35,7 +35,7 @@ export function StepIssueBadges({ badges, onOpen }: { badges: Record<string, Ste
   return hosts.map(([id, el]) => {
     const b = badges[id];
     if (!b) return null;
-    const label = `${b.count} confirmed issue${b.count === 1 ? "" : "s"}:${b.titles.join("; ")}`;
+    const label = `${b.count} confirmed issue${b.count === 1 ? "" : "s"}: ${b.titles.join("; ")}`;
     return createPortal(
       <button
         type="button"

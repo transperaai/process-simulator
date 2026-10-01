@@ -8,7 +8,7 @@ import { detectBrokenScenarios, resolveMoney, type AnalysisSettings, type Engine
 import { perceptionGapDetections } from "@/lib/issues/perception";
 import { rerate, visibleFindings } from "@/lib/rules/edit";
 import { useRatingSettings } from "@/lib/rules/use-rating-settings";
-import { confirmedBadges, entryView, promoteInput, registerEntries, stepBadges, stepRatingOf } from "@/lib/issues/register";
+import { confirmedBadges, confirmedRatings, entryView, promoteInput, registerEntries, stepRatingOf } from "@/lib/issues/register";
 import { useIssues } from "@/lib/issues/use-issues";
 import { useAbsenceTest } from "@/lib/sim/absence";
 import { IssuesRegister } from "./issues-register";
@@ -118,9 +118,9 @@ export function useProcessIssues({
     () => entries.filter((e) => e.kind === "detected" || !e.issue.process_id || e.issue.process_id === bundle.process.id),
     [entries, bundle.process.id],
   );
-  // Red badges count confirmed (tracked) issues only; a step is coloured by its worst finding of any kind.
+  // Nothing reaches the map until it is acknowledged (D24): badges count, and colours come from, confirmed issues only.
   const badges = useMemo(() => confirmedBadges(here), [here]);
-  const ratings = useMemo(() => stepBadges(here), [here]);
+  const ratings = useMemo(() => confirmedRatings(here), [here]);
   // Per step: the titles of what was found and not acknowledged yet (insights), and of the confirmed issues.
   const extras = useMemo(() => {
     const out = new Map<string, StepExtras>();

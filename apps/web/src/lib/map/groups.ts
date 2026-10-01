@@ -11,10 +11,10 @@ export interface Size {
 }
 
 /** What a step card measures, before React Flow has measured it. */
-export const CARD_SIZE: Size = { width: 208, height: 92 };
+export const CARD_SIZE: Size = { width: 192, height: 92 };
 export const TERMINAL_SIZE: Size = { width: 96, height: 34 };
 /** A closed group's card. */
-export const GROUP_CARD: Size = { width: 208, height: 124 };
+export const GROUP_CARD: Size = { width: 192, height: 124 };
 /** An open group with nothing in it yet. */
 export const EMPTY_GROUP: Size = { width: 240, height: 120 };
 /** Room inside an open group's box: its name above, and a margin below and to the right. Matches where MCP places a group's steps. */

@@ -56,3 +56,15 @@ export function stepZoom(zoom: number, direction: "in" | "out"): number {
 
 /** "85%". */
 export const zoomLabel = (zoom: number): string => `${Math.round(zoom * 100)}%`;
+
+/** A map panel that follows its map is never shorter than this (rem 16) or taller than this (rem 40) in pixels. */
+export const AUTO_HEIGHT = { min: 256, max: 640 } as const;
+
+/**
+ * How tall a panel should be to show `bounds` (map units) at the zoom that fits its width: the map's height at that
+ * zoom plus the padding, kept between 16 and 40 rem, so a small map doesn't sit in a tall empty panel.
+ */
+export function autoPanelHeight(bounds: { width: number; height: number }, panelWidth: number, pad: Padding = NO_PADDING): number {
+  const zoom = fitZoom({ width: bounds.width, height: 1 }, { width: panelWidth - pad.left - pad.right, height: 1e6 });
+  return clamp(Math.round(bounds.height * zoom + pad.top + pad.bottom), AUTO_HEIGHT.min, AUTO_HEIGHT.max);
+}

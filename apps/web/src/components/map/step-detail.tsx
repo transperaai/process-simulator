@@ -80,7 +80,7 @@ export function StepDetail({
           onClose();
         }
       }}
-      className="nodrag nopan absolute top-12 right-2.5 z-20 max-h-[calc(100%-4rem)] w-[min(18rem,calc(100%-1.25rem))] overflow-y-auto rounded-token border border-line bg-panel p-3 shadow-md"
+      className="nodrag nopan absolute top-2.5 right-2.5 z-20 max-h-[calc(100%-1.25rem)] w-[min(18rem,calc(100%-1.25rem))] overflow-y-auto rounded-token border border-line bg-panel p-3 shadow-md"
     >
       <div className="flex items-start justify-between gap-2">
         <h3 ref={heading} tabIndex={-1} className="text-sm leading-tight font-semibold outline-none">
@@ -105,7 +105,7 @@ export function StepDetail({
               {RATING_LABELS[rating]}
             </>
           ) : (
-            "Not rated"
+            "No confirmed issues"
           )}
         </dd>
       </dl>

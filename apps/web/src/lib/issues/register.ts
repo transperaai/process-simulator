@@ -227,6 +227,15 @@ export function confirmedBadges(entries: readonly RegisterEntry[]): Record<strin
   return stepBadges(entries.filter((e) => e.kind === "tracked"));
 }
 
+/**
+ * What colours a step on the map (issue #99, decision D24): the worst rating among its confirmed open issues. Nothing
+ * a run only detected reaches the map until someone acknowledges it, and a step with no confirmed issue stays
+ * uncoloured. A stored issue with the lowest severity reads as Great, which is not a problem to colour a step by.
+ */
+export function confirmedRatings(entries: readonly RegisterEntry[]): Record<string, StepBadge> {
+  return stepBadges(entries.filter((e) => e.kind === "tracked" && entryView(e).rating !== "great"));
+}
+
 /** Open findings per step: each step's count and worst rating, whether tracked or only detected. */
 export function stepBadges(entries: readonly RegisterEntry[]): Record<string, StepBadge> {
   const out: Record<string, StepBadge> = {};

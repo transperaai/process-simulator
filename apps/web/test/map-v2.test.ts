@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { northbeamBundle, northbeamIssues, northbeamStepIds, toEngineModel } from "@transpera-flow/db";
-import { detectIssues, simulate } from "@transpera-flow/engine";
-import { confirmedBadges, entryView, registerEntries, stepBadges } from "@/lib/issues/register";
+import { absenceTest, detectIssues, simulate } from "@transpera-flow/engine";
+import { confirmedBadges, confirmedRatings, entryView, registerEntries, stepBadges } from "@/lib/issues/register";
 import { DEMO_GROUP_IDS, withDemoGroups } from "@/lib/demo/nested";
 import { demoBundle } from "@/lib/sources/demo";
 import { groupsToOpen, litIds, withHighlightOpen } from "@/lib/map/highlight";
-import { LEGEND_ORDER, RATING_STYLE, ratingOfRank } from "@/lib/map/rating";
-import { MAX_FIT_ZOOM, MAX_ZOOM, MIN_FIT_ZOOM, MIN_ZOOM, fitViewport, fitZoom, stepZoom } from "@/lib/map/zoom";
+import { LEGEND_ORDER, ratingOfRank } from "@/lib/map/rating";
+import { AUTO_HEIGHT, MAX_FIT_ZOOM, MAX_ZOOM, MIN_FIT_ZOOM, MIN_ZOOM, autoPanelHeight, fitViewport, fitZoom, stepZoom } from "@/lib/map/zoom";
 
 // Map v2 (issue #99): the fit calculation, the red badges, highlighting and the rating colours.
 
@@ -53,7 +53,7 @@ describe("fitting the map to its panel", () => {
 function northbeamDetections() {
   const b = northbeamBundle();
   const model = toEngineModel({ ...b, clients: [], clientServices: [], clientAssignments: [] }, { startDate: "2026-10-05" });
-  return detectIssues(model, simulate(model, 30, 1)).filter((d) => d.key.startsWith("spof:"));
+  return detectIssues(model, simulate(model, 30, 1), {}, { absence: absenceTest(model) }).filter((d) => d.key.startsWith("spof:"));
 }
 
 describe("red badges count confirmed issues only", () => {
@@ -106,19 +106,47 @@ describe("highlighting steps on the map", () => {
   });
 });
 
-describe("rating colours", () => {
-  it("has a colour from the tokens for each of the four ratings, lime for Good", () => {
-    expect(LEGEND_ORDER).toEqual(["risk", "bad", "good", "great"]);
-    for (const r of LEGEND_ORDER) {
-      expect(RATING_STYLE[r].stripe).toMatch(/^var\(--rate-/);
-      expect(RATING_STYLE[r].soft).toMatch(/^var\(--rate-.*-soft\)$/);
-    }
-    expect(RATING_STYLE.good.stripe).toBe("var(--rate-good)");
+describe("what colours a step (D24: nothing reaches the map until it is acknowledged)", () => {
+  const entries = registerEntries(northbeamIssues(), northbeamDetections());
+  const [, promoted] = northbeamIssues();
+
+  it("colours a step by its confirmed issues only, never by a detection nobody has acknowledged", () => {
+    const rated = confirmedRatings(entries);
+    // Kickoff has only a detection, so it stays uncoloured; Audit has the tracked spof issue (Bad).
+    expect(rated[northbeamStepIds.kickoff]).toBeUndefined();
+    expect(stepBadges(entries)[northbeamStepIds.kickoff]).toBeDefined();
+    expect(rated[northbeamStepIds.audit]?.rating).toBe("bad");
+  });
+
+  it("does not colour a step by an issue stored with the lowest severity (that reads as Great)", () => {
+    const info = northbeamIssues().find((i) => entryView({ kind: "tracked", issue: i, detection: null }).rating === "great")!;
+    expect(info.step_id).toBe(northbeamStepIds.qualify);
+    expect(confirmedRatings(entries)[northbeamStepIds.qualify]).toBeUndefined();
+    // ...though it is still a confirmed issue, so it still counts on the red badge.
+    expect(confirmedBadges(entries)[northbeamStepIds.qualify]?.count).toBe(1);
+  });
+
+  it("stops colouring a step once its issue is closed", () => {
+    const closed = registerEntries([{ ...promoted!, status: "done" }], []);
+    expect(confirmedRatings(closed)).toEqual({});
   });
 
   it("turns a rank back into its rating", () => {
     expect([0, 1, 2, 3].map(ratingOfRank)).toEqual(["great", "good", "bad", "risk"]);
     expect(ratingOfRank(-1)).toBeNull();
     expect(ratingOfRank(4)).toBeNull();
+    expect(LEGEND_ORDER).toEqual(["risk", "bad", "good", "great"]);
+  });
+});
+
+describe("panel height that follows the map", () => {
+  it("is the map's height at the fitted zoom plus the padding, between 16 and 40 rem", () => {
+    const pad = { top: 24, right: 24, bottom: 24, left: 24 };
+    // 1000 wide in 1048 (room 1000): zoom 1; 300 tall -> 348, lifted to the 256 floor? no: 348 is above it.
+    expect(autoPanelHeight({ width: 1000, height: 300 }, 1048, pad)).toBe(348);
+    expect(autoPanelHeight({ width: 1000, height: 50 }, 1048, pad)).toBe(AUTO_HEIGHT.min);
+    expect(autoPanelHeight({ width: 1000, height: 3000 }, 1048, pad)).toBe(AUTO_HEIGHT.max);
+    // A wide map is fitted no smaller than 70%.
+    expect(autoPanelHeight({ width: 4000, height: 500 }, 1048, pad)).toBe(Math.round(500 * 0.7 + 48));
   });
 });

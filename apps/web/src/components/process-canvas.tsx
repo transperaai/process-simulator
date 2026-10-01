@@ -24,7 +24,6 @@ import {
   ReactFlowProvider,
   SelectionMode,
   getSmoothStepPath,
-  useNodesInitialized,
   useReactFlow,
   useStore,
   type AriaLabelConfig,
@@ -92,9 +91,9 @@ import type { InlineField } from "@/lib/editor/inline-edit";
 import type { Table } from "@/lib/editor/ops";
 import { laneLayout, type Lane } from "@/lib/editor/lanes";
 import { groupIds, openGroupSize } from "@/lib/map/groups";
-import { litIds, withHighlightOpen } from "@/lib/map/highlight";
+import { groupsToOpen, litIds, withHighlightOpen } from "@/lib/map/highlight";
 import { RATING_STYLE, ratingOfRank } from "@/lib/map/rating";
-import { fitViewport, stepZoom, type Padding } from "@/lib/map/zoom";
+import { MAX_ZOOM, MIN_ZOOM, autoPanelHeight, fitViewport, stepZoom, type Padding } from "@/lib/map/zoom";
 import { MapLegend, ZoomControls } from "./map/map-controls";
 import { NO_EXTRAS, StepDetail, sourcesOf, type StepExtras } from "./map/step-detail";
 import { formatHours, formatNumber } from "@/lib/format";
@@ -311,8 +310,6 @@ const selectedRing = "outline-2 outline-offset-2 outline-accent";
 /** Highlighted cards get a heavy outline; the rest fade (issue #99). */
 const litClass = (lit: boolean | null) => (lit === true ? "!border-accent outline-2 outline-offset-1 outline-accent" : lit === false ? "opacity-40" : "");
 
-/** A card's tint for its rating; a plain panel when it has none. */
-const ratingTint = (rating: Rating | null) => (rating ? { background: RATING_STYLE[rating].soft } : undefined);
 /** The coloured stripe down a card's left edge. */
 const Stripe = ({ rating }: { rating: Rating | null }) => (
   <span aria-hidden data-rating={rating ?? "none"} className="absolute inset-y-0 left-0 w-1.5 rounded-l-token" style={{ background: rating ? RATING_STYLE[rating].stripe : "var(--line-2)" }} />
@@ -360,8 +357,7 @@ function StepNode({ data, selected }: NodeProps<StepFlowNode>) {
   return (
     <div
       data-lit={data.lit ?? undefined}
-      style={editing || ghost ? undefined : ratingTint(data.rating)}
-      className={`relative rounded-token border bg-panel shadow-token transition-opacity ${editing ? "w-60 border-accent" : "w-52"} ${bottleneck && !editing && !ghost ? "border-crit ring-2 ring-crit/40" : editing ? "" : "border-line-2"} ${changeClass(data)} ${litClass(data.lit)} ${selected ? selectedRing : ""}`}
+      className={`relative rounded-token border bg-panel shadow-token transition-opacity ${editing ? "w-60 border-accent" : "w-48"} ${bottleneck && !editing && !ghost ? "border-crit ring-2 ring-crit/40" : editing ? "" : "border-line-2"} ${changeClass(data)} ${litClass(data.lit)} ${selected ? selectedRing : ""}`}
     >
       {pulse && !editing && (
         <span aria-hidden className="bottleneck-pulse pointer-events-none absolute -inset-1.5 rounded-token border-2 border-crit" />
@@ -377,17 +373,24 @@ function StepNode({ data, selected }: NodeProps<StepFlowNode>) {
           {data.restorable && <RestoreButton table="steps" id={step.id} what={step.name} />}
         </div>
       ) : (
-        <div className="py-2.5 pr-3 pl-4">
+        <div className="py-2 pr-3 pl-4">
           {data.wasName !== null && <p className="text-[11px] leading-tight text-fg-3 line-through">{data.wasName}</p>}
           <p data-field="name" className="text-sm leading-tight font-semibold">
             {step.name}
           </p>
-          <p data-field={person ? "person_id" : "role_id"} className="mt-0.5 text-[12.5px] text-fg-2">
-            {who && <i aria-hidden className="mr-1.5 inline-block size-2 rounded-full align-baseline" style={{ background: role?.color ?? "var(--line-2)" }} />}
-            <Was was={data.wasWho}>{who ?? (step.kind === "decision" ? "Decision" : step.kind === "wait" ? "Wait" : "No role")}</Was>
-            {person && <span className="text-fg-3"> · pinned</span>}
-          </p>
-          <p className="mt-1 flex justify-between gap-1 font-mono text-[11px] text-fg-3 tabular-nums">
+          <div className="mt-0.5 flex items-baseline justify-between gap-2 text-[12.5px] text-fg-2">
+            <p data-field={person ? "person_id" : "role_id"} className="min-w-0 truncate">
+              {who && <i aria-hidden className="mr-1.5 inline-block size-2 rounded-full align-baseline" style={{ background: role?.color ?? "var(--line-2)" }} />}
+              <Was was={data.wasWho}>{who ?? (step.kind === "decision" ? "Decision" : step.kind === "wait" ? "Wait" : "No role")}</Was>
+              {person && <span className="text-fg-3"> · pinned</span>}
+            </p>
+            {avgQueue !== null && (role || person) && (
+              <span title="Average queue" className={`shrink-0 text-xs tabular-nums ${bottleneck ? "font-semibold text-crit" : ""}`}>
+                queue {formatNumber(avgQueue)}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 flex justify-between gap-1 font-mono text-xs text-fg-2 tabular-nums">
             <span data-field="work_hours">
               <Was was={data.wasWork}>{Number(step.work_hours) || data.wasWork ? `${formatHours(step.work_hours)} work` : "—"}</Was>
             </span>
@@ -398,11 +401,6 @@ function StepNode({ data, selected }: NodeProps<StepFlowNode>) {
           {reworkTo && Number(step.rework_rate) > 0 && (
             <p className="mt-0.5 truncate text-[11px] text-fg-3" title={`Rework goes back to ${reworkTo}`}>
               ↺ {percent(Number(step.rework_rate))} back to {reworkTo}
-            </p>
-          )}
-          {avgQueue !== null && (role || person) && (
-            <p className={`mt-1 text-xs tabular-nums ${bottleneck ? "font-semibold text-crit" : "text-fg-2"}`}>
-              avg queue {formatNumber(avgQueue)}
             </p>
           )}
         </div>
@@ -457,14 +455,13 @@ function GroupNode({ data, selected }: NodeProps<GroupFlowNode>) {
   }
   return (
     <div
-      style={ratingTint(data.rating)}
-      className={`relative w-52 rounded-token border bg-panel shadow-token transition-opacity ${changeClass(data)} ${litClass(data.lit)} ${selected ? selectedRing : "border-line-2"}`}
+      className={`relative w-48 rounded-token border bg-panel shadow-token transition-opacity ${changeClass(data)} ${litClass(data.lit)} ${selected ? selectedRing : "border-line-2"}`}
       data-group="closed"
       data-lit={data.lit ?? undefined}
     >
       <Handle type="target" position={Position.Left} className={handleClass(editable)} />
       <Stripe rating={data.rating} />
-      <div className="py-2.5 pr-3 pl-4">
+      <div className="py-2 pr-3 pl-4">
         <div className="flex items-start justify-between gap-2">
           <p data-field="name" className="font-semibold leading-tight">
             {step.name}
@@ -474,7 +471,7 @@ function GroupNode({ data, selected }: NodeProps<GroupFlowNode>) {
         <p className="mt-0.5 text-xs text-fg-2">
           {expandable ? "Group" : "Child process"} · {roll.steps} {roll.steps === 1 ? "step" : "steps"}
         </p>
-        <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[11px] text-fg-3 tabular-nums">
+        <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-xs text-fg-2 tabular-nums">
           <span title="Hands-on time of every step inside, added up">{roll.handsOnHours ? `${formatHours(roll.handsOnHours)} work` : "no work entered"}</span>
           {worstRating && (
             <span className="rounded-full border border-line bg-panel px-1.5 font-sans text-[10px] font-semibold text-fg" title="The worst rating of the steps inside">
@@ -707,7 +704,9 @@ const nodeTypes = { step: StepNode, terminal: TerminalNode, group: GroupNode };
 const edgeTypes = { branch: BranchEdge };
 
 /** Room around the steps when framing them: the toolbar sits top left, playback along the foot, lane names on the left. */
-const fitPadding = (lanes: boolean): Padding => ({ top: 64, right: 24, bottom: 64, left: lanes ? 150 : 24 });
+const fitPadding = (lanes: boolean, toolbar: boolean, playback: boolean): Padding => ({ top: toolbar ? 64 : 24, right: 24, bottom: playback ? 64 : 24, left: lanes ? 150 : 24 });
+
+const noop = () => undefined;
 
 const READ_ARIA: Partial<AriaLabelConfig> = {
   "node.a11yDescription.default": "Enter opens the step's detail: who does it, its times, rating, insights, issues and sources. Escape closes it.",
@@ -747,14 +746,15 @@ function flowOrder(bundle: ProcessBundle): Map<string, number> {
 
 interface CanvasProps {
   bundle: ProcessBundle;
-  result: SimulationResult | null;
-  /** Null for a read-only canvas. */
-  editor: ProcessEditor | null;
-  editorState: EditorState | null;
-  selection: Selection;
-  onSelectionChange: Dispatch<SetStateAction<Selection>>;
+  /** The run to play back and read queues from; a read-only map without one shows no queues. */
+  result?: SimulationResult | null;
+  /** Null (or left out) for a read-only canvas. */
+  editor?: ProcessEditor | null;
+  editorState?: EditorState | null;
+  selection?: Selection;
+  onSelectionChange?: Dispatch<SetStateAction<Selection>>;
   /** Duplicate, copy, delete and inspect, shared with the keyboard shortcuts. */
-  commands: CanvasCommands | null;
+  commands?: CanvasCommands | null;
   /** The draft's changes against live, drawn on the map (issue #9); null outside a draft. */
   diff?: DraftDiff | null;
   /** Put a removed step or connection back as it is live; null when the map is read-only. */
@@ -776,10 +776,23 @@ interface CanvasProps {
    * and they are scrolled into view. Ids of steps; a closed group lights up for the steps it holds.
    */
   highlight?: readonly string[] | null;
-  /** Show the colour legend under the map. Default true. */
+  /** Show the colour legend in the bar above the map. Default true. */
   legend?: boolean;
-  /** Show the -, Fit and + buttons. Default true. */
+  /** Show the -, Fit and + buttons in the bar above the map. Default true. */
   zoomControls?: boolean;
+  /** Show the playback bar over the foot of the map. Default true; embedded maps turn it off. */
+  showPlayback?: boolean;
+  /** Offer the swimlane view (when the map has no groups). Default true. */
+  showLanes?: boolean;
+  /**
+   * `fill`: as tall as the space it is given (the editor). `auto`: as tall as the map needs, from 16 to 40 rem,
+   * so a small map doesn't sit in a tall empty panel. Default `auto` when read-only, `fill` when editable.
+   */
+  height?: "auto" | "fill";
+  /** A step (or closed group) was clicked, or Enter was pressed on it. */
+  onStepClick?: (stepId: string) => void;
+  /** Open the step's detail on a click, on a read-only map. Default true. */
+  stepDetail?: boolean;
   /** What a click on a step shows besides its numbers: the insights and confirmed issues on it. Read-only maps only. */
   stepExtras?: (stepId: string) => StepExtras | null;
   /** Titles of the workspace's sources by id, for the sources a step's detail lists. */
@@ -796,12 +809,12 @@ export function ProcessCanvas(props: CanvasProps) {
 
 function Canvas({
   bundle,
-  result,
-  editor,
-  editorState,
-  selection,
-  onSelectionChange,
-  commands,
+  result = null,
+  editor = null,
+  editorState = null,
+  selection = NO_SELECTION,
+  onSelectionChange = noop,
+  commands = null,
   diff = null,
   onRestore = null,
   savedLabel = "Saved",
@@ -812,6 +825,11 @@ function Canvas({
   highlight = null,
   legend = true,
   zoomControls = true,
+  showPlayback = true,
+  showLanes = true,
+  height: heightProp,
+  onStepClick,
+  stepDetail = true,
   stepExtras,
   sourceTitles,
 }: CanvasProps) {
@@ -819,30 +837,54 @@ function Canvas({
   // Groups open in place (issue #102): to edit inside one, open it; to read the map, close it for the roll-up.
   const [ownExpanded, setOwnExpanded] = useState<ReadonlySet<string>>(() => (editor ? new Set(groupIds(bundle.steps)) : new Set()));
   const expanded = expandedProp ?? ownExpanded;
+  const expandedNow = useRef(expanded);
+  useEffect(() => {
+    expandedNow.current = expanded;
+  });
+  /** Set the open groups, with a set or an updater like a state setter; the owner is told from here, never while rendering. */
   const setExpanded = useCallback(
-    (next: ReadonlySet<string>) => {
-      setOwnExpanded(next);
-      onExpandedChange?.(next);
+    (next: ReadonlySet<string> | ((prev: ReadonlySet<string>) => ReadonlySet<string>)) => {
+      const value = typeof next === "function" ? next(expandedNow.current) : next;
+      expandedNow.current = value;
+      setOwnExpanded(value);
+      onExpandedChange?.(value);
     },
     [onExpandedChange],
   );
-  // A highlight opens the groups its steps are in, without touching the open state: it closes again with the highlight.
-  const drawn = useMemo(() => withHighlightOpen(bundle.steps, expanded, highlight), [bundle.steps, expanded, highlight]);
+  // A highlight the map starts with (an issue's page) is opened into the open state once, so it can be closed by hand.
+  const highlightKey = highlight?.join("|") ?? "";
+  const [startKey] = useState(highlightKey);
+  const seeded = useRef(false);
+  useEffect(() => {
+    // Only the highlight present at mount: this runs once, and later highlights are the transient kind.
+    if (seeded.current) return;
+    seeded.current = true;
+    if (!highlight?.length) return;
+    const missing = groupsToOpen(bundle.steps, highlight).filter((g) => !expandedNow.current.has(g));
+    if (missing.length) setExpanded((prev) => new Set([...prev, ...missing]));
+  }, [bundle.steps, highlight, setExpanded]);
+  // One that changes later (a hovered insight) opens its groups only while it lasts, leaving the open state alone.
+  const transient = highlightKey === startKey ? null : highlight;
+  const drawn = useMemo(() => withHighlightOpen(bundle.steps, expanded, transient), [bundle.steps, expanded, transient]);
   const lit = useMemo(() => (highlight?.length ? litIds(bundle.steps, drawn, highlight) : null), [bundle.steps, drawn, highlight]);
   const hasGroups = useMemo(() => bundle.steps.some((st) => isGroup(st) || st.child_process_id), [bundle.steps]);
   const allGroups = useMemo(() => groupIds(bundle.steps), [bundle.steps]);
   const toggleGroup = useCallback(
-    (id: string) => {
-      const next = new Set(expanded);
-      if (!next.delete(id)) next.add(id);
-      setExpanded(next);
-    },
-    [expanded, setExpanded],
+    (id: string) =>
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        if (!next.delete(id)) next.add(id);
+        return next;
+      }),
+    [setExpanded],
   );
   const canvasContext = useMemo(() => ({ editor, restore: editor ? onRestore : null, toggleGroup }), [editor, onRestore, toggleGroup]);
   const flow = useReactFlow();
   // Expand all / Collapse all; the map re-frames itself unless it was zoomed by hand.
-  const toggleAllGroups = () => setExpanded(allGroups.every((id) => expanded.has(id)) ? new Set() : new Set(allGroups));
+  const toggleAllGroups = () => {
+    setExpanded(allGroups.every((id) => expanded.has(id)) ? new Set() : new Set(allGroups));
+    requestFit();
+  };
   const wrapper = useRef<HTMLDivElement>(null);
   // Positions of nodes mid-drag, and sizes React Flow measured; the rest comes from the bundle.
   const [dragging, setDragging] = useState<Map<string, { x: number; y: number }>>(new Map());
@@ -1246,7 +1288,7 @@ function Canvas({
       if (id && (e.key === "Enter" || e.key === " ")) {
         e.preventDefault();
         e.stopPropagation();
-        setDetailId(id);
+        openStep(id);
       }
       return;
     }
@@ -1281,39 +1323,87 @@ function Canvas({
     }
   };
 
-  const toggleLanes = () => setLanes(!lanes);
+  const toggleLanes = () => {
+    setLanes(!lanes);
+    requestFit();
+  };
 
-  // Zoom (issue #99): the map is fitted to its panel, never below 70%; a bigger map is dragged around instead.
-  // Zooming by hand stops it re-fitting itself (as the groups open and close) until Fit is pressed.
+  // Zoom (issue #99): the map is framed once when it first appears, never below 70%; a bigger map is dragged around
+  // instead. After that it moves only when asked: Fit, Expand or Collapse all, the swimlane toggle, or (read-only
+  // maps) the panel changing size. Adding a step, opening a group by hand or a highlight never moves the view.
   const width = useStore((st) => st.width);
   const height = useStore((st) => st.height);
   const zoom = useStore((st) => st.transform[2]);
-  const initialized = useNodesInitialized();
+  const heightMode = heightProp ?? (editable ? "fill" : "auto");
   const handZoomed = useRef(false);
   const framed = useRef(false);
   const sizeRef = useRef({ width: 0, height: 0 });
   useEffect(() => {
     sizeRef.current = { width, height };
   }, [width, height]);
+  const [autoHeight, setAutoHeight] = useState<number | null>(null);
+  // Whether the map reaches past the panel on the left or right, which the bar above says in words.
+  const [overflow, setOverflow] = useState({ left: false, right: false });
+  const measureOverflow = useCallback(() => {
+    const all = flow.getNodes();
+    const panelWidth = sizeRef.current.width;
+    if (!all.length || !panelWidth) return;
+    const b = flow.getNodesBounds(all);
+    const view = flow.getViewport();
+    const left = b.x * view.zoom + view.x < -4;
+    const right = (b.x + b.width) * view.zoom + view.x > panelWidth + 4;
+    setOverflow((o) => (o.left === left && o.right === right ? o : { left, right }));
+  }, [flow]);
   const fit = useCallback(
     (animate: boolean) => {
       const all = flow.getNodes();
       const panel = sizeRef.current;
-      if (!all.length || !panel.width || !panel.height) return;
-      void flow.setViewport(fitViewport(flow.getNodesBounds(all), panel, fitPadding(lanes)), animate ? { duration: 200 } : undefined);
+      if (!all.length || !panel.width) return;
+      const bounds = flow.getNodesBounds(all);
+      const pad = fitPadding(lanes, editable, showPlayback);
+      let panelHeight = panel.height;
+      if (heightMode === "auto") {
+        panelHeight = autoPanelHeight(bounds, panel.width, pad);
+        setAutoHeight(panelHeight);
+      }
+      if (!panelHeight) return;
+      void flow.setViewport(fitViewport(bounds, { width: panel.width, height: panelHeight }, pad), animate ? { duration: 200 } : undefined);
+      setTimeout(measureOverflow, animate ? 260 : 20);
     },
-    [flow, lanes],
+    [flow, lanes, editable, showPlayback, heightMode, measureOverflow],
   );
-  // A read-only map also re-fits when its panel or its steps change size; an editor's view stays where the author put it.
-  const refitKey = editable ? "" : `${width}x${height}:${bundle.steps.length}`;
+  const fitRef = useRef(fit);
   useEffect(() => {
-    // Once the first nodes are measured, later changes (groups opening) are framed without waiting on new ones to be.
-    if (initialized) framed.current = true;
-    if (!framed.current || handZoomed.current) return;
-    // Let React Flow take the new nodes and measure them first.
-    const timer = setTimeout(() => fit(false), 60);
+    fitRef.current = fit;
+  });
+  // Frame it once, when every card has been measured (a map that starts with its groups open included).
+  const allMeasured = nodes.length > 0 && nodes.every((n) => n.measured || n.width);
+  useEffect(() => {
+    if (!allMeasured || framed.current) return;
+    const timer = setTimeout(() => {
+      framed.current = true;
+      fitRef.current(false);
+    }, 30);
     return () => clearTimeout(timer);
-  }, [initialized, drawn, fit, refitKey]);
+  }, [allMeasured]);
+  // Fit again on request, once what changed has been laid out.
+  const [fitTick, setFitTick] = useState(0);
+  const requestFit = () => {
+    handZoomed.current = false;
+    setFitTick((t) => t + 1);
+  };
+  useEffect(() => {
+    if (!fitTick) return;
+    const timer = setTimeout(() => fitRef.current(true), 60);
+    return () => clearTimeout(timer);
+  }, [fitTick]);
+  // A read-only map follows its panel's width (and height, when that is fixed), unless it was moved by hand.
+  const refitKey = editable ? "" : heightMode === "auto" ? `${width}` : `${width}x${height}`;
+  useEffect(() => {
+    if (!refitKey || !framed.current || handZoomed.current) return;
+    const timer = setTimeout(() => fitRef.current(false), 60);
+    return () => clearTimeout(timer);
+  }, [refitKey]);
   const zoomBy = (direction: "in" | "out") => {
     handZoomed.current = true;
     void flow.zoomTo(stepZoom(zoom, direction), { duration: 150 });
@@ -1348,6 +1438,10 @@ function Canvas({
     const st = !editable && detailId ? bundle.steps.find((x) => x.id === detailId) : undefined;
     return st && !isGroup(st) && !st.child_process_id && st.kind !== "start" && st.kind !== "end" ? st : null;
   }, [editable, detailId, bundle.steps]);
+  const openStep = (id: string) => {
+    onStepClick?.(id);
+    if (stepDetail) setDetailId(id);
+  };
   const closeDetail = () => {
     const id = detailId;
     setDetailId(null);
@@ -1363,15 +1457,35 @@ function Canvas({
           tabIndex={-1}
           onDoubleClick={onDoubleClick}
           onKeyDownCapture={onKeyDownCapture}
-          className="relative isolate flex min-h-[24rem] min-w-0 flex-1 flex-col rounded-lg border bg-card"
+          className={`relative isolate flex min-w-0 flex-col rounded-lg border bg-card ${heightMode === "fill" ? "min-h-[24rem] flex-1" : ""}`}
           role="region"
           aria-label={`${bundle.process.name} process map`}
         >
-          <div className="relative min-h-0 flex-1">
+          {/* Above the map in the page, so Tab reaches these first: open or close every group, zoom, and what the colours mean. */}
+          {(zoomControls || legend || allGroups.length > 0 || (showLanes && !hasGroups)) && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line px-3 py-2">
+              {((showLanes && !hasGroups) || allGroups.length > 0) && (
+                <div className="flex items-center gap-1.5">
+                  {showLanes && !hasGroups && <LaneToggle lanes={lanes} onToggle={toggleLanes} />}
+                  {allGroups.length > 0 && <GroupControls allOpen={allGroups.every((id) => expanded.has(id))} onToggle={toggleAllGroups} />}
+                </div>
+              )}
+              {zoomControls && (
+                <ZoomControls zoom={zoom} onOut={() => zoomBy("out")} onFit={fitByHand} onIn={() => zoomBy("in")} canOut={zoom > MIN_ZOOM + 0.001} canIn={zoom < MAX_ZOOM - 0.001} />
+              )}
+              {legend && <MapLegend badge={!!openIssues} />}
+              {(overflow.left || overflow.right) && (
+                <p className="ml-auto text-[11.5px] text-fg-2" data-map-overflow>
+                  {overflow.right && !overflow.left ? "Drag the map to see the rest →" : overflow.left && !overflow.right ? "← Drag the map to see the rest" : "Drag the map to see the rest"}
+                </p>
+              )}
+            </div>
+          )}
+          <div className={`relative min-h-0 ${heightMode === "fill" ? "flex-1" : ""}`} style={heightMode === "auto" ? { height: autoHeight ?? 360 } : undefined}>
           {/* Before the map in the page, so Tab reaches the toolbar first. */}
           {editable && editorState && (
-            <div className="absolute top-2.5 left-2.5 z-10 max-w-[calc(100%-1.25rem)] md:max-w-[calc(100%-14rem)]">
-              <Toolbar bundle={bundle} editor={editor} state={editorState} onAdd={addFromToolbar} lanes={lanes} onToggleLanes={toggleLanes} lanesAvailable={!hasGroups} groups={allGroups.length ? { allOpen: allGroups.every((id) => expanded.has(id)), onToggle: toggleAllGroups } : null} savedLabel={savedLabel} />
+            <div className="absolute top-2.5 left-2.5 z-10 max-w-[calc(100%-1.25rem)]">
+              <Toolbar bundle={bundle} editor={editor} state={editorState} onAdd={addFromToolbar} savedLabel={savedLabel} />
             </div>
           )}
           {diff && diff.list.length > 0 && (
@@ -1383,27 +1497,18 @@ function Canvas({
               <s>removed</s> · <s className="text-fg-3">was</s> → now
             </p>
           )}
-          {!editable && (
-            <div className="absolute top-2.5 left-2.5 z-10 flex max-w-[calc(100%-14rem)] flex-wrap gap-1.5">
-              {!hasGroups && <LaneToggle lanes={lanes} onToggle={toggleLanes} />}
-              {allGroups.length > 0 && <GroupControls allOpen={allGroups.every((id) => expanded.has(id))} onToggle={toggleAllGroups} />}
-            </div>
-          )}
-          {zoomControls && (
-            <div className="absolute top-2.5 right-2.5 z-10">
-              <ZoomControls zoom={zoom} onOut={() => zoomBy("out")} onFit={fitByHand} onIn={() => zoomBy("in")} />
-            </div>
-          )}
           {/* Playback of the run (issue #14), over the foot of the map; before it in the page, for Tab. */}
-          <div className="absolute right-2.5 bottom-2.5 left-2.5 z-10">
-            <PlaybackBar
-              clock={playback.clock}
-              H={playback.index?.H ?? null}
-              hoursPerWeek={playback.hoursPerWeek}
-              reps={result?.reps ?? null}
-              describe={playback.describe}
-            />
-          </div>
+          {showPlayback && (
+            <div className="absolute right-2.5 bottom-2.5 left-2.5 z-10">
+              <PlaybackBar
+                clock={playback.clock}
+                H={playback.index?.H ?? null}
+                hoursPerWeek={playback.hoursPerWeek}
+                reps={result?.reps ?? null}
+                describe={playback.describe}
+              />
+            </div>
+          )}
           <div className="absolute inset-0">
           <ReactFlow
             nodes={nodes}
@@ -1453,12 +1558,18 @@ function Canvas({
             selectionMode={SelectionMode.Partial}
             zoomOnDoubleClick={false}
             // The menu belongs where it was opened; moving the map closes it.
-            onMoveStart={() => menuFor.current && closeMenu(false)}
+            onMoveStart={(event) => {
+              // A drag, the wheel or a pinch moves the view by hand; the map stops following its panel.
+              if (event) handZoomed.current = true;
+              if (menuFor.current) closeMenu(false);
+            }}
+            onMoveEnd={measureOverflow}
             ariaLabelConfig={editable ? EDIT_ARIA : READ_ARIA}
             onNodeClick={(e, node) => {
               // The group toggle and the issue badge are buttons of their own.
-              if (editable || (e.target instanceof Element && e.target.closest("button"))) return;
-              setDetailId(node.id);
+              if (e.target instanceof Element && e.target.closest("button")) return;
+              if (!node.id.startsWith("ghost:")) onStepClick?.(node.id);
+              if (!editable && stepDetail) setDetailId(node.id);
             }}
             onPaneClick={() => setDetailId(null)}
             // A read-only map sits in a page that scrolls: the wheel scrolls the page, and the map is dragged or zoomed with its buttons.
@@ -1504,11 +1615,6 @@ function Canvas({
             />
           )}
           </div>
-          {legend && (
-            <div className="border-t border-line">
-              <MapLegend badge={!!openIssues} />
-            </div>
-          )}
         </div>
       </InlineEditContext.Provider>
     </CanvasContext.Provider>
@@ -1591,22 +1697,12 @@ function Toolbar({
   editor,
   state,
   onAdd,
-  lanes,
-  onToggleLanes,
-  lanesAvailable,
-  groups,
   savedLabel,
 }: {
   bundle: ProcessBundle;
   editor: ProcessEditor;
   state: EditorState;
   onAdd: (kind: NewStepKind, outcome: StepOutcome | null) => void;
-  lanes: boolean;
-  onToggleLanes: () => void;
-  /** Swimlanes need every step in its own lane, so they are off while the process has groups. */
-  lanesAvailable: boolean;
-  /** Open or close every group at once; null when the process has none. */
-  groups: { allOpen: boolean; onToggle: () => void } | null;
   savedLabel: string;
 }) {
   const [kind, setKind] = useState<NewStepKind>("task");
@@ -1681,8 +1777,6 @@ function Toolbar({
         Redo
       </button>
       <span aria-hidden className="mx-0.5 h-5 w-px bg-line" />
-      {lanesAvailable && <LaneToggle lanes={lanes} onToggle={onToggleLanes} />}
-      {groups && <GroupControls allOpen={groups.allOpen} onToggle={groups.onToggle} />}
       <KeysHelp mod={mod} />
       <span className="px-1 text-fg-3" aria-live="polite">
         {state.saving ? "Saving…" : savedLabel}

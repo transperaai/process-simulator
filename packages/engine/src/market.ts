@@ -154,7 +154,7 @@ export function marketFromSchedule(
  * figure. `lostRevenue` is valued at today's price, LTV uses today's tenure
  * (`value`), and the pooled `weeksBilled` estimate uses the churn factor of the
  * month a client is won in, not later months'. (A roster client's reported
- * `churnMonthly` includes the factor since the churn drivers, engine 1.5.0.)
+ * `churnMonthly` includes the factor since the churn drivers, engine 1.6.0.)
  */
 export function withMarketCondition(model: EngineModel, factors: MarketFactors): EngineModel {
   return { ...model, market: { months: [factors] } };

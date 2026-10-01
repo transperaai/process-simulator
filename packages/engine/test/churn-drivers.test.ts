@@ -230,6 +230,15 @@ describe("rule 10: cause of clients leaving", () => {
     expect(calm.rating).toBe("bad");
   });
 
+  it("costs a month: the clients the driver loses a month × what losing one is worth", () => {
+    const i = issues().find((x) => x.key === "churn_risk:driver:ppc:late")!;
+    const perMonth = i.metrics.clients_lost_to_it! / (model.horizonWeeks / (52 / 12));
+    // A PPC client pays 4,229 a month; its loss value is that × the tenure left (12 months stay, capped at 12).
+    expect(i.cost.perMonth).toBeGreaterThan(0);
+    expect(i.cost.perMonth! / perMonth).toBeCloseTo(4229 * 12, 0);
+    expect(i.cost.method).toMatch(/share of the clients lost/);
+  });
+
   it("is switched off with the rule, and detectIssues carries it", () => {
     expect(issues(toRatingConfig({ rules: { driver: { enabled: false } } }, model.hoursPerWeek))).toHaveLength(0);
     expect(detectIssues(model, result).some((i) => i.key.startsWith("churn_risk:driver:"))).toBe(true);

@@ -29,6 +29,7 @@ import { Switch } from "@/components/ui/switch";
 import { OLD_LOGIC, RULES_UI, SETTING_HELP, bandsOf, shown } from "@/lib/rules/catalogue";
 import { getDemoAnalysisRules, setDemoAnalysisRules } from "@/lib/rules/demo-store";
 import { rerate, resetAll, setEscalator, setMoney, setRuleEnabled, tally } from "@/lib/rules/edit";
+import { useAbsenceTest } from "@/lib/sim/absence";
 import { useSimulation } from "@/lib/sim/use-simulation";
 import { cn } from "@/lib/utils";
 import { saveRules } from "@/app/w/[slug]/settings/rules/actions";
@@ -77,7 +78,9 @@ export function AnalysisRulesSettings({
   }, [bundle]);
   const sim = useSimulation(model);
   const result = sim.run?.result ?? null;
-  const issues = useMemo(() => (model && result ? rerate(model, result, settings, bundle?.process.id) : null), [model, result, settings, bundle]);
+  // The absence test (rule 8) is its own worker pass once the baseline is done.
+  const absence = useAbsenceTest(model && result && sim.status === "done" ? model : null, result?.seed ?? 1, resolveMoney(settings).absenceWeeks);
+  const issues = useMemo(() => (model && result ? rerate(model, result, settings, bundle?.process.id, absence) : null), [model, result, settings, bundle, absence]);
   const counts = useMemo(() => (issues ? tally(issues) : null), [issues]);
   const subjects = useMemo(() => subjectsOf(model, processes), [model, processes]);
   const currency = bundle?.workspace.settings.currency ?? "AUD";

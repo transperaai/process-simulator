@@ -16,15 +16,19 @@
 // from the run. Where a what-if would test the obvious fix, the issue carries
 // it as scenario patches (`fix`), which the app can run and compare.
 
-import type { EngineModel, EnginePerson, EngineStep, SimulationResult } from "./model";
+import { eligible, type AbsenceTest } from "./absence";
+import type { EngineModel, EngineStep, SimulationResult } from "./model";
+import { pct as percentile } from "./simulate";
+import { checkSuccessMeasures, NO_SUCCESS_MEASURES, type SuccessMeasureSource } from "./success";
 import { churnRiskIssues } from "./churn-issues";
 import { overtimeIssues } from "./overtime-issues";
 import {
   compareRatingsDesc,
   escalationNote,
-  fixedRating,
   ratingFields,
   rateRule,
+  rateValue,
+  worseRating,
   resolveRatingConfig,
   resolveRule,
   type Rating,
@@ -84,7 +88,7 @@ export interface DetectedIssue {
 }
 
 /** The detectors, in the order their issues are listed within a rating. */
-export const DETECTORS = ["capacity", "overtime", "queue", "wait", "spof", "rework", "sla", "churn"] as const;
+export const DETECTORS = ["capacity", "overtime", "queue", "wait", "spof", "rework", "sla", "dropoff", "cycle", "success", "spare", "churn"] as const;
 export type Detector = (typeof DETECTORS)[number];
 
 const LOCALE = "en-GB";
@@ -95,16 +99,20 @@ const days = (hours: number, hoursPerDay: number) => {
   return `${d} working day${d === "1" ? "" : "s"}`;
 };
 
-/** Who can work a step, as the engine dispatches it (simulate.ts `canDo`). */
-function eligible(personId: string, p: EnginePerson, s: EngineStep): boolean {
-  if (s.person) return s.person === personId;
-  if (p.skills) return p.skills.includes(s.id);
-  return s.role !== null && p.roles.includes(s.role);
-}
-
 export interface DetectOptions {
   /** The process the model is, for overrides set on a process. Servicing steps use their servicing process's id. */
   processId?: string | null;
+  /**
+   * The absence test's result for this model (absence.ts), run as its own
+   * pass after the baseline. Without it, rule 8 ("only one person can do it")
+   * raises nothing.
+   */
+  absence?: AbsenceTest | null;
+  /**
+   * The process's success measures (rule 11, "goals met"). Defaults to none
+   * until A54 stores first principles, so nothing is rated.
+   */
+  successMeasures?: SuccessMeasureSource;
 }
 
 /**
@@ -323,36 +331,18 @@ export function detectIssues(
               max_queue: st.maxQueue,
               expected_wait_hours: expected,
               wait_ratio: st.avgWait / expected,
+              ...(s.lostPerDayWaiting
+                ? {
+                    lost_per_day_waiting: s.lostPerDayWaiting,
+                    // Linear in the days waited, capped at everything: a cost input for A43, not a simulated loss.
+                    lost_to_waiting_share: Math.min(1, s.lostPerDayWaiting * (st.avgWait / hoursPerDay)),
+                  }
+                : {}),
             },
             ...base,
             fix: capacityFix(),
           });
         }
-      }
-    }
-
-    if ((s.role || s.person) && st.arrivals > 0) {
-      const who = Object.keys(people).filter((pid) => people[pid]!.capacity > 0 && eligible(pid, people[pid]!, s));
-      if (who.length === 1) {
-        const pid = who[0]!;
-        const util = result.people[pid]?.util ?? 0;
-        // Not yet on the rating model (rule 8, the absence test, will replace it): Bad when the person is also past the Bad cut-off for busy, else Good.
-        const busyBad = resolveRule(config, "busy", { personId: named ? pid : null, roleId: rid }).cutoffs[1];
-        out.push({
-          detector: "spof",
-          key: `spof:step:${s.id}`,
-          type: "spof",
-          ...fixedRating(util > busyBad ? "bad" : "good"),
-          title: named ? `Only ${people[pid]!.name} can do ${s.name}` : `Only one ${rid ? roleName(rid) : "person"} can do ${s.name}`,
-          evidence:
-            `Structural: ${num(st.arrivals)} items reach this step over the ${num(model.horizonWeeks, 0)}-week run and nobody else can pick them up when ` +
-            `${named ? people[pid]!.name : "they"} ${named ? "is" : "are"} away (${pct(util)} utilised).`,
-          metrics: { arrivals: st.arrivals, people: 1, utilisation: util },
-          stepId: s.id,
-          roleId: rid,
-          personId: named ? pid : null,
-          fix: s.role ? hire(s.role) : null,
-        });
       }
     }
 
@@ -379,6 +369,38 @@ export function detectIssues(
           },
           ...base,
           fix: { name: `Halve rework at ${s.name}`, patch: [{ path: `steps.${s.id}.rework_rate`, op: "multiply", value: 0.5 }] },
+        });
+      }
+    }
+
+    // Work lost at a step (rule 12): the share of visits that go straight to a lost end, against the step's benchmark.
+    const benchmark = s.dropoffBenchmark;
+    if (benchmark !== undefined && benchmark > 0 && st.lostHere !== undefined && st.departures > 0) {
+      const observed = Math.min(1, st.lostHere / st.departures);
+      const p90 = st.p90?.lostShare;
+      const { resolved, outcome } = rate("dropoff", subject, observed / benchmark, p90 === undefined ? null : p90 / benchmark, onBn);
+      if (outcome && outcome.rating !== "great") {
+        out.push({
+          detector: "dropoff",
+          key: `dropoff:step:${s.id}`,
+          type: "failure",
+          ...ratingFields(outcome),
+          title: `${pct(observed)} of work is lost at ${s.name}`,
+          evidence: (
+            `Simulated: ${num(st.lostHere)} of ${num(st.departures)} visits over the ${num(model.horizonWeeks, 0)}-week run go straight to a lost end, ` +
+            `${pct(observed)} against a benchmark of ${pct(benchmark)} (${num(observed / benchmark)}× the benchmark). ` +
+            `Cut-offs: ${resolved.cutoffs.map((c) => `${num(c)}×`).join(" / ")}. ${escalationNote(outcome)}`
+          ).trim(),
+          metrics: {
+            lost_share: observed,
+            ...(p90 !== undefined ? { lost_share_p90: p90 } : {}),
+            benchmark,
+            benchmark_ratio: observed / benchmark,
+            lost_items: st.lostHere,
+            departures: st.departures,
+          },
+          ...base,
+          fix: null,
         });
       }
     }
@@ -415,6 +437,157 @@ export function detectIssues(
               : { name: `Halve the wait at ${s.name}`, patch: [{ path: `steps.${s.id}.wait_hours`, op: "multiply", value: 0.5 }] },
         });
       }
+    }
+  }
+
+  // --- Only one person can do it (rule 8): the absence test's result, rated on work lost and weeks to recover.
+  // One finding for each step only that person can do (keyed by the step, as the structural check was), all rated
+  // from the same absence run. A step nothing reaches is left out.
+  for (const f of options.absence?.people ?? []) {
+    const p = people[f.personId];
+    if (!p) continue;
+    const main = p.roles[0] ?? null;
+    const soleSteps = model.steps.filter((s) => f.stepIds.includes(s.id) && (result.steps[s.id]?.arrivals ?? 0) > 0);
+    for (const s of soleSteps.sort((x, y) => cmp(x.id, y.id))) {
+      const subject: RatingSubject = { stepId: s.id, roleId: main, personId: named ? f.personId : null, ...stepContext(s.id) };
+      const resolved = resolveRule(config, "spof", subject);
+      if (!resolved.enabled) continue;
+      const lost = rateRule(config, "spof", resolved, { average: f.workLost });
+      // A queue that never got back to normal is Operational risk whatever the run's length: on a short run it is "not within the weeks we could see".
+      const recovery = f.recovered
+        ? rateValue(config.absence.recoveryCutoffs, { average: f.recoveryWeeks }, { upperInclusive: true, badMonth: false, bottleneck: false }).rating
+        : "risk";
+      let rating = worseRating(lost.rating, recovery);
+      if (f.clientDeadlineMissed) rating = "risk";
+      if (rating === "great") continue;
+      const away = options.absence!.weeksAway;
+      const others = soleSteps.filter((o) => o.id !== s.id).map((o) => o.name);
+      out.push({
+        detector: "spof",
+        key: `spof:step:${s.id}`,
+        type: "spof",
+        ...ratingFields({ rating, base: rating, badMonth: false, bottleneck: false }),
+        title: named ? `Only ${p.name} can do ${s.name}` : `Only one ${main ? roleName(main) : "person"} can do ${s.name}`,
+        evidence:
+          `Absence test: with ${named ? p.name : "them"} away for ${num(away, 1)} week${away === 1 ? "" : "s"}, ` +
+          `${pct(f.workLost)} of the work completed from then to the end of the run is lost, and the queues at their steps ` +
+          (f.recovered
+            ? `take ${num(f.recoveryWeeks, 0)} week${f.recoveryWeeks === 1 ? "" : "s"} to get back to normal`
+            : `are not back to normal within ${num(f.recoveryWeeks - 1, 0)} week${f.recoveryWeeks === 2 ? "" : "s"} of their return`) +
+          `.${f.clientDeadlineMissed ? ` A client deadline is missed: ${num(f.extraMissed)} more servicing tasks a run go unfinished.` : ""}` +
+          `${others.length ? ` They are also the only one for ${others.join(", ")}.` : ""} ` +
+          `Cut-offs: work lost ${resolved.cutoffs.map(pct).join(" / ")}; weeks to recover ${config.absence.recoveryCutoffs.join(" / ")}.`,
+        metrics: {
+          work_lost: f.workLost,
+          items_lost: f.itemsLost,
+          recovery_weeks: f.recoveryWeeks,
+          recovered: f.recovered ? 1 : 0,
+          weeks_away: away,
+          extra_missed_tasks: f.extraMissed,
+          absences_per_year: config.absence.perYear,
+          arrivals: result.steps[s.id]!.arrivals,
+          sole_steps: f.stepIds.length,
+        },
+        stepId: s.id,
+        roleId: roleOf(s),
+        personId: named ? f.personId : null,
+        fix: s.role ? hire(s.role) : null,
+      });
+    }
+  }
+
+  // --- Too slow overall (rule 13): end-to-end time against the process's target.
+  const target = model.targetCycleHours;
+  if (target !== undefined && target > 0 && result.kpi.cycle.mean > 0) {
+    const resolved = resolveRule(config, "cycle", { processId: options.processId ?? null });
+    if (resolved.enabled) {
+      const bad = percentile(result.samples.cycleMean.filter((c) => c > 0), 0.9);
+      const outcome = rateRule(config, "cycle", resolved, { average: result.kpi.cycle.mean / target, p90: bad / target });
+      if (outcome.rating !== "great") {
+        out.push({
+          detector: "cycle",
+          key: `cycle:process:${options.processId ?? "pipeline"}`,
+          type: "delay",
+          ...ratingFields(outcome),
+          title: `Takes ${days(result.kpi.cycle.mean, hoursPerDay)} end to end against a ${days(target, hoursPerDay)} target`,
+          evidence: (
+            `Simulated: items take ${num(result.kpi.cycle.mean)} h on average from start to finish (P90 ${num(result.kpi.cycle.p90)} h), ` +
+            `${num(result.kpi.cycle.mean / target)}× the ${num(target)} h target. Cut-offs: ${resolved.cutoffs.map((c) => `${num(c)}×`).join(" / ")}. ${escalationNote(outcome)}`
+          ).trim(),
+          metrics: {
+            cycle_mean_hours: result.kpi.cycle.mean,
+            cycle_p90_hours: result.kpi.cycle.p90,
+            target_hours: target,
+            target_ratio: result.kpi.cycle.mean / target,
+          },
+          stepId: null,
+          roleId: null,
+          personId: null,
+          fix: null,
+        });
+      }
+    }
+  }
+
+  // --- Goals met (rule 11): the share of runs that meet each success measure the simulation can compute.
+  for (const check of checkSuccessMeasures(options.successMeasures ?? NO_SUCCESS_MEASURES, model, result)) {
+    if (check.status !== "rated") continue;
+    const m = check.measure;
+    const resolved = resolveRule(config, "success", { processId: m.processId ?? options.processId ?? null });
+    if (!resolved.enabled) continue;
+    const outcome = rateRule(config, "success", resolved, { average: check.metShare });
+    if (outcome.rating === "great") continue;
+    out.push({
+      detector: "success",
+      key: `success:measure:${m.id}`,
+      type: "failure",
+      ...ratingFields(outcome),
+      title: `Goal not reliably met: ${m.name}`,
+      evidence: (
+        `Simulated: the target (${m.direction === "atLeast" ? "at least" : "at most"} ${num(m.target)}) is met in ${num(check.met, 0)} of ${num(check.reps, 0)} runs ` +
+        `(${pct(check.metShare)}); the average is ${num(check.mean)}. Cut-offs: ${resolved.cutoffs.map(pct).join(" / ")} of runs. ${escalationNote(outcome)}`
+      ).trim(),
+      metrics: { met_share: check.metShare, runs_met: check.met, runs: check.reps, target: m.target, average: check.mean },
+      stepId: null,
+      roleId: null,
+      personId: null,
+      fix: null,
+    });
+  }
+
+  // --- Spare time (rule 2): people (roles, when the model has no named people) with room to spare are an opportunity.
+  const spare = (subject: { key: string; name: string; capacity: number; roleId: string | null; personId: string | null }, r: { util: number; pipelineHours: number; ongoingHours: number; servicingHours: number }) => {
+    if (!(subject.capacity > 0)) return;
+    const { resolved, outcome } = rate("spare", { roleId: subject.roleId, personId: subject.personId }, r.util, null, false);
+    if (!outcome || outcome.rating === "great") return;
+    const busyHours = r.pipelineHours + r.ongoingHours + r.servicingHours;
+    const free = Math.max(0, subject.capacity - busyHours);
+    out.push({
+      detector: "spare",
+      key: subject.key,
+      type: "capacity",
+      ...ratingFields(outcome),
+      title: `${subject.name} has about ${num(free, 0)} h a week free`,
+      evidence:
+        `Simulated: ${pct(r.util)} utilised, ${num(busyHours)} h a week of work against ${num(subject.capacity)} h of capacity, so about ${num(free, 0)} h a week is free. ` +
+        `An opportunity: Good, could improve under ${pct(resolved.cutoffs[0])} busy.`,
+      metrics: { utilisation: r.util, free_hours_week: free, busy_hours_week: busyHours, capacity_hours_week: subject.capacity },
+      stepId: null,
+      roleId: subject.roleId,
+      personId: subject.personId,
+      fix: null,
+    });
+  };
+  if (named) {
+    for (const pid of Object.keys(people).sort()) {
+      const p = people[pid]!;
+      const r = result.people[pid];
+      if (r) spare({ key: `spare:person:${pid}`, name: p.name, capacity: p.capacity, roleId: p.roles[0] ?? null, personId: pid }, r);
+    }
+  } else {
+    for (const rid of Object.keys(model.roles).sort()) {
+      const r = result.roles[rid];
+      if (r) spare({ key: `spare:role:${rid}`, name: roleName(rid), capacity: roleCapacity[rid] ?? 0, roleId: rid, personId: null }, r);
     }
   }
 

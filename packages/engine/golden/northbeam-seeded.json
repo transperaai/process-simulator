@@ -1,7 +1,7 @@
 {
   "model": "northbeam-seeded",
   "description": "Northbeam as seeded: SEO and PPC services, named people, its 26-client roster, 10% overtime cap and two servicing processes.",
-  "engineVersion": "1.2.0",
+  "engineVersion": "1.3.0",
   "seed": 1,
   "reps": 30,
   "outputs": {
@@ -92,24 +92,46 @@
       "rosa": { "util": 0.214496327423526, "overtime": 0 }
     },
     "steps": {
-      "qualify": { "arrivals": 90.96666666666667, "departures": 91, "avgQueue": 0.0019865407897353823, "avgWait": 0.011469617457585669, "wip": 0, "slaBreaches": 0 },
-      "discovery": { "arrivals": 51.13333333333333, "departures": 50.666666666666664, "avgQueue": 0.0009309762777571993, "avgWait": 0.009136771606544868, "wip": 0, "slaBreaches": 0 },
-      "audit": { "arrivals": 40.233333333333334, "departures": 39.766666666666666, "avgQueue": 0.9512581885933649, "avgWait": 11.037117496421784, "wip": 1.2666666666666666, "slaBreaches": 0 },
-      "decision": { "arrivals": 34.8, "departures": 35.36666666666667, "avgQueue": 0, "avgWait": 0, "wip": 0, "slaBreaches": 0 },
-      "onboard": { "arrivals": 12.866666666666667, "departures": 12.466666666666667, "avgQueue": 0.014494913043431142, "avgWait": 0.5553454604168595, "wip": 0.03333333333333333, "slaBreaches": 0 },
-      "kickoff": { "arrivals": 11.433333333333334, "departures": 11.466666666666667, "avgQueue": 0.295305005789986, "avgWait": 11.584188331765374, "wip": 0.3333333333333333, "slaBreaches": 0 },
-      "seo": { "arrivals": 6.533333333333333, "departures": 6.666666666666667, "avgQueue": 0.01831249002607938, "avgWait": 1.2469045652501642, "wip": 0.03333333333333333, "slaBreaches": 0 },
-      "ppc": { "arrivals": 5.9, "departures": 5.9, "avgQueue": 0.08574202543774367, "avgWait": 6.109621765359547, "wip": 0.03333333333333333, "slaBreaches": 0 },
-      "live": { "arrivals": 11.6, "departures": 11.633333333333333, "avgQueue": 0.012816713323936309, "avgWait": 0.562988776311942, "wip": 0.03333333333333333, "slaBreaches": 0 },
-      "report_strat": { "arrivals": 97.26666666666667, "departures": 96.3, "avgQueue": 2.129779244316081, "avgWait": 11.09342328479878, "wip": 2.566666666666667, "slaBreaches": 0 },
-      "report_seo": { "arrivals": 56.833333333333336, "departures": 56.3, "avgQueue": 1.095242236973397, "avgWait": 9.963421110422443, "wip": 1.1666666666666667, "slaBreaches": 0 },
-      "report_ppc": { "arrivals": 39.46666666666667, "departures": 37.96666666666667, "avgQueue": 1.7252580427833202, "avgWait": 22.127070059494528, "wip": 2.6, "slaBreaches": 0 },
-      "report_am": { "arrivals": 94.26666666666667, "departures": 93.76666666666667, "avgQueue": 0.2582539017676255, "avgWait": 1.413027545195345, "wip": 0.3333333333333333, "slaBreaches": 0 },
-      "report_fin": { "arrivals": 93.76666666666667, "departures": 93.6, "avgQueue": 0.01281612255670888, "avgWait": 0.07088978594318288, "wip": 0, "slaBreaches": 0 },
-      "checkin_call": { "arrivals": 211.2, "departures": 210.4, "avgQueue": 0.65052403773396, "avgWait": 1.5826158929693042, "wip": 1.3666666666666667, "slaBreaches": 0 }
+      "qualify": { "arrivals": 90.96666666666667, "departures": 91, "avgQueue": 0.0019865407897353823, "avgWait": 0.011469617457585669, "wip": 0, "slaBreaches": 0, "lostHere": 39.86666666666667 },
+      "discovery": { "arrivals": 51.13333333333333, "departures": 50.666666666666664, "avgQueue": 0.0009309762777571993, "avgWait": 0.009136771606544868, "wip": 0, "slaBreaches": 0, "lostHere": 15.4 },
+      "audit": { "arrivals": 40.233333333333334, "departures": 39.766666666666666, "avgQueue": 0.9512581885933649, "avgWait": 11.037117496421784, "wip": 1.2666666666666666, "slaBreaches": 0, "lostHere": 0 },
+      "decision": { "arrivals": 34.8, "departures": 35.36666666666667, "avgQueue": 0, "avgWait": 0, "wip": 0, "slaBreaches": 0, "lostHere": 23.533333333333335 },
+      "onboard": { "arrivals": 12.866666666666667, "departures": 12.466666666666667, "avgQueue": 0.014494913043431142, "avgWait": 0.5553454604168595, "wip": 0.03333333333333333, "slaBreaches": 0, "lostHere": 0 },
+      "kickoff": { "arrivals": 11.433333333333334, "departures": 11.466666666666667, "avgQueue": 0.295305005789986, "avgWait": 11.584188331765374, "wip": 0.3333333333333333, "slaBreaches": 0, "lostHere": 0 },
+      "seo": { "arrivals": 6.533333333333333, "departures": 6.666666666666667, "avgQueue": 0.01831249002607938, "avgWait": 1.2469045652501642, "wip": 0.03333333333333333, "slaBreaches": 0, "lostHere": 0 },
+      "ppc": { "arrivals": 5.9, "departures": 5.9, "avgQueue": 0.08574202543774367, "avgWait": 6.109621765359547, "wip": 0.03333333333333333, "slaBreaches": 0, "lostHere": 0 },
+      "live": { "arrivals": 11.6, "departures": 11.633333333333333, "avgQueue": 0.012816713323936309, "avgWait": 0.562988776311942, "wip": 0.03333333333333333, "slaBreaches": 0, "lostHere": 0 },
+      "report_strat": { "arrivals": 97.26666666666667, "departures": 96.3, "avgQueue": 2.129779244316081, "avgWait": 11.09342328479878, "wip": 2.566666666666667, "slaBreaches": 0, "lostHere": 0 },
+      "report_seo": { "arrivals": 56.833333333333336, "departures": 56.3, "avgQueue": 1.095242236973397, "avgWait": 9.963421110422443, "wip": 1.1666666666666667, "slaBreaches": 0, "lostHere": 0 },
+      "report_ppc": { "arrivals": 39.46666666666667, "departures": 37.96666666666667, "avgQueue": 1.7252580427833202, "avgWait": 22.127070059494528, "wip": 2.6, "slaBreaches": 0, "lostHere": 0 },
+      "report_am": { "arrivals": 94.26666666666667, "departures": 93.76666666666667, "avgQueue": 0.2582539017676255, "avgWait": 1.413027545195345, "wip": 0.3333333333333333, "slaBreaches": 0, "lostHere": 0 },
+      "report_fin": { "arrivals": 93.76666666666667, "departures": 93.6, "avgQueue": 0.01281612255670888, "avgWait": 0.07088978594318288, "wip": 0, "slaBreaches": 0, "lostHere": 0 },
+      "checkin_call": { "arrivals": 211.2, "departures": 210.4, "avgQueue": 0.65052403773396, "avgWait": 1.5826158929693042, "wip": 1.3666666666666667, "slaBreaches": 0, "lostHere": 0 }
+    },
+    "absence": {
+      "maya": {
+        "steps": [ "audit", "kickoff", "report_strat" ],
+        "workLost": 0.1676829268292683,
+        "itemsLost": 44,
+        "recoveryWeeks": 10,
+        "recovered": false,
+        "extraMissed": 28.7
+      },
+      "rosa": {
+        "steps": [ "report_fin" ],
+        "workLost": 0.03467987804878049,
+        "itemsLost": 9.1,
+        "recoveryWeeks": 1,
+        "recovered": true,
+        "extraMissed": 8.3
+      }
     },
     "ratings": {
       "capacity:role:strat": { "rating": "risk", "base": "good", "badMonth": true, "bottleneck": true },
+      "spof:step:audit": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
+      "spof:step:kickoff": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
+      "spof:step:report_fin": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
+      "spof:step:report_strat": { "rating": "risk", "base": "risk", "badMonth": false, "bottleneck": false },
       "rework:step:ppc": { "rating": "risk", "base": "bad", "badMonth": true, "bottleneck": false },
       "capacity:role:ppc": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },
       "wait:step:audit": { "rating": "bad", "base": "good", "badMonth": true, "bottleneck": false },
@@ -122,10 +144,9 @@
       "capacity:person:leah": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false },
       "capacity:role:seo": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false },
       "wait:step:ppc": { "rating": "good", "base": "great", "badMonth": true, "bottleneck": false },
-      "spof:step:audit": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
-      "spof:step:kickoff": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
-      "spof:step:report_fin": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
-      "spof:step:report_strat": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
+      "spare:person:priya": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
+      "spare:person:rosa": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
+      "spare:person:tom": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false },
       "churn_risk:client:c12": { "rating": "good", "base": "good", "badMonth": false, "bottleneck": false }
     },
     "rosterClients": {

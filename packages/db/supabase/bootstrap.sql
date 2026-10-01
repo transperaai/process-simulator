@@ -11043,6 +11043,126 @@ create constraint trigger nesting_is_a_tree after insert or update of kind, pare
   deferrable initially deferred for each row execute function private.check_step_nesting();
 ']);
 
+-- 20261110000000_step_rule_fields.sql
+-- Step fields for the new analysis rules (docs/analysis-rules.md rules 5, 12 and
+-- 13; issue #107, A42). Four optional numbers on `public.steps`, each saved on
+-- its own like every other step field, so a draft carries them and publishing
+-- one copies them (open_draft copies every column):
+--
+--   * `expected_wait_hours`: how long an item may queue for a person before it
+--     counts as waiting too long (rule 5, "Waiting too long"). Null: the
+--     workspace's default for the step's kind (1 working day for pipeline
+--     steps, 2 for servicing steps).
+--   * `lost_per_day_waiting`: the share of items that go cold for each working
+--     day they wait here, 0 to 1 (0.05 is 5% a day). Prices the cost of
+--     waiting (A43). Null: no loss is assumed, so the insight shows time, not
+--     money.
+--   * `dropoff_benchmark`: the share of the items leaving the step that may be
+--     lost here and still be fine, 0 to 1 (rule 12, "Work lost at a step").
+--     Null: the rule doesn't rate this step.
+--   * `target_cycle_hours`: how long an item should take end to end, in
+--     working hours (rule 13, "Too slow overall"). Set on the process's
+--     `start` step, the one place that is once per process and travels with
+--     its revision; ignored on any other step. Null: the rule doesn't rate
+--     this process.
+--
+-- Strictly additive: four nullable columns with check constraints, no default,
+-- no data change. `save_fields` is unchanged: `steps` is already in its
+-- allow-list and it accepts any column the stored row has.
+--
+-- Preflight (run each with `bash packages/db/scripts/prod-sql.sh -c "..."`):
+--
+--   1. The columns must not exist yet. Expect 0 rows:
+--        select column_name from information_schema.columns
+--        where table_schema = 'public' and table_name = 'steps'
+--          and column_name in ('expected_wait_hours', 'lost_per_day_waiting', 'dropoff_benchmark', 'target_cycle_hours');
+--   2. Nothing is applied at or past this version yet. Expect no rows:
+--        select version from supabase_migrations.schema_migrations where version >= '20261110000000';
+--
+-- Rollback (run as one transaction):
+--
+--   begin;
+--   alter table public.steps
+--     drop column expected_wait_hours,
+--     drop column lost_per_day_waiting,
+--     drop column dropoff_benchmark,
+--     drop column target_cycle_hours;
+--   delete from supabase_migrations.schema_migrations where version = '20261110000000';
+--   commit;
+--
+-- Rolling back loses the values people entered in these fields; the rules fall
+-- back to their defaults. Production data: none needed.
+
+alter table public.steps
+  add column expected_wait_hours numeric
+    constraint steps_expected_wait_hours check (expected_wait_hours >= 0 and expected_wait_hours <= 10000),
+  add column lost_per_day_waiting numeric
+    constraint steps_lost_per_day_waiting check (lost_per_day_waiting >= 0 and lost_per_day_waiting <= 1),
+  add column dropoff_benchmark numeric
+    constraint steps_dropoff_benchmark check (dropoff_benchmark >= 0 and dropoff_benchmark <= 1),
+  add column target_cycle_hours numeric
+    constraint steps_target_cycle_hours check (target_cycle_hours > 0 and target_cycle_hours <= 100000);
+
+insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261110000000', 'step_rule_fields', array['-- Step fields for the new analysis rules (docs/analysis-rules.md rules 5, 12 and
+-- 13; issue #107, A42). Four optional numbers on `public.steps`, each saved on
+-- its own like every other step field, so a draft carries them and publishing
+-- one copies them (open_draft copies every column):
+--
+--   * `expected_wait_hours`: how long an item may queue for a person before it
+--     counts as waiting too long (rule 5, "Waiting too long"). Null: the
+--     workspace''s default for the step''s kind (1 working day for pipeline
+--     steps, 2 for servicing steps).
+--   * `lost_per_day_waiting`: the share of items that go cold for each working
+--     day they wait here, 0 to 1 (0.05 is 5% a day). Prices the cost of
+--     waiting (A43). Null: no loss is assumed, so the insight shows time, not
+--     money.
+--   * `dropoff_benchmark`: the share of the items leaving the step that may be
+--     lost here and still be fine, 0 to 1 (rule 12, "Work lost at a step").
+--     Null: the rule doesn''t rate this step.
+--   * `target_cycle_hours`: how long an item should take end to end, in
+--     working hours (rule 13, "Too slow overall"). Set on the process''s
+--     `start` step, the one place that is once per process and travels with
+--     its revision; ignored on any other step. Null: the rule doesn''t rate
+--     this process.
+--
+-- Strictly additive: four nullable columns with check constraints, no default,
+-- no data change. `save_fields` is unchanged: `steps` is already in its
+-- allow-list and it accepts any column the stored row has.
+--
+-- Preflight (run each with `bash packages/db/scripts/prod-sql.sh -c "..."`):
+--
+--   1. The columns must not exist yet. Expect 0 rows:
+--        select column_name from information_schema.columns
+--        where table_schema = ''public'' and table_name = ''steps''
+--          and column_name in (''expected_wait_hours'', ''lost_per_day_waiting'', ''dropoff_benchmark'', ''target_cycle_hours'');
+--   2. Nothing is applied at or past this version yet. Expect no rows:
+--        select version from supabase_migrations.schema_migrations where version >= ''20261110000000'';
+--
+-- Rollback (run as one transaction):
+--
+--   begin;
+--   alter table public.steps
+--     drop column expected_wait_hours,
+--     drop column lost_per_day_waiting,
+--     drop column dropoff_benchmark,
+--     drop column target_cycle_hours;
+--   delete from supabase_migrations.schema_migrations where version = ''20261110000000'';
+--   commit;
+--
+-- Rolling back loses the values people entered in these fields; the rules fall
+-- back to their defaults. Production data: none needed.
+
+alter table public.steps
+  add column expected_wait_hours numeric
+    constraint steps_expected_wait_hours check (expected_wait_hours >= 0 and expected_wait_hours <= 10000),
+  add column lost_per_day_waiting numeric
+    constraint steps_lost_per_day_waiting check (lost_per_day_waiting >= 0 and lost_per_day_waiting <= 1),
+  add column dropoff_benchmark numeric
+    constraint steps_dropoff_benchmark check (dropoff_benchmark >= 0 and dropoff_benchmark <= 1),
+  add column target_cycle_hours numeric
+    constraint steps_target_cycle_hours check (target_cycle_hours > 0 and target_cycle_hours <= 100000);
+']);
+
 -- seed.sql
 -- Generated by `pnpm --filter @transpera-flow/db gen:seed`. Do not edit by hand.
 
@@ -11106,19 +11226,19 @@ insert into public.demand_settings (workspace_id, growth_monthly, provenance) va
 insert into public.process_revisions (id, workspace_id, process_id, number, status, published_at) values
   ('d0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 1, 'published', '2026-09-29T00:00:00Z');
 
-insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, current_wip, parent_step_id, entry_step_id, child_process_id, x, y, assumption, conflict, provenance) values
-  ('e0000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Qualify lead', 'task', null, 'b0000000-0000-4000-8000-000000000001', null, 0.5, 'lognormal', '{}', 4, 'lognormal', '{}', 0, null, 'HubSpot', null, null, null, null, null, null, 60, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8000-000000000002', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Discovery call', 'task', null, 'b0000000-0000-4000-8000-000000000001', null, 1.5, 'lognormal', '{}', 24, 'lognormal', '{}', 0, null, 'Zoom + HubSpot', null, null, null, null, null, null, 290, 50, false, false, '{"wait_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Priya Shah","quote":"Discovery calls get booked within three working days of qualifying.","timestamp":null,"value":24}]}}'),
-  ('e0000000-0000-4000-8000-000000000003', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Audit & proposal', 'task', null, 'b0000000-0000-4000-8000-000000000002', null, 6, 'lognormal', '{}', 0, 'lognormal', '{}', 0.15, null, 'SEMrush, Google Docs', null, null, null, null, null, null, 520, 50, false, false, '{"work_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000001","speaker":"Maya Collins","quote":"A proper audit and proposal is a day''s work, call it six hours.","timestamp":"00:14:05","value":6}]},"rework_rate":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Priya Shah","quote":"About one proposal in seven comes back from sales review for changes.","timestamp":null,"value":0.15}]}}'),
-  ('e0000000-0000-4000-8000-000000000004', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Client decision', 'decision', null, null, null, 0, 'lognormal', '{}', 40, 'lognormal', '{}', 0, null, 'Email', null, null, null, null, null, null, 750, 50, false, false, '{"wait_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Tom Reed","quote":"Clients take a week to decide, sometimes longer.","timestamp":null,"value":40}]}}'),
-  ('e0000000-0000-4000-8000-000000000005', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Contract & onboarding', 'task', null, 'b0000000-0000-4000-8000-000000000003', null, 3, 'lognormal', '{}', 16, 'lognormal', '{}', 0.1, null, 'PandaDoc, Notion', null, null, null, null, null, null, 60, 290, false, false, '{}'),
-  ('e0000000-0000-4000-8000-000000000006', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Kickoff & strategy', 'task', null, 'b0000000-0000-4000-8000-000000000002', null, 4, 'lognormal', '{}', 8, 'lognormal', '{}', 0, null, 'Notion', null, null, null, null, null, null, 290, 290, false, false, '{}'),
-  ('e0000000-0000-4000-8000-000000000007', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'SEO campaign setup', 'task', null, 'b0000000-0000-4000-8000-000000000004', null, 10, 'lognormal', '{}', 8, 'lognormal', '{}', 0.1, null, 'Ahrefs, WordPress', null, null, null, null, null, null, 520, 230, false, false, '{}'),
-  ('e0000000-0000-4000-8000-000000000008', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'PPC campaign setup', 'task', null, 'b0000000-0000-4000-8000-000000000005', null, 8, 'lognormal', '{}', 8, 'lognormal', '{}', 0.1, null, 'Google Ads', null, null, null, null, null, null, 520, 340, false, false, '{}'),
-  ('e0000000-0000-4000-8000-000000000009', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Go live & first report', 'task', null, 'b0000000-0000-4000-8000-000000000003', null, 2, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Looker Studio', null, null, null, null, null, null, 750, 290, false, false, '{}'),
-  ('e0000000-0000-4000-8000-00000000000a', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Lead arrives', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, -150, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8000-00000000000b', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Won', 'end', 'won', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, 980, 290, false, false, '{}'),
-  ('e0000000-0000-4000-8000-00000000000c', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Lost', 'end', 'lost', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, 640, 170, false, false, '{}');
+insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, expected_wait_hours, lost_per_day_waiting, dropoff_benchmark, target_cycle_hours, current_wip, parent_step_id, entry_step_id, child_process_id, x, y, assumption, conflict, provenance) values
+  ('e0000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Qualify lead', 'task', null, 'b0000000-0000-4000-8000-000000000001', null, 0.5, 'lognormal', '{}', 4, 'lognormal', '{}', 0, null, 'HubSpot', null, null, null, null, null, null, null, null, null, null, 60, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8000-000000000002', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Discovery call', 'task', null, 'b0000000-0000-4000-8000-000000000001', null, 1.5, 'lognormal', '{}', 24, 'lognormal', '{}', 0, null, 'Zoom + HubSpot', null, null, null, null, null, null, null, null, null, null, 290, 50, false, false, '{"wait_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Priya Shah","quote":"Discovery calls get booked within three working days of qualifying.","timestamp":null,"value":24}]}}'),
+  ('e0000000-0000-4000-8000-000000000003', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Audit & proposal', 'task', null, 'b0000000-0000-4000-8000-000000000002', null, 6, 'lognormal', '{}', 0, 'lognormal', '{}', 0.15, null, 'SEMrush, Google Docs', null, null, null, null, null, null, null, null, null, null, 520, 50, false, false, '{"work_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000001","speaker":"Maya Collins","quote":"A proper audit and proposal is a day''s work, call it six hours.","timestamp":"00:14:05","value":6}]},"rework_rate":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Priya Shah","quote":"About one proposal in seven comes back from sales review for changes.","timestamp":null,"value":0.15}]}}'),
+  ('e0000000-0000-4000-8000-000000000004', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Client decision', 'decision', null, null, null, 0, 'lognormal', '{}', 40, 'lognormal', '{}', 0, null, 'Email', null, null, null, null, null, null, null, null, null, null, 750, 50, false, false, '{"wait_hours":{"source":"estimated","at":"2026-09-29T00:00:00Z","note":"Northbeam sample data","evidence":[{"source_id":"30000000-0000-4000-8000-000000000002","speaker":"Tom Reed","quote":"Clients take a week to decide, sometimes longer.","timestamp":null,"value":40}]}}'),
+  ('e0000000-0000-4000-8000-000000000005', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Contract & onboarding', 'task', null, 'b0000000-0000-4000-8000-000000000003', null, 3, 'lognormal', '{}', 16, 'lognormal', '{}', 0.1, null, 'PandaDoc, Notion', null, null, null, null, null, null, null, null, null, null, 60, 290, false, false, '{}'),
+  ('e0000000-0000-4000-8000-000000000006', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Kickoff & strategy', 'task', null, 'b0000000-0000-4000-8000-000000000002', null, 4, 'lognormal', '{}', 8, 'lognormal', '{}', 0, null, 'Notion', null, null, null, null, null, null, null, null, null, null, 290, 290, false, false, '{}'),
+  ('e0000000-0000-4000-8000-000000000007', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'SEO campaign setup', 'task', null, 'b0000000-0000-4000-8000-000000000004', null, 10, 'lognormal', '{}', 8, 'lognormal', '{}', 0.1, null, 'Ahrefs, WordPress', null, null, null, null, null, null, null, null, null, null, 520, 230, false, false, '{}'),
+  ('e0000000-0000-4000-8000-000000000008', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'PPC campaign setup', 'task', null, 'b0000000-0000-4000-8000-000000000005', null, 8, 'lognormal', '{}', 8, 'lognormal', '{}', 0.1, null, 'Google Ads', null, null, null, null, null, null, null, null, null, null, 520, 340, false, false, '{}'),
+  ('e0000000-0000-4000-8000-000000000009', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Go live & first report', 'task', null, 'b0000000-0000-4000-8000-000000000003', null, 2, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Looker Studio', null, null, null, null, null, null, null, null, null, null, 750, 290, false, false, '{}'),
+  ('e0000000-0000-4000-8000-00000000000a', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Lead arrives', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, null, null, null, null, -150, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8000-00000000000b', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Won', 'end', 'won', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, null, null, null, null, 980, 290, false, false, '{}'),
+  ('e0000000-0000-4000-8000-00000000000c', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'Lost', 'end', 'lost', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, null, null, null, null, 640, 170, false, false, '{}');
 
 insert into public.edges (id, revision_id, workspace_id, process_id, from_step_id, to_step_id, probability, condition_tag, label) values
   ('f0000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-00000000000a', 'e0000000-0000-4000-8000-000000000001', 1, null, null),
@@ -11139,14 +11259,14 @@ insert into public.edges (id, revision_id, workspace_id, process_id, from_step_i
 insert into public.process_revisions (id, workspace_id, process_id, number, status, published_at) values
   ('d0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 1, 'published', '2026-09-29T00:00:00Z');
 
-insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, current_wip, parent_step_id, entry_step_id, child_process_id, x, y, assumption, conflict, provenance) values
-  ('e0000000-0000-4000-8000-00000000000d', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'Set the month''s priorities', 'task', null, 'b0000000-0000-4000-8000-000000000002', null, 1.5, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Notion', null, null, null, null, null, null, 60, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8000-00000000000e', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'SEO work & report data', 'task', null, 'b0000000-0000-4000-8000-000000000004', null, 16, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Ahrefs, Looker Studio', null, null, null, null, null, null, 290, -10, false, false, '{}'),
-  ('e0000000-0000-4000-8000-00000000000f', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'PPC optimisation & report data', 'task', null, 'b0000000-0000-4000-8000-000000000005', null, 19, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Google Ads, Looker Studio', null, null, null, null, null, null, 290, 110, false, false, '{}'),
-  ('e0000000-0000-4000-8000-000000000010', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'Write & send the report', 'task', null, 'b0000000-0000-4000-8000-000000000003', null, 3, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Google Docs', null, null, null, null, null, null, 520, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8000-000000000011', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'Invoice', 'task', null, 'b0000000-0000-4000-8000-000000000006', null, 1.2, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Xero', null, null, null, null, null, null, 750, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8000-000000000012', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'Month starts', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, -150, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8000-000000000013', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'Report sent', 'end', 'done', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, 980, 50, false, false, '{}');
+insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, expected_wait_hours, lost_per_day_waiting, dropoff_benchmark, target_cycle_hours, current_wip, parent_step_id, entry_step_id, child_process_id, x, y, assumption, conflict, provenance) values
+  ('e0000000-0000-4000-8000-00000000000d', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'Set the month''s priorities', 'task', null, 'b0000000-0000-4000-8000-000000000002', null, 1.5, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Notion', null, null, null, null, null, null, null, null, null, null, 60, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8000-00000000000e', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'SEO work & report data', 'task', null, 'b0000000-0000-4000-8000-000000000004', null, 16, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Ahrefs, Looker Studio', null, null, null, null, null, null, null, null, null, null, 290, -10, false, false, '{}'),
+  ('e0000000-0000-4000-8000-00000000000f', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'PPC optimisation & report data', 'task', null, 'b0000000-0000-4000-8000-000000000005', null, 19, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Google Ads, Looker Studio', null, null, null, null, null, null, null, null, null, null, 290, 110, false, false, '{}'),
+  ('e0000000-0000-4000-8000-000000000010', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'Write & send the report', 'task', null, 'b0000000-0000-4000-8000-000000000003', null, 3, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Google Docs', null, null, null, null, null, null, null, null, null, null, 520, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8000-000000000011', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'Invoice', 'task', null, 'b0000000-0000-4000-8000-000000000006', null, 1.2, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Xero', null, null, null, null, null, null, null, null, null, null, 750, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8000-000000000012', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'Month starts', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, null, null, null, null, -150, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8000-000000000013', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'Report sent', 'end', 'done', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, null, null, null, null, 980, 50, false, false, '{}');
 
 insert into public.edges (id, revision_id, workspace_id, process_id, from_step_id, to_step_id, probability, condition_tag, label) values
   ('f0000000-0000-4000-8000-00000000000f', 'd0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000002', 'e0000000-0000-4000-8000-000000000012', 'e0000000-0000-4000-8000-00000000000d', 1, null, null),
@@ -11160,10 +11280,10 @@ insert into public.edges (id, revision_id, workspace_id, process_id, from_step_i
 insert into public.process_revisions (id, workspace_id, process_id, number, status, published_at) values
   ('d0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000003', 1, 'published', '2026-09-29T00:00:00Z');
 
-insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, current_wip, parent_step_id, entry_step_id, child_process_id, x, y, assumption, conflict, provenance) values
-  ('e0000000-0000-4000-8000-000000000014', 'd0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000003', 'Check-in call', 'task', null, 'b0000000-0000-4000-8000-000000000003', null, 1.5, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Zoom', null, null, null, null, null, null, 290, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8000-000000000015', 'd0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000003', 'Check-in due', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, 60, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8000-000000000016', 'd0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000003', 'Done', 'end', 'done', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, 520, 50, false, false, '{}');
+insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, expected_wait_hours, lost_per_day_waiting, dropoff_benchmark, target_cycle_hours, current_wip, parent_step_id, entry_step_id, child_process_id, x, y, assumption, conflict, provenance) values
+  ('e0000000-0000-4000-8000-000000000014', 'd0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000003', 'Check-in call', 'task', null, 'b0000000-0000-4000-8000-000000000003', null, 1.5, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Zoom', null, null, null, null, null, null, null, null, null, null, 290, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8000-000000000015', 'd0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000003', 'Check-in due', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, null, null, null, null, 60, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8000-000000000016', 'd0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000003', 'Done', 'end', 'done', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, null, null, null, null, 520, 50, false, false, '{}');
 
 insert into public.edges (id, revision_id, workspace_id, process_id, from_step_id, to_step_id, probability, condition_tag, label) values
   ('f0000000-0000-4000-8000-000000000016', 'd0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000003', 'e0000000-0000-4000-8000-000000000015', 'e0000000-0000-4000-8000-000000000014', 1, null, null),
@@ -11425,22 +11545,22 @@ insert into public.demand_settings (workspace_id, growth_monthly, provenance) va
 insert into public.process_revisions (id, workspace_id, process_id, number, status, published_at) values
   ('d0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 1, 'published', '2026-09-29T00:00:00Z');
 
-insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, current_wip, parent_step_id, entry_step_id, child_process_id, x, y, assumption, conflict, provenance) values
-  ('e0000000-0000-4000-8001-000000000001', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Triage enquiry', 'task', null, 'b0000000-0000-4000-8001-000000000002', null, 0.5, 'lognormal', '{}', 8, 'lognormal', '{}', 0, null, 'Instagram, HubSpot', null, null, null, null, null, null, 60, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000002', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Pitch call', 'task', null, 'b0000000-0000-4000-8001-000000000001', '90000000-0000-4000-8001-000000000001', 1.5, 'triangular', '{"min":1,"mode":1.25,"max":2.25}', 16, 'lognormal', '{}', 0, null, 'Google Meet', null, null, null, null, null, null, 290, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000003', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Creative concepts', 'task', null, 'b0000000-0000-4000-8001-000000000003', null, 5, 'lognormal', '{"cv":0.6}', 0, 'lognormal', '{}', 0.25, null, 'Figma', null, 80, null, null, null, null, 520, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000004', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Client decision', 'decision', null, null, null, 0, 'lognormal', '{}', 60, 'triangular', '{"min":15,"mode":45,"max":120}', 0, null, 'Email', null, null, 6, null, null, null, 750, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000005', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Contract & onboarding', 'task', null, 'b0000000-0000-4000-8001-000000000007', null, 2, 'lognormal', '{}', 24, 'constant', '{}', 0, null, 'PandaDoc, Xero', null, null, null, null, null, null, 60, 290, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000006', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Brand workshop', 'task', null, 'b0000000-0000-4000-8001-000000000001', null, 4, 'lognormal', '{}', 8, 'lognormal', '{}', 0, null, 'Miro', null, null, null, null, null, null, 290, 290, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000007', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Social set-up & first calendar', 'task', null, 'b0000000-0000-4000-8001-000000000005', null, 6, 'lognormal', '{}', 8, 'lognormal', '{}', 0.1, null, 'Later, Canva', null, null, null, null, null, null, 520, 180, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000008', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Content plan & first articles', 'task', null, 'b0000000-0000-4000-8001-000000000004', null, 12, 'lognormal', '{}', 16, 'lognormal', '{}', 0.2, null, 'Google Docs', null, null, null, null, null, null, 520, 290, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000009', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Website design', 'task', null, 'b0000000-0000-4000-8001-000000000003', null, 30, 'lognormal', '{"cv":0.5}', 24, 'lognormal', '{}', 0.3, null, 'Figma', null, null, null, null, null, null, 520, 400, false, false, '{}'),
-  ('e0000000-0000-4000-8001-00000000000a', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Website build', 'task', null, 'b0000000-0000-4000-8001-000000000006', null, 45, 'lognormal', '{}', 40, 'lognormal', '{}', 0.15, null, 'Webflow', null, 200, 2, null, null, null, 750, 400, false, false, '{}'),
-  ('e0000000-0000-4000-8001-00000000000b', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Launch & handover', 'task', null, 'b0000000-0000-4000-8001-000000000002', null, 2, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Loom', null, null, null, null, null, null, 750, 290, false, false, '{}'),
-  ('e0000000-0000-4000-8001-00000000000c', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Enquiry arrives', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, -150, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-00000000000d', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Won', 'end', 'won', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, 980, 290, false, false, '{}'),
-  ('e0000000-0000-4000-8001-00000000000e', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Lost: not a fit', 'end', 'lost', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, 290, -80, false, false, '{}'),
-  ('e0000000-0000-4000-8001-00000000000f', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Lost: price or timing', 'end', 'lost', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, 980, 50, false, false, '{}');
+insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, expected_wait_hours, lost_per_day_waiting, dropoff_benchmark, target_cycle_hours, current_wip, parent_step_id, entry_step_id, child_process_id, x, y, assumption, conflict, provenance) values
+  ('e0000000-0000-4000-8001-000000000001', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Triage enquiry', 'task', null, 'b0000000-0000-4000-8001-000000000002', null, 0.5, 'lognormal', '{}', 8, 'lognormal', '{}', 0, null, 'Instagram, HubSpot', null, null, null, null, null, null, null, null, null, null, 60, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000002', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Pitch call', 'task', null, 'b0000000-0000-4000-8001-000000000001', '90000000-0000-4000-8001-000000000001', 1.5, 'triangular', '{"min":1,"mode":1.25,"max":2.25}', 16, 'lognormal', '{}', 0, null, 'Google Meet', null, null, null, null, null, null, null, null, null, null, 290, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000003', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Creative concepts', 'task', null, 'b0000000-0000-4000-8001-000000000003', null, 5, 'lognormal', '{"cv":0.6}', 0, 'lognormal', '{}', 0.25, null, 'Figma', null, 80, null, null, null, null, null, null, null, null, 520, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000004', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Client decision', 'decision', null, null, null, 0, 'lognormal', '{}', 60, 'triangular', '{"min":15,"mode":45,"max":120}', 0, null, 'Email', null, null, null, null, null, null, 6, null, null, null, 750, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000005', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Contract & onboarding', 'task', null, 'b0000000-0000-4000-8001-000000000007', null, 2, 'lognormal', '{}', 24, 'constant', '{}', 0, null, 'PandaDoc, Xero', null, null, null, null, null, null, null, null, null, null, 60, 290, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000006', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Brand workshop', 'task', null, 'b0000000-0000-4000-8001-000000000001', null, 4, 'lognormal', '{}', 8, 'lognormal', '{}', 0, null, 'Miro', null, null, null, null, null, null, null, null, null, null, 290, 290, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000007', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Social set-up & first calendar', 'task', null, 'b0000000-0000-4000-8001-000000000005', null, 6, 'lognormal', '{}', 8, 'lognormal', '{}', 0.1, null, 'Later, Canva', null, null, null, null, null, null, null, null, null, null, 520, 180, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000008', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Content plan & first articles', 'task', null, 'b0000000-0000-4000-8001-000000000004', null, 12, 'lognormal', '{}', 16, 'lognormal', '{}', 0.2, null, 'Google Docs', null, null, null, null, null, null, null, null, null, null, 520, 290, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000009', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Website design', 'task', null, 'b0000000-0000-4000-8001-000000000003', null, 30, 'lognormal', '{"cv":0.5}', 24, 'lognormal', '{}', 0.3, null, 'Figma', null, null, null, null, null, null, null, null, null, null, 520, 400, false, false, '{}'),
+  ('e0000000-0000-4000-8001-00000000000a', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Website build', 'task', null, 'b0000000-0000-4000-8001-000000000006', null, 45, 'lognormal', '{}', 40, 'lognormal', '{}', 0.15, null, 'Webflow', null, 200, null, null, null, null, 2, null, null, null, 750, 400, false, false, '{}'),
+  ('e0000000-0000-4000-8001-00000000000b', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Launch & handover', 'task', null, 'b0000000-0000-4000-8001-000000000002', null, 2, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Loom', null, null, null, null, null, null, null, null, null, null, 750, 290, false, false, '{}'),
+  ('e0000000-0000-4000-8001-00000000000c', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Enquiry arrives', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, null, null, null, null, -150, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-00000000000d', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Won', 'end', 'won', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, null, null, null, null, 980, 290, false, false, '{}'),
+  ('e0000000-0000-4000-8001-00000000000e', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Lost: not a fit', 'end', 'lost', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, null, null, null, null, 290, -80, false, false, '{}'),
+  ('e0000000-0000-4000-8001-00000000000f', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'Lost: price or timing', 'end', 'lost', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, null, null, null, null, 980, 50, false, false, '{}');
 
 insert into public.edges (id, revision_id, workspace_id, process_id, from_step_id, to_step_id, probability, condition_tag, label) values
   ('f0000000-0000-4000-8001-000000000001', 'd0000000-0000-4000-8001-000000000001', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000001', 'e0000000-0000-4000-8001-00000000000c', 'e0000000-0000-4000-8001-000000000001', 1, null, null),
@@ -11464,13 +11584,13 @@ insert into public.edges (id, revision_id, workspace_id, process_id, from_step_i
 insert into public.process_revisions (id, workspace_id, process_id, number, status, published_at) values
   ('d0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 1, 'published', '2026-09-29T00:00:00Z');
 
-insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, current_wip, parent_step_id, entry_step_id, child_process_id, x, y, assumption, conflict, provenance) values
-  ('e0000000-0000-4000-8001-000000000010', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Plan the month', 'task', null, 'b0000000-0000-4000-8001-000000000002', null, 1.5, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Notion', null, null, null, null, null, null, 60, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000011', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Write the posts', 'task', null, 'b0000000-0000-4000-8001-000000000005', null, 10, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Later', null, null, null, null, null, null, 290, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000012', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Design the assets', 'task', null, 'b0000000-0000-4000-8001-000000000003', null, 5, 'lognormal', '{}', 0, 'lognormal', '{}', 0.2, null, 'Figma, Canva', null, null, null, null, null, null, 520, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000013', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Client approval', 'task', null, 'b0000000-0000-4000-8001-000000000002', null, 1, 'lognormal', '{}', 16, 'lognormal', '{}', 0, null, 'Email', null, null, null, null, null, null, 750, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000014', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Month due', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, -150, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000015', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Calendar approved', 'end', 'done', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, 980, 50, false, false, '{}');
+insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, expected_wait_hours, lost_per_day_waiting, dropoff_benchmark, target_cycle_hours, current_wip, parent_step_id, entry_step_id, child_process_id, x, y, assumption, conflict, provenance) values
+  ('e0000000-0000-4000-8001-000000000010', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Plan the month', 'task', null, 'b0000000-0000-4000-8001-000000000002', null, 1.5, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Notion', null, null, null, null, null, null, null, null, null, null, 60, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000011', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Write the posts', 'task', null, 'b0000000-0000-4000-8001-000000000005', null, 10, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, 'Later', null, null, null, null, null, null, null, null, null, null, 290, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000012', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Design the assets', 'task', null, 'b0000000-0000-4000-8001-000000000003', null, 5, 'lognormal', '{}', 0, 'lognormal', '{}', 0.2, null, 'Figma, Canva', null, null, null, null, null, null, null, null, null, null, 520, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000013', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Client approval', 'task', null, 'b0000000-0000-4000-8001-000000000002', null, 1, 'lognormal', '{}', 16, 'lognormal', '{}', 0, null, 'Email', null, null, null, null, null, null, null, null, null, null, 750, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000014', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Month due', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, null, null, null, null, -150, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000015', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'Calendar approved', 'end', 'done', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, null, null, null, null, 980, 50, false, false, '{}');
 
 insert into public.edges (id, revision_id, workspace_id, process_id, from_step_id, to_step_id, probability, condition_tag, label) values
   ('f0000000-0000-4000-8001-000000000012', 'd0000000-0000-4000-8001-000000000002', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000002', 'e0000000-0000-4000-8001-000000000014', 'e0000000-0000-4000-8001-000000000010', 1, null, null),
@@ -11482,10 +11602,10 @@ insert into public.edges (id, revision_id, workspace_id, process_id, from_step_i
 insert into public.process_revisions (id, workspace_id, process_id, number, status, published_at) values
   ('d0000000-0000-4000-8001-000000000003', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000003', 1, 'published', '2026-09-29T00:00:00Z');
 
-insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, current_wip, parent_step_id, entry_step_id, child_process_id, x, y, assumption, conflict, provenance) values
-  ('e0000000-0000-4000-8001-000000000016', 'd0000000-0000-4000-8001-000000000003', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000003', 'Turn the request round', 'task', null, 'b0000000-0000-4000-8001-000000000003', null, 2, 'triangular', '{"min":0.5,"mode":1.5,"max":4}', 0, 'lognormal', '{}', 0, null, 'Canva', null, null, null, null, null, null, 290, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000017', 'd0000000-0000-4000-8001-000000000003', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000003', 'Request in', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, 60, 50, false, false, '{}'),
-  ('e0000000-0000-4000-8001-000000000018', 'd0000000-0000-4000-8001-000000000003', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000003', 'Sent', 'end', 'done', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, 520, 50, false, false, '{}');
+insert into public.steps (id, revision_id, workspace_id, process_id, name, kind, outcome, role_id, person_id, work_hours, work_dist, work_params, wait_hours, wait_dist, wait_params, rework_rate, rework_to_step_id, tool, notes, sla_hours, expected_wait_hours, lost_per_day_waiting, dropoff_benchmark, target_cycle_hours, current_wip, parent_step_id, entry_step_id, child_process_id, x, y, assumption, conflict, provenance) values
+  ('e0000000-0000-4000-8001-000000000016', 'd0000000-0000-4000-8001-000000000003', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000003', 'Turn the request round', 'task', null, 'b0000000-0000-4000-8001-000000000003', null, 2, 'triangular', '{"min":0.5,"mode":1.5,"max":4}', 0, 'lognormal', '{}', 0, null, 'Canva', null, null, null, null, null, null, null, null, null, null, 290, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000017', 'd0000000-0000-4000-8001-000000000003', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000003', 'Request in', 'start', null, null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, null, null, null, null, 60, 50, false, false, '{}'),
+  ('e0000000-0000-4000-8001-000000000018', 'd0000000-0000-4000-8001-000000000003', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000003', 'Sent', 'end', 'done', null, null, 0, 'lognormal', '{}', 0, 'lognormal', '{}', 0, null, null, null, null, null, null, null, null, null, null, null, null, 520, 50, false, false, '{}');
 
 insert into public.edges (id, revision_id, workspace_id, process_id, from_step_id, to_step_id, probability, condition_tag, label) values
   ('f0000000-0000-4000-8001-000000000017', 'd0000000-0000-4000-8001-000000000003', 'a0000000-0000-4000-8001-000000000001', 'c0000000-0000-4000-8001-000000000003', 'e0000000-0000-4000-8001-000000000017', 'e0000000-0000-4000-8001-000000000016', 1, null, null),

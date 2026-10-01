@@ -3,7 +3,7 @@
 Agreed with Austin, 1 Oct 2026, in the analysis rules session. This replaces the detector thresholds in
 `packages/engine/src/issues.ts` (`DEFAULT_ISSUE_THRESHOLDS`) and the four engine severities. It is the spec for the tickets that follow.
 
-**Editing (A44, issue #109):** Settings → Analysis rules (`/w/<slug>/settings/rules`, `/demo/settings/rules`) edits all 15 rules, the escalators and the money settings, stored per workspace in `analysis_rules.settings` (sparse jsonb; `packages/engine/src/analysis-settings.ts`). Only the rules on the rating model below take effect in the engine yet; the others are saved and apply when their detectors land. Money settings (12-month cap, absence test) are stored but not read by the engine until the cost ticket.
+**Editing (A44, issue #109):** Settings → Analysis rules (`/w/<slug>/settings/rules`, `/demo/settings/rules`) edits all 15 rules, the escalators and the money settings, stored per workspace in `analysis_rules.settings` (sparse jsonb; `packages/engine/src/analysis-settings.ts`). Only the rules on the rating model below take effect in the engine yet; the others are saved and apply when their detectors land. The absence test's length and frequency are read by the engine (A42); the 12-month cap is read once the cost ticket (A43) lands.
 
 **Built so far (A41, issue #106):** the rating model and rules 1, 3, 4, 5, 6 and 7 are in
 `packages/engine/src/ratings.ts` and the detectors (`issues.ts`, `overtime-issues.ts`). The rules not listed there still
@@ -18,9 +18,45 @@ run their old logic, mapped onto ratings until their tickets land. Choices the s
 - Stored issues keep the database's four `severity` values, which stand for the ratings one to one (critical = Operational
   risk, serious = Bad, warning = Good, info = Great).
 
-### To confirm with Austin
+**Also built (A42, issue #107):** rules 2, 8, 11, 12 and 13 (`spare`, `spof`, `success`, `dropoff`, `cycle` in
+`ratings.ts`, the ids A44 stores; `absence.ts`, `success.ts`, `issues.ts`). Rules 9, 10, 14 and 15 still run their old logic.
 
-Choices made while building A41 that the spec didn't settle:
+- **Spare time (2)** is rated on utilisation, lower is worse: under 40% is Good, 40% and over is Great, and the rule has
+  no Bad or Operational risk band (its cut-offs are `0.4 / 0 / 0`). It never escalates (a bad month or the bottleneck
+  doesn't apply to spare time). One opportunity per named person (per role when the model has no named people), with
+  "about N h a week free" (capacity minus the hours worked).
+- **Absence test (8)** is its own pass (`absenceTest`), not part of the baseline run. It tests only people who are the
+  sole holder of a step (at most 8, those holding most steps first) with 10 replications at the baseline's seed, the
+  person away for 2 weeks (`absence.weeks`) from week 2 (earlier on a short run). Both sides use the same random
+  streams, so the difference is the absence. *Work lost* is the share of the work completed (won and done items,
+  servicing tasks on time or late) from the start of the absence to the end of the run that the absence cost; items only
+  delayed and finished by the end don't count. *Weeks to recover* is the first week after they return when the queues
+  at their steps are within 1 item or 25% of the baseline's in the same week and stay so a week later; when never, the
+  weeks observed plus one. A queue that never recovers is Operational risk whatever the run's length. A *client deadline missed* is at least one more servicing task
+  a replication that isn't finished within twice its SLA. Work lost is rated by the rule's cut-offs (`5 / 5 / 20%`, no
+  Good band) and weeks to recover by `absence.recoveryCutoffs` (the last two inputs of the stored rule, `1 / 1 / 4`; rule-wide: a per-person or per-step override changes the work-lost cut-offs only; a value on a cut-off falls in the better band), the
+  worse of the two wins, and a missed client deadline is Operational risk. No escalators. One finding per step only that
+  person can do, keyed `spof:step:<step id>` as before, all rated from the same absence run. Without an absence result
+  (`DetectOptions.absence`), the rule raises nothing: the app runs it in a worker after the baseline.
+- **Work lost at a step (12)** counts the visits a step sends straight to a lost end (`StepResult.lostHere`, a win that
+  is lost further on isn't counted) ÷ the visits that left it, against the step's benchmark (a step with none isn't
+  rated). A bad month raises it, like the other rules.
+- **Too slow overall (13)** rates the mean cycle time of completed items against the process's target (set on the
+  pipeline's start step; none, not rated). A bad month is the 90th percentile of the replications' mean cycle time.
+- **Goals met (11)** reads success measures through `SuccessMeasureSource` (A54 implements it; `NO_SUCCESS_MEASURES` is
+  the stub, so nothing is rated yet). Measures map to a `SuccessKpi` (wins, wins a week, win rate, new MRR, billed,
+  cycle time, labour cost, WIP at the end); one that doesn't is returned by `checkSuccessMeasures` as "Not checked by
+  simulation" and not rated. Rated on the share of replications that meet the target: 80%+ Great, 50–80% Good, 20–50%
+  Bad, under 20% Operational risk (lower is worse, a value on a cut-off in the better band).
+- **Step fields:** *expected wait* (rule 5) and *lost per day of waiting* (the wait insight carries
+  `lost_per_day_waiting` and `lost_to_waiting_share`, linear in the days waited and capped at 1, for A43's cost),
+  *work lost benchmark* (rule 12) and the start step's *time target* (rule 13). None changes the simulation.
+- The new findings reuse the stored issue types: spare time is `capacity`, absence `spof`, work lost and goals
+  `failure`, too slow `delay`. No migration to the `issues.type` check.
+
+### Confirmed by Austin (1 Oct)
+
+Choices made while building A41 and A42 that the spec didn't settle, all confirmed:
 
 - (a) A value exactly on a cut-off goes to the higher band, so exactly 70% busy is Good and exactly 95%, 20% or 25% is
   Operational risk. Rule 5 is the exception ("within 1x", "up to 1.5x"): a value on a cut-off stays in the lower band.
@@ -30,6 +66,10 @@ Choices made while building A41 that the spec didn't settle:
 - (d) The bottleneck bump only raises findings already worse than Great, so a Great that is merely on the bottleneck stays
   Great.
 - (e) Stored `info` issues now read as "Great", and the log-an-issue form offers Great for an open issue.
+- (f) The absence test measures work lost from the start of the absence to the end of the run, not over the whole run
+  or only the weeks away, and uses 10 replications and at most 8 people to stay in the performance targets (see
+  `docs/engine-versioning.md`). The "client deadline missed" test is one more missed servicing task a replication.
+- (g) A step's lost-per-day-of-waiting is linear (5% a day for 3 days is 15%), not compounding.
 
 ## The rating scale
 

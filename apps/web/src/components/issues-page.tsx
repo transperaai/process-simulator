@@ -5,12 +5,13 @@
 // page).
 import { useMemo, useState } from "react";
 import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow } from "@transpera-flow/db";
-import { detectBrokenScenarios, type AnalysisSettings } from "@transpera-flow/engine";
+import { detectBrokenScenarios, resolveMoney, type AnalysisSettings } from "@transpera-flow/engine";
 import { perceptionGapDetections } from "@/lib/issues/perception";
 import { rerate, visibleFindings } from "@/lib/rules/edit";
 import { useRatingSettings } from "@/lib/rules/use-rating-settings";
 import { useIssues } from "@/lib/issues/use-issues";
 import { retiredSteps } from "@/lib/scenarios/broken";
+import { useAbsenceTest } from "@/lib/sim/absence";
 import { useSimulation } from "@/lib/sim/use-simulation";
 import { Card } from "@/components/ui/card";
 import { IssuesRegister, type Named } from "./issues-register";
@@ -49,9 +50,11 @@ export function IssuesPage({
   const gaps = useMemo(() => perceptionGapDetections(bundle.steps), [bundle.steps]);
   // A change to the rules re-rates this run; it is not simulated again.
   const rules = useRatingSettings(mode === "demo", analysisRules);
+  // The absence test (rule 8) runs in its own worker once the baseline is done; until it returns, that rule raises nothing.
+  const absence = useAbsenceTest(model && result && sim.status === "done" ? model : null, result?.seed ?? 1, resolveMoney(rules).absenceWeeks);
   const detected = useMemo(
-    () => (model && !result ? null : visibleFindings(rules, model && result ? [...broken, ...rerate(model, result, rules, bundle.process.id), ...gaps] : gaps)),
-    [model, result, broken, gaps, rules, bundle.process.id],
+    () => (model && !result ? null : visibleFindings(rules, model && result ? [...broken, ...rerate(model, result, rules, bundle.process.id, absence), ...gaps] : gaps)),
+    [model, result, broken, gaps, rules, bundle.process.id, absence],
   );
   const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);
 

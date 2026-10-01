@@ -28,6 +28,8 @@ export interface AiRunInput {
   /** The version's first principles; null when it has none. */
   firstPrinciples: FirstPrinciples | null;
   absence?: AbsenceTest | null;
+  /** What one more person in each busy role would bring, for costing the too-busy findings (omitted: those costs read "n/a"). */
+  shadowPrices?: Record<string, number>;
   /** Quotes from linked sources, if the workspace reads sources. */
   quotes?: { step: string; quote: string }[] | null;
 }
@@ -57,11 +59,21 @@ export function quotesFromBundle(bundle: ProcessBundle, limit = 12): { step: str
 }
 
 /** The rule findings the pages list for this run (the same call the process page makes, without the broken-scenario and perception-gap findings). */
-export function ruleFindings(run: Pick<AiRunInput, "bundle" | "model" | "result" | "rules" | "firstPrinciples" | "absence">): DetectedIssue[] {
+export function ruleFindings(run: Pick<AiRunInput, "bundle" | "model" | "result" | "rules" | "firstPrinciples" | "absence" | "shadowPrices">): DetectedIssue[] {
   const rules = run.rules ?? {};
   const successMeasures = run.firstPrinciples ? successMeasureSource(run.firstPrinciples, run.bundle.process.id) : undefined;
-  return visibleFindings(rules, rerate(run.model, run.result, rules, run.bundle.process.id, run.absence, { currency: run.bundle.workspace.settings.currency, ...(successMeasures ? { successMeasures } : {}) }));
+  return visibleFindings(
+    rules,
+    rerate(run.model, run.result, rules, run.bundle.process.id, run.absence, {
+      currency: run.bundle.workspace.settings.currency,
+      ...(run.shadowPrices ? { shadowPrices: run.shadowPrices } : {}),
+      ...(successMeasures ? { successMeasures } : {}),
+    }),
+  );
 }
+
+/** The roles whose too-busy findings need a shadow price (an extra run) to be costed, as `useDetectedIssues` works out. */
+export const costedRoleIds = (issues: readonly DetectedIssue[]): string[] => [...new Set(issues.filter((i) => i.key.startsWith("capacity:") && i.roleId).map((i) => i.roleId!))].sort();
 
 /** What AI is given for this run: the facts it may use, and what its text is checked against. Null when there are no first principles to review. */
 export function aiInputForRun(run: AiRunInput): { input: AiInput; findings: DetectedIssue[] } | null {

@@ -33,7 +33,7 @@ const firstSentence = (s: string) => s.slice(0, s.search(/[.!?](\s|$)/) + 1);
 const AUDIT = northbeamStepIds.audit;
 
 /** What a good analysis looks like: every figure copied from the facts. */
-const good = () => ({
+const good = (): { read: string[]; insights: { title: string; type: string; rating: string; stepId: string | null; evidence: string; why: string }[]; review: { step: string; level: string; text: string }[] } => ({
   read: [`Over the run Northbeam wins ${results.wins}. ${firstSentence(first.evidence)}`],
   insights: [
     { title: "The audit step holds up the whole line", type: "bottleneck", rating: "bad", stepId: AUDIT, evidence: firstSentence(first.evidence), why: "Everything after it waits, and the first principles say proposals should go out quickly." },

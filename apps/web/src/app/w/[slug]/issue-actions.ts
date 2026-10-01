@@ -3,7 +3,7 @@
 import { ISSUE_STATUSES, loadIssue, loadIssueEvents, resolveIssue, saveIssue, storedStatus, uiStatus, type IssueEventRow, type IssueLinkRef, type IssueStatus, type Json, type StoredIssueStatus } from "@transpera-flow/db";
 import type { SaveOutcome } from "@/lib/fields/field-controller";
 import { saveField, saveFields } from "@/lib/fields/server";
-import { ALREADY_TRACKED, type RemoveIssueResult, type SaveIssueResult } from "@/lib/issues/store";
+import { ALREADY_RESOLVED, ALREADY_TRACKED, type RemoveIssueResult, type SaveIssueResult } from "@/lib/issues/store";
 import { cleanFieldValue, isId, isIssueField, parseIssueInput, parsePromoteInput, parseResolveInput, parseSaveInput, type Scalar } from "@/lib/issues/validate";
 import { createClient } from "@/lib/supabase/server";
 
@@ -34,6 +34,8 @@ const failure = (error: { code?: string; message?: string }) =>
       ? ({ status: "error", message: ALREADY_TRACKED } as const)
       : error.code === "23514"
         ? ({ status: "error", message: "Some of those values aren't allowed." } as const)
+        : error.code === "22023" && /already resolved/.test(error.message ?? "")
+          ? ({ status: "error", message: ALREADY_RESOLVED } as const)
         : error.code === "23503"
           ? ({ status: "error", message: "Something the issue links to no longer exists." } as const)
           : ({ status: "error", message: "Couldn't save. Try again." } as const);

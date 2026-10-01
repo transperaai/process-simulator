@@ -370,7 +370,6 @@ export function IssuePage(props: IssuePageProps) {
         open={resolving}
         issueNumber={issue.number}
         issueTitle={issue.title}
-        solutions={solutions}
         busy={state.busy}
         error={state.error}
         onClose={() => setResolving(false)}

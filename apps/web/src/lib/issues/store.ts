@@ -22,6 +22,7 @@ export type SaveIssueResult = { status: "ok"; issue: IssueRow } | { status: "err
 export type RemoveIssueResult = { status: "ok" } | { status: "error"; message: string };
 
 export const ALREADY_TRACKED = "That issue is already tracked.";
+export const ALREADY_RESOLVED = "That issue is already resolved. Reopen it first if you want to resolve it again.";
 
 export interface IssueStore {
   /** Log an issue by hand. */
@@ -225,6 +226,7 @@ export class MemoryIssueStore implements IssueStore {
     if (!parsed.ok) return { status: "error", message: parsed.error };
     const row = this.rows.get(id);
     if (!row || row.status === "dismissed") return { status: "error", message: "That issue no longer exists." };
+    if (row.status === "resolved" || row.status === "wont_fix") return { status: "error", message: ALREADY_RESOLVED };
     const at = this.now();
     const next: IssueRow = {
       ...row,

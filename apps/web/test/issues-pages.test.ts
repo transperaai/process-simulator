@@ -159,13 +159,27 @@ describe("resolving and reopening", () => {
     expect((await s.events(first!.id)).map((e) => e.kind)).toEqual(["created", "resolved"]);
   });
 
-  it("stays off the map even if the analysis still detects it, once someone said how it was resolved", async () => {
+  it("stays off the map and out of the open list even if the analysis detects it again, however it was resolved (D38)", async () => {
     const s = store();
     const tracked = northbeamIssues()[1]!;
     const detection = { key: tracked.detected_key!, type: tracked.type, rating: "bad", cost: noCost(""), title: tracked.title, evidence: "", metrics: {}, stepId: tracked.step_id, roleId: null, personId: null, fix: null } as unknown as DetectedIssue;
     expect(mapFeed(registerEntries(all(s), [detection])).badges[tracked.step_id!]?.count).toBe(2);
     await ok(s.resolve(tracked.id, "process_change", null));
-    expect(mapFeed(registerEntries(all(s), [detection])).badges[tracked.step_id!]?.count).toBe(1);
+    const entries = registerEntries(all(s), [detection]);
+    expect(mapFeed(entries).badges[tracked.step_id!]?.count).toBe(1);
+    // Resolved by an older route that recorded no way (a resolved row with no how) is no different.
+    const legacy = all(s).map((i) => (i.id === tracked.id ? { ...i, resolved_how: null } : i));
+    expect(mapFeed(registerEntries(legacy, [detection])).badges[tracked.step_id!]?.count).toBe(1);
+    expect(listIssues(legacy, { show: "open", rating: "" }).map((i) => i.id)).not.toContain(tracked.id);
+  });
+
+  it("refuses to resolve an issue that is already resolved, and keeps what was recorded", async () => {
+    const s = store();
+    const t = northbeamIssues()[0]!;
+    await ok(s.resolve(t.id, "solution", "First"));
+    const again = await s.resolve(t.id, "not_a_problem", "Second");
+    expect(again).toEqual({ status: "error", message: expect.stringMatching(/already resolved/) });
+    expect(all(s).find((i) => i.id === t.id)).toMatchObject({ resolved_how: "solution", resolution_note: "First" });
   });
 
   it("reopen sets it back to Open, clears how and the note, logs it, and the resolved entry stays", async () => {
@@ -245,7 +259,8 @@ describe("(i) help on every control", () => {
     for (const [name, set] of Object.entries(sets)) {
       for (const key of Object.keys(set)) {
         const src = files[name as keyof typeof files];
-        const used = src.includes(`<Help {...${name}.${key}}`) || src.includes(`<HelpLabel {...${name}.${key}}`) || src.includes(`help: ${name}.${key}`) || src.includes(`${name}.${key}.label`);
+        // The help object is spread into an (i); naming it for its label alone doesn't give the control one.
+        const used = src.includes(`<Help {...${name}.${key}}`) || src.includes(`<HelpLabel {...${name}.${key}}`) || src.includes(`help: ${name}.${key}`);
         expect(used, `${name}.${key} has no (i)`).toBe(true);
       }
     }

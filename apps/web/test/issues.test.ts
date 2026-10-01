@@ -111,10 +111,10 @@ describe("the register merges tracked issues with this run's detections", () => 
     expect(again.map((e) => entryView(e).id)).toEqual(entries.map((e) => entryView(e).id));
   });
 
-  it("brings a resolved issue back when its detection fires again, but a dismissed one is never an issue", () => {
+  it("keeps a resolved issue closed when its detection fires again (D38), and a dismissed one is never an issue", () => {
     const [, promoted] = northbeamIssues();
     const done = registerEntries([{ ...promoted!, status: "resolved" }], detected);
-    expect(entryView(done.find((e) => e.kind === "tracked")!).open).toBe(true);
+    expect(entryView(done.find((e) => e.kind === "tracked")!).open).toBe(false);
     const dismissed = registerEntries([{ ...promoted!, status: "dismissed" }], detected);
     // A dismissed insight is not an issue: it is not listed, and its detection isn't listed again either.
     expect(dismissed.some((e) => e.kind === "tracked")).toBe(false);

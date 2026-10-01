@@ -2,12 +2,10 @@ import Link from "next/link";
 import { northbeamIssues, northbeamScenarios, processesOf } from "@transpera-flow/db";
 import { IssuesPage } from "@/components/issues-page";
 import { Page } from "@/components/shell/page";
-import { parseListState } from "@/lib/issues/pages";
 import { demoBundle, demoSources } from "@/lib/sources/demo";
 
 /** The Issues list on the demo: Northbeam's sample issues, in memory. */
-export default async function DemoIssuesPage(props: PageProps<"/demo/issues">) {
-  const initial = parseListState(await props.searchParams);
+export default function DemoIssuesPage() {
   const bundle = demoBundle();
   return (
     <Page
@@ -29,7 +27,6 @@ export default async function DemoIssuesPage(props: PageProps<"/demo/issues">) {
         scenarios={northbeamScenarios()}
         processes={processesOf(bundle).map((p) => ({ id: p.id, name: p.name }))}
         sources={demoSources()}
-        initial={initial}
         base="/demo"
         mode="demo"
       />

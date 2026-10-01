@@ -4,7 +4,7 @@
 // and rating filters (both kept in the URL), sorted by rating and then cost. A cost comes from the latest run of the live
 // process, simulated here in a worker as on the process page; until it is back the issues are sorted without it.
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow, type SourceRow } from "@transpera-flow/db";
 import { RATING_LABELS, detectBrokenScenarios, ratingOfStored, resolveMoney, type AnalysisSettings, type FirstPrinciples, type IssueCost, type Rating } from "@transpera-flow/engine";
@@ -15,7 +15,7 @@ import { RatingPill } from "@/components/overview/rating-pill";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { emptyDraft, issueFormOptions, toSaveInput } from "@/lib/issues/draft";
-import { DEFAULT_LIST_STATE, NO_SOLUTIONS, RATINGS_WORST_FIRST, SHOW_FILTERS, SHOW_LABELS, isOpenIssue, issueHref, listIssues, listQuery, ratingCounts, shortDate, showCounts, solutionSummaries, statusLabel, type ListState } from "@/lib/issues/pages";
+import { NO_SOLUTIONS, RATINGS_WORST_FIRST, SHOW_FILTERS, SHOW_LABELS, isOpenIssue, issueHref, listIssues, listQuery, parseListState, ratingCounts, shortDate, showCounts, solutionSummaries, statusLabel, type ListState } from "@/lib/issues/pages";
 import { perceptionGapDetections } from "@/lib/issues/perception";
 import { useIssues } from "@/lib/issues/use-issues";
 import { useDetectedIssues } from "@/lib/issues/use-detected";
@@ -42,7 +42,6 @@ export function IssuesPage({
   mode,
   analysisRules,
   firstPrinciples,
-  initial = DEFAULT_LIST_STATE,
   base,
   liveRevisions,
 }: {
@@ -57,8 +56,6 @@ export function IssuesPage({
   mode: "live" | "demo" | "readonly";
   /** The workspace's analysis rules (Settings → Analysis rules); omitted means the defaults. On the demo, the ones edited in this tab. */
   analysisRules?: AnalysisSettings;
-  /** The filters the URL asked for. */
-  initial?: ListState;
   /** Where the workspace's pages live: `/w/<slug>` or `/demo`. An issue's page is `<base>/issues/<number>`. */
   base: string;
   liveRevisions?: Record<string, string>;
@@ -66,17 +63,18 @@ export function IssuesPage({
   const router = useRouter();
   const pathname = usePathname();
   const state = useIssues(bundle.workspace.id, issues, mode, liveRevisions ?? { [bundle.process.id]: bundle.revision.id });
-  const [filters, setFilters] = useState<ListState>(initial);
+  // The filters are the URL's: Back and Forward change them, and so does a link.
+  const params = useSearchParams();
+  const filters = useMemo<ListState>(() => parseListState(Object.fromEntries(params.entries())), [params]);
   const [newOpen, setNewOpen] = useState(false);
 
   const setFilter = (next: ListState) => {
-    setFilters(next);
     // The filters are in the URL, so a link or a reload shows the same list.
-    router.replace(`${pathname}${listQuery(next)}`, { scroll: false });
+    router.push(`${pathname}${listQuery(next)}`, { scroll: false });
   };
 
   const costs = useIssueCosts(bundle, scenarios, mode, analysisRules, firstPrinciples);
-  const costOf = (i: IssueRow): IssueCost | null => (i.detected_key ? (costs.get(i.detected_key) ?? null) : null);
+  const costOf = (i: IssueRow): IssueCost | null => (i.detected_key ? (costs?.get(i.detected_key) ?? null) : null);
 
   const options = useMemo(
     () =>
@@ -140,7 +138,7 @@ export function IssuesPage({
           No issues here. Acknowledge an insight, or add one by hand.
         </Card>
       ) : (
-        <Card className="overflow-x-auto p-0">
+        <Card className="relative overflow-x-auto p-0">
           <table className="w-full min-w-[44rem] text-left text-sm" data-issues-table>
             <thead>
               <tr className="border-b border-border text-2xs font-semibold tracking-wider text-muted-foreground uppercase">
@@ -273,7 +271,8 @@ function RatingChips({ ratings, value, onChange }: { ratings: ReturnType<typeof 
 
 /**
  * What the latest run of the live process says each issue costs a month, by detection key: the list sorts by rating and
- * then by this. The run is simulated in a worker; until it is back the map is empty and nothing is costed.
+ * then by this. The run is simulated in a worker. Null until every cost is in (the "too busy" ones need an extra run),
+ * so the list is sorted by cost once, not reshuffled as each arrives.
  */
 function useIssueCosts(
   bundle: ProcessBundle,
@@ -281,7 +280,7 @@ function useIssueCosts(
   mode: "live" | "demo" | "readonly",
   analysisRules: AnalysisSettings | undefined,
   firstPrinciples: FirstPrinciples | null | undefined,
-): Map<string, IssueCost> {
+): Map<string, IssueCost> | null {
   const model = useMemo(() => {
     try {
       return toEngineModel(bundle);
@@ -299,7 +298,11 @@ function useIssueCosts(
   const successMeasures = useSuccessMeasures(bundle.process.id, mode === "demo", firstPrinciples);
   const found = useDetectedIssues(model, result, rules, bundle.process.id, bundle.workspace.settings.currency, absence, successMeasures);
   return useMemo(() => {
+    // A model that can't be simulated has no costs to wait for.
+    if (model && !found) return null;
     const detected = visibleFindings(rules, found ? [...broken, ...found, ...gaps] : gaps);
+    // Still waiting for a role's shadow price: the cost of a "too busy" issue is missing until it is in.
+    if (detected.some((d) => d.key.startsWith("capacity:") && d.roleId && d.cost.perMonth == null && d.cost.hoursPerMonth == null)) return null;
     return new Map(detected.map((d) => [d.key, d.cost as IssueCost]));
-  }, [found, broken, gaps, rules]);
+  }, [model, found, broken, gaps, rules]);
 }

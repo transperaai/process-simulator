@@ -113,7 +113,7 @@ export const RESOLVE_HELP = {
   },
   solution: {
     label: "A solution fixed it",
-    description: "Pick this when one of the solutions you tested is the fix, and you have built it into the live process.",
+    description: "Pick this when one of the solutions you tested is the fix, and you have built it into the live process. The history says a solution fixed it; it does not record which one yet.",
     example: "“Lead scoring” passed its test, and you built it into the live process.",
   },
   process: {
@@ -125,11 +125,6 @@ export const RESOLVE_HELP = {
     label: "No longer a problem",
     description: "Pick this when something else changed, or it was a one-off, so there is nothing left to fix.",
     example: "The client who caused the delays left, and the wait is back to normal.",
-  },
-  pick: {
-    label: "Solution",
-    description: "Which of the solutions you tested fixed it. It is listed in the history.",
-    example: "Lead scoring, which passed against this issue's target.",
   },
   note: {
     label: "Note",

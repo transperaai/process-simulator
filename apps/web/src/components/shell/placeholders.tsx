@@ -1,6 +1,5 @@
 import { LayoutDashboard, Layers, Lightbulb } from "lucide-react";
 import { ComingSoon } from "./coming-soon";
-import { Page } from "./page";
 
 // The sidebar pages that don't exist yet (issue #98). One component each, shared by a workspace and the demo.
 

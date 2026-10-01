@@ -69,8 +69,23 @@ export async function loadServicingContext(
     db.from("service_servicing").select(SERVICE_SERVICING_COLUMNS).eq("workspace_id", workspaceId).order("id"),
   ]);
   const live = processes.filter((p) => p.id !== process.id && p.live_revision_id);
-  const pipeline = process.kind === "servicing" ? live.find((p) => p.kind !== "servicing") : undefined;
-  const wanted = live.filter((p) => p.kind === "servicing" || p === pipeline);
+  // A child process runs inside its parent, so it is never the pipeline a servicing process runs beside.
+  const pipeline = process.kind === "servicing" ? live.find((p) => p.kind !== "servicing" && !p.parent_process_id) : undefined;
+  const base = live.filter((p) => p.kind === "servicing" || p === pipeline);
+  // The child processes (any depth) of this process and of those, which the steps holding them are simulated through.
+  const reached = new Set([process.id, ...base.map((p) => p.id)]);
+  const children: typeof live = [];
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const p of live) {
+      if (p.parent_process_id && reached.has(p.parent_process_id) && !reached.has(p.id)) {
+        reached.add(p.id);
+        children.push(p);
+        grew = true;
+      }
+    }
+  }
+  const wanted = [...base, ...children.filter((c) => !base.includes(c))];
   const revisionIds = wanted.map((p) => p.live_revision_id!);
   const [revisions, steps, edges] = revisionIds.length
     ? await Promise.all([
@@ -221,7 +236,7 @@ export async function loadProcessBundle(
   };
 }
 
-const PROCESS_COLUMNS = "id, workspace_id, name, kind, entity_name, description, live_revision_id" as const;
+const PROCESS_COLUMNS = "id, workspace_id, name, kind, entity_name, description, live_revision_id, parent_process_id" as const;
 
 /** A workspace's processes, oldest first. */
 export async function listProcesses(db: Db, workspaceId: string): Promise<(ProcessRow & { draft_revision_id: string | null })[]> {
@@ -251,6 +266,8 @@ export interface ProcessListing {
   live: boolean;
   /** Has an open draft. */
   draft: boolean;
+  /** The process it sits inside, or null (or absent) for a top-level process: the company map's steps (issue #102). */
+  parentId?: string | null;
 }
 
 /**
@@ -291,9 +308,10 @@ export async function loadProcessBySlug(
   if (error) throw error;
   if (!workspace) return null;
   const all = await listProcesses(db, workspace.id);
-  const process = processId ? all.find((p) => p.id === processId) : all.find((p) => p.live_revision_id);
+  // The default is a top-level process: a child process opens from the step that holds it, or from the list.
+  const process = processId ? all.find((p) => p.id === processId) : (all.find((p) => p.live_revision_id && !p.parent_process_id) ?? all.find((p) => p.live_revision_id));
   if (!process) return null;
-  const processes = all.map((p) => ({ id: p.id, name: p.name, kind: p.kind, live: Boolean(p.live_revision_id), draft: Boolean(p.draft_revision_id) }));
+  const processes = all.map((p) => ({ id: p.id, name: p.name, kind: p.kind, live: Boolean(p.live_revision_id), draft: Boolean(p.draft_revision_id), parentId: p.parent_process_id }));
   const { draft_revision_id: draftId, ...row } = process;
   if (!process.live_revision_id) {
     // Never published: only its draft exists.

@@ -195,3 +195,42 @@ describe("the migration's backfill from named clients", () => {
     expect((await db.client.query("select client_count from client_groups where service_id = $1", [a])).rows[0].client_count).toBe(99);
   });
 });
+
+describe("the production data alignment block", () => {
+  const migration = readFileSync(new URL("../supabase/migrations/20261111000000_client_groups.sql", import.meta.url), "utf8");
+  const block = migration
+    .slice(migration.indexOf("-- Production data alignment"))
+    .split("\n")
+    .filter((l) => l.startsWith("-- begin;") || /^-- (update|set|from|\s|\(|\)|join|where|and|is|commit)/.test(l) || l.startsWith("--   "))
+    .map((l) => l.replace(/^-- ?/, ""))
+    .join("\n");
+  const groups = async () =>
+    (
+      await db.client.query(
+        "select s.name, g.client_count, g.fee::float8 as fee, g.churn_monthly::float8 as churn, g.stay_months::float8 as stay, g.starting_health::float8 as health from client_groups g join services s on s.id = g.service_id where s.workspace_id = $1 order by s.name",
+        [ws],
+      )
+    ).rows;
+  const tidy = [
+    { name: "PPC management", client_count: 12, fee: 4229, churn: 0.04, stay: 12, health: 52 },
+    { name: "SEO retainer", client_count: 17, fee: 3456, churn: 0.03, stay: 18, health: 83 },
+  ];
+
+  it("sets production Northbeam's groups to the seed's values, and changes nothing the second time", async () => {
+    expect(block).toContain("update public.client_groups g");
+    await db.client.query("update client_groups set fee = 1, starting_health = 71 where workspace_id = $1", [ws]);
+    await db.client.query(block);
+    expect(await groups()).toEqual(tidy);
+    const stamp = (await db.client.query("select max(updated_at) as t from client_groups where workspace_id = $1", [ws])).rows[0].t;
+    await db.client.query(block);
+    expect((await db.client.query("select max(updated_at) as t from client_groups where workspace_id = $1", [ws])).rows[0].t).toEqual(stamp);
+    expect(await groups()).toEqual(tidy);
+  });
+
+  it("leaves other workspaces' groups alone", async () => {
+    const svc = (await db.client.query("insert into services (workspace_id, name, price) values ($1, 'SEO retainer', 1) returning id", [otherWs])).rows[0].id;
+    await db.client.query("insert into client_groups (workspace_id, service_id, client_count, fee) values ($1, $2, 3, 10)", [otherWs, svc]);
+    await db.client.query(block);
+    expect((await db.client.query("select client_count, fee::float8 as fee from client_groups where service_id = $1", [svc])).rows[0]).toEqual({ client_count: 3, fee: 10 });
+  });
+});

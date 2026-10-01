@@ -254,3 +254,28 @@ begin
     'conflicts', conflicts);
 end;
 $$;
+
+-- Production data alignment (run once, by hand, after the migration):
+--
+-- Austin asked for the Northbeam example to be tidied under client groups, and
+-- production Northbeam is that example. This sets its two groups to the seed's
+-- values (NORTHBEAM_CLIENT_GROUPS in packages/engine/src/fixtures/northbeam-roster.ts):
+-- SEO retainer 17 clients at 3,456 a month, 3% normal churn, 18 months, health 83;
+-- PPC management 12 clients at 4,229, 4%, 12 months, health 52 (the group that is
+-- at risk). Scoped by workspace slug 'northbeam' and service name; touches only
+-- client_groups rows that already exist (the backfill makes them); idempotent:
+-- rows already at these values are left alone, so a second run changes nothing.
+--
+-- begin;
+-- update public.client_groups g
+-- set client_count = v.client_count, fee = v.fee, churn_monthly = v.churn_monthly, stay_months = v.stay_months, starting_health = v.starting_health
+-- from (values
+--   ('SEO retainer', 17, 3456, 0.03, 18, 83),
+--   ('PPC management', 12, 4229, 0.04, 12, 52)
+-- ) as v (service_name, client_count, fee, churn_monthly, stay_months, starting_health)
+-- join public.services s on s.name = v.service_name
+-- join public.workspaces w on w.id = s.workspace_id and w.slug = 'northbeam'
+-- where g.service_id = s.id
+--   and (g.client_count, g.fee, g.churn_monthly, g.stay_months, g.starting_health)
+--     is distinct from (v.client_count, v.fee, v.churn_monthly, v.stay_months, v.starting_health);
+-- commit;

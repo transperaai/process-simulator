@@ -12,7 +12,15 @@ _Avoid_: Workflow, flow, pipeline (a pipeline is one kind of process)
 
 **Sub-process**:
 A step that holds its own steps, as a group or a child process. Example: "Audit and proposal" opens into five smaller steps. The engine always simulates the small steps, so the numbers are the same open or closed.
-_Avoid_: Nested process, child map
+_Avoid_: Child map. Say "child process" for a process that sits inside another, and "group" for a box of steps inside one process; "nested" describes how deep either goes, not a thing of its own.
+
+**Group**:
+A box of steps inside one process, opened or closed on the map. It has no hours, role or rework of its own; a closed group shows a roll-up of its steps (how many, total hands-on time, open issues, worst rating). Example: "Qualify" holding "Receive enquiry" and "Check fit".
+_Avoid_: Folder, container, sub-process (that is a group or a child process)
+
+**Child process**:
+A process that sits inside a step of another process, with its own page, versions and first principles. The company map is the root: its steps are the top-level processes. A process has one parent. Example: "Onboarding" inside the step "Onboarding" of "Lead to live".
+_Avoid_: Sub-map, nested process
 
 **Block**:
 A saved group of steps that can be inserted into a process. Example: a "Send proposal and chase" block used in three processes. A block marked AI was made by the AI.
@@ -57,6 +65,7 @@ _Avoid_: Proposal (a visitor's proposal arrives as a suggestion)
 **Client group**:
 The clients of one service, counted but not named: how many, the fee, normal churn, typical stay and starting health. Example: "34 SEO clients paying $2,000 a month". Named client records are hidden but kept.
 _Avoid_: Client roster, client list, account
+Not to be confused with a **group**, which is a box of steps inside a process (above): a group holds steps, a client group counts clients.
 
 **Churn driver**:
 A reason clients leave, with a weight and an on/off switch. Example: "Late work", responsible for 40% of the clients lost this year.

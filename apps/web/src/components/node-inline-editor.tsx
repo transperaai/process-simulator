@@ -27,7 +27,7 @@ const inputClass =
 export function NodeInlineEditor({ step, focus }: { step: StepRow; focus: InlineField }) {
   const ctx = useContext(InlineEditContext);
   const ref = useRef<HTMLDivElement>(null);
-  const working = step.kind !== "start" && step.kind !== "end";
+  const working = step.kind !== "start" && step.kind !== "end" && step.kind !== "group" && !step.child_process_id;
 
   useEffect(() => {
     const root = ref.current;

@@ -43,7 +43,7 @@ const optionalProvenance: Check = (v) =>
 /** Step fields the editor saves, and what each accepts. `*_params.key` are keys of the jsonb params. */
 export const STEP_FIELDS = {
   name: text(200),
-  kind: oneOf("task", "wait", "decision", "subprocess", "start", "end"),
+  kind: oneOf("task", "wait", "decision", "subprocess", "group", "start", "end"),
   outcome: (v) => v === null || oneOf("won", "lost", "done")(v),
   role_id: optionalId,
   person_id: optionalId,
@@ -61,6 +61,10 @@ export const STEP_FIELDS = {
   "wait_params.max": optionalAtLeast0,
   rework_rate: share,
   rework_to_step_id: optionalId,
+  // Nesting (issue #102): the group a step sits in, a group's first step, the child process a step holds.
+  parent_step_id: optionalId,
+  entry_step_id: optionalId,
+  child_process_id: optionalId,
   tool: optionalText(200),
   notes: optionalText(4000),
   sla_hours: optionalAtLeast0,

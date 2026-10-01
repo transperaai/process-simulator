@@ -1086,6 +1086,7 @@ export type Database = {
           kind: string
           live_revision_id: string | null
           name: string
+          parent_process_id: string | null
           source: string
           updated_at: string
           workspace_id: string
@@ -1100,6 +1101,7 @@ export type Database = {
           kind?: string
           live_revision_id?: string | null
           name: string
+          parent_process_id?: string | null
           source?: string
           updated_at?: string
           workspace_id: string
@@ -1114,11 +1116,19 @@ export type Database = {
           kind?: string
           live_revision_id?: string | null
           name?: string
+          parent_process_id?: string | null
           source?: string
           updated_at?: string
           workspace_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "processes_parent_fk"
+            columns: ["parent_process_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id", "workspace_id"]
+          },
           {
             foreignKeyName: "processes_draft_revision_id_fkey"
             columns: ["draft_revision_id"]
@@ -1682,16 +1692,19 @@ export type Database = {
       steps: {
         Row: {
           assumption: boolean
+          child_process_id: string | null
           conflict: boolean
           cost_override: number | null
           created_at: string
           created_by: string | null
           current_wip: number | null
+          entry_step_id: string | null
           id: string
           kind: string
           name: string
           notes: string | null
           outcome: string | null
+          parent_step_id: string | null
           person_id: string | null
           process_id: string
           provenance: Json
@@ -1715,16 +1728,19 @@ export type Database = {
         }
         Insert: {
           assumption?: boolean
+          child_process_id?: string | null
           conflict?: boolean
           cost_override?: number | null
           created_at?: string
           created_by?: string | null
           current_wip?: number | null
+          entry_step_id?: string | null
           id?: string
           kind?: string
           name: string
           notes?: string | null
           outcome?: string | null
+          parent_step_id?: string | null
           person_id?: string | null
           process_id: string
           provenance?: Json
@@ -1748,16 +1764,19 @@ export type Database = {
         }
         Update: {
           assumption?: boolean
+          child_process_id?: string | null
           conflict?: boolean
           cost_override?: number | null
           created_at?: string
           created_by?: string | null
           current_wip?: number | null
+          entry_step_id?: string | null
           id?: string
           kind?: string
           name?: string
           notes?: string | null
           outcome?: string | null
+          parent_step_id?: string | null
           person_id?: string | null
           process_id?: string
           provenance?: Json
@@ -1780,6 +1799,27 @@ export type Database = {
           y?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "steps_child_process_fk"
+            columns: ["child_process_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "steps_entry_step_fk"
+            columns: ["revision_id", "entry_step_id"]
+            isOneToOne: false
+            referencedRelation: "steps"
+            referencedColumns: ["revision_id", "id"]
+          },
+          {
+            foreignKeyName: "steps_parent_step_fk"
+            columns: ["revision_id", "parent_step_id"]
+            isOneToOne: false
+            referencedRelation: "steps"
+            referencedColumns: ["revision_id", "id"]
+          },
           {
             foreignKeyName: "steps_person_id_workspace_id_fkey"
             columns: ["person_id", "workspace_id"]

@@ -454,6 +454,8 @@ export function ProcessView({
           diff={showingLive || !hasDraft ? null : diff}
           onRestore={editable ? restore : null}
           savedLabel={hasDraft ? "Saved to draft" : "Saved"}
+          openIssues={issuesUi.openIssues}
+          rating={issuesUi.rating}
         />
         <MapSidePanel
           open={panelOpen}

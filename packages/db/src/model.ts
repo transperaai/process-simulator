@@ -1,8 +1,10 @@
 import {
   factorsFromPercents,
+  flattenModel,
   isFlatDemand,
   isNeutralMarket,
   marketFromSchedule,
+  NestingError,
   type EngineMarket,
   type EngineDemand,
   type Distribution as EngineDistribution,
@@ -10,6 +12,7 @@ import {
   type EngineClientGroup,
   type EngineEnd,
   type EngineHealthRules,
+  type EngineGroup,
   type EngineModel,
   type EnginePerson,
   type EngineService,
@@ -48,18 +51,34 @@ export class ModelError extends Error {}
 interface Graph {
   /** The step (or end) the start step leads to. */
   entry: string;
-  /** Working steps, by id. */
+  /** Working (leaf) steps, by id, including those of child processes held by its steps. */
   working: EngineStep[];
-  /** End steps, by id. */
+  /** End steps, by id. A child process's `done` ends are not here: they are exits of its group. */
   endSteps: StepRow[];
+  /** Its groups, and the child processes its steps hold as groups, by the holder step's id. */
+  groups: Record<string, EngineGroup>;
 }
+
+/** The processes a graph's holder steps may hold (live revisions), and those on the way down, to refuse loops. */
+interface GraphContext {
+  parts: ReadonlyMap<string, ProcessPart>;
+  stack: readonly string[];
+}
+
+const NO_CONTEXT: GraphContext = { parts: new Map(), stack: [] };
 
 /**
  * A process revision's graph: its single start step's edge is the entry, and
  * every edge leads to a working step or an end step of the same revision.
  * `tags`: whether edges keep their condition tags (only when there are services).
+ *
+ * Nesting (issue #102): a `group` step becomes an engine group (its steps point
+ * at it); a `subprocess` step holding a child process becomes a group of the
+ * child's own graph, resolved the same way (its `done` ends are the group's
+ * exits; its `won` and `lost` ends stay ends). Neither is a working step, so
+ * the engine simulates leaf steps only; `flattenModel` does the rest.
  */
-function resolveGraph(steps: StepRow[], edges: EdgeRow[], tags: boolean): Graph {
+function resolveGraph(steps: StepRow[], edges: EdgeRow[], tags: boolean, ctx: GraphContext = NO_CONTEXT): Graph {
   const byId = new Map(steps.map((step) => [step.id, step]));
   const starts = steps.filter((step) => step.kind === "start");
   if (starts.length !== 1) throw new ModelError(`Process needs exactly one start step, found ${starts.length}`);
@@ -77,15 +96,57 @@ function resolveGraph(steps: StepRow[], edges: EdgeRow[], tags: boolean): Graph 
 
   // Tags route only entities whose service carries them, so without services they are left out.
   const tagOf = (tag: string | null) => (tags && tag?.trim() ? { tag: tag.trim() } : {});
+  const edgesOut = (step: StepRow) =>
+    edges
+      .filter((e) => e.from_step_id === step.id)
+      .sort(byIdAsc)
+      .map((e) => ({ to: e.to_step_id, p: Number(e.probability), ...tagOf(e.condition_tag) }));
+  const parentOf = (step: StepRow) => {
+    if (step.parent_step_id === null || step.parent_step_id === undefined) return {};
+    if (byId.get(step.parent_step_id)?.kind !== "group") throw new ModelError(`Step '${step.name}' sits inside a group that isn't there`);
+    return { parent: step.parent_step_id };
+  };
+
+  const groups: Record<string, EngineGroup> = {};
+  const heldSteps: EngineStep[] = [];
+  const heldEnds: StepRow[] = [];
+  for (const step of steps.filter(isHolderStep).sort(byIdAsc)) {
+    const next = edgesOut(step);
+    for (const n of next) checkTarget(step.name, n.to);
+    if (step.kind === "group") {
+      const entryStep = step.entry_step_id ? byId.get(step.entry_step_id) : undefined;
+      if (!steps.some((s) => s.parent_step_id === step.id)) throw new ModelError(`Group '${step.name}' has no steps`);
+      if (!entryStep) throw new ModelError(`Group '${step.name}' needs a first step`);
+      groups[step.id] = { name: step.name, ...parentOf(step), entry: entryStep.id, next };
+      continue;
+    }
+    const child = ctx.parts.get(step.child_process_id!);
+    if (!child) throw new ModelError(`'${step.name}' holds a child process that has no published version yet, or that no longer sits inside this process (it was moved); publish it, or remove or replace this step`);
+    if (child.process.parent_process_id !== ctx.stack[ctx.stack.length - 1]) {
+      throw new ModelError(`'${step.name}' holds '${child.process.name}', which no longer sits inside this process (it was moved); remove or replace that step`);
+    }
+    if (ctx.stack.includes(child.process.id)) throw new ModelError(`Child process '${child.process.name}' is inside itself`);
+    let sub: Graph;
+    try {
+      sub = resolveGraph(child.steps, child.edges, tags, { parts: ctx.parts, stack: [...ctx.stack, child.process.id] });
+    } catch (err) {
+      throw err instanceof ModelError ? new ModelError(`Child process '${child.process.name}': ${err.message}`) : err;
+    }
+    const done = sub.endSteps.filter((e) => e.outcome === "done").map((e) => e.id);
+    groups[step.id] = { name: step.name, ...parentOf(step), entry: sub.entry, next, ...(done.length ? { exits: done } : {}) };
+    // The child's steps and groups sit inside the holder's group.
+    for (const [id, g] of Object.entries(sub.groups)) groups[id] = g.parent === undefined ? { ...g, parent: step.id } : g;
+    heldSteps.push(...sub.working.map((w) => (w.parent === undefined ? { ...w, parent: step.id } : w)));
+    heldEnds.push(...sub.endSteps.filter((e) => e.outcome !== "done"));
+  }
+
   const working = steps
-    .filter((step) => step.kind !== "start" && step.kind !== "end")
+    .filter((step) => step.kind !== "start" && step.kind !== "end" && !isHolderStep(step))
     .sort(byIdAsc)
     .map((step): EngineStep => {
-      const next = edges
-        .filter((e) => e.from_step_id === step.id)
-        .sort(byIdAsc)
-        .map((e) => ({ to: e.to_step_id, p: Number(e.probability), ...tagOf(e.condition_tag) }));
-      if (!next.length) throw new ModelError(`Step '${step.name}' has no outgoing edge`);
+      const next = edgesOut(step);
+      // Inside a group, no way out means leaving the group.
+      if (!next.length && !step.parent_step_id) throw new ModelError(`Step '${step.name}' has no outgoing edge`);
       for (const n of next) checkTarget(step.name, n.to);
       return {
         id: step.id,
@@ -101,10 +162,18 @@ function resolveGraph(steps: StepRow[], edges: EdgeRow[], tags: boolean): Graph 
         ...(step.current_wip != null ? { currentWip: Number(step.current_wip) } : {}),
         // An SLA only counts breaches (detected issues); it doesn't change the run.
         ...(step.sla_hours != null ? { sla: Number(step.sla_hours) } : {}),
+        ...parentOf(step),
         next,
       };
     });
-  return { entry, working, endSteps: steps.filter((step) => step.kind === "end").sort(byIdAsc) };
+  return {
+    entry,
+    // Sorted by id with the child processes' steps among them, so the order doesn't depend on how the model is nested.
+    working: heldSteps.length ? [...working, ...heldSteps].sort(byIdAsc) : working,
+    // The process's own ends first, so its win and loss are the model's sinks.
+    endSteps: [...steps.filter((step) => step.kind === "end").sort(byIdAsc), ...heldEnds],
+    groups,
+  };
 }
 
 /**
@@ -116,7 +185,8 @@ function pipelineOf(bundle: ProcessBundle): ProcessPart {
   if (bundle.process.kind !== "servicing") {
     return { process: bundle.process, revision: bundle.revision, steps: bundle.steps, edges: bundle.edges };
   }
-  const pipeline = (bundle.otherProcesses ?? []).find((p) => p.process.kind !== "servicing");
+  // A child process runs inside the process that holds it, never as the business pipeline.
+  const pipeline = (bundle.otherProcesses ?? []).find((p) => p.process.kind !== "servicing" && !p.process.parent_process_id);
   if (!pipeline) throw new ModelError("A servicing process runs beside a pipeline; publish a pipeline process to simulate it");
   return pipeline;
 }
@@ -151,7 +221,11 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
   const s = workspace.settings;
   const pipeline = pipelineOf(bundle);
   const baseServices = engineServices(bundle, pipeline.process.id);
-  const { entry, working: pipelineSteps, endSteps } = resolveGraph(pipeline.steps, pipeline.edges, Boolean(baseServices));
+  const held = heldProcesses(bundle);
+  const { entry, working: pipelineSteps, endSteps, groups: pipelineGroups } = resolveGraph(pipeline.steps, pipeline.edges, Boolean(baseServices), {
+    parts: held,
+    stack: [pipeline.process.id],
+  });
 
   const sinkFor = (outcome: "won" | "lost") => endSteps.find((step) => step.outcome === outcome)?.id ?? `__${outcome}__`;
   const sinks = { won: sinkFor("won"), lost: sinkFor("lost") };
@@ -161,9 +235,10 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
     if (step.id !== sinks.won && step.id !== sinks.lost) ends[step.id] = { outcome: step.outcome ?? "done" };
   }
 
-  const servicing = engineServicing(bundle, baseServices);
+  const servicing = engineServicing(bundle, baseServices, held);
   const services = servicing.services;
   const working = [...pipelineSteps, ...servicing.steps];
+  const groups = { ...pipelineGroups, ...servicing.groups };
   Object.assign(ends, servicing.ends);
 
   const engineRoles: EngineModel["roles"] = {};
@@ -184,7 +259,7 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
   const clients = clientGroups ? undefined : engineClients(bundle, services, startDate);
   const market = engineMarket(bundle);
 
-  return {
+  const model: EngineModel = {
     horizonWeeks: s.horizon_weeks,
     hoursPerWeek: s.hours_per_week,
     leadsPerWeek: arrivalsPerWeek(bundle, services),
@@ -206,11 +281,31 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
     ...(clientGroups ? { clientGroups } : {}),
     ...(Object.keys(servicing.processes).length ? { servicingProcesses: servicing.processes } : {}),
     ...optional("health", healthRules(s)),
+    ...(Object.keys(groups).length ? { groups } : {}),
     entry,
     sinks,
     ...(Object.keys(ends).length ? { ends } : {}),
     steps: working,
   };
+  // Groups and child processes are a view: the engine's model is the leaf steps (a no-op without any).
+  try {
+    return flattenModel(model);
+  } catch (err) {
+    // A group with nowhere to go, or a loop of groups, is a problem with the process, as any other bad graph is.
+    if (err instanceof NestingError) throw new ModelError(err.message);
+    throw err;
+  }
+}
+
+/**
+ * The child processes steps of this run's processes may hold, by id, at their
+ * live revisions: every one the bundle carries (`loadServicingContext` loads
+ * the descendants of the processes a run needs).
+ */
+function heldProcesses(bundle: ProcessBundle): Map<string, ProcessPart> {
+  const parts = new Map<string, ProcessPart>();
+  for (const p of bundle.otherProcesses ?? []) if (p.process.parent_process_id) parts.set(p.process.id, p);
+  return parts;
 }
 
 /**
@@ -280,13 +375,15 @@ function fallbackLoad(stored: unknown, roleIds: Set<string>): Record<string, num
 function engineServicing(
   bundle: ProcessBundle,
   services: Record<string, EngineService> | undefined,
+  held: ReadonlyMap<string, ProcessPart>,
 ): {
   services: Record<string, EngineService> | undefined;
   steps: EngineStep[];
   ends: Record<string, EngineEnd>;
   processes: Record<string, EngineServicingProcess>;
+  groups: Record<string, EngineGroup>;
 } {
-  const none = { services, steps: [], ends: {}, processes: {} };
+  const none = { services, steps: [], ends: {}, processes: {}, groups: {} };
   if (!services) return none;
   const parts = new Map<string, ProcessPart>();
   for (const p of bundle.otherProcesses ?? []) if (p.process.kind === "servicing") parts.set(p.process.id, p);
@@ -305,16 +402,18 @@ function engineServicing(
   const steps: EngineStep[] = [];
   const ends: Record<string, EngineEnd> = {};
   const processes: Record<string, EngineServicingProcess> = {};
+  const groups: Record<string, EngineGroup> = {};
   for (const pid of used) {
     const part = parts.get(pid)!;
     let graph: Graph;
     try {
-      graph = resolveGraph(part.steps, part.edges, true);
+      graph = resolveGraph(part.steps, part.edges, true, { parts: held, stack: [pid] });
     } catch (err) {
       if (err instanceof ModelError && pid !== bundle.process.id) throw new ModelError(`Servicing process '${part.process.name}': ${err.message}`);
       throw err;
     }
     steps.push(...graph.working);
+    Object.assign(groups, graph.groups);
     for (const end of graph.endSteps) ends[end.id] = { outcome: "done" };
     processes[pid] = { name: part.process.name, entry: graph.entry, steps: graph.working.map((st) => st.id) };
   }
@@ -323,7 +422,7 @@ function engineServicing(
     const mine = links.filter((x) => x.l.service_id === sid);
     withLinks[sid] = mine.length ? { ...sv, servicing: mine.map((x) => ({ process: x.l.process_id, recurrence: x.recurrence!, sla: x.sla })) } : sv;
   }
-  return { services: withLinks, steps, ends, processes };
+  return { services: withLinks, steps, ends, processes, groups };
 }
 
 /** Health rules from the workspace settings; undefined when none is set, so the engine's estimated defaults apply. */
@@ -561,6 +660,12 @@ function byIdAsc(a: { id: string }, b: { id: string }): number {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
+/** A step that holds others: a group, or a step holding a child process. It does no work itself (issue #102). */
+export function isHolderStep(step: Pick<StepRow, "kind" | "child_process_id">): boolean {
+  return step.kind === "group" || (step.child_process_id !== null && step.child_process_id !== undefined);
+}
+
+/** A step that does work, so the engine simulates it: not a start, an end or a holder of other steps. */
 export function isWorkingStep(step: StepRow): boolean {
-  return step.kind !== "start" && step.kind !== "end";
+  return step.kind !== "start" && step.kind !== "end" && !isHolderStep(step);
 }

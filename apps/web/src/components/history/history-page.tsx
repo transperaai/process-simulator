@@ -1,0 +1,46 @@
+import type { ReactNode } from "react";
+import { HistoryView } from "@/components/history/history-view";
+import type { VersionActions, VersionLinks } from "@/components/history/version-dialogs";
+import { ShellHeader } from "@/components/shell/shell-header";
+import type { VersionModel } from "@/lib/history/use-version-runs";
+import type { VersionMeta } from "@/lib/history/versions";
+
+/**
+ * The frame of a process's History screen (issue #105), shared by the workspace and the demo: the process
+ * switcher with its breadcrumbs, the page's name, then the charts and table.
+ */
+export function HistoryPage({
+  nav,
+  processName,
+  versions,
+  models,
+  loadModel,
+  viewBase,
+  actions,
+  links,
+  note,
+}: {
+  /** The process switcher with its breadcrumbs. */
+  nav: ReactNode;
+  processName: string;
+  versions: VersionMeta[];
+  models: Record<string, VersionModel>;
+  loadModel?: (revisionId: string) => Promise<VersionModel>;
+  viewBase: string;
+  actions?: VersionActions;
+  links: VersionLinks;
+  note?: string;
+}) {
+  return (
+    <div>
+      <ShellHeader title="Process history" />
+      <div className="mx-auto flex w-full min-w-0 max-w-6xl flex-col gap-5 px-4 pt-6 pb-12 sm:px-6">
+        <header className="flex flex-col gap-1">
+          {nav}
+          <h2 className="font-heading text-2xl leading-tight font-semibold tracking-tight">Process history</h2>
+        </header>
+        <HistoryView processName={processName} versions={versions} models={models} loadModel={loadModel} viewBase={viewBase} actions={actions} links={links} note={note} />
+      </div>
+    </div>
+  );
+}

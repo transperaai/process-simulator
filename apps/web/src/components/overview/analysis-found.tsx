@@ -12,7 +12,7 @@ import { ratingCounts } from "@/lib/overview/findings";
 /** The findings can't be Great (a Great result isn't a problem), so the counts are of the other three. */
 const COUNTED: readonly Rating[] = ["risk", "bad", "good"];
 
-export function RatingCounts({ findings }: { findings: readonly DetectedIssue[] | null }) {
+export function RatingCounts({ findings }: { findings: readonly Pick<DetectedIssue, "rating">[] | null }) {
   if (!findings) return <Skeleton className="h-5 w-72 max-w-full" />;
   const counts = ratingCounts(findings).filter((c) => COUNTED.includes(c.rating));
   return (

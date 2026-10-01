@@ -10,7 +10,7 @@ import { perceptionGapDetections } from "@/lib/issues/perception";
 import { visibleFindings } from "@/lib/rules/edit";
 import { useDetectedIssues } from "@/lib/issues/use-detected";
 import { useRatingSettings } from "@/lib/rules/use-rating-settings";
-import { confirmedBadges, confirmedRatings, entryView, promoteInput, registerEntries, stepRatingOf } from "@/lib/issues/register";
+import { entryView, mapFeed, promoteInput, registerEntries, stepRatingOf } from "@/lib/issues/register";
 import { useIssues } from "@/lib/issues/use-issues";
 import { useAbsenceTest } from "@/lib/sim/absence";
 import { IssuesRegister } from "./issues-register";
@@ -127,8 +127,7 @@ export function useProcessIssues({
     [entries, bundle.process.id],
   );
   // Nothing reaches the map until it is acknowledged (D24): badges count, and colours come from, confirmed issues only.
-  const badges = useMemo(() => confirmedBadges(here), [here]);
-  const ratings = useMemo(() => confirmedRatings(here), [here]);
+  const { badges, ratings } = useMemo(() => mapFeed(here), [here]);
   // Per step: the titles of what was found and not acknowledged yet (insights), and of the confirmed issues.
   const extras = useMemo(() => {
     const out = new Map<string, StepExtras>();

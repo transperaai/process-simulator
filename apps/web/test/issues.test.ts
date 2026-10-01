@@ -313,8 +313,19 @@ describe("issue Server Actions", () => {
   it("promote with source 'promoted', status open and the detection's key", async () => {
     db.result = { data: { id: "i2" }, error: null };
     const d = northbeamDetections()[1]!;
-    await promoteIssue(WS, { ...promoteInput(d, NORTHBEAM_PROCESS_ID, scenarios), status: "done" });
+    await promoteIssue(WS, promoteInput(d, NORTHBEAM_PROCESS_ID, scenarios));
     expect(db.calls[1]!.args[0]).toMatchObject({ workspace_id: WS, source: "promoted", status: "open", detected_key: d.key });
+  });
+
+  it("promote can store a dismissed insight in one write, and refuses any other status", async () => {
+    db.result = { data: { id: "i2" }, error: null };
+    const d = northbeamDetections()[1]!;
+    await promoteIssue(WS, { ...promoteInput(d, NORTHBEAM_PROCESS_ID, scenarios), status: "dismissed" });
+    expect(db.calls.find((c) => c.op === "insert")!.args[0]).toMatchObject({ source: "promoted", status: "dismissed", detected_key: d.key });
+    db.calls.length = 0;
+    const r = await promoteIssue(WS, { ...promoteInput(d, NORTHBEAM_PROCESS_ID, scenarios), status: "done" });
+    expect(r.status).toBe("error");
+    expect(db.calls.some((c) => c.op === "insert")).toBe(false);
   });
 
   it("say so when a detection is already tracked (unique key)", async () => {

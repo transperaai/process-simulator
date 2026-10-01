@@ -21,7 +21,7 @@ export interface Insight {
   cost: IssueCost;
   /** The number behind it, as a short phrase ("Strategist is busy 92% of the time"). */
   number: string;
-  /** What we found: the full evidence. */
+  /** What we found beyond the number: the rest of the evidence, empty when the number says it all. */
   found: string;
   /** Why it matters, in plain words. */
   why: string;
@@ -31,8 +31,6 @@ export interface Insight {
   detection: Detection;
   /** The tracked issue it became, if acknowledged. */
   issue: IssueRow | null;
-  /** That issue's number, as people refer to it ("Issue #3"). */
-  issueNumber: number | null;
 }
 
 /** Why a finding of each type matters, in plain words (the detection itself carries the numbers). */
@@ -50,6 +48,11 @@ export const WHY_IT_MATTERS: Record<IssueType, string> = {
   broken_scenario: "A saved scenario no longer matches the process, so its result can't be trusted until it is fixed.",
 };
 
+/** The evidence after its first sentence: what "What we found" adds to the number. Empty when there is nothing more. */
+export function rest(evidence: string): string {
+  return evidence.slice(headline(evidence).length).trim();
+}
+
 /** The first sentence of a finding's evidence, which carries its main number. */
 export function headline(evidence: string): string {
   const end = evidence.search(/[.!?](\s|$)/);
@@ -62,18 +65,11 @@ export function sourceOf(d: Detection): InsightSource {
   return { kind: "rule", ruleId: id, name: id ? RULES_UI[id].name : TYPE_LABELS[d.type] };
 }
 
-/** Every tracked issue's number: its place in the order they were logged, so the first one is #1. */
-export function issueNumbers(issues: readonly IssueRow[]): Map<string, number> {
-  const ordered = issues.map((i, n) => ({ i, n })).sort((a, b) => a.i.created_at.localeCompare(b.i.created_at) || a.n - b.n);
-  return new Map(ordered.map(({ i }, k) => [i.id, k + 1]));
-}
-
 /**
  * The insights in a list of register entries: each detection of the latest run, as it stands (not acknowledged yet)
  * or as the issue it became. A dismissed one is left out. Worst rating first, then dearest, then as found.
  */
-export function buildInsights(entries: readonly RegisterEntry[], allIssues: readonly IssueRow[]): Insight[] {
-  const numbers = issueNumbers(allIssues);
+export function buildInsights(entries: readonly RegisterEntry[]): Insight[] {
   const out: Insight[] = [];
   for (const e of entries) {
     const d = e.detection as Detection | null;
@@ -87,13 +83,12 @@ export function buildInsights(entries: readonly RegisterEntry[], allIssues: read
       type: d.type,
       cost: d.cost,
       number: headline(d.evidence),
-      found: d.evidence,
+      found: rest(d.evidence),
       why: WHY_IT_MATTERS[d.type],
       stepIds: d.stepId ? [d.stepId] : [],
       source: sourceOf(d),
       detection: d,
       issue,
-      issueNumber: issue ? (numbers.get(issue.id) ?? null) : null,
     });
   }
   const none = noCost("");

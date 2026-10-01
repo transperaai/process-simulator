@@ -66,12 +66,12 @@ export const INSIGHT_HELP = {
   acknowledge: {
     label: "Acknowledge as issue",
     description: "Make this a tracked issue the team owns, with a rating, an owner and a status. Only then does it show on the map as a badge.",
-    example: "Acknowledge “Strategist is too busy”: it becomes Issue #4 with a red badge on that step.",
+    example: "Acknowledge “Strategist is too busy”: it becomes an issue with a red badge on that step.",
   },
   issueLink: {
     label: "Issue number",
     description: "This insight has been acknowledged and is now a tracked issue. The link opens it in the register.",
-    example: "Issue #4 is “Strategist is too busy”, owned by Maya.",
+    example: "“Strategist is too busy” is now an issue, owned by Maya.",
   },
 } as const;
 
@@ -93,6 +93,7 @@ export interface InsightsProps {
   registerHref?: string;
   /** Whether the viewer may acknowledge or dismiss. */
   canAct: boolean;
+  /** Resolve to something falsy when the save failed, so the pop-up stays open. */
   onAcknowledge: (insight: Insight) => Promise<unknown>;
   onDismiss: (insight: Insight) => Promise<unknown>;
   /** The sources linked to an insight. Linking one comes with A47, so there are none to show yet. */
@@ -191,10 +192,10 @@ export function Insights(props: InsightsProps) {
                   {i.issue &&
                     (link ? (
                       <Link href={link} className="rounded-md border px-2 py-0.5 font-medium text-foreground hover:bg-muted" data-issue-link>
-                        Issue #{i.issueNumber} →
+                        Issue →
                       </Link>
                     ) : (
-                      <span className="font-medium text-foreground">Issue #{i.issueNumber}</span>
+                      <span className="font-medium text-foreground">Issue</span>
                     ))}
                   <ChevronRight aria-hidden className="size-4 transition-transform group-hover:translate-x-0.5" />
                 </span>
@@ -234,7 +235,7 @@ function Chip({ on, disabled, onClick, count, dot, children }: { on: boolean; di
 function SourceTag({ insight }: { insight: Insight }) {
   const ai = insight.source.kind === "ai";
   return (
-    <span className="hidden items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 sm:inline-flex" data-source={ai ? "ai" : "rule"}>
+    <span className="inline-flex max-w-28 items-center gap-1 truncate rounded-md bg-muted px-1.5 py-0.5 sm:max-w-none" data-source={ai ? "ai" : "rule"}>
       {ai && <Sparkles aria-hidden className="size-3 text-accent" />}
       {insight.source.name}
     </span>
@@ -253,14 +254,14 @@ function InsightDialog({
   onDismiss,
   linkedSources,
   busy,
+  error,
 }: InsightsProps & { insight: Insight | null; onClose: () => void }) {
   const [working, setWorking] = useState(false);
   const act = async (run: (i: Insight) => Promise<unknown>) => {
     if (!insight) return;
     setWorking(true);
     try {
-      await run(insight);
-      onClose();
+      if (await run(insight)) onClose();
     } finally {
       setWorking(false);
     }
@@ -270,7 +271,15 @@ function InsightDialog({
   const ai = insight?.source.kind === "ai";
   return (
     <Dialog open={!!insight} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-xl" data-insight-dialog>
+      <DialogContent
+        className="max-h-[90svh] overflow-y-auto sm:max-w-xl"
+        data-insight-dialog
+        onOpenAutoFocus={(e) => {
+          // Not the first (i): its tooltip would cover the number. Focus the pop-up itself.
+          e.preventDefault();
+          (e.currentTarget as HTMLElement).focus();
+        }}
+      >
         {insight && (
           <>
             <DialogHeader>
@@ -290,8 +299,12 @@ function InsightDialog({
                 <Help {...INSIGHT_HELP.number} />
               </dt>
               <dd className="font-mono">{insight.number}</dd>
-              <dt className="text-xs font-medium text-muted-foreground uppercase">What we found</dt>
-              <dd>{insight.found}</dd>
+              {insight.found && (
+                <>
+                  <dt className="text-xs font-medium text-muted-foreground uppercase">What we found</dt>
+                  <dd>{insight.found}</dd>
+                </>
+              )}
               <dt className="text-xs font-medium text-muted-foreground uppercase">Why it matters</dt>
               <dd>{insight.why}</dd>
               <dt className="text-xs font-medium text-muted-foreground uppercase">Touches</dt>
@@ -355,15 +368,20 @@ function InsightDialog({
               )}
             </div>
 
+            {error && (
+              <p role="alert" className="rounded-lg border border-crit bg-crit-soft p-2 text-xs">
+                {error}
+              </p>
+            )}
             <DialogFooter className="items-center">
               {insight.issue ? (
                 <span className="flex items-center">
                   {link ? (
                     <Button asChild>
-                      <Link href={link}>Issue #{insight.issueNumber} →</Link>
+                      <Link href={link}>Issue →</Link>
                     </Button>
                   ) : (
-                    <span className="text-sm font-medium">Issue #{insight.issueNumber}</span>
+                    <span className="text-sm font-medium">Issue</span>
                   )}
                   <Help {...INSIGHT_HELP.issueLink} />
                 </span>
@@ -419,7 +437,7 @@ export function InsightsSection({
   const insights = useMemo(() => {
     if (detected === null) return null;
     const entries = registerEntries(state.issues, detected);
-    return buildInsights(stepIds ? entriesInProcess(entries, processId, stepIds) : entries, state.issues);
+    return buildInsights(stepIds ? entriesInProcess(entries, processId, stepIds) : entries);
   }, [detected, state.issues, stepIds, processId]);
   const ctx: InsightContext = { processId, processOfStep, scenarios };
   return (

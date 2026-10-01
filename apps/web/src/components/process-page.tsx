@@ -152,7 +152,7 @@ export function ProcessPage({
     initialIssues: issues,
     initialScenarios: scenarios,
     registerHref,
-    rulesHref: `${settingsHref ?? "/demo/settings"}/rules`,
+    rulesHref: settingsHref ? `${settingsHref}/rules` : mode === "demo" ? "/demo/settings/rules" : undefined,
     analysisRules,
     // A badge on the map takes you down to the issues on that step.
     onShowIssues: () => document.getElementById("issues")?.scrollIntoView({ behavior: "smooth", block: "start" }),

@@ -24,7 +24,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { horizonLabel, horizonWeeks, isHorizonMonths, monthsForWeeks } from "@/lib/horizon";
 import { perceptionGapDetections } from "@/lib/issues/perception";
-import { confirmedBadges, confirmedRatings, registerEntries, stepRatingOf } from "@/lib/issues/register";
+import { mapFeed, registerEntries, stepRatingOf } from "@/lib/issues/register";
 import { litIds } from "@/lib/map/highlight";
 import { companyMap } from "@/lib/overview/company-map";
 import { sortFindings } from "@/lib/overview/findings";
@@ -39,6 +39,7 @@ import { AiReadPlaceholder, RatingCounts } from "./analysis-found";
 import { LegendItem, MrrChart, RoleBusyChart } from "./charts";
 import { HeadlineCards } from "./headline-cards";
 import { InsightsSection } from "@/components/insights";
+import { buildInsights } from "@/lib/insights/insights";
 import { useIssues } from "@/lib/issues/use-issues";
 
 export interface OverviewProps {
@@ -136,8 +137,11 @@ export function Overview({ workspaceName, live, parts, issues, mode, analysisRul
   // Acknowledging an insight tracks it here, so it badges the map straight away.
   const state = useIssues(live.workspace.id, issues, mode);
   const entries = useMemo(() => registerEntries(state.issues, findings ?? []), [state.issues, findings]);
-  const openIssues = useMemo(() => Object.fromEntries(Object.entries(confirmedBadges(entries)).map(([id, b]) => [id, b.count])), [entries]);
-  const rating = useMemo(() => stepRatingOf(confirmedRatings(entries)), [entries]);
+  // What the header counts and the list shows: the same insights (a dismissed one is in neither).
+  const insightList = useMemo(() => (findings ? buildInsights(entries) : null), [findings, entries]);
+  const feed = useMemo(() => mapFeed(entries), [entries]);
+  const openIssues = useMemo(() => Object.fromEntries(Object.entries(feed.badges).map(([id, b]) => [id, b.count])), [feed]);
+  const rating = useMemo(() => stepRatingOf(feed.ratings), [feed]);
 
   // The company map: open groups in place; opening one moves its neighbours.
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
@@ -243,7 +247,7 @@ export function Overview({ workspaceName, live, parts, issues, mode, analysisRul
 
         <Section
           title="What the analysis found"
-          description={<RatingCounts findings={findings} />}
+          description={<RatingCounts findings={insightList} />}
           action={
             <Link href={issuesHref} className={buttonVariants({ variant: "ghost", size: "sm" })}>
               See all insights

@@ -62,7 +62,7 @@ export async function promoteIssue(workspaceId: unknown, input: unknown): Promis
   const parsed = parsePromoteInput(input);
   if (!parsed.ok) return { status: "error", message: parsed.error };
   const { evidence_metrics, ...rest } = parsed.value;
-  return insert(workspaceId, { ...rest, evidence_metrics: evidence_metrics as Json, source: "promoted", status: "open" });
+  return insert(workspaceId, { ...rest, evidence_metrics: evidence_metrics as Json, source: "promoted", status: rest.status ?? "open" });
 }
 
 /** Save one field of an issue if its stored value is still `base`. */

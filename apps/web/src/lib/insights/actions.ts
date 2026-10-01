@@ -22,10 +22,8 @@ export function acknowledgeInsight(state: Pick<IssuesState, "promote">, insight:
   return state.promote(promoteInput(insight.detection, processFor(insight, ctx), ctx.scenarios));
 }
 
-/** Dismiss an insight: it is tracked as dismissed, so it stays off the list and the map and doesn't come back next run. */
-export async function dismissInsight(state: Pick<IssuesState, "promote" | "saver">, insight: Insight, ctx: InsightContext): Promise<boolean> {
-  const row = await acknowledgeInsight(state, insight, ctx);
-  if (!row) return false;
-  const outcome = await state.saver(row.id, "status")("open", "dismissed");
-  return outcome.status === "saved";
+/** Dismiss an insight: it is tracked as dismissed in a single write, so it stays off the list and the map and doesn't come back next run. */
+export async function dismissInsight(state: Pick<IssuesState, "promote">, insight: Insight, ctx: InsightContext): Promise<boolean> {
+  // One write, already dismissed: a failed save leaves nothing behind, and nothing is ever open (so never on the map).
+  return (await state.promote({ ...promoteInput(insight.detection, processFor(insight, ctx), ctx.scenarios), status: "dismissed" })) !== null;
 }

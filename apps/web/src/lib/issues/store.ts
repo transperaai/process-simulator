@@ -59,7 +59,7 @@ export class MemoryIssueStore implements IssueStore {
     const parsed = parsePromoteInput(input);
     if (!parsed.ok) return { status: "error", message: parsed.error };
     if ([...this.rows.values()].some((r) => r.detected_key === parsed.value.detected_key)) return { status: "error", message: ALREADY_TRACKED };
-    return { status: "ok", issue: this.insert({ ...parsed.value, status: "open", source: "promoted" }) };
+    return { status: "ok", issue: this.insert({ ...parsed.value, status: parsed.value.status ?? "open", source: "promoted" }) };
   }
 
   async saveField(id: string, field: IssueField, base: Scalar, value: Scalar): Promise<SaveOutcome<Scalar>> {

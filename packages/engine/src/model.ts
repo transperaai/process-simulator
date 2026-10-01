@@ -2,6 +2,8 @@
 // far with named people, services, end-step outcomes, seasonal demand, a client
 // roster, overtime, and client servicing with health and churn (docs/PRD.md §6).
 
+import type { EngineMarket } from "./market";
+
 /** Times are in working hours. */
 export interface EngineRole {
   name: string;
@@ -264,6 +266,12 @@ export interface EngineModel {
    * growth: a constant rate, simulated exactly as before this field existed.
    */
   demand?: EngineDemand;
+  /**
+   * Market conditions month by month from the start of the run (D29; see
+   * market.ts). Omitted, or Stable in every month: the model runs exactly as
+   * before this field existed.
+   */
+  market?: EngineMarket;
   activeClients: number;
   churnMonthly: number;
   /**

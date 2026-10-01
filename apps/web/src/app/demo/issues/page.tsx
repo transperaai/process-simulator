@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { northbeamIssues, northbeamScenarios, processesOf } from "@transpera-flow/db";
 import { IssuesPage } from "@/components/issues-page";
 import { Page } from "@/components/shell/page";
@@ -10,7 +11,15 @@ export default function DemoIssuesPage() {
     <Page
       title="Issues"
       eyebrow="Improve"
-      description={`Audit findings and what the simulation detects on ${bundle.process.name}. Demo mode: changes stay in this tab and are gone when you reload.`}
+      description={
+        <>
+          Audit findings and what the simulation detects on {bundle.process.name}. Ratings follow the{" "}
+          <Link href="/demo/settings/rules" className="underline">
+            analysis rules
+          </Link>
+          . Demo mode: changes stay in this tab and are gone when you reload.
+        </>
+      }
     >
       <IssuesPage
         bundle={bundle}

@@ -18,7 +18,9 @@ const number: Check = (v) => typeof v === "number" && Number.isFinite(v);
 const atLeast0: Check = (v) => number(v) && (v as number) >= 0;
 const optionalAtLeast0: Check = (v) => v === null || atLeast0(v);
 const optionalShare: Check = (v) => v === null || share(v);
-const optionalPositive: Check = (v) => v === null || (number(v) && (v as number) > 0);
+// Bounds match the database's checks (migration 20261110000000).
+const optionalUpTo = (max: number): Check => (v) => v === null || (atLeast0(v) && (v as number) <= max);
+const optionalPositiveUpTo = (max: number): Check => (v) => v === null || (number(v) && (v as number) > 0 && (v as number) <= max);
 const share: Check = (v) => number(v) && (v as number) >= 0 && (v as number) <= 1;
 const oneOf =
   (...values: string[]): Check =>
@@ -67,10 +69,10 @@ export const STEP_FIELDS = {
   notes: optionalText(4000),
   sla_hours: optionalAtLeast0,
   // The analysis rules' per-step settings (docs/analysis-rules.md rules 5, 12, 13).
-  expected_wait_hours: optionalAtLeast0,
+  expected_wait_hours: optionalUpTo(10_000),
   lost_per_day_waiting: optionalShare,
   dropoff_benchmark: optionalShare,
-  target_cycle_hours: optionalPositive,
+  target_cycle_hours: optionalPositiveUpTo(100_000),
   current_wip: optionalCount,
   x: coordinate,
   y: coordinate,

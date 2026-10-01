@@ -3,7 +3,7 @@ import { NORTHBEAM_PROCESS_ID, northbeamStepIds } from "../src";
 import { createTestDb, type TestDb } from "./harness";
 
 // The step fields behind the new analysis rules (issue #107, migration
-// 20261106000000): expected wait, lost per day of waiting, the work-lost
+// 20261110000000): expected wait, lost per day of waiting, the work-lost
 // benchmark and, on the start step, the process's time target.
 
 let db: TestDb;

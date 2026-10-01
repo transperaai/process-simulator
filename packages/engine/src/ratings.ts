@@ -32,7 +32,7 @@ export const compareRatingsDesc = (a: Rating, b: Rating): number => ratingRank(b
 export type Cutoffs = readonly [good: number, bad: number, risk: number];
 
 /** The rules this model rates (the numbers are those in docs/analysis-rules.md). */
-export const RATING_RULE_IDS = ["busy", "overtime", "queue", "wait", "rework", "sla", "spare", "absence", "dropoff", "cycle", "goals"] as const;
+export const RATING_RULE_IDS = ["busy", "overtime", "queue", "wait", "rework", "sla", "spare", "spof", "dropoff", "cycle", "success"] as const;
 export type RatingRuleId = (typeof RATING_RULE_IDS)[number];
 
 export interface RatingRuleMeta {
@@ -64,10 +64,10 @@ export const RATING_RULES: Record<RatingRuleId, RatingRuleMeta> = {
   rework: { number: 6, name: "Rework", upperInclusive: false, badMonth: true },
   sla: { number: 7, name: "Missed deadlines", upperInclusive: false, badMonth: true },
   spare: { number: 2, name: "Spare time", upperInclusive: true, badMonth: false, lowerIsWorse: true },
-  absence: { number: 8, name: "Only one person can do it", upperInclusive: false, badMonth: false },
+  spof: { number: 8, name: "Only one person can do it", upperInclusive: false, badMonth: false },
   dropoff: { number: 12, name: "Work lost at a step", upperInclusive: true, badMonth: true },
   cycle: { number: 13, name: "Too slow overall", upperInclusive: true, badMonth: true },
-  goals: { number: 11, name: "Goals met", upperInclusive: true, badMonth: false, lowerIsWorse: true },
+  success: { number: 11, name: "Goals met", upperInclusive: true, badMonth: false, lowerIsWorse: true },
 };
 
 /**
@@ -81,11 +81,11 @@ export const RATING_RULES: Record<RatingRuleId, RatingRuleMeta> = {
  * - rework: simulated share of visits that repeat, 5 / 10 / 20%.
  * - sla: share of visits over the step's SLA, 5 / 10 / 25%.
  * - spare: utilisation, lower is worse: an opportunity (Good) under 40%; no Bad or Operational risk band (0 / 0).
- * - absence: the share of work lost while the person is away, 5 / 5 / 20% (no Good band). The weeks to recover are
+ * - spof: the share of work lost while the person is away, 5 / 5 / 20% (no Good band). The weeks to recover are
  *   rated by `absence.recoveryCutoffs`.
  * - dropoff: share of work lost at a step ÷ the step's benchmark, 1 / 1.25 / 1.5.
  * - cycle: end-to-end time ÷ the process's target, 1 / 1.25 / 1.5.
- * - goals: the share of runs that meet a success measure, lower is worse: 80 / 50 / 20%.
+ * - success: the share of runs that meet a success measure, lower is worse: 80 / 50 / 20%.
  */
 export const DEFAULT_RATING_CUTOFFS: Record<RatingRuleId, Cutoffs> = {
   busy: [0.7, 0.85, 0.95],
@@ -95,10 +95,10 @@ export const DEFAULT_RATING_CUTOFFS: Record<RatingRuleId, Cutoffs> = {
   rework: [0.05, 0.1, 0.2],
   sla: [0.05, 0.1, 0.25],
   spare: [0.4, 0, 0],
-  absence: [0.05, 0.05, 0.2],
+  spof: [0.05, 0.05, 0.2],
   dropoff: [1, 1.25, 1.5],
   cycle: [1, 1.25, 1.5],
-  goals: [0.8, 0.5, 0.2],
+  success: [0.8, 0.5, 0.2],
 };
 
 /**

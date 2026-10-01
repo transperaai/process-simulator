@@ -88,7 +88,7 @@ export interface DetectedIssue {
 }
 
 /** The detectors, in the order their issues are listed within a rating. */
-export const DETECTORS = ["capacity", "overtime", "queue", "wait", "spof", "rework", "sla", "dropoff", "cycle", "goals", "spare", "churn"] as const;
+export const DETECTORS = ["capacity", "overtime", "queue", "wait", "spof", "rework", "sla", "dropoff", "cycle", "success", "spare", "churn"] as const;
 export type Detector = (typeof DETECTORS)[number];
 
 const LOCALE = "en-GB";
@@ -450,11 +450,14 @@ export function detectIssues(
     const soleSteps = model.steps.filter((s) => f.stepIds.includes(s.id) && (result.steps[s.id]?.arrivals ?? 0) > 0);
     for (const s of soleSteps.sort((x, y) => cmp(x.id, y.id))) {
       const subject: RatingSubject = { stepId: s.id, roleId: main, personId: named ? f.personId : null, ...stepContext(s.id) };
-      const resolved = resolveRule(config, "absence", subject);
+      const resolved = resolveRule(config, "spof", subject);
       if (!resolved.enabled) continue;
-      const lost = rateRule(config, "absence", resolved, { average: f.workLost });
-      const recovery = rateValue(config.absence.recoveryCutoffs, { average: f.recoveryWeeks }, { upperInclusive: true, badMonth: false, bottleneck: false });
-      let rating = worseRating(lost.rating, recovery.rating);
+      const lost = rateRule(config, "spof", resolved, { average: f.workLost });
+      // A queue that never got back to normal is Operational risk whatever the run's length: on a short run it is "not within the weeks we could see".
+      const recovery = f.recovered
+        ? rateValue(config.absence.recoveryCutoffs, { average: f.recoveryWeeks }, { upperInclusive: true, badMonth: false, bottleneck: false }).rating
+        : "risk";
+      let rating = worseRating(lost.rating, recovery);
       if (f.clientDeadlineMissed) rating = "risk";
       if (rating === "great") continue;
       const away = options.absence!.weeksAway;
@@ -530,13 +533,13 @@ export function detectIssues(
   for (const check of checkSuccessMeasures(options.successMeasures ?? NO_SUCCESS_MEASURES, model, result)) {
     if (check.status !== "rated") continue;
     const m = check.measure;
-    const resolved = resolveRule(config, "goals", { processId: m.processId ?? options.processId ?? null });
+    const resolved = resolveRule(config, "success", { processId: m.processId ?? options.processId ?? null });
     if (!resolved.enabled) continue;
-    const outcome = rateRule(config, "goals", resolved, { average: check.metShare });
+    const outcome = rateRule(config, "success", resolved, { average: check.metShare });
     if (outcome.rating === "great") continue;
     out.push({
-      detector: "goals",
-      key: `goals:measure:${m.id}`,
+      detector: "success",
+      key: `success:measure:${m.id}`,
       type: "failure",
       ...ratingFields(outcome),
       title: `Goal not reliably met: ${m.name}`,

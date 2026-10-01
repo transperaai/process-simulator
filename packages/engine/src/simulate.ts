@@ -25,6 +25,7 @@ import {
   servicingStepIds,
 } from "./servicing";
 import { arrivalTimes as drawArrivals } from "./demand";
+import { activeMarket, type MarketFactors } from "./market";
 import { EventQueue } from "./event-queue";
 import type {
   ClientReplication,
@@ -219,6 +220,10 @@ interface StepState {
   routes: Route[] | null;
   /** Where each of the step's edges (`s.next`) leads. */
   targets: Target[];
+  /** With a market: which of `s.next` lead to the sale (see `signingEdges`); null when conv doesn't apply here. */
+  winEdges: EdgeKind[] | null;
+  /** With a market: the sale is still ahead (a lost end can be reached from here), so "time to decide" applies to its external wait. */
+  beforeSale: boolean;
   /** Its role's hour counters; null when the step has no role the model knows. */
   acc: RoleAcc | null;
   /**
@@ -235,6 +240,8 @@ interface Route {
   total: number;
   /** Where each of `next` leads. */
   targets: Target[];
+  /** As `StepState.winEdges`, for `next`. */
+  winEdges: EdgeKind[] | null;
 }
 
 /** A service as a run uses it. */
@@ -246,6 +253,8 @@ interface ServiceState {
   /** Expected value of one client: price × tenure (retainer), price (one-off), nothing (hourly). */
   value: number;
   counts: ServiceCounts;
+  /** Wins in the measured window, each weighted by the market's price factor in its month (market.ts); equals `counts.won` with no market. */
+  wonUnits: number;
 }
 
 /**
@@ -278,6 +287,7 @@ function resolveServices(model: EngineModel): ServiceState[] {
     entry: s.entry ?? model.entry,
     value: s.pricingModel === "retainer" ? s.price * s.tenureMonths : s.pricingModel === "one_off" ? s.price : 0,
     counts: { arrivals: 0, won: 0, lost: 0 },
+    wonUnits: 0,
   }));
 }
 
@@ -294,10 +304,100 @@ function resolveServices(model: EngineModel): ServiceState[] {
 function routeFor(edges: EngineEdge[], tags: string[]): Route {
   const sum = (next: EngineEdge[]) => next.reduce((a, n) => a + n.p, 0);
   const tagged = edges.filter((n) => n.tag !== undefined && tags.includes(n.tag));
-  if (tagged.length) return { next: tagged, total: sum(tagged), targets: [] };
+  if (tagged.length) return { next: tagged, total: sum(tagged), targets: [], winEdges: null };
   const untagged = edges.filter((n) => n.tag === undefined);
-  if (untagged.length) return { next: untagged, total: sum(untagged), targets: [] };
-  return { next: edges, total: 1, targets: [] };
+  if (untagged.length) return { next: untagged, total: sum(untagged), targets: [], winEdges: null };
+  return { next: edges, total: 1, targets: [], winEdges: null };
+}
+
+/** What an edge or step can lead to: a won end, a lost end, or both (through different paths). */
+interface Reach {
+  won: boolean;
+  lost: boolean;
+}
+
+/**
+ * For every step and end, whether a won end and a lost end can be reached
+ * from it (through any edge; an end with a hand-off continues there, unless it
+ * is itself a win or a loss). Used by the market to find where a sale is
+ * decided and which steps come before it.
+ */
+function outcomeReach(stepStates: Map<string, StepState>, ends: Map<string, EngineEnd>): Map<string, Reach> {
+  const reach = new Map<string, Reach>();
+  const of = (id: string): Reach => {
+    const end = ends.get(id);
+    if (end) {
+      if (end.outcome === "won") return { won: true, lost: false };
+      if (end.outcome === "lost") return { won: false, lost: true };
+      return end.handoff ? { ...(reach.get(end.handoff) ?? { won: false, lost: false }) } : { won: false, lost: false };
+    }
+    return reach.get(id) ?? { won: false, lost: false };
+  };
+  for (const id of stepStates.keys()) reach.set(id, { won: false, lost: false });
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const [id, st] of stepStates) {
+      const r = reach.get(id)!;
+      for (const n of st.s.next) {
+        const t = of(n.to);
+        if (t.won && !r.won) {
+          r.won = true;
+          changed = true;
+        }
+        if (t.lost && !r.lost) {
+          r.lost = true;
+          changed = true;
+        }
+      }
+    }
+  }
+  const all = new Map(reach);
+  for (const id of ends.keys()) all.set(id, of(id));
+  return all;
+}
+
+/** Where an edge leads, for the market's "enquiries that sign": only to a win, only to a loss, or still either way. */
+type EdgeKind = "win" | "lose" | "open";
+
+/**
+ * How each edge of a step leads, when this step is where a sale is decided:
+ * at least one edge goes only to a win (a won end, or steps that go on to one
+ * and can't be lost) and at least one goes only to a loss. Edges that can
+ * still end either way (a follow-up loop) are "open" and keep their
+ * probability. Elsewhere (earlier steps, or steps with no such pair: kickoff
+ * splitting between services, say) it is null, so "enquiries that sign"
+ * applies once per path.
+ */
+function signingEdges(targets: Target[], reach: Map<string, Reach>): EdgeKind[] | null {
+  const kinds = targets.map((t): EdgeKind => {
+    const r = reach.get(t.id);
+    return r?.won && !r.lost ? "win" : r?.lost && !r.won ? "lose" : "open";
+  });
+  return kinds.includes("win") && kinds.includes("lose") ? kinds : null;
+}
+
+/**
+ * Pick an edge when the market scales "enquiries that sign" by `conv`: with W
+ * the win-only edges' probability and L the loss-only edges', the wins become
+ * min(W + L, W × conv) and the losses take the rest of W + L; open edges keep
+ * theirs, so the total is unchanged. Uses the same single draw `u`.
+ */
+function pickWithSigning(next: EngineEdge[], kinds: EdgeKind[], u: number, conv: number): number {
+  let win = 0;
+  let lose = 0;
+  for (let i = 0; i < next.length; i++) {
+    if (kinds[i] === "win") win += next[i]!.p;
+    else if (kinds[i] === "lose") lose += next[i]!.p;
+  }
+  const newWin = Math.min(win + lose, win * conv);
+  const winScale = win > 0 ? newWin / win : 1;
+  const loseScale = lose > 0 ? (win + lose - newWin) / lose : 1;
+  let acc = 0;
+  for (let i = 0; i < next.length; i++) {
+    acc += next[i]!.p * (kinds[i] === "win" ? winScale : kinds[i] === "lose" ? loseScale : 1);
+    if (u < acc) return i;
+  }
+  return next.length - 1;
 }
 
 /** Repeated duration draws with the given mean (same values as `sampleDuration`). */
@@ -452,6 +552,12 @@ export function runOnce(
   const peopleModel = resolvePeople(model);
   const services = resolveServices(model);
   const hasServices = services[0]!.id !== null;
+  // Market conditions (market.ts); null when the model has none or they are all Stable, which leaves every path below as it was.
+  const market = activeMarket(model);
+  // The month the factors come from is looked up per event, so the checks and the month length are done once here.
+  const monthHours = (52 / 12) * model.hoursPerWeek;
+  const lastMonth = market ? market.months.length - 1 : 0;
+  const mkt = (t: number): MarketFactors => market!.months[t < 0 ? 0 : Math.min(Math.floor(t / monthHours), lastMonth)]!;
   for (const sv of services) {
     if (!(sv.s.mixShare >= 0)) throw new Error(`Service '${sv.s.name}' needs a mix share of 0 or more`);
   }
@@ -515,6 +621,8 @@ export function runOnce(
           ? services.map((sv) => routeFor(s.next, sv.s.pathTags))
           : null,
       targets: [],
+      winEdges: null,
+      beforeSale: false,
       acc: s.role !== null && Object.hasOwn(roleAcc, s.role) ? roleAcc[s.role]! : null,
       assigned: servicingSteps.has(s.id) ? { people: [], lists: [], waiting: 0 } : null,
     });
@@ -534,6 +642,14 @@ export function runOnce(
   for (const st of stepList) {
     st.targets = st.s.next.map((n) => targetFor(n.to));
     if (st.routes) for (const r of st.routes) r.targets = r.next.map((n) => targetFor(n.to));
+  }
+  if (market) {
+    const reach = outcomeReach(stepStates, ends);
+    for (const st of stepList) {
+      st.beforeSale = reach.get(st.s.id)?.lost === true;
+      st.winEdges = signingEdges(st.targets, reach);
+      if (st.routes) for (const r of st.routes) r.winEdges = signingEdges(r.targets, reach);
+    }
   }
   const entryTargets = services.map((sv) => targetFor(sv.entry));
 
@@ -811,7 +927,7 @@ export function runOnce(
       assignments[rid] = pool[i % pool.length]!.person;
       nextAssignee[rid] = i + 1;
     }
-    const weeklyBill = svc.s.pricingModel === "retainer" ? svc.s.price / WEEKS_PER_MONTH : 0;
+    const weeklyBill = svc.s.pricingModel === "retainer" ? (svc.s.price * (market ? mkt(t).price : 1)) / WEEKS_PER_MONTH : 0;
     addClient(`won:${++wonClients}`, { services, assignments }, t, false, weeklyBill);
   };
   /**
@@ -821,17 +937,18 @@ export function runOnce(
    */
   const churnTick = (t: number) => {
     if (!roster) {
-      active = Math.max(0, active - active * (model.churnMonthly / WEEKS_PER_MONTH));
+      active = Math.max(0, active - active * ((model.churnMonthly * (market ? mkt(t).churn : 1)) / WEEKS_PER_MONTH));
       setPooledLoads(t);
       return;
     }
     // Tasks whose deadline passed before this tick count as missed first (one at the tick itself comes after it).
     if (servicing) for (const rc of rosterClients) settleMisses(rc, t, false);
     const staying: RosterClient[] = [];
+    const churnFactor = market ? mkt(t).churn : 1;
     for (const rc of rosterClients) {
       rc.trajectory?.push(rc.health);
       // Not clamped: a monthly rate above 1 means certain churn at the first tick.
-      const weekly = (rc.churnBase * (1 + rc.sensitivity * ((100 - rc.health) / 100))) / WEEKS_PER_MONTH;
+      const weekly = (rc.churnBase * (1 + rc.sensitivity * ((100 - rc.health) / 100)) * churnFactor) / WEEKS_PER_MONTH;
       if (rc.rng() < weekly) {
         removeClient(rc, t);
         rc.churned = true;
@@ -990,6 +1107,7 @@ export function runOnce(
     if (outcome === "won") {
       won++;
       sv.counts.won++;
+      sv.wonUnits += market ? mkt(t).price : 1;
       cycle.push(t - e.t0);
       // A one-off job doesn't become an ongoing client.
       if (sv.s.pricingModel !== "one_off") {
@@ -1002,9 +1120,9 @@ export function runOnce(
       }
       // With a roster, the new client bills week by week until it churns (see `bill`).
       if (sv.s.pricingModel === "retainer" && !roster) {
-        billed += (sv.s.price / WEEKS_PER_MONTH) * weeksBilled(t, sv.s.churnMonthly);
+        billed += ((sv.s.price * (market ? mkt(t).price : 1)) / WEEKS_PER_MONTH) * weeksBilled(t, sv.s.churnMonthly * (market ? mkt(t).churn : 1));
       } else if (sv.s.pricingModel === "one_off") {
-        billed += sv.s.price;
+        billed += sv.s.price * (market ? mkt(t).price : 1);
       }
     } else if (outcome === "lost") {
       lost++;
@@ -1170,7 +1288,9 @@ export function runOnce(
       p.freeSince = t;
       p.completed++;
     }
-    const w = st.wait ? st.wait() : 0;
+    let w = st.wait ? st.wait() : 0;
+    // "Time to decide": the market stretches or shortens external waits before the sale, not onboarding, delivery or servicing.
+    if (market && w > 0 && st.beforeSale && !st.assigned) w *= mkt(t).cycle;
     // With no wait and nothing else pending at `t`, its leave event would be
     // the very next one handled (whatever `takeNext` schedules comes after
     // it), so it's handled here instead, in exactly that order.
@@ -1205,11 +1325,17 @@ export function runOnce(
     }
     let acc = 0;
     let k = next.length - 1;
-    for (let i = 0; i < next.length; i++) {
-      acc += next[i]!.p;
-      if (u < acc) {
-        k = i;
-        break;
+    const conv = market ? mkt(t).conv : 1;
+    const winEdges = st.routes ? st.routes[e.svc]!.winEdges : st.winEdges;
+    if (conv !== 1 && winEdges) {
+      k = pickWithSigning(next, winEdges, u, conv);
+    } else {
+      for (let i = 0; i < next.length; i++) {
+        acc += next[i]!.p;
+        if (u < acc) {
+          k = i;
+          break;
+        }
       }
     }
     const target = targets[k]!;
@@ -1227,7 +1353,10 @@ export function runOnce(
     lost = 0;
     done = 0;
     billed = 0;
-    for (const sv of services) sv.counts = { arrivals: 0, won: 0, lost: 0 };
+    for (const sv of services) {
+      sv.counts = { arrivals: 0, won: 0, lost: 0 };
+      sv.wonUnits = 0;
+    }
     cycle.length = 0;
     // Nothing is won or churns during the warm-up, so the clients are as they started.
     churned = 0;
@@ -1467,8 +1596,9 @@ export function runOnce(
   const serviceOut: Record<string, ServiceCounts> = {};
   for (const sv of services) {
     const { won: w, lost: l } = sv.counts;
-    if (sv.s.pricingModel === "retainer") newMrr += w * sv.s.price;
-    ltvAdded += w * sv.value;
+    const units = market ? sv.wonUnits : w;
+    if (sv.s.pricingModel === "retainer") newMrr += units * sv.s.price;
+    ltvAdded += units * sv.value;
     lostRevenue += l * sv.value;
     if (sv.id !== null) serviceOut[sv.id] = sv.counts;
   }

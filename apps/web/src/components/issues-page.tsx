@@ -5,8 +5,10 @@
 // page).
 import { useMemo, useState } from "react";
 import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow } from "@transpera-flow/db";
-import { detectBrokenScenarios, detectIssues } from "@transpera-flow/engine";
+import { detectBrokenScenarios, resolveMoney, type AnalysisSettings } from "@transpera-flow/engine";
 import { perceptionGapDetections } from "@/lib/issues/perception";
+import { rerate, visibleFindings } from "@/lib/rules/edit";
+import { useRatingSettings } from "@/lib/rules/use-rating-settings";
 import { useIssues } from "@/lib/issues/use-issues";
 import { retiredSteps } from "@/lib/scenarios/broken";
 import { useAbsenceTest } from "@/lib/sim/absence";
@@ -20,12 +22,15 @@ export function IssuesPage({
   scenarios,
   processes,
   mode,
+  analysisRules,
 }: {
   bundle: ProcessBundle;
   issues: IssueRow[];
   scenarios: ScenarioRow[];
   processes: Named[];
   mode: "live" | "demo" | "readonly";
+  /** The workspace's analysis rules (Settings → Analysis rules); omitted means the defaults. On the demo, the ones edited in this tab. */
+  analysisRules?: AnalysisSettings;
 }) {
   const state = useIssues(bundle.workspace.id, issues, mode);
   const [stepFilter, setStepFilter] = useState("");
@@ -43,11 +48,13 @@ export function IssuesPage({
   const broken = useMemo(() => (model ? detectBrokenScenarios(model, scenarios, retiredSteps(bundle)) : []), [model, scenarios, bundle]);
   // Perception gaps come from the steps' evidence, not the run (issue #21).
   const gaps = useMemo(() => perceptionGapDetections(bundle.steps), [bundle.steps]);
-  // The absence test runs in its own worker once the baseline is in (rule 8); until it returns, that rule raises nothing.
-  const absence = useAbsenceTest(model && result ? model : null, result?.seed ?? 1);
+  // A change to the rules re-rates this run; it is not simulated again.
+  const rules = useRatingSettings(mode === "demo", analysisRules);
+  // The absence test (rule 8) runs in its own worker once the baseline is done; until it returns, that rule raises nothing.
+  const absence = useAbsenceTest(model && result && sim.status === "done" ? model : null, result?.seed ?? 1, resolveMoney(rules).absenceWeeks);
   const detected = useMemo(
-    () => (model && result ? [...broken, ...detectIssues(model, result, {}, { absence }), ...gaps] : model ? null : gaps),
-    [model, result, absence, broken, gaps],
+    () => (model && !result ? null : visibleFindings(rules, model && result ? [...broken, ...rerate(model, result, rules, bundle.process.id, absence), ...gaps] : gaps)),
+    [model, result, broken, gaps, rules, bundle.process.id, absence],
   );
   const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);
 

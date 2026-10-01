@@ -173,10 +173,10 @@ describe("the absence test (rule 8)", () => {
     });
 
     it("uses the workspace's cut-offs, switch and overrides", () => {
-      expect(rate({ workLost: 0.1 }, { rules: { absence: { cutoffs: [0.2, 0.3, 0.4] } } })).toBe("great");
+      expect(rate({ workLost: 0.1 }, { rules: { spof: { cutoffs: [0.2, 0.3, 0.4] } } })).toBe("great");
       expect(rate({ recoveryWeeks: 3 }, { absence: { recoveryCutoffs: [1, 2, 3] } })).toBe("bad");
-      expect(rate({ workLost: 0.5 }, { rules: { absence: { enabled: false } } })).toBe("great");
-      expect(rate({ workLost: 0.5 }, { rules: { absence: { overrides: [{ kind: "role", id: "solo", enabled: false }] } } })).toBe("great");
+      expect(rate({ workLost: 0.5 }, { rules: { spof: { enabled: false } } })).toBe("great");
+      expect(rate({ workLost: 0.5 }, { rules: { spof: { overrides: [{ kind: "role", id: "solo", enabled: false }] } } })).toBe("great");
     });
 
     it("carries the numbers behind it and no escalation", () => {
@@ -323,7 +323,7 @@ describe("goals met (rule 11)", () => {
 
   it("does nothing without a source (the stub until A54)", () => {
     expect(NO_SUCCESS_MEASURES.measures()).toEqual([]);
-    expect(detectIssues(m, r, NO_ESC).map((i) => i.key).filter((k) => k.startsWith("goals"))).toEqual([]);
+    expect(detectIssues(m, r, NO_ESC).map((i) => i.key).filter((k) => k.startsWith("success"))).toEqual([]);
     expect(checkSuccessMeasures(NO_SUCCESS_MEASURES, m, r)).toEqual([]);
   });
 
@@ -331,7 +331,7 @@ describe("goals met (rule 11)", () => {
     // Ten runs win 1..10 items. A target of k "at least" is met by 11 - k runs.
     const share = (met: number) => {
       const measure: SuccessMeasure = { ...wins, target: 11 - met };
-      return find(detectIssues(m, tampered(10), NO_ESC, { successMeasures: source(measure) }), "goals:measure:wins")?.rating ?? "great";
+      return find(detectIssues(m, tampered(10), NO_ESC, { successMeasures: source(measure) }), "success:measure:wins")?.rating ?? "great";
     };
     expect([10, 8, 7, 5, 4, 2, 1, 0].map(share)).toEqual(["great", "great", "good", "good", "bad", "bad", "risk", "risk"]);
   });
@@ -350,16 +350,16 @@ describe("goals met (rule 11)", () => {
     const checks = checkSuccessMeasures(source(manual, { ...wins, target: 1 }), m, r);
     expect(checks[0]).toMatchObject({ status: "not_checked", reason: "Not checked by simulation" });
     expect(checks[1]!.status).toBe("rated");
-    expect(find(detectIssues(m, r, NO_ESC, { successMeasures: source(manual) }), "goals:measure:nps")).toBeUndefined();
+    expect(find(detectIssues(m, r, NO_ESC, { successMeasures: source(manual) }), "success:measure:nps")).toBeUndefined();
     expect(checkSuccessMeasures(source({ ...wins, target: Number.NaN }), m, r)[0]).toMatchObject({ status: "not_checked" });
   });
 
   it("raises an insight with the numbers, and follows overrides on the process", () => {
-    const issue = find(detectIssues(m, r, NO_ESC, { successMeasures: source(wins) }), "goals:measure:wins")!;
+    const issue = find(detectIssues(m, r, NO_ESC, { successMeasures: source(wins) }), "success:measure:wins")!;
     expect(issue).toMatchObject({ type: "failure", rating: "risk", title: "Goal not reliably met: Win a million items" });
     expect(issue.metrics).toMatchObject({ met_share: 0, runs_met: 0, runs: 10, target: 1e6 });
-    const off = { rules: { goals: { overrides: [{ kind: "process" as const, id: "p1", enabled: false }] } }, ...NO_ESC };
-    expect(find(detectIssues(m, r, off, { processId: "p1", successMeasures: source(wins) }), "goals:measure:wins")).toBeUndefined();
+    const off = { rules: { success: { overrides: [{ kind: "process" as const, id: "p1", enabled: false }] } }, ...NO_ESC };
+    expect(find(detectIssues(m, r, off, { processId: "p1", successMeasures: source(wins) }), "success:measure:wins")).toBeUndefined();
   });
 });
 

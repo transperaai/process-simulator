@@ -36,10 +36,10 @@ describe("defaults match docs/analysis-rules.md", () => {
       rework: [0.05, 0.1, 0.2],
       sla: [0.05, 0.1, 0.25],
       spare: [0.4, 0, 0],
-      absence: [0.05, 0.05, 0.2],
+      spof: [0.05, 0.05, 0.2],
       dropoff: [1, 1.25, 1.5],
       cycle: [1, 1.25, 1.5],
-      goals: [0.8, 0.5, 0.2],
+      success: [0.8, 0.5, 0.2],
     });
     expect(DEFAULT_RATING_CONFIG.absence).toEqual({ weeks: 2, perYear: 2, recoveryCutoffs: [1, 1, 4] });
     expect(DEFAULT_RATING_CONFIG.expectedWaitDays).toEqual({ pipeline: 1, servicing: 2 });
@@ -82,7 +82,7 @@ describe("band boundaries", () => {
       [0, "good"], [0.2, "good"], [0.4 - eps, "good"], [0.4, "great"], [0.9, "great"], [1.2, "great"],
     ],
     // Rule 8: the share of work lost. Under 5% Great, 5-20% Bad (no Good band), 20% or more Risk.
-    absence: [
+    spof: [
       [0, "great"], [0.05 - eps, "great"], [0.05, "bad"], [0.2 - eps, "bad"], [0.2, "risk"], [1, "risk"],
     ],
     // Rule 12: lost share / the step's benchmark. At or better than the benchmark is Great; a value on a cut-off stays in the lower band.
@@ -94,7 +94,7 @@ describe("band boundaries", () => {
       [0, "great"], [1, "great"], [1 + eps, "good"], [1.25, "good"], [1.25 + eps, "bad"], [1.5, "bad"], [1.5 + eps, "risk"], [5, "risk"],
     ],
     // Rule 11: the share of runs that meet the measure. 80% or more Great, 50-80% Good, 20-50% Bad, under 20% Risk.
-    goals: [
+    success: [
       [1, "great"], [0.8, "great"], [0.8 - eps, "good"], [0.5, "good"], [0.5 - eps, "bad"], [0.2, "bad"], [0.2 - eps, "risk"], [0, "risk"],
     ],
   };

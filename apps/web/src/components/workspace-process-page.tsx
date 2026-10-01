@@ -5,6 +5,7 @@ import { ProcessNav } from "@/components/process-nav";
 import { ProcessView } from "@/components/process-view";
 import { ShellHeader } from "@/components/shell/shell-header";
 import { canEditWorkspace, currentViewer } from "@/lib/access-data";
+import { loadWorkspaceAnalysisRules } from "@/lib/rules/data";
 import { loadProcessForEditing, loadWorkspaceIssues, loadWorkspaceOverview, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
 
 /**
@@ -21,12 +22,13 @@ export async function WorkspaceProcessPage({ slug, processId }: { slug: string; 
     return <EmptyWorkspace slug={slug} overview={overview} />;
   }
   const { live, draft, processes } = process;
-  const [canEdit, scenarios, issues, viewer, sources] = await Promise.all([
+  const [canEdit, scenarios, issues, viewer, sources, rules] = await Promise.all([
     canEditWorkspace(live.workspace.id),
     loadWorkspaceScenarios(live.workspace.id),
     loadWorkspaceIssues(live.workspace.id),
     currentViewer(),
     loadWorkspaceSources(live.workspace.id),
+    loadWorkspaceAnalysisRules(live.workspace.id),
   ]);
   const base = `/w/${slug}`;
   const hrefs = Object.fromEntries(processes.map((p) => [p.id, `${base}/p/${p.id}`]));
@@ -39,6 +41,7 @@ export async function WorkspaceProcessPage({ slug, processId }: { slug: string; 
       scenarios={scenarios}
       issues={issues}
       sources={sources}
+      analysisRules={rules.settings}
       registerHref={`${base}/issues`}
       settingsHref={`${base}/settings`}
       userId={viewer?.userId ?? null}

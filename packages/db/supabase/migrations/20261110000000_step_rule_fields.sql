@@ -30,8 +30,8 @@
 --        select column_name from information_schema.columns
 --        where table_schema = 'public' and table_name = 'steps'
 --          and column_name in ('expected_wait_hours', 'lost_per_day_waiting', 'dropoff_benchmark', 'target_cycle_hours');
---   2. Nothing of ours is applied past roles_and_workspaces. Expect only `20261021000000`:
---        select version from supabase_migrations.schema_migrations where version >= '20261021000000';
+--   2. Nothing is applied at or past this version yet. Expect no rows:
+--        select version from supabase_migrations.schema_migrations where version >= '20261110000000';
 --
 -- Rollback (run as one transaction):
 --
@@ -41,7 +41,7 @@
 --     drop column lost_per_day_waiting,
 --     drop column dropoff_benchmark,
 --     drop column target_cycle_hours;
---   delete from supabase_migrations.schema_migrations where version = '20261106000000';
+--   delete from supabase_migrations.schema_migrations where version = '20261110000000';
 --   commit;
 --
 -- Rolling back loses the values people entered in these fields; the rules fall

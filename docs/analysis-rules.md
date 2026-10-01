@@ -3,6 +3,8 @@
 Agreed with Austin, 1 Oct 2026, in the analysis rules session. This replaces the detector thresholds in
 `packages/engine/src/issues.ts` (`DEFAULT_ISSUE_THRESHOLDS`) and the four engine severities. It is the spec for the tickets that follow.
 
+**Editing (A44, issue #109):** Settings → Analysis rules (`/w/<slug>/settings/rules`, `/demo/settings/rules`) edits all 15 rules, the escalators and the money settings, stored per workspace in `analysis_rules.settings` (sparse jsonb; `packages/engine/src/analysis-settings.ts`). Only the rules on the rating model below take effect in the engine yet; the others are saved and apply when their detectors land. Money settings (12-month cap, absence test) are stored but not read by the engine until the cost ticket.
+
 **Built so far (A41, issue #106):** the rating model and rules 1, 3, 4, 5, 6 and 7 are in
 `packages/engine/src/ratings.ts` and the detectors (`issues.ts`, `overtime-issues.ts`). The rules not listed there still
 run their old logic, mapped onto ratings until their tickets land. Choices the spec left open:
@@ -16,8 +18,8 @@ run their old logic, mapped onto ratings until their tickets land. Choices the s
 - Stored issues keep the database's four `severity` values, which stand for the ratings one to one (critical = Operational
   risk, serious = Bad, warning = Good, info = Great).
 
-**Also built (A42, issue #107):** rules 2, 8, 11, 12 and 13 (`spare`, `absence`, `goals`, `dropoff`, `cycle` in
-`ratings.ts`; `absence.ts`, `success.ts`, `issues.ts`). Rules 9, 10, 14 and 15 still run their old logic.
+**Also built (A42, issue #107):** rules 2, 8, 11, 12 and 13 (`spare`, `spof`, `success`, `dropoff`, `cycle` in
+`ratings.ts`, the ids A44 stores; `absence.ts`, `success.ts`, `issues.ts`). Rules 9, 10, 14 and 15 still run their old logic.
 
 - **Spare time (2)** is rated on utilisation, lower is worse: under 40% is Good, 40% and over is Great, and the rule has
   no Bad or Operational risk band (its cut-offs are `0.4 / 0 / 0`). It never escalates (a bad month or the bottleneck
@@ -30,9 +32,9 @@ run their old logic, mapped onto ratings until their tickets land. Choices the s
   servicing tasks on time or late) from the start of the absence to the end of the run that the absence cost; items only
   delayed and finished by the end don't count. *Weeks to recover* is the first week after they return when the queues
   at their steps are within 1 item or 25% of the baseline's in the same week and stay so a week later; when never, the
-  weeks observed plus one, which counts as "not recovered". A *client deadline missed* is at least one more servicing task
+  weeks observed plus one. A queue that never recovers is Operational risk whatever the run's length. A *client deadline missed* is at least one more servicing task
   a replication that isn't finished within twice its SLA. Work lost is rated by the rule's cut-offs (`5 / 5 / 20%`, no
-  Good band) and weeks to recover by `absence.recoveryCutoffs` (`1 / 1 / 4`, a value on a cut-off in the better band), the
+  Good band) and weeks to recover by `absence.recoveryCutoffs` (the last two inputs of the stored rule, `1 / 1 / 4`; rule-wide: a per-person or per-step override changes the work-lost cut-offs only; a value on a cut-off falls in the better band), the
   worse of the two wins, and a missed client deadline is Operational risk. No escalators. One finding per step only that
   person can do, keyed `spof:step:<step id>` as before, all rated from the same absence run. Without an absence result
   (`DetectOptions.absence`), the rule raises nothing: the app runs it in a worker after the baseline.
@@ -40,7 +42,7 @@ run their old logic, mapped onto ratings until their tickets land. Choices the s
   is lost further on isn't counted) ÷ the visits that left it, against the step's benchmark (a step with none isn't
   rated). A bad month raises it, like the other rules.
 - **Too slow overall (13)** rates the mean cycle time of completed items against the process's target (set on the
-  process's start step; none, not rated). A bad month is the 90th percentile of the replications' mean cycle time.
+  pipeline's start step; none, not rated). A bad month is the 90th percentile of the replications' mean cycle time.
 - **Goals met (11)** reads success measures through `SuccessMeasureSource` (A54 implements it; `NO_SUCCESS_MEASURES` is
   the stub, so nothing is rated yet). Measures map to a `SuccessKpi` (wins, wins a week, win rate, new MRR, billed,
   cycle time, labour cost, WIP at the end); one that doesn't is returned by `checkSuccessMeasures` as "Not checked by

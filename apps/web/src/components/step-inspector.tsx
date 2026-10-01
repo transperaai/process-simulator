@@ -288,7 +288,8 @@ export function StepInspector({
         </>
       )}
 
-      {step.kind === "start" && (
+      {/* Only a pipeline has a time target: a servicing process runs to its tasks' SLAs. */}
+      {step.kind === "start" && bundle.process.kind === "pipeline" && (
         <div className={sectionClass}>
           <NumberField
             label="Time target"

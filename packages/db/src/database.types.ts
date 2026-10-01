@@ -14,6 +14,38 @@ export type Database = {
   }
   public: {
     Tables: {
+      analysis_rules: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          settings: Json
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          settings?: Json
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          settings?: Json
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analysis_rules_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: true
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       api_tokens: {
         Row: {
           active_workspace_id: string | null
@@ -512,6 +544,113 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "workspaces"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      market_conditions: {
+        Row: {
+          churn: number
+          conv: number
+          created_at: string
+          created_by: string | null
+          cycle: number
+          hire: number
+          id: string
+          leads: number
+          name: string
+          pay: number
+          preset: string | null
+          price: number
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          churn?: number
+          conv?: number
+          created_at?: string
+          created_by?: string | null
+          cycle?: number
+          hire?: number
+          id?: string
+          leads?: number
+          name: string
+          pay?: number
+          preset?: string | null
+          price?: number
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          churn?: number
+          conv?: number
+          created_at?: string
+          created_by?: string | null
+          cycle?: number
+          hire?: number
+          id?: string
+          leads?: number
+          name?: string
+          pay?: number
+          preset?: string | null
+          price?: number
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "market_conditions_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      market_schedule: {
+        Row: {
+          condition_id: string
+          created_at: string
+          created_by: string | null
+          from_month: number
+          id: string
+          to_month: number
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          condition_id: string
+          created_at?: string
+          created_by?: string | null
+          from_month: number
+          id?: string
+          to_month: number
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          condition_id?: string
+          created_at?: string
+          created_by?: string | null
+          from_month?: number
+          id?: string
+          to_month?: number
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "market_schedule_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "market_schedule_condition_id_workspace_id_fkey"
+            columns: ["condition_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "market_conditions"
+            referencedColumns: ["id", "workspace_id"]
           },
         ]
       }

@@ -12,6 +12,7 @@ import { z } from "zod";
 import {
   ISSUE_COLUMNS,
   listProcesses,
+  loadAnalysisRules,
   loadIssues,
   loadProcessBundle,
   loadScenarios,
@@ -23,7 +24,7 @@ import {
   type ProcessBundle,
   type ScenarioRow,
 } from "@transpera-flow/db";
-import { applyPatches, detectIssues, ENGINE_VERSION, isBlocking, ISSUE_TYPES, MAX_PATCHES, PATCH_OPS, RATINGS, STORED_SEVERITIES, ratingOfStored, simulate, storedOfRating, type EngineModel } from "@transpera-flow/engine";
+import { applyPatches, detectIssues, ENGINE_VERSION, isBlocking, ISSUE_TYPES, MAX_PATCHES, PATCH_OPS, RATINGS, STORED_SEVERITIES, ratingOfStored, simulate, storedOfRating, toRatingConfig, withoutDisabledRules, type EngineModel } from "@transpera-flow/engine";
 import { bottleneckReport, checkScenarioRobustness, compareScenarios, matchNamed, type NamedScenario } from "./analysis";
 import { resolveProcess, resolveWorkspace, revisionIdFor, type ProcessWithDraft, type ToolContext, type WorkspaceRef } from "./context";
 import { runTool, ToolError } from "./result";
@@ -501,7 +502,9 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
           assumptions.push(`Detections come from a run of the live model at ${DEFAULT_REPS} replications, seed ${DEFAULT_SEED}.`);
           const run = simulate(loaded.model, DEFAULT_REPS, DEFAULT_SEED);
           const keys = new Set(issues.map((i) => i.detected_key).filter(Boolean));
-          detected = detectIssues(loaded.model, run)
+          // The workspace's analysis rules, as the app rates with them.
+          const rules = await loadAnalysisRules(ctx.db, ws.id).catch(() => ({ settings: {}, version: null }));
+          detected = withoutDisabledRules(rules.settings, detectIssues(loaded.model, run, toRatingConfig(rules.settings, loaded.model.hoursPerWeek), { processId: proc.id }))
             .filter((d) => !keys.has(d.key) && (!args.type || d.type === args.type) && !client)
             .map((d) => ({ ...d, source: "detected", status: null }));
           if (args.status && args.status !== "open") detected = [];

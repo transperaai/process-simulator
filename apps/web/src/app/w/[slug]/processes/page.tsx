@@ -1,12 +1,25 @@
 import { notFound } from "next/navigation";
-import { ProcessesList } from "@/components/shell/placeholders";
-import { loadProcessList, loadWorkspaceHead } from "@/lib/data";
+import { createServicingProcess } from "@/app/w/[slug]/process-actions";
+import { ProcessesPage } from "@/components/processes/processes-page";
+import { canEditWorkspace } from "@/lib/access-data";
+import { loadWorkspaceHead } from "@/lib/data";
+import { loadProcessesPage } from "@/lib/processes/data";
+import { openProcessCard } from "./actions";
 
-/** Every process of the workspace, each opening its map (issue #98). A36 adds nesting and per-process cards. */
-export default async function ProcessesPage(props: PageProps<"/w/[slug]/processes">) {
+/** Every process of the workspace, sub-processes indented, each row opening its map card (issue #101). */
+export default async function WorkspaceProcessesPage(props: PageProps<"/w/[slug]/processes">) {
   const { slug } = await props.params;
   const workspace = await loadWorkspaceHead(slug);
   if (!workspace) notFound();
-  const processes = await loadProcessList(workspace.id);
-  return <ProcessesList processes={processes.map((p) => ({ ...p, href: `/w/${slug}/p/${p.id}` }))} />;
+  const [rows, canEdit] = await Promise.all([loadProcessesPage(workspace.id), canEditWorkspace(workspace.id)]);
+  const base = `/w/${slug}`;
+  return (
+    <ProcessesPage
+      rows={rows}
+      hrefs={Object.fromEntries(rows.map((r) => [r.id, `${base}/p/${r.id}`]))}
+      companyMapHref={base}
+      loadCard={openProcessCard.bind(null, slug)}
+      create={canEdit ? createServicingProcess.bind(null, workspace.id, slug) : undefined}
+    />
+  );
 }

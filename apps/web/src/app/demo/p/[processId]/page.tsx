@@ -4,6 +4,7 @@ import { Info } from "lucide-react";
 import { ProcessNav } from "@/components/process-nav";
 import { ProcessView } from "@/components/process-view";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { processRatings } from "@/lib/processes/rows";
 import { withDemoGroups } from "@/lib/demo/nested";
 import { demoBundle, demoSources } from "@/lib/sources/demo";
 
@@ -31,7 +32,7 @@ export default async function DemoProcessPage(props: PageProps<"/demo/p/[process
       issues={northbeamIssues()}
       sources={demoSources()}
       editHref={`/demo/edit?process=${bundle.process.id}${nested === "1" ? "&nested=1" : ""}`}
-      processPicker={<ProcessNav processes={processes} current={bundle.process.id} hrefs={hrefs} />}
+      processPicker={<ProcessNav processes={processes} current={bundle.process.id} hrefs={hrefs} ratings={processRatings(processes, northbeamIssues(), [...pipeline.steps, ...(pipeline.otherProcesses ?? []).flatMap((p) => p.steps)])} processesHref="/demo/processes" companyMapHref="/demo" />}
       notice={
         <Alert role="note">
           <Info />

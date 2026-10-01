@@ -1,15 +1,34 @@
-import { processesOf } from "@transpera-flow/db";
-import { ProcessesList } from "@/components/shell/placeholders";
+import { northbeamIssues, partOf } from "@transpera-flow/db";
+import { ProcessesPage } from "@/components/processes/processes-page";
+import { processRows, type LiveVersion } from "@/lib/processes/rows";
 import { demoBundle } from "@/lib/sources/demo";
+import { openDemoProcessCard } from "./actions";
 
-/** Northbeam's processes, each opening its map on the demo (issue #98). */
+/** Northbeam's processes on the demo, each row opening its map card (issue #101). */
 export default function DemoProcessesPage() {
   const pipeline = demoBundle();
-  const processes = processesOf(pipeline).map((p) => ({
-    id: p.id,
-    name: p.name,
-    kind: p.kind,
-    href: `/demo/p/${p.id}`,
-  }));
-  return <ProcessesList processes={processes} />;
+  const parts = [partOf(pipeline), ...(pipeline.otherProcesses ?? [])];
+  const rows = processRows({
+    processes: parts.map(({ process: p }) => ({
+      id: p.id,
+      name: p.name,
+      kind: p.kind,
+      description: p.description,
+      parentId: p.parent_process_id,
+      live: true,
+      draft: false,
+    })),
+    steps: parts.flatMap((p) => p.steps),
+    issues: northbeamIssues(),
+    versions: new Map<string, LiveVersion>(parts.map((p) => [p.process.id, { number: p.revision.number, publishedAt: null }])),
+  });
+  return (
+    <ProcessesPage
+      rows={rows}
+      hrefs={Object.fromEntries(rows.map((r) => [r.id, `/demo/p/${r.id}`]))}
+      companyMapHref="/demo"
+      loadCard={openDemoProcessCard}
+      note="Demo mode: sample data. Nothing here is kept."
+    />
+  );
 }

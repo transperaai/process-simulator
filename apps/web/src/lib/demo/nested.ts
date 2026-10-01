@@ -52,6 +52,8 @@ export function withDemoGroups(bundle: ProcessBundle): ProcessBundle {
     };
     steps = [...steps.map((s) => (g.steps.includes(s.id) ? { ...s, parent_step_id: g.id, x: Number(s.x) - x, y: Number(s.y) - y } : s)), group];
   }
+  // Lost sat between the two groups' steps; the boxes take that room, so it moves clear of them.
+  steps = steps.map((st) => (st.id === ids.lost ? { ...st, x: 520, y: -70 } : st));
   const edges: EdgeRow[] = bundle.edges.map((e) => (e.from_step_id === ids.start ? { ...e, to_step_id: DEMO_GROUP_IDS.conversation } : e));
   return { ...bundle, steps, edges };
 }

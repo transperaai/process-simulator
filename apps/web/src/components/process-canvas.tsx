@@ -19,7 +19,6 @@ import {
   EdgeLabelRenderer,
   Handle,
   MarkerType,
-  Panel,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -770,6 +769,10 @@ function Canvas({
   );
   const canvasContext = useMemo(() => ({ editor, restore: editor ? onRestore : null, toggleGroup }), [editor, onRestore, toggleGroup]);
   const flow = useReactFlow();
+  const toggleAllGroups = () => {
+    setExpanded(allGroups.every((id) => expanded.has(id)) ? new Set() : new Set(allGroups));
+    setTimeout(() => void flow.fitView({ padding: fitPadding(false), duration: 200 }), 50);
+  };
   const wrapper = useRef<HTMLDivElement>(null);
   // Positions of nodes mid-drag, and sizes React Flow measured; the rest comes from the bundle.
   const [dragging, setDragging] = useState<Map<string, { x: number; y: number }>>(new Map());
@@ -848,7 +851,8 @@ function Canvas({
             selected: selected.has(step.id),
             ariaLabel: `${step.name}, ${isGroup(step) ? "group" : "child process"} of ${roll.steps} ${roll.steps === 1 ? "step" : "steps"}${isGroup(step) ? (open ? ", open" : ", closed") : ""}`,
             ...(step.parent_step_id ? { parentId: step.parent_step_id } : {}),
-            ...(box ? { style: { width: box.width, height: box.height }, zIndex: -1 } : {}),
+            // An open group is as big as its steps need: React Flow takes the size from here, and so shows it at once.
+            ...(box ? { width: box.width, height: box.height, style: { width: box.width, height: box.height } } : {}),
             ...(measured.has(step.id) && !box ? { measured: measured.get(step.id) } : {}),
             data: gdata,
           };
@@ -1213,7 +1217,7 @@ function Canvas({
           {/* Before the map in the page, so Tab reaches the toolbar first. */}
           {editable && editorState && (
             <div className="absolute top-2.5 left-2.5 z-10 max-w-[calc(100%-1.25rem)]">
-              <Toolbar bundle={bundle} editor={editor} state={editorState} onAdd={addFromToolbar} lanes={lanes} onToggleLanes={toggleLanes} lanesAvailable={!hasGroups} savedLabel={savedLabel} />
+              <Toolbar bundle={bundle} editor={editor} state={editorState} onAdd={addFromToolbar} lanes={lanes} onToggleLanes={toggleLanes} lanesAvailable={!hasGroups} groups={allGroups.length ? { allOpen: allGroups.every((id) => expanded.has(id)), onToggle: toggleAllGroups } : null} savedLabel={savedLabel} />
             </div>
           )}
           {diff && diff.list.length > 0 && (
@@ -1225,9 +1229,10 @@ function Canvas({
               <s>removed</s> · <s className="text-fg-3">was</s> → now
             </p>
           )}
-          {!editable && !hasGroups && (
-            <div className="absolute top-2.5 left-2.5 z-10">
-              <LaneToggle lanes={lanes} onToggle={toggleLanes} />
+          {!editable && (
+            <div className="absolute top-2.5 left-2.5 z-10 flex gap-1.5">
+              {!hasGroups && <LaneToggle lanes={lanes} onToggle={toggleLanes} />}
+              {allGroups.length > 0 && <GroupControls allOpen={allGroups.every((id) => expanded.has(id))} onToggle={toggleAllGroups} />}
             </div>
           )}
           {/* Playback of the run (issue #14), over the foot of the map; before it in the page, for Tab. */}
@@ -1296,17 +1301,6 @@ function Canvas({
             proOptions={{ hideAttribution: true }}
           >
             <Background color="var(--line)" gap={24} />
-            {allGroups.length > 0 && (
-              <Panel position="top-right" style={{ marginTop: diff && diff.list.length > 0 ? 36 : undefined }}>
-                <GroupControls
-                  allOpen={allGroups.every((id) => expanded.has(id))}
-                  onToggle={() => {
-                    setExpanded(allGroups.every((id) => expanded.has(id)) ? new Set() : new Set(allGroups));
-                    setTimeout(() => void flow.fitView({ padding: fitPadding(false), duration: 200 }), 50);
-                  }}
-                />
-              </Panel>
-            )}
             {layout && <LaneLayer lanes={layout.lanes} />}
             {playback.index && (
               <PlaybackLayer
@@ -1415,6 +1409,7 @@ function Toolbar({
   lanes,
   onToggleLanes,
   lanesAvailable,
+  groups,
   savedLabel,
 }: {
   bundle: ProcessBundle;
@@ -1425,6 +1420,8 @@ function Toolbar({
   onToggleLanes: () => void;
   /** Swimlanes need every step in its own lane, so they are off while the process has groups. */
   lanesAvailable: boolean;
+  /** Open or close every group at once; null when the process has none. */
+  groups: { allOpen: boolean; onToggle: () => void } | null;
   savedLabel: string;
 }) {
   const [kind, setKind] = useState<NewStepKind>("task");
@@ -1500,6 +1497,7 @@ function Toolbar({
       </button>
       <span aria-hidden className="mx-0.5 h-5 w-px bg-line" />
       {lanesAvailable && <LaneToggle lanes={lanes} onToggle={onToggleLanes} />}
+      {groups && <GroupControls allOpen={groups.allOpen} onToggle={groups.onToggle} />}
       <KeysHelp mod={mod} />
       <span className="px-1 text-fg-3" aria-live="polite">
         {state.saving ? "Saving…" : savedLabel}

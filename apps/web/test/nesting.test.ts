@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { northbeamStepIds as ids, rollUp, toEngineModel, visibleEdges, visibleSteps, type ProcessBundle } from "@transpera-flow/db";
 import { simulate } from "@transpera-flow/engine";
 import { DEMO_GROUP_IDS, withDemoGroups } from "@/lib/demo/nested";
-import { deleteSteps, kindProblem, stepWarnings } from "@/lib/editor/commands";
+import { copySteps, deleteSteps, kindProblem, pasteSteps, stepWarnings } from "@/lib/editor/commands";
+import { parseNewStep } from "@/lib/editor/validate";
+import { diffBundles } from "@/lib/drafts/diff";
 import { demoBundle } from "@/lib/sources/demo";
 import { GROUP_CARD, groupIds, openGroupSize } from "@/lib/map/groups";
 
@@ -89,6 +91,48 @@ describe("editing a nested process", () => {
     // The same step outside any group is flagged itself.
     const plain = flat();
     expect(stepWarnings({ ...plain, edges: plain.edges.filter((e) => e.from_step_id !== ids.live) }).has(ids.live)).toBe(true);
+  });
+
+  it("copies a group with the steps inside it, into a group of its own", () => {
+    const b = nested();
+    const clip = copySteps(b, [DEMO_GROUP_IDS.setup])!;
+    expect(clip.steps.map((s) => s.id).sort()).toEqual([DEMO_GROUP_IDS.setup, ids.seo, ids.ppc, ids.live].sort());
+    const pasted = pasteSteps(b, clip, { x: 40, y: 40 })!;
+    const rows = pasted.edit.ops.flatMap((op) => (op.kind === "insert" ? op.steps : []));
+    const copy = rows.find((r) => r.kind === "group")!;
+    expect(copy.id).not.toBe(DEMO_GROUP_IDS.setup);
+    // The copies sit in the copy of the group, at the same place inside it, and the first step is the copy of the first.
+    const inside = rows.filter((r) => r.kind !== "group");
+    expect(inside.every((r) => r.parent_step_id === copy.id)).toBe(true);
+    expect(copy.entry_step_id).toBe(inside.find((r) => r.name.startsWith("SEO"))!.id);
+    const seo = b.steps.find((s) => s.id === ids.seo)!;
+    expect([Number(inside.find((r) => r.name.startsWith("SEO"))!.x), Number(inside.find((r) => r.name.startsWith("SEO"))!.y)]).toEqual([Number(seo.x), Number(seo.y)]);
+    // The group itself moves by the offset.
+    const original = b.steps.find((s) => s.id === DEMO_GROUP_IDS.setup)!;
+    expect(Number(copy.x)).toBe(Number(original.x) + 40);
+  });
+
+  it("copies a step alone into the group it was in", () => {
+    const b = nested();
+    const pasted = pasteSteps(b, copySteps(b, [ids.seo])!, { x: 40, y: 40 })!;
+    const row = pasted.edit.ops.flatMap((op) => (op.kind === "insert" ? op.steps : []))[0]!;
+    expect(row.parent_step_id).toBe(DEMO_GROUP_IDS.setup);
+  });
+
+  it("accepts a group, with its first step and the group it is in, as a step to restore (undo)", () => {
+    const b = nested();
+    const group = b.steps.find((s) => s.id === DEMO_GROUP_IDS.setup)!;
+    expect(parseNewStep(group)).toMatchObject({ id: group.id, kind: "group", entry_step_id: ids.seo, parent_step_id: null });
+    const inner = b.steps.find((s) => s.id === ids.seo)!;
+    expect(parseNewStep(inner)).toMatchObject({ parent_step_id: DEMO_GROUP_IDS.setup });
+  });
+
+  it("shows a step moved into a group as a change in a draft", () => {
+    const live = flat();
+    const draft = nested();
+    const changed = diffBundles(live, draft).steps.get(ids.seo)!;
+    expect(changed.kind).toBe("changed");
+    expect(changed.fields.map((f) => f.field)).toContain("parent_step_id");
   });
 
   it("won't turn a group that holds steps into a task", () => {

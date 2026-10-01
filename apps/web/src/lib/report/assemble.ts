@@ -17,8 +17,12 @@ import {
   evidenceOf,
   formatParameter,
   isOpenAssumption,
+  isWorkingStep,
   openConflict,
+  rollUp,
   toEngineModel,
+  visibleEdges,
+  visibleSteps,
   type IssueRow,
   type ProcessBundle,
   type ProcessPart,
@@ -315,7 +319,9 @@ export function buildReportContent(input: ReportInput): BuiltReport {
   const calloutSteps = bn.steps.slice(0, 3).sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
   const calloutNo = new Map(calloutSteps.map((s, i) => [s.id, i + 1]));
   const processMaps: ProcessMapView[] = parts.map((part) => {
-    const nodes: MapNode[] = part.steps.map((s) => {
+    // Groups print closed (issue #102): one box each, with the hands-on time of the steps inside, and the connections rolled up to it.
+    const closed = new Set<string>();
+    const nodes: MapNode[] = visibleSteps(part.steps, closed).map((s) => {
       const r = baseline.steps[s.id];
       const role = s.role_id ? roleById.get(s.role_id) : undefined;
       return {
@@ -327,7 +333,7 @@ export function buildReportContent(input: ReportInput): BuiltReport {
         y: Number(s.y),
         role: role ? { name: role.name, color: role.color } : null,
         person: s.person_id ? (personName.get(s.person_id) ?? null) : null,
-        workHours: Number(s.work_hours),
+        workHours: s.kind === "group" ? rollUp(part.steps, s.id).handsOnHours : Number(s.work_hours),
         waitHours: Number(s.wait_hours),
         rework: Number(s.rework_rate),
         stats: r ? { avgQueue: r.avgQueue, maxQueue: r.maxQueue, avgWaitHours: r.avgWait, arrivals: r.arrivals } : null,
@@ -344,9 +350,9 @@ export function buildReportContent(input: ReportInput): BuiltReport {
       kind: part.process.kind,
       revision: part.revision.number,
       nodes,
-      edges: part.edges
-        .filter((e) => ids.has(e.from_step_id) && ids.has(e.to_step_id))
-        .map((e) => ({ from: e.from_step_id, to: e.to_step_id, probability: Number(e.probability), tag: e.condition_tag, label: e.label })),
+      edges: visibleEdges(part.steps, part.edges, closed)
+        .filter((e) => ids.has(e.from) && ids.has(e.to))
+        .map((e) => ({ from: e.from, to: e.to, probability: e.probability ?? 1, tag: e.condition_tag, label: e.label })),
       callouts: calloutSteps.filter((s) => part.steps.some((x) => x.id === s.id)).map((s) => ({ n: calloutNo.get(s.id)!, stepId: s.id, text: s.evidence })),
     };
   });
@@ -361,7 +367,7 @@ export function buildReportContent(input: ReportInput): BuiltReport {
     }
     return best;
   };
-  const working = (part: ProcessPart) => part.steps.filter((s) => s.kind !== "start" && s.kind !== "end").length;
+  const working = (part: ProcessPart) => part.steps.filter(isWorkingStep).length;
   const companyMap: CompanyMapView = {
     processes: parts.map((p) => ({
       id: p.process.id,
@@ -569,7 +575,7 @@ function buildAppendix(input: ReportInput, parts: ProcessPart[], model: EngineMo
   const valueText = (col: (typeof EVIDENCE_COLUMNS)[number], v: number) => formatParameter(col, v);
 
   for (const part of parts) {
-    const steps = [...part.steps].filter((s) => s.kind !== "start" && s.kind !== "end").sort((a, b) => a.name.localeCompare(b.name));
+    const steps = [...part.steps].filter(isWorkingStep).sort((a, b) => a.name.localeCompare(b.name));
     for (const s of steps) {
       const where = parts.length > 1 ? `${part.process.name} · ${s.name}` : s.name;
       for (const col of EVIDENCE_COLUMNS) {

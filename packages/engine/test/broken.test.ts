@@ -158,6 +158,7 @@ describe("detectBrokenScenarios", () => {
         type: "broken_scenario",
         rating: "bad",
         escalation: { base: "bad", badMonth: false, bottleneck: false },
+        cost: { perMonth: null, hoursPerMonth: null, method: "A broken saved scenario has no money method." },
         title: "Scenario “Automate proposals” needs attention",
         evidence:
           "Its only change no longer resolves against the model: “Audit & proposal” (hands-on time) was split into Audit and Proposal. " +

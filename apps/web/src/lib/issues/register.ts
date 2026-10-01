@@ -6,16 +6,20 @@
 import type { IssueRow, IssueSource, IssueStatus, ScenarioRow } from "@transpera-flow/db";
 import {
   RATINGS,
+  compareCostsDesc,
   RATING_LABELS,
   ratingRank,
   compareRatingsDesc,
+  noCost,
   ratingOfStored,
   storedOfRating,
   type DetectedIssue,
+  type IssueCost,
   type IssueType,
   type Rating,
   type ScenarioPatch,
 } from "@transpera-flow/engine";
+import { formatNumber, formatWholeCurrency } from "@/lib/format";
 import type { PromoteInput } from "./validate";
 
 export type RegisterEntry =
@@ -54,6 +58,18 @@ export const SOURCE_LABELS: Record<IssueSource, string> = {
   promoted: "Tracked detection",
 };
 
+const NO_COST = noCost("");
+
+/**
+ * An issue's cost per month, as the screens print it: always an estimate, in
+ * the workspace currency. No money method shows time, or "n/a".
+ */
+export function formatIssueCost(cost: IssueCost | null, currency: string): string {
+  if (cost?.perMonth != null) return `About ${formatWholeCurrency(cost.perMonth, currency)} a month (estimate)`;
+  if (cost?.hoursPerMonth != null) return `About ${formatNumber(cost.hoursPerMonth, cost.hoursPerMonth < 10 ? 1 : 0)} h a month (estimate, time only)`;
+  return "Cost per month: n/a";
+}
+
 const isOpen = (s: IssueStatus) => s === "open" || s === "in_progress";
 
 /** An entry's shared fields, whichever kind it is. */
@@ -67,6 +83,7 @@ export function entryView(e: RegisterEntry) {
       type: d.type,
       rating: d.rating,
       source: "detected" as IssueSource,
+      cost: d.cost as IssueCost | null,
       status: null,
       stepId: d.stepId,
       personId: d.personId,
@@ -83,6 +100,8 @@ export function entryView(e: RegisterEntry) {
     // Stored issues keep the database's four values; they stand for the four ratings one to one.
     rating: ratingOfStored(i.severity),
     source: i.source,
+    // A tracked issue is costed by what the latest run detects for it.
+    cost: (e.detection?.cost ?? null) as IssueCost | null,
     status: i.status,
     stepId: i.step_id,
     personId: i.person_id,
@@ -113,7 +132,10 @@ export function registerEntries(tracked: readonly IssueRow[], detected: readonly
       const ob = entryView(b.e).open;
       if (oa !== ob) return oa ? -1 : 1;
       if (!oa) return updated(b.e).localeCompare(updated(a.e)) || a.i - b.i;
-      return compareRatingsDesc(entryView(a.e).rating, entryView(b.e).rating) || a.i - b.i;
+      const va = entryView(a.e);
+      const vb = entryView(b.e);
+      // Most severe first, then costliest first (issue #108); no cost sorts last.
+      return compareRatingsDesc(va.rating, vb.rating) || compareCostsDesc(va.cost ?? NO_COST, vb.cost ?? NO_COST) || a.i - b.i;
     })
     .map(({ e }) => e);
 }

@@ -60,6 +60,8 @@ export interface ShadowPriceOptions {
   seed?: number;
   /** Stop starting replication pairs after this many milliseconds (at least one pair always runs). */
   timeBudgetMs?: number;
+  /** What to count: `completions` (won or done, the default) or `wins` only (the cost per month counts wins, cost.ts). */
+  count?: "completions" | "wins";
   /** Clock, for tests. */
   now?: () => number;
 }
@@ -68,11 +70,12 @@ export interface ShadowPriceOptions {
 export function shadowPrice(
   model: EngineModel,
   roleId: string,
-  { reps = 30, seed = 1, timeBudgetMs, now = () => performance.now() }: ShadowPriceOptions = {},
+  { reps = 30, seed = 1, timeBudgetMs, count = "completions", now = () => performance.now() }: ShadowPriceOptions = {},
 ): ShadowPrice | null {
   if (!model.roles[roleId]) return null;
   const patch: ScenarioPatch[] = [{ path: `roles.${roleId}.headcount`, op: "add", value: 1 }];
   const plus = applyPatches(model, patch).model;
+  const counted = (r: ReplicationResult) => (count === "wins" ? r.won : completions(r));
   const deadline = timeBudgetMs === undefined ? Infinity : now() + timeBudgetMs;
   const startA = initialState(model);
   const startB = initialState(plus);
@@ -81,8 +84,8 @@ export function shadowPrice(
   for (let i = 0; i < reps; i++) {
     if (i > 0 && now() >= deadline) break;
     const s = seed + i * SEED_STRIDE;
-    a.push(completions(runOnce(model, s, false, startA)));
-    b.push(completions(runOnce(plus, s, false, startB)));
+    a.push(counted(runOnce(model, s, false, startA)));
+    b.push(counted(runOnce(plus, s, false, startB)));
   }
   const k = WEEKS_PER_QUARTER / model.horizonWeeks;
   const scaled = (x: number[]) => x.map((v) => v * k);

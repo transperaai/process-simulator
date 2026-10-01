@@ -83,6 +83,8 @@ export interface AbsenceFinding {
   workLost: number;
   /** Items (and servicing tasks) lost in that window, per replication. */
   itemsLost: number;
+  /** Wins lost in that window, per replication: what the cost per month counts at deal value (servicing tasks aren't deals). */
+  winsLost: number;
   /** Weeks after they return until the queues at their steps are back to normal; see `recovered`. */
   recoveryWeeks: number;
   /**
@@ -162,6 +164,11 @@ export function absenceTest(model: EngineModel, options: AbsenceOptions = {}): A
     const c = r.weekly!.completed;
     return (c[c.length - 1] ?? 0) - (startWeek > 0 ? (c[startWeek - 1] ?? 0) : 0);
   };
+  const windowWins = (r: ReplicationResult) => {
+    const w = r.weekly!.won;
+    return (w[w.length - 1] ?? 0) - (startWeek > 0 ? (w[startWeek - 1] ?? 0) : 0);
+  };
+  const baseWins = sum(baseline.map(windowWins));
   const baseWork = sum(baseline.map(windowWork));
   const baseMissed = sum(baseline.map((r) => r.touchpoints?.missed ?? 0)) / reps;
   const queueAt = (rs: ReplicationResult[], stepIds: string[], tick: number) =>
@@ -180,6 +187,7 @@ export function absenceTest(model: EngineModel, options: AbsenceOptions = {}): A
     const absent = run(away);
     const workLost = baseWork > 0 ? Math.max(0, (baseWork - sum(absent.map(windowWork))) / baseWork) : 0;
     const itemsLost = Math.max(0, (baseWork - sum(absent.map(windowWork))) / reps);
+    const winsLost = Math.max(0, (baseWins - sum(absent.map(windowWins))) / reps);
 
     // Weeks after the return until the queues at their steps are back to normal, and stay so a week later.
     const back = startWeek + weeks;
@@ -202,6 +210,7 @@ export function absenceTest(model: EngineModel, options: AbsenceOptions = {}): A
       stepIds: cand.stepIds,
       workLost,
       itemsLost,
+      winsLost,
       recoveryWeeks,
       recovered,
       extraMissed,

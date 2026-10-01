@@ -6,7 +6,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { IssueRow, ProcessBundle, ScenarioRow } from "@transpera-flow/db";
 import { detectBrokenScenarios, resolveMoney, type AnalysisSettings, type EngineModel, type RetiredSteps, type SimulationResult } from "@transpera-flow/engine";
 import { perceptionGapDetections } from "@/lib/issues/perception";
-import { rerate, visibleFindings } from "@/lib/rules/edit";
+import { visibleFindings } from "@/lib/rules/edit";
+import { useDetectedIssues } from "@/lib/issues/use-detected";
 import { useRatingSettings } from "@/lib/rules/use-rating-settings";
 import { confirmedBadges, confirmedRatings, entryView, promoteInput, registerEntries, stepRatingOf } from "@/lib/issues/register";
 import { useIssues } from "@/lib/issues/use-issues";
@@ -82,10 +83,8 @@ export function useProcessIssues({
   const gaps = useMemo(() => visibleFindings(rules, perceptionGapDetections(bundle.steps)), [bundle.steps, rules]);
   // The absence test (rule 8) runs in its own worker once the baseline is done; until it returns, that rule raises nothing.
   const absence = useAbsenceTest(model && result && !running ? model : null, result?.seed ?? 1, resolveMoney(rules).absenceWeeks);
-  const detected = useMemo(
-    () => (model && result ? visibleFindings(rules, [...broken, ...rerate(model, result, rules, bundle.process.id, absence), ...gaps]) : null),
-    [model, result, broken, gaps, rules, bundle.process.id, absence],
-  );
+  const found = useDetectedIssues(model, result, rules, bundle.process.id, bundle.workspace.settings.currency, absence);
+  const detected = useMemo(() => (found ? visibleFindings(rules, [...broken, ...found, ...gaps]) : null), [found, broken, gaps, rules]);
   const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);
 
   // A tracked broken-scenario issue resolves itself once its scenario is fixed (re-pointed or deleted).
@@ -179,6 +178,7 @@ export function useProcessIssues({
               scenarios={scenarios}
               brokenScenarios={brokenScenarios}
               canEdit={mode !== "readonly"}
+              currency={bundle.workspace.settings.currency}
               stepFilter={stepFilter}
               onStepFilterChange={setStepFilter}
               onHighlight={setLit}

@@ -32,10 +32,12 @@ import {
 } from "@transpera-flow/db";
 import {
   BUILD_STEP_KINDS,
+  IMPORT_STEP_KINDS,
   buildNewStep,
   buildStepChange,
   connectionProblem,
   DISTRIBUTIONS,
+  flattenNesting,
   graphWarnings,
   isUuid,
   nextOutcome,
@@ -48,8 +50,10 @@ import {
   reworkProblem,
   revisionDiff,
   startProblem,
+  type BuildStepKind,
   type Citation,
   type EdgeChange,
+  type Holder,
   type Graph,
   type ImportEdge,
   type ImportPlan,
@@ -136,11 +140,66 @@ const stepFieldsShape = {
     .describe("Reasoning for numbers no source states; each stays an assumption to confirm."),
 };
 
-const importStepArg = z
-  .object({ id: z.string().optional().describe("The step's stable id, to match an existing step exactly."), name: z.string().trim().min(1).max(200), ...stepFieldsShape })
-  .strict();
+type StepFieldsJson = z.infer<z.ZodObject<typeof stepFieldsShape>>;
+
+/** A step of process_json: the step tools' fields, plus the steps it holds and the child process it holds (issue #102). */
+interface ImportStepJson extends Omit<StepFieldsJson, "kind"> {
+  id?: string;
+  name: string;
+  kind?: BuildStepKind;
+  parent?: string | null;
+  entry?: string | null;
+  steps?: ImportStepJson[];
+  child_process?: string;
+  process?: ProcessJson;
+}
+
+interface ImportEdgeJson {
+  from: string;
+  to: string;
+  probability?: number;
+  condition_tag?: string | null;
+  label?: string | null;
+}
+
+interface ProcessJson {
+  name?: string;
+  kind?: "pipeline" | "servicing";
+  entity_name?: string;
+  description?: string | null;
+  steps: ImportStepJson[];
+  edges?: ImportEdgeJson[];
+  remove_missing?: boolean;
+  assumptions?: { step: string; field: (typeof EVIDENCE_COLUMNS)[number]; reasoning: string }[];
+}
+
+const importStepArg: z.ZodType<ImportStepJson> = z.lazy(() =>
+  z
+    .object({
+      id: z.string().optional().describe("The step's stable id, to match an existing step exactly."),
+      name: z.string().trim().min(1).max(200),
+      ...stepFieldsShape,
+      kind: z
+        .enum(IMPORT_STEP_KINDS)
+        .optional()
+        .describe(
+          "task (default), wait, decision, start or end; or group (a box of steps inside this process: give it `steps`) or subprocess " +
+            "(a step that holds a child process: give it `child_process` or `process`). A group and a sub-process step have no hours, role or rework of their own.",
+        ),
+      parent: z.string().nullish().describe("The group this step sits in (a group's name or id), instead of listing it in the group's `steps`; null for the top level."),
+      entry: z.string().nullish().describe("A group's first step (name or id). Default: the first of its `steps`."),
+      steps: z
+        .array(importStepArg)
+        .max(MAX_IMPORT_STEPS)
+        .optional()
+        .describe("A group's steps (the step is then a group). They can hold groups too, to any depth. Edges to and from them go in the process's `edges`, by name; names stay unique across the whole JSON."),
+      child_process: z.string().optional().describe("A sub-process step: an existing process (id or name) that becomes its child, shown inside this step. It must not already sit inside another process."),
+      process: processJsonArg.optional().describe("A sub-process step: a new child process to create in this call (same shape as process_json; its name defaults to this step's name), or, if the step already holds one, the steps to write into it."),
+    })
+    .strict(),
+);
 /** A step tool's arguments (add_step, update_step, a step of process_json). */
-type StepArgs = Partial<Omit<z.infer<typeof importStepArg>, "id">>;
+type StepArgs = Partial<Omit<StepFieldsJson, "kind"> & { name: string; kind: BuildStepKind }>;
 const importEdgeArg = z
   .object({
     from: z.string().min(1).describe("Step id or name (in process_json or the process)."),
@@ -150,22 +209,24 @@ const importEdgeArg = z
     label: z.string().max(200).nullish(),
   })
   .strict();
-const processJsonArg = z
-  .object({
-    name: z.string().trim().min(1).max(200).optional(),
-    kind: z.enum(["pipeline", "servicing"]).optional(),
-    entity_name: z.string().trim().min(1).max(100).optional(),
-    description: z.string().max(4000).nullish(),
-    steps: z.array(importStepArg).max(MAX_IMPORT_STEPS),
-    edges: z.array(importEdgeArg).max(MAX_IMPORT_EDGES).optional(),
-    remove_missing: z.boolean().optional().describe("With target: remove the draft's steps process_json doesn't list (default false)."),
-    assumptions: z
-      .array(z.object({ step: z.string().min(1), field: z.enum(EVIDENCE_COLUMNS), reasoning: z.string().trim().min(1).max(2000) }).strict())
-      .max(500)
-      .optional()
-      .describe("Reasoning for numbers no source states, by step name (the same as a step's own `assumptions`)."),
-  })
-  .strict();
+const processJsonArg: z.ZodType<ProcessJson> = z.lazy(() =>
+  z
+    .object({
+      name: z.string().trim().min(1).max(200).optional(),
+      kind: z.enum(["pipeline", "servicing"]).optional(),
+      entity_name: z.string().trim().min(1).max(100).optional(),
+      description: z.string().max(4000).nullish(),
+      steps: z.array(importStepArg).max(MAX_IMPORT_STEPS),
+      edges: z.array(importEdgeArg).max(MAX_IMPORT_EDGES).optional(),
+      remove_missing: z.boolean().optional().describe("With target: remove the draft's steps process_json doesn't list (default false)."),
+      assumptions: z
+        .array(z.object({ step: z.string().min(1), field: z.enum(EVIDENCE_COLUMNS), reasoning: z.string().trim().min(1).max(2000) }).strict())
+        .max(500)
+        .optional()
+        .describe("Reasoning for numbers no source states, by step name (the same as a step's own `assumptions`)."),
+    })
+    .strict(),
+);
 
 const routeArg = z
   .object({
@@ -403,11 +464,22 @@ async function applyPlan(
 ): Promise<EditConflict[]> {
   const conflicts: EditConflict[] = [];
   if (plan.insertSteps.length) {
-    const { error } = await ctx.db.from("steps").insert(plan.insertSteps.map((s) => ({ ...s, provenance: s.provenance as Json })));
+    // A group's first step is set once its steps are all in place (the database checks it when each request commits).
+    const { error } = await ctx.db.from("steps").insert(plan.insertSteps.map((s) => ({ ...s, entry_step_id: null, provenance: s.provenance as Json })));
     if (error) throw writeError(error, "add steps");
   }
+  // Moves into and out of groups first, then first steps, which need their group's steps to be in place.
+  const entries = [
+    ...plan.insertSteps.filter((s) => s.entry_step_id).map((s) => ({ id: s.id, base: { entry_step_id: null } as Record<string, unknown>, changes: { entry_step_id: s.entry_step_id } as Record<string, unknown> })),
+    ...plan.updateSteps.filter((u) => "entry_step_id" in u.changes).map((u) => ({ id: u.id, base: { entry_step_id: u.base.entry_step_id ?? null }, changes: { entry_step_id: u.changes.entry_step_id } })),
+  ];
   for (const u of plan.updateSteps) {
-    for (const c of await saveFields(ctx, "steps", revisionId, u.id, u.base, u.changes)) conflicts.push({ table: "steps", id: u.id, ...c });
+    const { entry_step_id: _entry, ...changes } = u.changes;
+    const { entry_step_id: _base, ...base } = u.base;
+    for (const c of await saveFields(ctx, "steps", revisionId, u.id, base, changes)) conflicts.push({ table: "steps", id: u.id, ...c });
+  }
+  for (const e of entries) {
+    for (const c of await saveFields(ctx, "steps", revisionId, e.id, e.base, e.changes)) conflicts.push({ table: "steps", id: e.id, ...c });
   }
   if (plan.removeEdges.length) {
     const { error } = await ctx.db.from("edges").delete().eq("revision_id", revisionId).in("id", plan.removeEdges.map((e) => e.id));
@@ -460,7 +532,7 @@ const warningsFor = (g: Graph, ids: readonly string[]) => graphWarnings(g).filte
 async function createProcessWithDraft(
   ctx: ToolContext,
   ws: WorkspaceRef,
-  input: { name: string; kind: "pipeline" | "servicing"; entity_name: string; description: string | null; source: "mcp" | "import" | "template" },
+  input: { name: string; kind: "pipeline" | "servicing"; entity_name: string; description: string | null; source: "mcp" | "import" | "template"; parent_process_id?: string },
 ): Promise<{ proc: ProcessWithDraft; draft: Draft }> {
   const existing = await listProcesses(ctx.db, ws.id);
   const clash = existing.find((p) => normalizeName(p.name) === normalizeName(input.name));
@@ -471,8 +543,16 @@ async function createProcessWithDraft(
   }
   const { data, error } = await ctx.db
     .from("processes")
-    .insert({ workspace_id: ws.id, name: input.name, kind: input.kind, entity_name: input.entity_name, description: input.description, source: input.source })
-    .select("id, workspace_id, name, kind, entity_name, description, live_revision_id, draft_revision_id")
+    .insert({
+      workspace_id: ws.id,
+      name: input.name,
+      kind: input.kind,
+      entity_name: input.entity_name,
+      description: input.description,
+      source: input.source,
+      ...(input.parent_process_id ? { parent_process_id: input.parent_process_id } : {}),
+    })
+    .select("id, workspace_id, name, kind, entity_name, description, live_revision_id, draft_revision_id, parent_process_id")
     .single();
   if (error) throw writeError(error, "create processes");
   const proc = data as unknown as ProcessWithDraft;
@@ -493,7 +573,7 @@ function templateSummary(t: ProcessTemplate) {
 }
 
 /** Reasoning given at the top of process_json, moved onto its steps. */
-function withTopLevelReasoning(steps: z.infer<typeof importStepArg>[], top: z.infer<typeof processJsonArg>["assumptions"]) {
+function withTopLevelReasoning<T extends { id?: string; name: string; assumptions?: { field: (typeof EVIDENCE_COLUMNS)[number]; reasoning: string }[] }>(steps: T[], top: ProcessJson["assumptions"]): T[] {
   if (!top?.length) return steps;
   return steps.map((s) => {
     const extra = top.filter((a) => normalizeName(a.step) === normalizeName(s.name) || a.step === s.id);
@@ -501,6 +581,232 @@ function withTopLevelReasoning(steps: z.infer<typeof importStepArg>[], top: z.in
     const mine = s.assumptions ?? [];
     return { ...s, assumptions: [...mine, ...extra.filter((a) => !mine.some((m) => m.field === a.field)).map((a) => ({ field: a.field, reasoning: a.reasoning }))] };
   });
+}
+
+// ---------------------------------------------------------------------------
+// import_process
+// ---------------------------------------------------------------------------
+
+type DraftBundle = Graph & { roles: readonly Named[]; people: readonly Named[]; retired?: StepRow[] };
+
+/** What import_process returns for one process: the draft it wrote and what to check, with the child processes written beside it. */
+interface ImportOutcome {
+  workspace: { id: string; name: string };
+  process: { id: string; name: string };
+  draft: { revision_id: string; number: number; opened_now: boolean };
+  created: boolean;
+  matched: ImportPlan["matched"];
+  diff: ReturnType<typeof revisionDiff>;
+  not_overwritten: ImportPlan["kept"];
+  conflicts: ImportPlan["conflicts"];
+  edit_conflicts: EditConflict[];
+  checklist: ReturnType<typeof checklist>;
+  warnings: string[];
+  /** The child processes of its sub-process steps that this call created or wrote into. */
+  children: (ImportOutcome & { step: string })[];
+  text: string;
+}
+
+interface PreparedImport {
+  /** Create the process and its draft, or open the existing draft (as a child of `parent`). Writes nothing else. */
+  ensure(parent: ProcessWithDraft | null): Promise<{ proc: ProcessWithDraft; draft: Draft }>;
+  /** Write the steps and edges, then the child processes'. */
+  write(): Promise<ImportOutcome>;
+}
+
+interface ImportScope {
+  ctx: ToolContext;
+  ws: WorkspaceRef;
+  assumptions: string[];
+  /** Names of the processes this call will create, to refuse two with the same name. */
+  reserved: Set<string>;
+  /** Every process of the workspace, as read once. */
+  processes: ProcessWithDraft[];
+  stamp: Stamp;
+}
+
+/**
+ * Check a whole import before writing any of it (a failed call creates no
+ * process, opens no draft and moves no child), then return what writes it.
+ * `json` is process_json or a sub-process step's `process`; steps held in
+ * groups are unfolded (flattenNesting), and the processes held by sub-process
+ * steps are prepared the same way, to any depth.
+ */
+async function prepareImport(
+  scope: ImportScope,
+  json: ProcessJson,
+  opts: { target?: ProcessWithDraft; create?: { name: string; kind: "pipeline" | "servicing"; entity_name: string; source: "import" }; ancestors: string[] },
+): Promise<PreparedImport> {
+  const { ctx, ws, assumptions, stamp } = scope;
+  const { steps: flat, holders } = flattenNesting(json.steps);
+  const target = opts.target ?? null;
+
+  // The child process each sub-process step holds: one it already holds, an existing process to adopt, or a new one.
+  const current = target?.draft_revision_id ?? target?.live_revision_id;
+  const currentBundle = current ? await loadProcessBundle(ctx.db, ws, target!, current) : null;
+  const heldNow = (stepName: string, id?: string) => {
+    const row = currentBundle?.steps.find((r) => (id !== undefined && r.id === id) || normalizeName(r.name) === normalizeName(stepName));
+    return row?.child_process_id ?? null;
+  };
+  const processById = new Map(scope.processes.map((pr) => [pr.id, pr]));
+  const self = target?.id ?? null;
+  interface Held {
+    step: string;
+    /** The process it holds now, or will once created or adopted. */
+    id: string;
+    /** Set when an existing process is adopted as the step's child. */
+    adopt?: ProcessWithDraft;
+    /** The steps to write into it (an existing child or a new one). */
+    inline?: { json: ProcessJson; existing: ProcessWithDraft | null; prepared: PreparedImport };
+  }
+  const held: Held[] = [];
+  for (const h of holders as Holder<ProcessJson>[]) {
+    const idGiven = flat.find((st) => normalizeName(st.name) === normalizeName(h.step))?.id;
+    const now = heldNow(h.step, idGiven);
+    if (h.child_process !== undefined) {
+      const child = resolveProcessRef(scope.processes, h.child_process, `for step '${h.step}'`);
+      if (child.id === self || opts.ancestors.includes(child.id)) throw new ToolError("invalid_input", `Step '${h.step}': a process can't sit inside itself; '${child.name}' is this process or one that holds it.`);
+      if (child.parent_process_id && child.parent_process_id !== self) {
+        throw new ToolError("invalid_input", `Step '${h.step}': '${child.name}' already sits inside '${processById.get(child.parent_process_id)?.name ?? "another process"}'; a process has one parent.`);
+      }
+      if (now && now !== child.id) throw new ToolError("invalid_input", `Step '${h.step}' already holds '${processById.get(now)?.name ?? "another process"}'; remove that first.`);
+      held.push({ step: h.step, id: child.id, ...(child.parent_process_id === self ? {} : { adopt: child }) });
+      continue;
+    }
+    const inlineJson = h.process!;
+    const existing = now ? (processById.get(now) ?? null) : null;
+    const name = inlineJson.name ?? h.step;
+    const childOpts = existing
+      ? { target: existing, ancestors: [...opts.ancestors, ...(self ? [self] : [])] }
+      : { create: { name, kind: inlineJson.kind ?? json.kind ?? target?.kind ?? opts.create?.kind ?? "pipeline", entity_name: inlineJson.entity_name ?? target?.entity_name ?? opts.create?.entity_name ?? "item", source: "import" as const }, ancestors: [...opts.ancestors, ...(self ? [self] : [])] };
+    const prepared = await prepareImport(scope, { ...inlineJson, ...(existing ? {} : { name }) }, childOpts);
+    held.push({ step: h.step, id: existing?.id ?? newId(), inline: { json: inlineJson, existing, prepared } });
+  }
+  const childIds = new Map(held.map((x) => [normalizeName(x.step), x.id]));
+
+  let create: Parameters<typeof createProcessWithDraft>[2] | null = null;
+  if (!target) {
+    const c = opts.create;
+    if (!c) throw new ToolError("invalid_input", "process_json needs a name for a new process (or pass `target` to write into an existing one).");
+    const clash = scope.processes.find((pr) => normalizeName(pr.name) === normalizeName(c.name));
+    if (clash || scope.reserved.has(normalizeName(c.name))) {
+      throw new ToolError("name_taken", `'${ws.name}' already has a process called '${clash?.name ?? c.name}'; pass it as import_process's target to change it`, clash ? [{ id: clash.id, name: clash.name }] : undefined);
+    }
+    scope.reserved.add(normalizeName(c.name));
+    create = { name: c.name, kind: c.kind, entity_name: c.entity_name, description: json.description?.trim() || null, source: c.source };
+  }
+
+  const planFor = async (from: DraftBundle, owner: StepOwner, ids: ReadonlyMap<string, string>) => {
+    const l = await lookupsFor(ctx, ws, from as Graph & { roles: readonly Named[]; people: readonly Named[]; steps: StepRow[] }, hasCitations(flat));
+    const steps: ImportStep[] = withTopLevelReasoning(flat, json.assumptions).map((st) => {
+      const { id, name, rework_to, ...rest } = st;
+      const child = ids.get(normalizeName(name));
+      return {
+        ...toFields({ name, ...rest } as StepArgs, l, ` (step '${name}')`),
+        ...(child ? { child_process_id: child } : {}),
+        ...(rest.parent !== undefined ? { parent: rest.parent } : {}),
+        ...(rest.entry !== undefined ? { entry: rest.entry } : {}),
+        ...(id !== undefined ? { id } : {}),
+        name,
+        ...(rework_to !== undefined ? { rework_to } : {}),
+      };
+    });
+    const plan = planImport({ steps, edges: (json.edges ?? []) as ImportEdge[], remove_missing: json.remove_missing }, { ...from, retired: from.retired ?? [] }, owner, stamp, { newId });
+    return { l, plan };
+  };
+
+  // Plan against what the draft will be (the open draft, else a copy of live, else empty).
+  await planFor(
+    currentBundle ??
+      ({
+        steps: [],
+        edges: [],
+        roles: check(await ctx.db.from("roles").select("id, name").eq("workspace_id", ws.id)),
+        people: check(await ctx.db.from("people").select("id, name").eq("workspace_id", ws.id)),
+      } as DraftBundle),
+    { revision_id: current ?? newId(), workspace_id: ws.id, process_id: target?.id ?? newId() },
+    childIds,
+  );
+
+  let ensured: { proc: ProcessWithDraft; draft: Draft } | null = null;
+  const prepared: PreparedImport = {
+    async ensure(parent) {
+      if (ensured) return ensured;
+      if (target) {
+        const draft = await openDraft(ctx, target);
+        ensured = { proc: { ...target, draft_revision_id: draft.revision_id }, draft };
+      } else {
+        const made = await createProcessWithDraft(ctx, ws, { ...create!, ...(parent ? { parent_process_id: parent.id } : {}) });
+        ensured = { proc: made.proc, draft: made.draft };
+      }
+      return ensured;
+    },
+    async write() {
+      const { proc, draft } = await prepared.ensure(null);
+      // Every child exists, and belongs to this process, before the step that holds it is written.
+      for (const h of held) {
+        if (h.adopt) {
+          const { error } = await ctx.db.from("processes").update({ parent_process_id: proc.id }).eq("id", h.adopt.id);
+          if (error) throw writeError(error, "move a process inside another");
+        }
+        if (h.inline) h.id = (await h.inline.prepared.ensure(proc)).proc.id;
+      }
+      const ids = new Map(held.map((x) => [normalizeName(x.step), x.id]));
+      const bundle = await loadDraft(ctx, ws, proc, draft);
+      const e: Editing = { ws, proc, draft, bundle, owner: { revision_id: draft.revision_id, workspace_id: ws.id, process_id: proc.id }, stamp };
+      const { l, plan } = await planFor(bundle, e.owner, ids);
+      assumptions.push(...plan.assumptions);
+      const editConflicts = await applyPlan(ctx, draft.revision_id, plan);
+
+      const after = await loadDraft(ctx, ws, proc, draft);
+      const live = proc.live_revision_id ? await loadProcessBundle(ctx.db, ws, proc, proc.live_revision_id) : null;
+      const diff = revisionDiff(live && { steps: [...live.steps, ...(live.retired ?? [])], edges: live.edges }, { steps: [...after.steps, ...(after.retired ?? [])], edges: after.edges });
+      const items = checklist(after.steps);
+      const nConflicts = items.filter((i) => i.kind === "conflict").length;
+      const warnings = [...graphWarnings(after).map((w) => (w.step ? `${w.step}: ${w.warning}` : w.warning)), ...l.warnings];
+
+      const children: ImportOutcome["children"] = [];
+      for (const h of held) if (h.inline) children.push({ step: h.step, ...(await h.inline.prepared.write()) });
+
+      const created = !target;
+      return {
+        ...header(e),
+        created,
+        matched: plan.matched,
+        diff,
+        not_overwritten: plan.kept,
+        conflicts: plan.conflicts,
+        edit_conflicts: editConflicts,
+        checklist: items,
+        warnings,
+        children,
+        text:
+          `${!created ? `Wrote into the draft of '${proc.name}'` : `Created '${proc.name}' as a draft`}: ${diff.text}` +
+          (!created ? ` Matched ${plan.matched.filter((m) => m.by === "id").length} by id and ${plan.matched.filter((m) => m.by === "name").length} by name.` : "") +
+          (plan.kept.length ? ` ${plural(plan.kept.length, "entered value")} kept and flagged as ${plan.kept.length === 1 ? "a conflict" : "conflicts"}.` : "") +
+          ` To confirm before publishing: ${plural(nConflicts, "conflict")}, ${plural(items.length - nConflicts, "assumption")}.` +
+          (held.length
+            ? ` Child processes: ${held.map((x) => `'${x.step}' holds '${(children.find((c) => c.step === x.step)?.process.name ?? x.adopt?.name ?? processById.get(x.id)?.name) ?? x.step}'${x.adopt ? " (moved inside it)" : ""}`).join("; ")}.`
+            : "") +
+          conflictNote(editConflicts),
+      };
+    },
+  };
+  return prepared;
+}
+
+/** The ids of the processes that hold `proc`, nearest first. */
+function ancestorsOf(processes: readonly ProcessWithDraft[], proc: ProcessWithDraft): string[] {
+  const out: string[] = [];
+  for (let at: ProcessWithDraft | undefined = proc; at?.parent_process_id && !out.includes(at.parent_process_id); at = processes.find((p) => p.id === at!.parent_process_id)) {
+    out.push(at.parent_process_id);
+  }
+  return out;
+}
+
+/** An existing process by id or name (exactly, ignoring case and punctuation), for a sub-process step's `child_process`. */
+function resolveProcessRef(processes: readonly ProcessWithDraft[], ref: string, where: string): ProcessWithDraft {
+  return resolveName(processes, ref, "process", ` ${where}`, { strict: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -979,19 +1285,26 @@ export function registerBuildingTools(server: McpServer, ctx: ToolContext): void
         "Write a whole process graph (steps with numbers, evidence and reasoning, and edges) into a draft. Without `target`, creates a new " +
         "process as a draft. With `target`, writes into that process's draft (opening one if needed): steps are matched by stable id, then by " +
         "name, and keep their ids; values someone entered or measured are never overwritten but flagged as conflicts; a step whose edges are " +
-        "listed gets exactly those edges. Names and the graph are checked before anything is written, so a failed call creates no process and " +
-        "opens no draft. Returns the diff against live, the conflicts and the checklist of assumptions to confirm.",
+        "listed gets exactly those edges. Steps can hold steps: give a step `steps` and it is a group (a box of steps inside the process, to any " +
+        "depth), or give it `child_process` (an existing process) or `process` (a new one, written in the same call) and it holds a child process " +
+        "of its own. The engine simulates the detailed steps, so a group or child process changes how the map is drawn, not the numbers. Names and " +
+        "the graph are checked before anything is written, so a failed call creates no process and opens no draft. Returns the diff against live, " +
+        "the conflicts and the checklist of assumptions to confirm, with the same for each child process written.",
       inputSchema: {
         process_json: z
           .union([processJsonArg, z.string().max(2_000_000)])
-          .describe("{name?, kind?, entity_name?, description?, steps: [{id?, name, kind?, outcome?, role?, work_hours?, ..., evidence?, assumptions?}], edges: [{from, to, probability?}], remove_missing?, assumptions?: [{step, field, reasoning}]} (an object, or the same as a JSON string)."),
+          .describe(
+            "{name?, kind?, entity_name?, description?, steps: [{id?, name, kind?, outcome?, role?, work_hours?, ..., evidence?, assumptions?, " +
+              "steps?: [...a group's steps], entry?, parent?, child_process?: 'existing process', process?: {...a new child process}}], " +
+              "edges: [{from, to, probability?}], remove_missing?, assumptions?: [{step, field, reasoning}]} (an object, or the same as a JSON string).",
+          ),
         target: z.string().optional().describe("Existing process (id or name) to write into; omit to create a new process."),
         workspace: workspaceArg,
       },
     },
     (args) =>
       runTool(async (assumptions) => {
-        let json: z.infer<typeof processJsonArg>;
+        let json: ProcessJson;
         if (typeof args.process_json === "string") {
           let parsed: unknown;
           try {
@@ -1008,78 +1321,24 @@ export function registerBuildingTools(server: McpServer, ctx: ToolContext): void
         if (accessError) throw writeError(accessError, "edit processes");
         if (canEdit !== true) throw new ToolError("forbidden", `You don't have permission to edit processes in '${ws.name}' (editors and owners can).`);
 
-        let target: ProcessWithDraft | null = null;
-        let create: Parameters<typeof createProcessWithDraft>[2] | null = null;
+        const processes = await listProcesses(ctx.db, ws.id);
+        const scope: ImportScope = { ctx, ws, assumptions, reserved: new Set(), processes, stamp: await stampOf(ctx) };
+        let prepared: PreparedImport;
         if (args.target) {
-          target = await resolveProcess(ctx, ws, args.target, assumptions);
+          const target = await resolveProcess(ctx, ws, args.target, assumptions);
           const ignored = (["name", "kind", "entity_name", "description"] as const).filter((k) => json[k] !== undefined && json[k] !== (target as unknown as Record<string, unknown>)[k]);
           if (ignored.length) assumptions.push(`process_json's ${ignored.join(", ")} ${ignored.length === 1 ? "was" : "were"} ignored: they belong to the process, not its draft.`);
+          prepared = await prepareImport(scope, json, { target, ancestors: ancestorsOf(processes, target) });
         } else {
           if (!json.name) throw new ToolError("invalid_input", "process_json needs a name for a new process (or pass `target` to write into an existing one).");
           const kind = json.kind ?? "pipeline";
           if (!json.kind) assumptions.push("kind defaulted to pipeline.");
           const entity = json.entity_name ?? (kind === "pipeline" ? "lead" : "item");
           if (!json.entity_name) assumptions.push(`entity_name defaulted to '${entity}'.`);
-          create = { name: json.name, kind, entity_name: entity, description: json.description?.trim() || null, source: "import" };
+          prepared = await prepareImport(scope, json, { create: { name: json.name, kind, entity_name: entity, source: "import" }, ancestors: [] });
         }
-
-        const stamp = await stampOf(ctx);
-        const planFor = async (from: Graph & { roles: readonly Named[]; people: readonly Named[]; retired?: StepRow[] }, owner: StepOwner) => {
-          const l = await lookupsFor(ctx, ws, from, hasCitations(json.steps));
-          const steps: ImportStep[] = withTopLevelReasoning(json.steps, json.assumptions).map((s) => {
-            const { id, name, rework_to, ...rest } = s;
-            return { ...toFields({ name, ...rest }, l, ` (step '${name}')`), ...(id !== undefined ? { id } : {}), name, ...(rework_to !== undefined ? { rework_to } : {}) };
-          });
-          const plan = planImport({ steps, edges: (json.edges ?? []) as ImportEdge[], remove_missing: json.remove_missing }, { ...from, retired: from.retired ?? [] }, owner, stamp, { newId });
-          return { l, plan };
-        };
-
-        // Check everything before writing anything, so a name that doesn't resolve or an invalid graph leaves no new
-        // process or newly opened draft behind: plan against what the draft will be (the open draft, else a copy of live,
-        // else empty), then create or open it and plan again against the real rows.
-        const current = target?.draft_revision_id ?? target?.live_revision_id;
-        await planFor(
-          current
-            ? await loadProcessBundle(ctx.db, ws, target!, current)
-            : { steps: [], edges: [], roles: check(await ctx.db.from("roles").select("id, name").eq("workspace_id", ws.id)), people: check(await ctx.db.from("people").select("id, name").eq("workspace_id", ws.id)) },
-          { revision_id: current ?? newId(), workspace_id: ws.id, process_id: target?.id ?? newId() },
-        );
-
-        let proc: ProcessWithDraft;
-        let draft: Draft;
-        if (target) {
-          draft = await openDraft(ctx, target);
-          proc = { ...target, draft_revision_id: draft.revision_id };
-        } else ({ proc, draft } = await createProcessWithDraft(ctx, ws, create!));
-        const bundle = await loadDraft(ctx, ws, proc, draft);
-        const e: Editing = { ws, proc, draft, bundle, owner: { revision_id: draft.revision_id, workspace_id: ws.id, process_id: proc.id }, stamp };
-        const { l, plan } = await planFor(bundle, e.owner);
-        assumptions.push(...plan.assumptions);
-        const editConflicts = await applyPlan(ctx, draft.revision_id, plan);
-
-        const after = await loadDraft(ctx, ws, proc, draft);
-        const live = proc.live_revision_id ? await loadProcessBundle(ctx.db, ws, proc, proc.live_revision_id) : null;
-        const diff = revisionDiff(live && { steps: [...live.steps, ...(live.retired ?? [])], edges: live.edges }, { steps: [...after.steps, ...(after.retired ?? [])], edges: after.edges });
-        const items = checklist(after.steps);
-        const nConflicts = items.filter((i) => i.kind === "conflict").length;
-        const warnings = [...graphWarnings(after).map((w) => (w.step ? `${w.step}: ${w.warning}` : w.warning)), ...l.warnings];
-        return {
-          ...header(e),
-          created: !args.target,
-          matched: plan.matched,
-          diff,
-          not_overwritten: plan.kept,
-          conflicts: plan.conflicts,
-          edit_conflicts: editConflicts,
-          checklist: items,
-          warnings,
-          text:
-            `${args.target ? `Wrote into the draft of '${proc.name}'` : `Created '${proc.name}' as a draft`}: ${diff.text}` +
-            (args.target ? ` Matched ${plan.matched.filter((m) => m.by === "id").length} by id and ${plan.matched.filter((m) => m.by === "name").length} by name.` : "") +
-            (plan.kept.length ? ` ${plural(plan.kept.length, "entered value")} kept and flagged as ${plan.kept.length === 1 ? "a conflict" : "conflicts"}.` : "") +
-            ` To confirm before publishing: ${plural(nConflicts, "conflict")}, ${plural(items.length - nConflicts, "assumption")}.` +
-            conflictNote(editConflicts),
-        };
+        await prepared.ensure(null);
+        return prepared.write();
       }),
   );
 

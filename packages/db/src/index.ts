@@ -14,6 +14,20 @@ export {
 } from "./model";
 export { isRetiredStep, partitionSteps } from "./retired";
 export {
+  absolutePositions,
+  ancestorsOf,
+  childrenOf,
+  isGroup,
+  leavesIn,
+  rollUp,
+  visibleEdges,
+  visibleEndpoint,
+  visibleSteps,
+  type Expanded,
+  type MapEdge,
+  type RollUp,
+} from "./nesting";
+export {
   MAX_POISSON_PER_MONTH,
   MAX_RECURRENCE_TIMES,
   MAX_SLA_HOURS,

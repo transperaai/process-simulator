@@ -465,4 +465,333 @@ describe.skipIf(!POSTGREST_URL)("MCP process building over PostgREST (drafts onl
     // Only the test's own setup (as the database owner) is logged as anything else.
     expect(rows.filter((r) => r.actor_kind !== "mcp").every((r) => r.target_table === "memberships")).toBe(true);
   });
+
+  // -------------------------------------------------------------------------
+  // Processes inside processes (issue #102). These run after the audit-log
+  // test above, which expects the test's own setup to be the only writes that
+  // aren't MCP's; they set workspace numbers the simulations need.
+  // -------------------------------------------------------------------------
+
+  const sid = (n: number) => `70000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+  const SIM = { reps: 4, seed: 7, start_date: "2026-11-02", revision: "live" } as const;
+
+  type Outcome = {
+    created: boolean;
+    process: { id: string; name: string };
+    matched: { name: string; id: string; by: string }[];
+    diff: { text: string; steps: { added: { name: string }[]; changed: unknown[] } };
+    warnings: string[];
+    children: (Outcome & { step: string })[];
+    text: string;
+  };
+  type Run = Record<string, unknown>;
+
+  /** A run's numbers, without what names a process. */
+  const numbers = (r: Run) => {
+    const { process: _p, revision: _r, duration_ms: _d, workspace: _w, ...rest } = r;
+    return rest;
+  };
+
+  it("lists import_process with nested steps in its schema", async () => {
+    const editor = await connect(editorToken, options);
+    const { tools } = await editor.listTools();
+    const tool = tools.find((t) => t.name === "import_process")!;
+    const text = JSON.stringify(tool.inputSchema);
+    expect(text).toContain("child_process");
+    expect(text).toContain("a group");
+    await editor.close();
+  });
+
+  it("imports groups inside groups in one call, and simulates exactly as the same process drawn flat", async () => {
+    await admin.query(
+      `update workspaces set settings = '{"hours_per_week":40,"horizon_weeks":13,"leads_per_week":7,"active_clients":20,"churn_monthly":0.03,"retainer":3000}'::jsonb where id = $1`,
+      [workspaceId],
+    );
+    const editor = await connect(editorToken, options);
+    const step = (n: number, name: string, over: Record<string, unknown> = {}) => ({
+      id: sid(n),
+      name,
+      role: "Consultant",
+      work_hours: 1 + n / 10,
+      wait_hours: 2 + n,
+      rework_rate: n === 4 ? 0.1 : 0,
+      ...over,
+    });
+    const flat = await call<Outcome>(editor, "import_process", {
+      process_json: {
+        name: "Flat sales",
+        steps: [
+          { id: sid(0), name: "Enquiry", kind: "start" },
+          step(1, "Receive enquiry"),
+          step(2, "Check fit"),
+          step(3, "Discovery"),
+          step(4, "Proposal"),
+          { id: sid(9), name: "Won", kind: "end", outcome: "won" },
+        ],
+        edges: [
+          { from: "Enquiry", to: "Receive enquiry" },
+          { from: "Receive enquiry", to: "Check fit" },
+          { from: "Check fit", to: "Discovery" },
+          { from: "Discovery", to: "Proposal" },
+          { from: "Proposal", to: "Won" },
+        ],
+      },
+    });
+    expect(flat.ok, JSON.stringify(flat)).toBe(true);
+
+    const nested = await call<Outcome>(editor, "import_process", {
+      process_json: {
+        name: "Nested sales",
+        steps: [
+          { id: sid(0), name: "Enquiry", kind: "start" },
+          {
+            name: "Sales",
+            steps: [
+              { name: "Qualify", steps: [step(1, "Receive enquiry"), step(2, "Check fit")] },
+              step(3, "Discovery"),
+              step(4, "Proposal"),
+            ],
+          },
+          { id: sid(9), name: "Won", kind: "end", outcome: "won" },
+        ],
+        // Edges name steps at any depth; those into a group enter its first step.
+        edges: [
+          { from: "Enquiry", to: "Sales" },
+          { from: "Receive enquiry", to: "Check fit" },
+          { from: "Check fit", to: "Discovery" },
+          { from: "Discovery", to: "Proposal" },
+          { from: "Sales", to: "Won" },
+        ],
+      },
+    });
+    expect(nested.ok, JSON.stringify(nested)).toBe(true);
+    expect(nested.data.diff.steps.added.map((s) => s.name).sort()).toEqual(["Check fit", "Discovery", "Enquiry", "Proposal", "Qualify", "Receive enquiry", "Sales", "Won"]);
+    expect(nested.data.warnings).toEqual([]);
+
+    const proc = await processRow("Nested sales");
+    const rows = await stepsOf(proc.draft_revision_id!);
+    const named = (name: string) => rows.find((r) => r.name === name)! as unknown as { id: string; kind: string; parent_step_id: string | null; entry_step_id: string | null; x: number; y: number };
+    expect(named("Sales")).toMatchObject({ kind: "group", parent_step_id: null, entry_step_id: named("Qualify").id });
+    expect(named("Qualify")).toMatchObject({ kind: "group", parent_step_id: named("Sales").id, entry_step_id: sid(1) });
+    expect(named("Receive enquiry")).toMatchObject({ id: sid(1), parent_step_id: named("Qualify").id });
+    expect(named("Check fit").parent_step_id).toBe(named("Qualify").id);
+    expect(named("Proposal").parent_step_id).toBe(named("Sales").id);
+    expect(named("Won").parent_step_id).toBeNull();
+
+    // get_process shows the nesting, so Claude can read back what it wrote.
+    const read = await call<{ steps: { name: string; parent_step_id: string | null; entry_step_id: string | null }[] }>(editor, "get_process", { process: "Nested sales", revision: "draft" });
+    expect(read.data.steps.find((s) => s.name === "Qualify")).toMatchObject({ parent_step_id: named("Sales").id, entry_step_id: sid(1) });
+
+    for (const name of ["Flat sales", "Nested sales"]) {
+      const published = await call(editor, "publish_process", { process: name, accept_estimates: true });
+      expect(published.ok, JSON.stringify(published)).toBe(true);
+    }
+    const a = await call<Run>(editor, "run_scenario", { process: "Flat sales", ...SIM });
+    const b = await call<Run>(editor, "run_scenario", { process: "Nested sales", ...SIM });
+    expect(a.ok, JSON.stringify(a)).toBe(true);
+    expect(b.ok, JSON.stringify(b)).toBe(true);
+    // Same steps, same numbers: nesting is how the map is drawn, not what is simulated.
+    expect(numbers(b.data)).toEqual(numbers(a.data));
+    expect((a.data.kpi as { won: { mean: number } }).won.mean).toBeGreaterThan(0);
+    await editor.close();
+  });
+
+  it("round trips: reading the nested process back and importing it again changes nothing", async () => {
+    const editor = await connect(editorToken, options);
+    const read = await call<{
+      steps: { id: string; name: string; kind: string; outcome: string | null; parent_step_id: string | null; entry_step_id: string | null }[];
+      edges: { from_step_id: string; to_step_id: string; probability: number }[];
+    }>(editor, "get_process", { process: "Nested sales" });
+    const name = new Map(read.data.steps.map((s) => [s.id, s.name]));
+    const again = await call<Outcome>(editor, "import_process", {
+      target: "Nested sales",
+      process_json: {
+        steps: read.data.steps.map((s) => ({
+          id: s.id,
+          name: s.name,
+          kind: s.kind,
+          ...(s.outcome ? { outcome: s.outcome } : {}),
+          parent: s.parent_step_id ? name.get(s.parent_step_id) : null,
+          ...(s.entry_step_id ? { entry: name.get(s.entry_step_id) } : {}),
+        })),
+        edges: read.data.edges.map((e) => ({ from: name.get(e.from_step_id), to: name.get(e.to_step_id), probability: e.probability })),
+      },
+    });
+    expect(again.ok, JSON.stringify(again)).toBe(true);
+    expect(again.data.created).toBe(false);
+    expect(again.data.diff.text).toBe("The draft is the same as live.");
+    expect(again.data.matched.every((m) => m.by === "id")).toBe(true);
+    await editor.close();
+  });
+
+  it("imports a child process in the same call, and simulates it as part of the process that holds it", async () => {
+    const editor = await connect(editorToken, options);
+    const task = (n: number, name: string) => ({ id: sid(n), name, role: "Consultant", work_hours: 1 + n / 10, wait_hours: 2 + n, rework_rate: n === 14 ? 0.1 : 0 });
+    const flat = await call<Outcome>(editor, "import_process", {
+      process_json: {
+        name: "Flat delivery",
+        steps: [
+          { id: sid(10), name: "Enquiry", kind: "start" },
+          task(11, "Qualify"),
+          task(12, "Kickoff"),
+          task(13, "Build"),
+          task(14, "Go live"),
+          { id: sid(19), name: "Won", kind: "end", outcome: "won" },
+        ],
+        edges: [
+          { from: "Enquiry", to: "Qualify" },
+          { from: "Qualify", to: "Kickoff" },
+          { from: "Kickoff", to: "Build" },
+          { from: "Build", to: "Go live" },
+          { from: "Go live", to: "Won" },
+        ],
+      },
+    });
+    expect(flat.ok, JSON.stringify(flat)).toBe(true);
+
+    const made = await call<Outcome>(editor, "import_process", {
+      process_json: {
+        name: "Company delivery",
+        steps: [
+          { id: sid(10), name: "Enquiry", kind: "start" },
+          task(11, "Qualify"),
+          {
+            name: "Delivery",
+            process: {
+              name: "Delivery process",
+              steps: [{ name: "Start delivery", kind: "start" }, task(12, "Kickoff"), task(13, "Build"), task(14, "Go live"), { name: "Delivered", kind: "end", outcome: "done" }],
+              edges: [
+                { from: "Start delivery", to: "Kickoff" },
+                { from: "Kickoff", to: "Build" },
+                { from: "Build", to: "Go live" },
+                { from: "Go live", to: "Delivered" },
+              ],
+            },
+          },
+          { id: sid(19), name: "Won", kind: "end", outcome: "won" },
+        ],
+        edges: [
+          { from: "Enquiry", to: "Qualify" },
+          { from: "Qualify", to: "Delivery" },
+          { from: "Delivery", to: "Won" },
+        ],
+      },
+    });
+    expect(made.ok, JSON.stringify(made)).toBe(true);
+    expect(made.data.children).toHaveLength(1);
+    expect(made.data.children[0]).toMatchObject({ step: "Delivery", created: true, process: { name: "Delivery process" } });
+    expect(made.data.text).toContain("'Delivery' holds 'Delivery process'");
+
+    const parent = await processRow("Company delivery");
+    const child = await processRow("Delivery process");
+    expect(child).toMatchObject({ parent_process_id: parent.id, source: "import" });
+    expect(parent).toMatchObject({ parent_process_id: null });
+    const holder = (await stepsOf(parent.draft_revision_id!)).find((s) => s.name === "Delivery")! as unknown as { kind: string; child_process_id: string; work_hours: number; role_id: string | null };
+    expect(holder).toMatchObject({ kind: "subprocess", child_process_id: child.id, role_id: null });
+    expect(Number(holder.work_hours)).toBe(0);
+    expect((await stepsOf(child.draft_revision_id!)).map((s) => s.name).sort()).toEqual(["Build", "Delivered", "Go live", "Kickoff", "Start delivery"]);
+
+    const read = await call<{ process: { parent_process_id: string | null } }>(editor, "get_process", { process: "Delivery process", revision: "draft" });
+    expect(read.data.process.parent_process_id).toBe(parent.id);
+
+    // Publish the child, then the parent, and simulate: the child's steps are simulated inside the parent.
+    expect(await call(editor, "publish_process", { process: "Flat delivery", accept_estimates: true })).toMatchObject({ ok: true });
+    expect(await call(editor, "publish_process", { process: "Delivery process", accept_estimates: true })).toMatchObject({ ok: true });
+    expect(await call(editor, "publish_process", { process: "Company delivery", accept_estimates: true })).toMatchObject({ ok: true });
+    const a = await call<Run>(editor, "run_scenario", { process: "Flat delivery", ...SIM });
+    const b = await call<Run>(editor, "run_scenario", { process: "Company delivery", ...SIM });
+    expect(b.ok, JSON.stringify(b)).toBe(true);
+    expect(numbers(b.data)).toEqual(numbers(a.data));
+
+    // The child on its own simulates too (it is a process of its own, with its own page and versions).
+    const alone = await call<Run>(editor, "run_scenario", { process: "Delivery process", ...SIM });
+    expect(alone.ok, JSON.stringify(alone)).toBe(true);
+    await editor.close();
+  });
+
+  it("writes into the child a step already holds, and moves an existing process inside a step", async () => {
+    const editor = await connect(editorToken, options);
+    // The same import again, now with a changed child step: it goes into the existing child's draft.
+    const again = await call<Outcome>(editor, "import_process", {
+      target: "Company delivery",
+      process_json: {
+        steps: [{ name: "Delivery", process: { steps: [{ name: "Build", work_hours: 9, role: "Consultant" }] } }],
+      },
+    });
+    expect(again.ok, JSON.stringify(again)).toBe(true);
+    expect(again.data.children).toHaveLength(1);
+    expect(again.data.children[0]).toMatchObject({ step: "Delivery", created: false, process: { name: "Delivery process" } });
+    expect(again.data.children[0]!.matched).toEqual([{ name: "Build", id: sid(13), by: "name" }]);
+    const child = await processRow("Delivery process");
+    expect(child.draft_revision_id).not.toBeNull();
+
+    // An existing standalone process becomes the child of a new step.
+    expect(await call(editor, "create_process", { name: "Standalone" })).toMatchObject({ ok: true });
+    const adopt = await call<Outcome>(editor, "import_process", {
+      target: "Company delivery",
+      process_json: { steps: [{ name: "Standalone step", child_process: "Standalone" }] },
+    });
+    expect(adopt.ok, JSON.stringify(adopt)).toBe(true);
+    expect(adopt.data.text).toContain("(moved inside it)");
+    const parent = await processRow("Company delivery");
+    expect(await processRow("Standalone")).toMatchObject({ parent_process_id: parent.id });
+
+    // A process has one parent.
+    expect(await call(editor, "import_process", { target: "Flat delivery", process_json: { steps: [{ name: "Also here", child_process: "Standalone" }] } })).toMatchObject({
+      ok: false,
+      error: { code: "invalid_input", message: expect.stringContaining("already sits inside") },
+    });
+    await editor.close();
+  });
+
+  it("refuses a loop, a name that is taken and a bad nesting, and writes nothing", async () => {
+    const editor = await connect(editorToken, options);
+    const processesBefore = (await admin.query("select count(*)::int n from processes where workspace_id = $1", [workspaceId])).rows[0].n;
+    const parent = await processRow("Company delivery");
+    const child = await processRow("Delivery process");
+    const before = await snapshot(child.draft_revision_id!);
+
+    // The child can't hold the process that holds it.
+    expect(await call(editor, "import_process", { target: "Delivery process", process_json: { steps: [{ name: "Back up", child_process: "Company delivery" }] } })).toMatchObject({
+      ok: false,
+      error: { code: "invalid_input", message: expect.stringContaining("can't sit inside itself") },
+    });
+    // Nor can a process hold itself.
+    expect(await call(editor, "import_process", { target: "Company delivery", process_json: { steps: [{ name: "Me", child_process: "Company delivery" }] } })).toMatchObject({
+      ok: false,
+      error: { code: "invalid_input" },
+    });
+    // A new child named like an existing process: nothing is created, not even the parent.
+    expect(
+      await call(editor, "import_process", {
+        process_json: { name: "Brand new parent", steps: [{ name: "Holds", process: { name: "Standalone", steps: [] } }] },
+      }),
+    ).toMatchObject({ ok: false, error: { code: "name_taken" } });
+    // Two new processes with the same name in one call.
+    expect(
+      await call(editor, "import_process", {
+        process_json: { name: "Twin parent", steps: [{ name: "One", process: { name: "Twin child", steps: [] } }, { name: "Two", process: { name: "twin child", steps: [] } }] },
+      }),
+    ).toMatchObject({ ok: false, error: { code: "name_taken" } });
+    // Bad nesting inside a child stops the whole call before the parent is written.
+    expect(
+      await call(editor, "import_process", {
+        process_json: { name: "Parent of a bad child", steps: [{ name: "Holds", process: { name: "Bad child", steps: [{ name: "Box", kind: "group", work_hours: 3 }] } }] },
+      }),
+    ).toMatchObject({ ok: false, error: { code: "invalid_input", message: expect.stringContaining("does no work itself") } });
+    // A step in a task, a start step in a group, and a group removed from under its steps.
+    expect(await call(editor, "import_process", { target: "Delivery process", process_json: { steps: [{ name: "In a task", parent: "Build" }] } })).toMatchObject({
+      ok: false,
+      error: { code: "invalid_input", message: expect.stringContaining("isn't a group") },
+    });
+    expect(await call(editor, "import_process", { target: "Delivery process", process_json: { steps: [{ name: "Box", steps: [{ name: "Again", kind: "start" }] }] } })).toMatchObject({
+      ok: false,
+      error: { code: "invalid_input" },
+    });
+
+    expect((await admin.query("select count(*)::int n from processes where workspace_id = $1", [workspaceId])).rows[0].n).toBe(processesBefore);
+    expect(await snapshot(child.draft_revision_id!)).toEqual(before);
+    expect(await processRow("Company delivery")).toMatchObject({ id: parent.id });
+    await editor.close();
+  });
 });

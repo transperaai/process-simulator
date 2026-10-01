@@ -6,6 +6,8 @@ import { reviewSuggestions } from "@/app/w/[slug]/suggestion-actions";
 import { demoSuggestionBackend, useDemoCompany } from "@/lib/demo/company-store";
 import { describeAuditEntry, type AuditEntry } from "@/lib/suggestions/audit";
 import { reviewSummary, type ReviewDecision, type ReviewOutcome } from "@/lib/suggestions/review";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 // The Suggestions page (docs/PRD.md §8 screen 8, §7.1c; issue #25): company-
 // model changes Claude suggested over MCP, to accept or reject one by one or
@@ -100,21 +102,22 @@ export function SuggestionsView({ suggestions, model, sources, canEdit, review, 
     <div className="flex flex-col gap-3">
       <div role="tablist" aria-label="Which suggestions" className="flex flex-wrap gap-1">
         {(["pending", "accepted", "rejected", "all"] as const).map((f) => (
-          <button
+          <Button
             key={f}
             type="button"
             role="tab"
             aria-selected={filter === f}
             onClick={() => setFilter(f)}
-            className={`rounded-token border px-2.5 py-1 ${filter === f ? "border-accent bg-accent-soft font-semibold" : "border-line hover:bg-panel-2"}`}
+            variant={filter === f ? "secondary" : "ghost"}
+            className={filter === f ? "ring-1 ring-border" : undefined}
           >
-            {f === "all" ? "All" : STATUS_LABEL[f]} <span className="tabular-nums text-fg-3">{counts[f]}</span>
-          </button>
+            {f === "all" ? "All" : STATUS_LABEL[f]} <span className="tabular-nums text-muted-foreground">{counts[f]}</span>
+          </Button>
         ))}
       </div>
 
       {canEdit && selectable.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-token border border-line bg-panel p-2 shadow-token">
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-panel p-2 shadow-xs">
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -127,28 +130,26 @@ export function SuggestionsView({ suggestions, model, sources, canEdit, review, 
             {chosen.length ? `${chosen.length} selected` : "Select all"}
           </label>
           <span className="grow" />
-          <button
+          <Button
             type="button"
             disabled={!chosen.length || pending}
             onClick={() => run(chosen, "accept", null)}
-            className="rounded-token bg-accent px-3 py-1 font-semibold text-accent-fg disabled:opacity-50"
           >
             Accept selected
-          </button>
-          <button
+          </Button>
+          <Button variant="outline" size="sm"
             type="button"
             disabled={!chosen.length || pending}
             onClick={() => setRejecting(chosen)}
-            className="rounded-token border border-line px-3 py-1 font-semibold hover:bg-panel-2 disabled:opacity-50"
           >
             Reject selected
-          </button>
+          </Button>
         </div>
       )}
 
       {rejecting && (
         <form
-          className="flex flex-wrap items-end gap-2 rounded-token border border-line bg-panel-2 p-2"
+          className="flex flex-wrap items-end gap-2 rounded-lg border border-line bg-panel-2 p-2"
           onSubmit={(e) => {
             e.preventDefault();
             run(rejecting, "reject", reason);
@@ -158,29 +159,23 @@ export function SuggestionsView({ suggestions, model, sources, canEdit, review, 
             <span className="text-xs font-medium text-fg-2">
               Why reject {rejecting.length === 1 ? "this suggestion" : `these ${rejecting.length} suggestions`}? (optional)
             </span>
-            <input
-              autoFocus
-              value={reason}
-              maxLength={2000}
-              onChange={(e) => setReason(e.target.value)}
-              className="rounded-token border border-line bg-panel px-2 py-1"
-            />
+            <Input autoFocus value={reason} maxLength={2000} onChange={(e) => setReason(e.target.value)} />
           </label>
-          <button type="submit" disabled={pending} className="rounded-token bg-accent px-3 py-1 font-semibold text-accent-fg disabled:opacity-50">
+          <Button type="submit" disabled={pending}>
             Reject
-          </button>
-          <button type="button" onClick={() => setRejecting(null)} className="rounded-token px-2 py-1 text-fg-2 hover:bg-panel">
+          </Button>
+          <Button type="button" variant="ghost" onClick={() => setRejecting(null)}>
             Cancel
-          </button>
+          </Button>
         </form>
       )}
 
-      <p role="status" aria-live="polite" className={message ? `rounded-token border p-2 ${message.tone === "error" ? "border-crit bg-crit-soft" : "border-good bg-good-soft"}` : "sr-only"}>
+      <p role="status" aria-live="polite" className={message ? `rounded-lg border p-2 ${message.tone === "error" ? "border-crit bg-crit-soft" : "border-good bg-good-soft"}` : "sr-only"}>
         {message?.text}
       </p>
 
       {shown.length === 0 ? (
-        <p className="rounded-token border border-dashed border-line p-4 text-fg-2">
+        <p className="rounded-lg border border-dashed border-line p-4 text-fg-2">
           {filter === "pending"
             ? "Nothing waiting for review. When Claude changes people, clients, services, roles, demand or company settings over MCP, its suggestions appear here."
             : "None."}
@@ -235,7 +230,7 @@ function SuggestionCard({
   const open = s.status === "pending";
   const headingId = `suggestion-${s.id}`;
   return (
-    <li aria-labelledby={headingId} data-suggestion={s.id} data-status={s.status} className="rounded-token border border-line bg-panel p-3 shadow-token">
+    <li aria-labelledby={headingId} data-suggestion={s.id} data-status={s.status} className="rounded-lg border border-line bg-panel p-3 shadow-xs">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         {open && canEdit && (
           <input type="checkbox" checked={selected} onChange={onToggle} aria-label={`Select: ${view.headline}`} className="self-center" />
@@ -249,7 +244,7 @@ function SuggestionCard({
       </p>
 
       {view.missing && (
-        <p className="mt-2 rounded-token border border-crit bg-crit-soft p-2 text-xs">What this changes no longer exists, so it can only be rejected.</p>
+        <p className="mt-2 rounded-lg border border-crit bg-crit-soft p-2 text-xs">What this changes no longer exists, so it can only be rejected.</p>
       )}
 
       <table className="mt-2 w-full table-fixed text-left text-sm">
@@ -287,7 +282,7 @@ function SuggestionCard({
       {s.evidence.length > 0 ? (
         <ul className="mt-2 flex flex-col gap-1">
           {s.evidence.map((e, i) => (
-            <li key={i} className="rounded-token bg-panel-2 px-2 py-1.5 text-xs">
+            <li key={i} className="rounded-lg bg-panel-2 px-2 py-1.5 text-xs">
               <q>{e.quote}</q>
               <span className="text-fg-2">
                 {e.speaker ? ` — ${e.speaker}` : ""}
@@ -315,12 +310,12 @@ function SuggestionCard({
       {open ? (
         canEdit && (
           <div className="mt-3 flex gap-2">
-            <button type="button" disabled={busy} onClick={onAccept} className="rounded-token bg-accent px-3 py-1 font-semibold text-accent-fg disabled:opacity-50">
+            <Button type="button" disabled={busy} onClick={onAccept}>
               Accept
-            </button>
-            <button type="button" disabled={busy} onClick={onReject} className="rounded-token border border-line px-3 py-1 font-semibold hover:bg-panel-2 disabled:opacity-50">
+            </Button>
+            <Button variant="outline" size="sm" type="button" disabled={busy} onClick={onReject}>
               Reject
-            </button>
+            </Button>
           </div>
         )
       ) : (
@@ -347,9 +342,9 @@ export function ChangeLog({ entries, model, people }: { entries: AuditEntry[]; m
         this log.
       </p>
       {entries.length === 0 ? (
-        <p className="rounded-token border border-dashed border-line p-4 text-fg-2">No changes yet.</p>
+        <p className="rounded-lg border border-dashed border-line p-4 text-fg-2">No changes yet.</p>
       ) : (
-        <ul className="flex flex-col divide-y divide-line rounded-token border border-line bg-panel shadow-token">
+        <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-panel shadow-xs">
           {entries.map((e) => (
             <li key={e.id} className="flex flex-wrap gap-x-3 px-3 py-1.5 text-sm">
               <span className="w-36 shrink-0 text-xs text-fg-3 tabular-nums">{when(e.created_at)}</span>

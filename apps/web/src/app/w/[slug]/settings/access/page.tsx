@@ -1,5 +1,12 @@
 import { notFound } from "next/navigation";
-import { ShellHeader } from "@/components/shell/shell-header";
+import { Help } from "@/components/help";
+import { Page } from "@/components/shell/page";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ASSIGNABLE_ROLES } from "@/lib/access";
 import { loadAccessSettings, type WorkspaceMember } from "@/lib/access-data";
 import { createClient } from "@/lib/supabase/server";
@@ -13,11 +20,6 @@ import {
   updateEmail,
 } from "./actions";
 
-const input = "rounded-token border border-line bg-panel px-2 py-1";
-const button = "rounded-token border border-line px-2 py-1 font-semibold hover:bg-panel-2";
-const primary = "rounded-token bg-accent px-3 py-1 font-semibold text-accent-fg";
-const cell = "border-b border-line px-2 py-2 align-middle";
-
 const SOURCE_LABEL: Record<WorkspaceMember["source"], string> = {
   access_list: "Pre-assigned email",
   domain: "Allowed domain",
@@ -26,26 +28,26 @@ const SOURCE_LABEL: Record<WorkspaceMember["source"], string> = {
 
 function RoleSelect({ value, name = "role" }: { value?: string; name?: string }) {
   return (
-    <select name={name} defaultValue={value ?? "member"} className={input} aria-label="Role">
+    <NativeSelect name={name} defaultValue={value ?? "member"} aria-label="Role" className="w-auto">
       {ASSIGNABLE_ROLES.map((r) => (
         <option key={r} value={r}>
           {r}
         </option>
       ))}
-    </select>
+    </NativeSelect>
   );
 }
 
 function PersonSelect({ people, value }: { people: { id: string; name: string }[]; value?: string | null }) {
   return (
-    <select name="person_id" defaultValue={value ?? ""} className={input} aria-label="Person record">
+    <NativeSelect name="person_id" defaultValue={value ?? ""} aria-label="Person record" className="w-auto">
       <option value="">No person record</option>
       {people.map((p) => (
         <option key={p.id} value={p.id}>
           {p.name}
         </option>
       ))}
-    </select>
+    </NativeSelect>
   );
 }
 
@@ -67,177 +69,197 @@ export default async function AccessPage(props: PageProps<"/w/[slug]/settings/ac
   const listed = new Map(emails.map((e) => [e.email, e]));
 
   return (
-    <div>
-      <ShellHeader title="Access" />
-      <div className="mx-auto w-full max-w-5xl px-4 pb-12 pt-6">
-        <h1 className="mt-2 mb-1 text-xl font-bold">Access</h1>
-        <p className="mb-4 text-fg-2">
-          People get in by signing in with Google. Nobody is emailed. Changes apply on their next page load.
-        </p>
-        {error && (
-          <p role="alert" className="mb-4 rounded-token bg-crit-soft px-3 py-2 text-crit">
-            {error}
-          </p>
-        )}
-        {notice && (
-          <p role="status" className="mb-4 rounded-token bg-good-soft px-3 py-2">
-            {notice}
-          </p>
-        )}
+    <Page
+      title="Access"
+      eyebrow="Company"
+      description="People get in by signing in with Google. Nobody is emailed. Changes apply on their next page load."
+    >
+      {error && (
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      {notice && (
+        <Alert role="status">
+          <AlertDescription>{notice}</AlertDescription>
+        </Alert>
+      )}
 
-        <section className="mb-8">
-          <h2 className="mb-1 text-lg font-bold">Allowed domains</h2>
-          <p className="mb-3 text-sm text-fg-2">
-            Anyone with a company-managed Google account on these domains joins as <strong>member</strong>. Personal Google
-            accounts made with a work address don&apos;t qualify. Free email providers can&apos;t be added.
-          </p>
-          <ul className="mb-3 flex flex-wrap gap-2">
-            {domains.length === 0 && <li className="text-fg-3">No domains yet.</li>}
+      <Card role="region" aria-labelledby="domains-heading">
+        <CardHeader>
+          <h2 id="domains-heading" className="flex items-center font-heading text-base font-medium">
+            Allowed domains
+            <Help
+              label="Allowed domains"
+              description="Anyone who signs in with a company Google account on one of these domains gets into this workspace as a member. Free email providers can't be added."
+              example="Add northbeam.example and everyone with a @northbeam.example Google account can sign in."
+            />
+          </h2>
+          <CardDescription>Personal Google accounts made with a work address don&apos;t qualify.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <ul className="flex flex-wrap gap-2">
+            {domains.length === 0 && <li className="text-muted-foreground">No domains yet.</li>}
             {domains.map((d) => (
-              <li key={d.id} className="flex items-center gap-2 rounded-token border border-line bg-panel px-3 py-1">
+              <li key={d.id} className="flex items-center gap-2 rounded-lg border bg-muted/40 py-1 pr-1 pl-3">
                 <span className="font-mono">{d.domain}</span>
                 <form action={removeDomain.bind(null, slug)}>
                   <input type="hidden" name="id" value={d.id} />
-                  <button type="submit" className="text-sm text-crit underline" aria-label={`Remove ${d.domain}`}>
+                  <Button type="submit" variant="ghost" size="xs" className="text-destructive" aria-label={`Remove ${d.domain}`}>
                     Remove
-                  </button>
+                  </Button>
                 </form>
               </li>
             ))}
           </ul>
           <form action={addDomain.bind(null, slug, workspace.id)} className="flex flex-wrap gap-2">
-            <input name="domain" required placeholder="acme.com" className={input} aria-label="Domain" />
-            <button type="submit" className={primary}>
-              Add domain
-            </button>
+            <Input name="domain" required placeholder="acme.com" aria-label="Domain" className="w-full sm:w-64" />
+            <Button type="submit">Add domain</Button>
           </form>
-        </section>
+        </CardContent>
+      </Card>
 
-        <section className="mb-8">
-          <h2 className="mb-1 text-lg font-bold">Pre-assigned emails</h2>
-          <p className="mb-3 text-sm text-fg-2">
-            Whoever signs in with one of these emails gets exactly this role, whatever their domain. Use it for owners,
-            editors and contractors on personal addresses.
-          </p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-fg-3">
-                <tr>
-                  <th className={cell}>Email</th>
-                  <th className={cell}>Role and person</th>
-                  <th className={cell} />
-                </tr>
-              </thead>
-              <tbody>
-                {emails.length === 0 && (
-                  <tr>
-                    <td className={cell} colSpan={3}>
-                      <span className="text-fg-3">Nobody yet.</span>
-                    </td>
-                  </tr>
-                )}
-                {emails.map((e) => (
-                  <tr key={e.id}>
-                    <td className={`${cell} font-mono`}>{e.email}</td>
-                    <td className={cell}>
-                      <form action={updateEmail.bind(null, slug)} className="flex flex-wrap gap-2">
-                        <input type="hidden" name="id" value={e.id} />
-                        <RoleSelect value={e.role} />
-                        <PersonSelect people={people} value={e.person_id} />
-                        <button type="submit" className={button}>
-                          Save
-                        </button>
-                      </form>
-                    </td>
-                    <td className={cell}>
-                      <form action={removeEmail.bind(null, slug)}>
-                        <input type="hidden" name="id" value={e.id} />
-                        <button type="submit" className="text-crit underline">
-                          Remove
-                        </button>
-                      </form>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <form action={addEmail.bind(null, slug, workspace.id)} className="mt-3 flex flex-wrap gap-2">
-            <input name="email" type="email" required placeholder="name@company.com" className={input} aria-label="Email" />
+      <Card role="region" aria-labelledby="emails-heading">
+        <CardHeader>
+          <h2 id="emails-heading" className="flex items-center font-heading text-base font-medium">
+            Pre-assigned emails
+            <Help
+              label="Pre-assigned emails"
+              description="Whoever signs in with one of these emails gets exactly the role you choose, whatever their domain. Use it for owners, editors and contractors on personal addresses."
+              example="Add sam@gmail.com as an editor and Sam can edit the process even though gmail.com isn't an allowed domain."
+            />
+          </h2>
+          <CardDescription>Exact roles for named people.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Email</TableHead>
+                <TableHead>
+                  <span className="flex items-center">
+                    Role and person
+                    <Help
+                      label="Role and person"
+                      description="Role is what they can do: owners and editors can change things, members and viewers can look. Person links the sign-in to a person record, so their work shows under their name."
+                      example="Add maya@northbeam.example as an editor, linked to the person Maya Collins."
+                    />
+                  </span>
+                </TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {emails.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={3} className="text-muted-foreground">
+                    Nobody yet.
+                  </TableCell>
+                </TableRow>
+              )}
+              {emails.map((e) => (
+                <TableRow key={e.id}>
+                  <TableCell className="font-mono">{e.email}</TableCell>
+                  <TableCell>
+                    <form action={updateEmail.bind(null, slug)} className="flex flex-wrap gap-2">
+                      <input type="hidden" name="id" value={e.id} />
+                      <RoleSelect value={e.role} />
+                      <PersonSelect people={people} value={e.person_id} />
+                      <Button type="submit" variant="outline">
+                        Save
+                      </Button>
+                    </form>
+                  </TableCell>
+                  <TableCell>
+                    <form action={removeEmail.bind(null, slug)}>
+                      <input type="hidden" name="id" value={e.id} />
+                      <Button type="submit" variant="ghost" size="sm" className="text-destructive">
+                        Remove
+                      </Button>
+                    </form>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <form action={addEmail.bind(null, slug, workspace.id)} className="flex flex-wrap gap-2">
+            <Input name="email" type="email" required placeholder="name@company.com" aria-label="Email" className="w-full sm:w-64" />
             <RoleSelect />
             <PersonSelect people={people} />
-            <button type="submit" className={primary}>
-              Add email
-            </button>
+            <Button type="submit">Add email</Button>
           </form>
-        </section>
+        </CardContent>
+      </Card>
 
-        <section>
-          <h2 className="mb-1 text-lg font-bold">Members</h2>
-          <p className="mb-3 text-sm text-fg-2">
+      <Card role="region" aria-labelledby="members-heading">
+        <CardHeader>
+          <h2 id="members-heading" className="font-heading text-base font-medium">
+            Members
+          </h2>
+          <CardDescription>
             Everyone who has signed in to this workspace. Change a pre-assigned person&apos;s role in the list above.
-          </p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-fg-3">
-                <tr>
-                  <th className={cell}>Email</th>
-                  <th className={cell}>Role</th>
-                  <th className={cell}>How they got in</th>
-                  <th className={cell}>Last sign-in</th>
-                  <th className={cell} />
-                </tr>
-              </thead>
-              <tbody>
-                {members.length === 0 && (
-                  <tr>
-                    <td className={cell} colSpan={5}>
-                      <span className="text-fg-3">Nobody has signed in yet.</span>
-                    </td>
-                  </tr>
-                )}
-                {members.map((m) => {
-                  const locked = m.userId === user?.id || (m.role === "agency_admin" && !isAgencyAdmin);
-                  const onList = m.source === "access_list" && listed.has(m.email.toLowerCase());
-                  return (
-                    <tr key={m.membershipId} className={m.active ? undefined : "text-fg-3"}>
-                      <td className={`${cell} font-mono`}>{m.email}</td>
-                      <td className={cell}>
-                        {locked || onList || !m.active ? (
-                          m.role
-                        ) : (
-                          <form action={setMemberRole.bind(null, slug)} className="flex gap-2">
-                            <input type="hidden" name="id" value={m.membershipId} />
-                            <RoleSelect value={m.role} />
-                            <button type="submit" className={button}>
-                              Save
-                            </button>
-                          </form>
-                        )}
-                      </td>
-                      <td className={cell}>{SOURCE_LABEL[m.source]}</td>
-                      <td className={cell}>{formatDate(m.lastSignInAt)}</td>
-                      <td className={cell}>
-                        {locked ? null : onList ? (
-                          <span className="text-fg-3">Remove from the list above</span>
-                        ) : (
-                          <form action={setMemberActive.bind(null, slug)}>
-                            <input type="hidden" name="id" value={m.membershipId} />
-                            <input type="hidden" name="active" value={m.active ? "false" : "true"} />
-                            <button type="submit" className={m.active ? "text-crit underline" : "underline"}>
-                              {m.active ? "Remove access" : "Restore access"}
-                            </button>
-                          </form>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </div>
-    </div>
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Email</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>How they got in</TableHead>
+                <TableHead>Last sign-in</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {members.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-muted-foreground">
+                    Nobody has signed in yet.
+                  </TableCell>
+                </TableRow>
+              )}
+              {members.map((m) => {
+                const locked = m.userId === user?.id || (m.role === "agency_admin" && !isAgencyAdmin);
+                const onList = m.source === "access_list" && listed.has(m.email.toLowerCase());
+                return (
+                  <TableRow key={m.membershipId} className={m.active ? undefined : "text-muted-foreground"}>
+                    <TableCell className="font-mono">{m.email}</TableCell>
+                    <TableCell>
+                      {locked || onList || !m.active ? (
+                        m.role
+                      ) : (
+                        <form action={setMemberRole.bind(null, slug)} className="flex gap-2">
+                          <input type="hidden" name="id" value={m.membershipId} />
+                          <RoleSelect value={m.role} />
+                          <Button type="submit" variant="outline">
+                            Save
+                          </Button>
+                        </form>
+                      )}
+                    </TableCell>
+                    <TableCell>{SOURCE_LABEL[m.source]}</TableCell>
+                    <TableCell>{formatDate(m.lastSignInAt)}</TableCell>
+                    <TableCell>
+                      {locked ? null : onList ? (
+                        <span className="text-muted-foreground">Remove from the list above</span>
+                      ) : (
+                        <form action={setMemberActive.bind(null, slug)}>
+                          <input type="hidden" name="id" value={m.membershipId} />
+                          <input type="hidden" name="active" value={m.active ? "false" : "true"} />
+                          <Button type="submit" variant="ghost" size="sm" className={m.active ? "text-destructive" : undefined}>
+                            {m.active ? "Remove access" : "Restore access"}
+                          </Button>
+                        </form>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </Page>
   );
 }

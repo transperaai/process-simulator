@@ -25,6 +25,10 @@ import {
 } from "@/lib/issues/register";
 import type { IssuesState } from "@/lib/issues/use-issues";
 import { ISSUE_STATUSES, MAX_EVIDENCE, MAX_TITLE, type IssueField } from "@/lib/issues/validate";
+import { buttonVariants } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Textarea } from "@/components/ui/textarea";
 import { SelectField, TextField, type SelectOption } from "./fields";
 
 const NONE: ReadonlySet<string> = new Set();
@@ -47,10 +51,9 @@ const RATING_CHIP: Record<Rating, string> = {
   great: "border-line bg-panel-2",
 };
 
-const chip = "rounded-token border border-line px-1.5 py-px text-xs whitespace-nowrap";
-const button = "rounded-token border border-line px-2 py-0.5 text-xs hover:bg-panel-2 disabled:opacity-50";
-const primary = "rounded-token bg-accent px-2 py-0.5 text-xs font-semibold text-accent-fg disabled:opacity-50";
-const input = "w-full rounded-token border border-line bg-panel px-2 py-1 text-sm";
+const chip = "rounded-full border border-border px-2 py-px text-xs whitespace-nowrap";
+const button = buttonVariants({ variant: "outline", size: "xs" });
+const primary = buttonVariants({ size: "xs" });
 
 const options = (list: readonly Named[]): SelectOption[] => list.map((x) => ({ value: x.id, label: x.name }));
 const typeOptions = ISSUE_TYPES.map((t) => ({ value: t, label: TYPE_LABELS[t] }));
@@ -111,14 +114,14 @@ export function IssuesRegister({
   const filterSelect = (label: string, key: keyof IssueFilters, opts: SelectOption[], all: string) => (
     <label className="flex min-w-0 flex-col gap-0.5">
       <span className="text-xs text-fg-3">{label}</span>
-      <select value={filters[key]} onChange={(e) => set(key, e.target.value as never)} className={input}>
+      <NativeSelect value={filters[key]} onChange={(e) => set(key, e.target.value as never)} className="h-7 text-sm md:text-sm">
         <option value="">{all}</option>
         {opts.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
           </option>
         ))}
-      </select>
+      </NativeSelect>
     </label>
   );
 
@@ -145,7 +148,7 @@ export function IssuesRegister({
         )}
         <label className="flex min-w-0 flex-col gap-0.5">
           <span className="text-xs text-fg-3">Status</span>
-          <select value={filters.status} onChange={(e) => set("status", e.target.value as IssueFilters["status"])} className={input}>
+          <NativeSelect value={filters.status} onChange={(e) => set("status", e.target.value as IssueFilters["status"])} className="h-7 text-sm md:text-sm">
             <option value="active">Open and detected</option>
             <option value="">Any status</option>
             {statusOptions.map((o) => (
@@ -153,7 +156,7 @@ export function IssuesRegister({
                 {o.label}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </label>
       </div>
       {stepFilter && (
@@ -166,7 +169,7 @@ export function IssuesRegister({
       )}
 
       {state.error && (
-        <p role="alert" className="rounded-token border border-crit bg-crit-soft p-2 text-xs">
+        <p role="alert" className="rounded-lg border border-crit bg-crit-soft p-2 text-xs">
           {state.error}{" "}
           <button type="button" className="underline" onClick={state.dismissError}>
             Dismiss
@@ -195,7 +198,7 @@ export function IssuesRegister({
         ))}
 
       {shown.length === 0 ? (
-        <p className="rounded-token border border-dashed border-line p-3 text-xs text-fg-2">
+        <p className="rounded-lg border border-dashed border-line p-3 text-xs text-fg-2">
           {entries.length === 0
             ? detected === null
               ? "Running the simulation…"
@@ -285,7 +288,7 @@ function IssueItem({
     <li
       data-issue={v.id}
       data-source={v.source}
-      className={`relative rounded-token border border-line bg-panel py-2 pr-2 pl-3.5 before:absolute before:inset-y-0 before:left-0 before:w-1 before:rounded-l-token ${RATING_STRIPE[v.rating]}`}
+      className={`relative rounded-lg border border-line bg-panel py-2 pr-2 pl-3.5 before:absolute before:inset-y-0 before:left-0 before:w-1 before:rounded-l-lg ${RATING_STRIPE[v.rating]}`}
     >
       <p className="text-sm font-semibold">{v.title}</p>
       {v.evidence && <p className="mt-0.5 text-xs text-fg-2">{v.evidence}</p>}
@@ -426,21 +429,21 @@ function LogIssueForm({
   const select = (name: string, label: string, opts: SelectOption[], none?: string, value?: string) => (
     <label className="flex min-w-0 flex-col gap-0.5">
       <span className="text-xs font-medium text-fg-2">{label}</span>
-      <select name={name} defaultValue={value ?? ""} className={input}>
+      <NativeSelect name={name} defaultValue={value ?? ""}>
         {none !== undefined && <option value="">{none}</option>}
         {opts.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
           </option>
         ))}
-      </select>
+      </NativeSelect>
     </label>
   );
   return (
-    <form onSubmit={submit} aria-label="Log an issue" className="grid gap-2 rounded-token border border-line bg-panel-2 p-2">
+    <form onSubmit={submit} aria-label="Log an issue" className="grid gap-2 rounded-lg border border-line bg-panel-2 p-2">
       <label className="flex flex-col gap-0.5">
         <span className="text-xs font-medium text-fg-2">Title</span>
-        <input name="title" required maxLength={MAX_TITLE} className={input} placeholder="What's wrong, in a sentence" />
+        <Input name="title" required maxLength={MAX_TITLE} placeholder="What's wrong, in a sentence" />
       </label>
       <div className="grid grid-cols-2 gap-2">
         {select("type", "Type", typeOptions, undefined, "manual")}
@@ -452,7 +455,7 @@ function LogIssueForm({
       </div>
       <label className="flex flex-col gap-0.5">
         <span className="text-xs font-medium text-fg-2">Evidence</span>
-        <textarea name="evidence" rows={2} maxLength={MAX_EVIDENCE} className={input} placeholder="What you saw or heard, and where" />
+        <Textarea name="evidence" rows={2} maxLength={MAX_EVIDENCE} placeholder="What you saw or heard, and where" />
       </label>
       {error && (
         <p role="alert" className="text-xs text-crit">

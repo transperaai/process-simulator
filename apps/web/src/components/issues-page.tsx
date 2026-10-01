@@ -11,6 +11,7 @@ import { useDetectedIssues } from "@/lib/issues/use-detected";
 import { useIssues } from "@/lib/issues/use-issues";
 import { retiredSteps } from "@/lib/scenarios/broken";
 import { useSimulation } from "@/lib/sim/use-simulation";
+import { Card } from "@/components/ui/card";
 import { IssuesRegister, type Named } from "./issues-register";
 
 export function IssuesPage({
@@ -24,7 +25,7 @@ export function IssuesPage({
   issues: IssueRow[];
   scenarios: ScenarioRow[];
   processes: Named[];
-  mode: "live" | "readonly";
+  mode: "live" | "demo" | "readonly";
 }) {
   const state = useIssues(bundle.workspace.id, issues, mode);
   const [stepFilter, setStepFilter] = useState("");
@@ -47,7 +48,7 @@ export function IssuesPage({
   const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);
 
   return (
-    <div className="rounded-token border border-line bg-panel p-4 shadow-token">
+    <Card className="px-4">
       <IssuesRegister
         layout="page"
         state={state}
@@ -59,11 +60,11 @@ export function IssuesPage({
         people={bundle.people.filter((p) => p.active).map((p) => ({ id: p.id, name: p.name }))}
         scenarios={scenarios}
         brokenScenarios={brokenScenarios}
-        canEdit={mode === "live"}
+        canEdit={mode !== "readonly"}
         currency={bundle.workspace.settings.currency}
         stepFilter={stepFilter}
         onStepFilterChange={setStepFilter}
       />
-    </div>
+    </Card>
   );
 }

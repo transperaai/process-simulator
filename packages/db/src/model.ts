@@ -1,6 +1,7 @@
 import {
   flattenModel,
   isFlatDemand,
+  NestingError,
   type EngineDemand,
   type Distribution as EngineDistribution,
   type EngineClient,
@@ -115,7 +116,10 @@ function resolveGraph(steps: StepRow[], edges: EdgeRow[], tags: boolean, ctx: Gr
       continue;
     }
     const child = ctx.parts.get(step.child_process_id!);
-    if (!child) throw new ModelError(`'${step.name}' holds a child process that has no published version yet; publish it to simulate this process`);
+    if (!child) throw new ModelError(`'${step.name}' holds a child process that has no published version yet, or that no longer sits inside this process (it was moved); publish it, or remove or replace this step`);
+    if (child.process.parent_process_id !== ctx.stack[ctx.stack.length - 1]) {
+      throw new ModelError(`'${step.name}' holds '${child.process.name}', which no longer sits inside this process (it was moved); remove or replace that step`);
+    }
     if (ctx.stack.includes(child.process.id)) throw new ModelError(`Child process '${child.process.name}' is inside itself`);
     let sub: Graph;
     try {
@@ -268,7 +272,13 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
     steps: working,
   };
   // Groups and child processes are a view: the engine's model is the leaf steps (a no-op without any).
-  return flattenModel(model);
+  try {
+    return flattenModel(model);
+  } catch (err) {
+    // A group with nowhere to go, or a loop of groups, is a problem with the process, as any other bad graph is.
+    if (err instanceof NestingError) throw new ModelError(err.message);
+    throw err;
+  }
 }
 
 /**

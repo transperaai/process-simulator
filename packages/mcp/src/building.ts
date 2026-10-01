@@ -25,6 +25,7 @@ import {
   EVIDENCE_LABELS,
   formatParameter,
   groupHasExit,
+  groupsLetOut,
   isOpenAssumption,
   isRetiredStep,
   openConflict,
@@ -605,7 +606,7 @@ export function startProblem(g: Graph): string | null {
 
 /**
  * Why the steps can't nest as they are, or null (the database enforces the same,
- * as migration 20261101000000 says, but refuses a whole write with one message):
+ * as migration 20261108000000 says, but refuses a whole write with one message):
  * a step sits only in a group of the same draft, never in itself or below itself;
  * a group's first step is one of its own; start and end steps stay at the top
  * level; a group, or a step holding a child process, has no numbers of its own.
@@ -649,7 +650,12 @@ export function graphWarnings(g: Graph): { step_id: string | null; step: string 
     const outgoing = g.edges.filter((e) => e.from_step_id === step.id);
     if (!outgoing.length) {
       // Inside a group, a step with nothing leaving it is where the group ends: it leaves through the group's own edges.
-      if (step.parent_step_id) continue;
+      if (step.parent_step_id) {
+        if (step.kind !== "group" && !groupsLetOut(g.steps, g.edges, step.id)) {
+          out.push({ step_id: step.id, step: step.name, warning: "Nothing leaves this step, and no group it is in has a connection out." });
+        }
+        continue;
+      }
       if (step.kind === "group" && groupHasExit(g.steps, g.edges, step.id)) continue;
       out.push({ step_id: step.id, step: step.name, warning: step.kind === "group" ? "Nothing leaves this group yet." : "Nothing leaves this step yet." });
       continue;

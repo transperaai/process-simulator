@@ -471,12 +471,30 @@ async function applyPlan(
   // Moves into and out of groups first, then first steps, which need their group's steps to be in place.
   const entries = [
     ...plan.insertSteps.filter((s) => s.entry_step_id).map((s) => ({ id: s.id, base: { entry_step_id: null } as Record<string, unknown>, changes: { entry_step_id: s.entry_step_id } as Record<string, unknown> })),
-    ...plan.updateSteps.filter((u) => "entry_step_id" in u.changes).map((u) => ({ id: u.id, base: { entry_step_id: u.base.entry_step_id ?? null }, changes: { entry_step_id: u.changes.entry_step_id } })),
+    ...plan.updateSteps.filter((u) => typeof u.changes.entry_step_id === "string").map((u) => ({ id: u.id, base: { entry_step_id: u.base.entry_step_id ?? null }, changes: { entry_step_id: u.changes.entry_step_id } })),
   ];
-  for (const u of plan.updateSteps) {
-    const { entry_step_id: _entry, ...changes } = u.changes;
-    const { entry_step_id: _base, ...base } = u.base;
-    for (const c of await saveFields(ctx, "steps", revisionId, u.id, base, changes)) conflicts.push({ table: "steps", id: u.id, ...c });
+  // Each request is checked on its own when it commits, so the order matters: steps leave their groups first, then kinds and
+  // other fields change (a group becoming a task is empty by then; a task becoming a group is one before steps move in), then
+  // steps enter groups.
+  const pick = (o: Record<string, unknown>, keys: string[]) => Object.fromEntries(Object.entries(o).filter(([k]) => keys.includes(k)));
+  const phases: ((u: (typeof plan.updateSteps)[number]) => { base: Record<string, unknown>; changes: Record<string, unknown> } | null)[] = [
+    (u) => {
+      // A group's first step is cleared before anything moves, and set again once the steps are in place.
+      const out = Object.fromEntries(Object.entries(u.changes).filter(([k, v]) => (k === "parent_step_id" && v === null) || k === "entry_step_id").map(([k, v]) => [k, k === "entry_step_id" ? null : v]));
+      return Object.keys(out).length ? { base: pick(u.base, Object.keys(out)), changes: out } : null;
+    },
+    (u) => {
+      const changes = Object.fromEntries(Object.entries(u.changes).filter(([k]) => k !== "entry_step_id" && k !== "parent_step_id"));
+      return Object.keys(changes).length ? { base: Object.fromEntries(Object.entries(u.base).filter(([k]) => k in changes)), changes } : null;
+    },
+    (u) => (typeof u.changes.parent_step_id === "string" ? { base: pick(u.base, ["parent_step_id"]), changes: { parent_step_id: u.changes.parent_step_id } } : null),
+  ];
+  for (const phase of phases) {
+    for (const u of plan.updateSteps) {
+      const part = phase(u);
+      if (!part) continue;
+      for (const c of await saveFields(ctx, "steps", revisionId, u.id, part.base, part.changes)) conflicts.push({ table: "steps", id: u.id, ...c });
+    }
   }
   for (const e of entries) {
     for (const c of await saveFields(ctx, "steps", revisionId, e.id, e.base, e.changes)) conflicts.push({ table: "steps", id: e.id, ...c });
@@ -622,6 +640,8 @@ interface ImportScope {
   reserved: Set<string>;
   /** Every process of the workspace, as read once. */
   processes: ProcessWithDraft[];
+  /** The step holding each child process in this call, so no process is held twice. */
+  claimed: Map<string, string>;
   stamp: Stamp;
 }
 
@@ -660,6 +680,17 @@ async function prepareImport(
     inline?: { json: ProcessJson; existing: ProcessWithDraft | null; prepared: PreparedImport };
   }
   const held: Held[] = [];
+  const holderNames = new Set((holders as Holder<ProcessJson>[]).map((h) => normalizeName(h.step)));
+  /** A child process sits in one step: refuse a second holder, in this call or already in the draft. */
+  const claim = (childId: string, childName: string, step: string) => {
+    const first = scope.claimed.get(childId);
+    if (first !== undefined) {
+      throw new ToolError("invalid_input", `'${childName}' can't sit in both '${first}' and '${step}': a process is held by one step.`);
+    }
+    const other = currentBundle?.steps.find((r) => r.child_process_id === childId && normalizeName(r.name) !== normalizeName(step) && !holderNames.has(normalizeName(r.name)));
+    if (other) throw new ToolError("invalid_input", `'${childName}' is already held by the step '${other.name}'; remove that step first, or give the child to just one.`);
+    scope.claimed.set(childId, step);
+  };
   for (const h of holders as Holder<ProcessJson>[]) {
     const idGiven = flat.find((st) => normalizeName(st.name) === normalizeName(h.step))?.id;
     const now = heldNow(h.step, idGiven);
@@ -670,11 +701,13 @@ async function prepareImport(
         throw new ToolError("invalid_input", `Step '${h.step}': '${child.name}' already sits inside '${processById.get(child.parent_process_id)?.name ?? "another process"}'; a process has one parent.`);
       }
       if (now && now !== child.id) throw new ToolError("invalid_input", `Step '${h.step}' already holds '${processById.get(now)?.name ?? "another process"}'; remove that first.`);
+      claim(child.id, child.name, h.step);
       held.push({ step: h.step, id: child.id, ...(child.parent_process_id === self ? {} : { adopt: child }) });
       continue;
     }
     const inlineJson = h.process!;
     const existing = now ? (processById.get(now) ?? null) : null;
+    if (existing) claim(existing.id, existing.name, h.step);
     const name = inlineJson.name ?? h.step;
     const childOpts = existing
       ? { target: existing, ancestors: [...opts.ancestors, ...(self ? [self] : [])] }
@@ -1322,7 +1355,7 @@ export function registerBuildingTools(server: McpServer, ctx: ToolContext): void
         if (canEdit !== true) throw new ToolError("forbidden", `You don't have permission to edit processes in '${ws.name}' (editors and owners can).`);
 
         const processes = await listProcesses(ctx.db, ws.id);
-        const scope: ImportScope = { ctx, ws, assumptions, reserved: new Set(), processes, stamp: await stampOf(ctx) };
+        const scope: ImportScope = { ctx, ws, assumptions, reserved: new Set(), processes, claimed: new Map(), stamp: await stampOf(ctx) };
         let prepared: PreparedImport;
         if (args.target) {
           const target = await resolveProcess(ctx, ws, args.target, assumptions);

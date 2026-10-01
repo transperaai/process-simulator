@@ -10095,7 +10095,7 @@ revoke all on function public.create_workspace(text, text, jsonb) from public, a
 grant execute on function public.create_workspace(text, text, jsonb) to authenticated;
 ']);
 
--- 20261101000000_nested_processes.sql
+-- 20261108000000_nested_processes.sql
 -- Processes inside processes (docs/plans/redesign-plan.md A37; issue #102).
 --
 -- A step can hold its own steps. It is either a GROUP (a box of steps inside
@@ -10163,7 +10163,7 @@ grant execute on function public.create_workspace(text, text, jsonb) to authenti
 --     drop constraint processes_not_own_parent,
 --     drop constraint processes_parent_fk,
 --     drop column parent_process_id;
---   delete from supabase_migrations.schema_migrations where version = '20261101000000';
+--   delete from supabase_migrations.schema_migrations where version = '20261108000000';
 --   commit;
 
 -- ---------------------------------------------------------------------------
@@ -10184,11 +10184,16 @@ set search_path = ''
 as $$
 begin
   -- A child process hangs from the step that holds it: moving it away from the process that holds it would leave
-  -- that step pointing at a process that is no longer its child. Unlink the holder step first. (Deleting the parent
-  -- process also lands here, through the foreign key's set null; the parent is gone by then, so that is allowed.)
+  -- that step pointing at a process that is no longer its child. Unlink the holder step first. Only live and draft
+  -- revisions count: a superseded revision is history, and the loader reports it if it is ever simulated. (Deleting
+  -- the parent process also lands here, through the foreign key's set null; the parent is gone by then, so that is
+  -- allowed.)
   if tg_op = 'UPDATE' and old.parent_process_id is not null and old.parent_process_id is distinct from new.parent_process_id
      and exists (select 1 from public.processes p where p.id = old.parent_process_id)
-     and exists (select 1 from public.steps s where s.child_process_id = new.id and s.process_id = old.parent_process_id) then
+     and exists (
+       select 1 from public.steps s join public.process_revisions r on r.id = s.revision_id
+       where s.child_process_id = new.id and r.process_id = old.parent_process_id and r.status in ('draft', 'published')
+     ) then
     raise exception 'Process % is held by a step of its parent; remove that step before moving the process', new.name using errcode = '23514';
   end if;
   if new.parent_process_id is null then
@@ -10252,45 +10257,61 @@ language plpgsql
 set search_path = ''
 as $$
 declare
+  cur public.steps;
   holder public.steps;
   entry public.steps;
   child public.processes;
+  owner uuid;
 begin
-  if new.parent_step_id is not null then
-    select * into holder from public.steps s where s.revision_id = new.revision_id and s.id = new.parent_step_id;
+  -- Deferred: by commit the row may have been changed again or deleted, so check what is there now, not the row
+  -- this event saw.
+  select * into cur from public.steps s where s.revision_id = new.revision_id and s.id = new.id;
+  if not found then
+    return null;
+  end if;
+
+  if cur.parent_step_id is not null then
+    select * into holder from public.steps s where s.revision_id = cur.revision_id and s.id = cur.parent_step_id;
     if holder.id is null or holder.kind <> 'group' then
-      raise exception 'Step % can only sit inside a group', new.name using errcode = '23514';
+      raise exception 'Step % can only sit inside a group', cur.name using errcode = '23514';
     end if;
     if exists (
       with recursive up(id) as (
-        select new.parent_step_id
+        select cur.parent_step_id
         union
-        select s.parent_step_id from public.steps s join up on s.revision_id = new.revision_id and s.id = up.id where s.parent_step_id is not null
+        select s.parent_step_id from public.steps s join up on s.revision_id = cur.revision_id and s.id = up.id where s.parent_step_id is not null
       )
-      select 1 from up where id = new.id
+      select 1 from up where id = cur.id
     ) then
-      raise exception 'Step % cannot sit inside itself', new.name using errcode = '23514';
+      raise exception 'Step % cannot sit inside itself', cur.name using errcode = '23514';
     end if;
   end if;
 
-  if new.entry_step_id is not null then
-    select * into entry from public.steps s where s.revision_id = new.revision_id and s.id = new.entry_step_id;
-    if entry.id is null or entry.parent_step_id is distinct from new.id then
-      raise exception 'The first step of group % must be one of its own steps', new.name using errcode = '23514';
+  if cur.entry_step_id is not null then
+    select * into entry from public.steps s where s.revision_id = cur.revision_id and s.id = cur.entry_step_id;
+    if entry.id is null or entry.parent_step_id is distinct from cur.id then
+      raise exception 'The first step of group % must be one of its own steps', cur.name using errcode = '23514';
     end if;
   end if;
 
-  if new.child_process_id is not null then
-    select * into child from public.processes p where p.id = new.child_process_id;
-    if child.parent_process_id is distinct from new.process_id then
-      raise exception 'Process % must be a child of this step''s process to sit in step %', child.name, new.name using errcode = '23514';
+  -- A step that is some group's first step stays in that group.
+  if exists (select 1 from public.steps g where g.revision_id = cur.revision_id and g.entry_step_id = cur.id and g.id is distinct from cur.parent_step_id) then
+    raise exception 'Step % is the first step of a group, so it must stay in that group (or change the group''s first step)', cur.name using errcode = '23514';
+  end if;
+
+  if cur.child_process_id is not null then
+    select * into child from public.processes p where p.id = cur.child_process_id;
+    -- The step's process comes from its revision, not from the step's own (denormalised) process_id.
+    select r.process_id into owner from public.process_revisions r where r.id = cur.revision_id;
+    if child.parent_process_id is distinct from owner then
+      raise exception 'Process % must be a child of this step''s process to sit in step %', child.name, cur.name using errcode = '23514';
     end if;
   end if;
 
   -- A group that stops being a group can't leave steps inside it.
-  if tg_op = 'UPDATE' and new.kind <> 'group'
-     and exists (select 1 from public.steps s where s.revision_id = new.revision_id and s.parent_step_id = new.id) then
-    raise exception 'Step % holds steps, so it must stay a group', new.name using errcode = '23514';
+  if cur.kind <> 'group'
+     and exists (select 1 from public.steps s where s.revision_id = cur.revision_id and s.parent_step_id = cur.id) then
+    raise exception 'Step % holds steps, so it must stay a group', cur.name using errcode = '23514';
   end if;
   return null;
 end;
@@ -10300,7 +10321,7 @@ $$;
 create constraint trigger nesting_is_a_tree after insert or update of kind, parent_step_id, entry_step_id, child_process_id on public.steps
   deferrable initially deferred for each row execute function private.check_step_nesting();
 
-insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261101000000', 'nested_processes', array['-- Processes inside processes (docs/plans/redesign-plan.md A37; issue #102).
+insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261108000000', 'nested_processes', array['-- Processes inside processes (docs/plans/redesign-plan.md A37; issue #102).
 --
 -- A step can hold its own steps. It is either a GROUP (a box of steps inside
 -- one process: `kind = ''group''`, its steps point at it with `parent_step_id`)
@@ -10367,7 +10388,7 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --     drop constraint processes_not_own_parent,
 --     drop constraint processes_parent_fk,
 --     drop column parent_process_id;
---   delete from supabase_migrations.schema_migrations where version = ''20261101000000'';
+--   delete from supabase_migrations.schema_migrations where version = ''20261108000000'';
 --   commit;
 
 -- ---------------------------------------------------------------------------
@@ -10388,11 +10409,16 @@ set search_path = ''''
 as $$
 begin
   -- A child process hangs from the step that holds it: moving it away from the process that holds it would leave
-  -- that step pointing at a process that is no longer its child. Unlink the holder step first. (Deleting the parent
-  -- process also lands here, through the foreign key''s set null; the parent is gone by then, so that is allowed.)
+  -- that step pointing at a process that is no longer its child. Unlink the holder step first. Only live and draft
+  -- revisions count: a superseded revision is history, and the loader reports it if it is ever simulated. (Deleting
+  -- the parent process also lands here, through the foreign key''s set null; the parent is gone by then, so that is
+  -- allowed.)
   if tg_op = ''UPDATE'' and old.parent_process_id is not null and old.parent_process_id is distinct from new.parent_process_id
      and exists (select 1 from public.processes p where p.id = old.parent_process_id)
-     and exists (select 1 from public.steps s where s.child_process_id = new.id and s.process_id = old.parent_process_id) then
+     and exists (
+       select 1 from public.steps s join public.process_revisions r on r.id = s.revision_id
+       where s.child_process_id = new.id and r.process_id = old.parent_process_id and r.status in (''draft'', ''published'')
+     ) then
     raise exception ''Process % is held by a step of its parent; remove that step before moving the process'', new.name using errcode = ''23514'';
   end if;
   if new.parent_process_id is null then
@@ -10456,45 +10482,61 @@ language plpgsql
 set search_path = ''''
 as $$
 declare
+  cur public.steps;
   holder public.steps;
   entry public.steps;
   child public.processes;
+  owner uuid;
 begin
-  if new.parent_step_id is not null then
-    select * into holder from public.steps s where s.revision_id = new.revision_id and s.id = new.parent_step_id;
+  -- Deferred: by commit the row may have been changed again or deleted, so check what is there now, not the row
+  -- this event saw.
+  select * into cur from public.steps s where s.revision_id = new.revision_id and s.id = new.id;
+  if not found then
+    return null;
+  end if;
+
+  if cur.parent_step_id is not null then
+    select * into holder from public.steps s where s.revision_id = cur.revision_id and s.id = cur.parent_step_id;
     if holder.id is null or holder.kind <> ''group'' then
-      raise exception ''Step % can only sit inside a group'', new.name using errcode = ''23514'';
+      raise exception ''Step % can only sit inside a group'', cur.name using errcode = ''23514'';
     end if;
     if exists (
       with recursive up(id) as (
-        select new.parent_step_id
+        select cur.parent_step_id
         union
-        select s.parent_step_id from public.steps s join up on s.revision_id = new.revision_id and s.id = up.id where s.parent_step_id is not null
+        select s.parent_step_id from public.steps s join up on s.revision_id = cur.revision_id and s.id = up.id where s.parent_step_id is not null
       )
-      select 1 from up where id = new.id
+      select 1 from up where id = cur.id
     ) then
-      raise exception ''Step % cannot sit inside itself'', new.name using errcode = ''23514'';
+      raise exception ''Step % cannot sit inside itself'', cur.name using errcode = ''23514'';
     end if;
   end if;
 
-  if new.entry_step_id is not null then
-    select * into entry from public.steps s where s.revision_id = new.revision_id and s.id = new.entry_step_id;
-    if entry.id is null or entry.parent_step_id is distinct from new.id then
-      raise exception ''The first step of group % must be one of its own steps'', new.name using errcode = ''23514'';
+  if cur.entry_step_id is not null then
+    select * into entry from public.steps s where s.revision_id = cur.revision_id and s.id = cur.entry_step_id;
+    if entry.id is null or entry.parent_step_id is distinct from cur.id then
+      raise exception ''The first step of group % must be one of its own steps'', cur.name using errcode = ''23514'';
     end if;
   end if;
 
-  if new.child_process_id is not null then
-    select * into child from public.processes p where p.id = new.child_process_id;
-    if child.parent_process_id is distinct from new.process_id then
-      raise exception ''Process % must be a child of this step''''s process to sit in step %'', child.name, new.name using errcode = ''23514'';
+  -- A step that is some group''s first step stays in that group.
+  if exists (select 1 from public.steps g where g.revision_id = cur.revision_id and g.entry_step_id = cur.id and g.id is distinct from cur.parent_step_id) then
+    raise exception ''Step % is the first step of a group, so it must stay in that group (or change the group''''s first step)'', cur.name using errcode = ''23514'';
+  end if;
+
+  if cur.child_process_id is not null then
+    select * into child from public.processes p where p.id = cur.child_process_id;
+    -- The step''s process comes from its revision, not from the step''s own (denormalised) process_id.
+    select r.process_id into owner from public.process_revisions r where r.id = cur.revision_id;
+    if child.parent_process_id is distinct from owner then
+      raise exception ''Process % must be a child of this step''''s process to sit in step %'', child.name, cur.name using errcode = ''23514'';
     end if;
   end if;
 
   -- A group that stops being a group can''t leave steps inside it.
-  if tg_op = ''UPDATE'' and new.kind <> ''group''
-     and exists (select 1 from public.steps s where s.revision_id = new.revision_id and s.parent_step_id = new.id) then
-    raise exception ''Step % holds steps, so it must stay a group'', new.name using errcode = ''23514'';
+  if cur.kind <> ''group''
+     and exists (select 1 from public.steps s where s.revision_id = cur.revision_id and s.parent_step_id = cur.id) then
+    raise exception ''Step % holds steps, so it must stay a group'', cur.name using errcode = ''23514'';
   end if;
   return null;
 end;

@@ -219,6 +219,18 @@ describe("planImport with groups", () => {
 });
 
 describe("graphWarnings with groups", () => {
+  it("flags the last step of a group when no group it is in has a connection out", () => {
+    const input = importOf(
+      flattenNesting([{ name: "S", kind: "start" }, { name: "Box", steps: [{ name: "In" }] }, { name: "W", kind: "end", outcome: "won" }] as never[]).steps as unknown as ImportStep[],
+      [{ from: "S", to: "Box" }],
+    );
+    const warnings = graphWarnings(plan(input).after).map((w) => `${w.step}: ${w.warning}`);
+    expect(warnings).toContain("In: Nothing leaves this step, and no group it is in has a connection out.");
+    // Connecting the group out clears it.
+    const fixed = plan(importOf(input.steps, [{ from: "S", to: "Box" }, { from: "Box", to: "W" }]));
+    expect(graphWarnings(fixed.after).map((w) => w.step)).not.toContain("In");
+  });
+
   it("lets the last step inside a group have nothing leaving it, and flags an empty group", () => {
     const p = plan(importOf(flattenNesting([{ name: "S", kind: "start" }, { name: "Box", steps: [{ name: "In" }] }, { name: "Empty", steps: [] }, { name: "W", kind: "end", outcome: "won" }] as never[]).steps as unknown as ImportStep[], [{ from: "S", to: "Box" }, { from: "Box", to: "Empty" }, { from: "Empty", to: "W" }]));
     const warnings = graphWarnings(p.after).map((w) => `${w.step}: ${w.warning}`);

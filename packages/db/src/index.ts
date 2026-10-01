@@ -20,6 +20,7 @@ export {
   companyMap,
   flattenCompanyMap,
   groupHasExit,
+  groupsLetOut,
   isGroup,
   leavesIn,
   rollUp,

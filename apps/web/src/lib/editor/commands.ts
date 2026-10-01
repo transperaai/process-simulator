@@ -5,6 +5,7 @@
 import {
   ancestorsOf,
   groupHasExit,
+  groupsLetOut,
   triangularRange,
   type EdgeRow,
   type ProcessBundle,
@@ -484,8 +485,13 @@ export function stepWarnings(bundle: ProcessBundle): Map<string, string> {
     if (step.kind === "end") continue;
     const outgoing = bundle.edges.filter((e) => e.from_step_id === step.id);
     if (!outgoing.length) {
-      // Inside a group, the step the group ends at leaves through the group's own connections.
-      if (step.parent_step_id) continue;
+      // Inside a group, the step the group ends at leaves through the group's own connections: flag it if no group it is in has one.
+      if (step.parent_step_id) {
+        if (!groupsLetOut(bundle.steps, bundle.edges, step.id) && step.kind !== "group") {
+          out.set(step.id, "Nothing leaves this step, and no group it is in has a connection out. Connect the step, or connect its group.");
+        }
+        continue;
+      }
       // A group can be left from a step inside it, so it needs no connection of its own then.
       if (step.kind === "group" && groupHasExit(bundle.steps, bundle.edges, step.id)) continue;
       out.set(step.id, step.kind === "group" ? "Nothing leaves this group yet. Drag from its right edge to connect it." : "Nothing leaves this step yet. Drag from its right edge to connect it.");

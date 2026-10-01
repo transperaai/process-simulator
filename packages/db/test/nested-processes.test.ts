@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { NORTHBEAM_WORKSPACE_ID } from "../src";
 import { createTestDb, createUser, type TestDb } from "./harness";
 
-// Processes inside processes (issue #102, migration 20261101000000): groups
+// Processes inside processes (issue #102, migration 20261108000000): groups
 // (a step holding steps), child processes (a step holding a process), the
 // process tree, and the rules that keep both acyclic, as the database enforces
 // them. The tree rules are checked when a transaction commits, so a group and
@@ -397,5 +397,78 @@ describe("deleting a parent process", () => {
     await db.client.query("delete from processes where id = $1", [top.proc]);
     const row = (await db.client.query("select parent_process_id from processes where id = $1", [child.proc])).rows[0];
     expect(row).toEqual({ parent_process_id: null });
+  });
+});
+
+describe("rules checked at commit see the final rows", () => {
+  it("lets a group and its step be inserted and the group deleted in one transaction", async () => {
+    const p = await newProcess();
+    const g = randomUUID();
+    await commit(async (c) => {
+      await addStep(c, p, { id: g, kind: "group", name: "Short-lived" });
+      await addStep(c, p, { name: "Inside", parent: g });
+      await c.query("delete from steps where revision_id = $1 and id = $2", [p.rev, g]);
+    });
+    expect((await db.client.query("select count(*)::int n from steps where revision_id = $1", [p.rev])).rows[0].n).toBe(0);
+  });
+
+  it("lets a step move into a group, out again, and the group become a task, in one transaction", async () => {
+    const p = await newProcess();
+    const g = randomUUID();
+    const s = randomUUID();
+    await commit(async (c) => {
+      await addStep(c, p, { id: g, kind: "group", name: "Box" });
+      await addStep(c, p, { id: s, name: "Mover" });
+    });
+    await commit(async (c) => {
+      await c.query("update steps set parent_step_id = $3 where revision_id = $1 and id = $2", [p.rev, s, g]);
+      await c.query("update steps set parent_step_id = null where revision_id = $1 and id = $2", [p.rev, s]);
+      await c.query("update steps set kind = 'task' where revision_id = $1 and id = $2", [p.rev, g]);
+    });
+    expect(await stepRow(p.rev, g)).toMatchObject({ kind: "task" });
+  });
+
+  it("refuses to move a group's first step out of it", async () => {
+    const p = await newProcess();
+    const g = randomUUID();
+    const a = randomUUID();
+    await commit(async (c) => {
+      await addStep(c, p, { id: g, kind: "group", name: "Box", entry: a });
+      await addStep(c, p, { id: a, name: "First", parent: g });
+    });
+    await expect(commit((c) => c.query("update steps set parent_step_id = null where revision_id = $1 and id = $2", [p.rev, a]))).rejects.toMatchObject({
+      code: "23514",
+      message: expect.stringContaining("first step of a group"),
+    });
+    // Changing the group's first step in the same transaction is fine.
+    const b = randomUUID();
+    await commit(async (c) => {
+      await addStep(c, p, { id: b, name: "Second", parent: g });
+      await c.query("update steps set entry_step_id = $3 where revision_id = $1 and id = $2", [p.rev, g, b]);
+      await c.query("update steps set parent_step_id = null where revision_id = $1 and id = $2", [p.rev, a]);
+    });
+    expect(await stepRow(p.rev, g)).toMatchObject({ entry_step_id: b });
+  });
+
+  it("lets a child process move out once only a superseded revision holds it", async () => {
+    const top = await newProcess(ws, null, "History parent");
+    const child = await newProcess(ws, top.proc, "History child");
+    await commit((c) => addStep(c, top, { kind: "subprocess", name: "Held then", child: child.proc }));
+    await db.client.query("update process_revisions set status = 'published', published_at = now() where id = $1", [top.rev]);
+    await expect(db.client.query("update processes set parent_process_id = null where id = $1", [child.proc])).rejects.toMatchObject({ code: "23514" });
+    await db.client.query("update process_revisions set status = 'superseded' where id = $1", [top.rev]);
+    await db.client.query("update processes set parent_process_id = null where id = $1", [child.proc]);
+    expect((await db.client.query("select parent_process_id from processes where id = $1", [child.proc])).rows[0]).toEqual({ parent_process_id: null });
+  });
+
+  it("takes the holder's process from its revision, not from the step's own process_id", async () => {
+    const top = await newProcess(ws, null, "Real owner");
+    const other = await newProcess(ws, null, "Some other process");
+    const child = await newProcess(ws, top.proc, "Real child");
+    // The step says it belongs to another process, but its revision is the real owner's: fine.
+    await commit((c) => addStep(c, { proc: other.proc, rev: top.rev }, { kind: "subprocess", name: "Right revision", child: child.proc }));
+    // The step says it belongs to the real owner, but its revision is another process's: refused.
+    const stranger = await newProcess(ws, null, "Wrong revision");
+    await expect(commit((c) => addStep(c, { proc: top.proc, rev: stranger.rev }, { kind: "subprocess", name: "Wrong revision", child: child.proc }))).rejects.toMatchObject({ code: "23514" });
   });
 });

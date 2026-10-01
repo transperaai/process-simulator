@@ -136,6 +136,16 @@ export function groupHasExit(steps: readonly Nested[], edges: readonly Pick<Edge
   return edges.some((e) => within(e.from_step_id) && !within(e.to_step_id));
 }
 
+/**
+ * Whether a step with no connection of its own can still leave: it leaves through
+ * the connections of the nearest group it is in that has any. False when none of
+ * its groups has one, which the engine can't simulate.
+ */
+export function groupsLetOut(steps: readonly Nested[], edges: readonly Pick<EdgeRow, "from_step_id">[], stepId: string): boolean {
+  const byId = new Map(steps.map((s) => [s.id, s]));
+  return ancestorsOf(stepId, byId).some((g) => edges.some((e) => e.from_step_id === g));
+}
+
 /** The steps that do work inside a group, at any depth (child processes' steps through `childLeaves`). */
 export function leavesIn<T extends Nested & Pick<StepRow, "child_process_id">>(
   steps: readonly T[],

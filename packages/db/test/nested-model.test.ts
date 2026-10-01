@@ -143,6 +143,14 @@ describe("toEngineModel with groups", () => {
     expect(() => modelOf({ ...b, steps: b.steps.map((s) => (s.id === ids.audit ? { ...s, parent_step_id: ids.decision } : s)) })).toThrow(ModelError);
   });
 
+  it("reports a group with nowhere to go as a ModelError, not a crash", () => {
+    const b = withGroups();
+    // Go-live is the last step of Setup and nothing leaves Setup either.
+    const edges = b.edges.filter((e) => e.from_step_id !== ids.live);
+    expect(() => modelOf({ ...b, edges })).toThrow(ModelError);
+    expect(() => modelOf({ ...b, edges })).toThrow(/nothing leaving it/);
+  });
+
   it("refuses a step with no way out when it is not inside a group", () => {
     const b = flat();
     expect(() => modelOf({ ...b, edges: b.edges.filter((e) => e.from_step_id !== ids.audit) })).toThrow(/has no outgoing edge/);
@@ -189,7 +197,21 @@ describe("toEngineModel with a child process", () => {
       ...child.edges.map((e) => (e.from_step_id === ids.live ? { ...e, to_step_id: again.id } : e)),
       { ...edgeRow(bundle, again.id, done), ...owner },
     ];
-    expect(() => modelOf(bundle)).toThrow(/inside itself/);
+    expect(() => modelOf(bundle)).toThrow(/no longer sits inside this process|inside itself/);
+  });
+
+  it("says so, as a ModelError, when a step holds a child that has since moved out of the process", () => {
+    const { bundle } = withChildProcess();
+    const moved = (bundle.otherProcesses ?? []).map((p) => (p.process.name === "Delivery" ? { ...p, process: { ...p.process, parent_process_id: null } } : p));
+    const err = (() => {
+      try {
+        modelOf({ ...bundle, otherProcesses: moved });
+      } catch (e) {
+        return e;
+      }
+    })();
+    expect(err).toBeInstanceOf(ModelError);
+    expect((err as Error).message).toMatch(/no longer sits inside this process/);
   });
 
   it("is not picked as the pipeline a servicing process runs beside", () => {

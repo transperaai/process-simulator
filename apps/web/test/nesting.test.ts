@@ -100,10 +100,10 @@ describe("editing a nested process", () => {
     // The groups have no connections of their own: they are left from the steps inside (discovery, go-live).
     expect(stepWarnings(b).has(DEMO_GROUP_IDS.conversation)).toBe(false);
     expect(stepWarnings(b).has(DEMO_GROUP_IDS.setup)).toBe(false);
-    // Go-live loses its connection: it is where the group ends, so it leaves through the group's own, and that is flagged on the group.
+    // Go-live loses its connection and nothing leaves the group either: both are flagged, as the engine could not simulate it.
     const edges = b.edges.filter((e) => e.from_step_id !== ids.live);
     const warned = stepWarnings({ ...b, edges });
-    expect(warned.has(ids.live)).toBe(false);
+    expect(warned.get(ids.live)).toMatch(/no group it is in has a connection out/);
     expect(warned.get(DEMO_GROUP_IDS.setup)).toMatch(/Nothing leaves this group/);
     // The same step outside any group is flagged itself.
     const plain = flat();

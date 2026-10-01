@@ -794,4 +794,64 @@ describe.skipIf(!POSTGREST_URL)("MCP process building over PostgREST (drafts onl
     expect(await processRow("Company delivery")).toMatchObject({ id: parent.id });
     await editor.close();
   });
+
+  it("refuses two steps holding one child process, in one call or against a step that holds it already, and writes nothing", async () => {
+    const editor = await connect(editorToken, options);
+    expect(await call(editor, "create_process", { name: "Shared child" })).toMatchObject({ ok: true });
+    const processesBefore = (await admin.query("select count(*)::int n from processes where workspace_id = $1", [workspaceId])).rows[0].n;
+    const draftsBefore = (await admin.query("select count(*)::int n from process_revisions where workspace_id = $1", [workspaceId])).rows[0].n;
+
+    // Two steps of one import name the same existing process.
+    expect(
+      await call(editor, "import_process", {
+        process_json: { name: "Twice holder", steps: [{ name: "One", child_process: "Shared child" }, { name: "Two", child_process: "Shared child" }] },
+      }),
+    ).toMatchObject({ ok: false, error: { code: "invalid_input", message: expect.stringContaining("can't sit in both") } });
+    // A new parent and an existing one can't both take it either (the second holder is in the first call's scope).
+    expect(
+      await call(editor, "import_process", {
+        process_json: {
+          name: "Nested twice",
+          steps: [{ name: "Outer", process: { name: "Outer child", steps: [{ name: "Inner", child_process: "Shared child" }] } }, { name: "Again", child_process: "Shared child" }],
+        },
+      }),
+    ).toMatchObject({ ok: false, error: { code: "invalid_input" } });
+    expect((await admin.query("select count(*)::int n from processes where workspace_id = $1", [workspaceId])).rows[0].n).toBe(processesBefore);
+    expect((await admin.query("select count(*)::int n from process_revisions where workspace_id = $1", [workspaceId])).rows[0].n).toBe(draftsBefore);
+
+    // One step holds it; a second step of another call may not.
+    const first = await call(editor, "import_process", { target: "Company delivery", process_json: { steps: [{ name: "Holds shared", child_process: "Shared child" }] } });
+    expect(first.ok, JSON.stringify(first)).toBe(true);
+    const parent = await processRow("Company delivery");
+    const before = await snapshot(parent.draft_revision_id!);
+    expect(await call(editor, "import_process", { target: "Company delivery", process_json: { steps: [{ name: "Holds shared too", child_process: "Shared child" }] } })).toMatchObject({
+      ok: false,
+      error: { code: "invalid_input", message: expect.stringContaining("already held by the step 'Holds shared'") },
+    });
+    expect(await snapshot(parent.draft_revision_id!)).toEqual(before);
+    await editor.close();
+  });
+
+  it("turns a group into a task and moves its steps out in one import (leaving, then changing kind, then entering)", async () => {
+    const editor = await connect(editorToken, options);
+    const done = await call<Outcome>(editor, "import_process", {
+      target: "Nested sales",
+      process_json: {
+        steps: [
+          { name: "Qualify", kind: "task", entry: null, work_hours: 1, role: "Consultant" },
+          { name: "Receive enquiry", parent: null },
+          { name: "Check fit", parent: null },
+        ],
+      },
+    });
+    expect(done.ok, JSON.stringify(done)).toBe(true);
+    const proc = await processRow("Nested sales");
+    const rows = (await stepsOf(proc.draft_revision_id!)) as unknown as { name: string; kind: string; parent_step_id: string | null; entry_step_id: string | null }[];
+    const by = (n: string) => rows.find((r) => r.name === n)!;
+    expect(by("Qualify")).toMatchObject({ kind: "task", entry_step_id: null });
+    expect(by("Receive enquiry").parent_step_id).toBeNull();
+    expect(by("Check fit").parent_step_id).toBeNull();
+    expect(by("Sales")).toMatchObject({ kind: "group" });
+    await editor.close();
+  });
 });

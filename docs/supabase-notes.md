@@ -144,3 +144,13 @@ Verified only against plain Postgres (the db test harness, `process-history.test
 
 - `revision_history` is `security definer` and reads `auth.users` and `audit_log` (both closed to ordinary members). It checks `can_read_workspace` itself and shows an email only to someone who manages the workspace. On Supabase, check that the function owner can read `auth.users`.
 - `restore_version` and `duplicate_version` are `security invoker` and copy rows with `jsonb_populate_record`, like `open_draft`. The deferred nesting trigger (`nesting_is_a_tree`) runs at commit, so a bad copy is refused when the RPC's transaction commits.
+
+## Issues v2 (A47, migration 20261120000000)
+
+Checked on plain Postgres 16 with the auth shim (`packages/db/test/issues-v2.test.ts`); not confirmed on Supabase itself, and the PostgREST end-to-end tests run only in CI:
+
+- Issue numbers come from `private.next_issue_number`, an `insert ... on conflict do update ... returning` on a one-row-per-workspace counter table. The row lock serialises concurrent inserts (tested with two connections). The trigger function that calls it (`private.issues_before_write`) is `security definer`, so the `authenticated` role needs no access to the `private` schema; Supabase's `authenticated` role has none either.
+- The new triggers sit beside the existing ones: `issues_number` (before insert or update) runs after `issues_before_write` because triggers fire in name order, and `issue_seed_links` (after insert) runs after `issue_log` for the same reason. That ordering is Postgres's, tested here, and not confirmed on Supabase.
+- The history log is written by `security definer` triggers that call `auth.uid()` for the actor. On plain Postgres the shim's `auth.uid()` reads `request.jwt.claims`; Supabase's reads the same setting, but the actor on a real session is unconfirmed.
+- Link-table events are skipped when the same transaction already logged the issue, using `txid_current()` stored on each event. Over PostgREST each request is one transaction, so `save_issue` (one RPC) logs one entry.
+- `public.save_issue` is `security invoker` with defaults on every argument after `p_fields`, so supabase-js can leave out `p_id`, `p_links`, `p_owners` and `p_sources` (PostgREST resolves the call by argument names). Only called with all of them present here.

@@ -1,3 +1,4 @@
+import { storedStatus } from "@transpera-flow/db/issue-status";
 import type { IssueRow, ProcessBundle, ScenarioRow, SourceRow, WorkspaceAccess } from "./types";
 
 type Value = string | number | boolean | null | object;
@@ -84,8 +85,19 @@ export function seedSql(
   }
   if (issues.length) {
     out.push("-- Issues register: audit findings and a promoted detection\n");
-    // resolved_at is set by the table's trigger from the status.
-    out.push(insert("issues", issues.map(({ resolved_at: _resolved, ...r }) => ({ ...r }))));
+    // resolved_at and number are set by the table's triggers (the fixtures are numbered in insert order). The status is
+    // stored as the older spellings plus a resolution (issue-status.ts). An issue's first link and first owner are
+    // seeded by a trigger from process_id, step_id and owner_person_id; the rest go in their own tables.
+    out.push(
+      insert(
+        "issues",
+        issues.map(({ resolved_at: _resolved, number: _number, links: _l, owner_ids: _o, source_ids: _s, status, ...r }) => ({ ...r, ...storedStatus(status) })),
+      ),
+    );
+    const rel = <T extends Record<string, unknown>>(pick: (i: IssueRow) => T[]) => issues.flatMap((i) => pick(i).map((r) => ({ issue_id: i.id, workspace_id: i.workspace_id, ...r })));
+    out.push(insert("issue_links", rel((i) => i.links.filter((l) => !(l.process_id === i.process_id && l.step_id === i.step_id)).map((l) => ({ ...l })))));
+    out.push(insert("issue_owners", rel((i) => i.owner_ids.filter((id) => id !== i.owner_person_id).map((person_id) => ({ person_id })))));
+    out.push(insert("issue_sources", rel((i) => i.source_ids.map((source_id) => ({ source_id })))));
   }
   return out.join("\n");
 }

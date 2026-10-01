@@ -14,7 +14,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, type ReactNode } from "react";
 import { ArrowRight } from "lucide-react";
-import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ProcessPart } from "@transpera-flow/db";
+import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ProcessPart, type SourceRow } from "@transpera-flow/db";
 import { resolveMoney, toRatingConfig, type AnalysisSettings, type EngineModel, type SimulationResult } from "@transpera-flow/engine";
 import { Help } from "@/components/help";
 import { HorizonPicker } from "@/components/horizon-picker";
@@ -26,6 +26,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { horizonLabel, horizonWeeks, isHorizonMonths, monthsForWeeks } from "@/lib/horizon";
 import { perceptionGapDetections } from "@/lib/issues/perception";
+import { issueFormOptions } from "@/lib/issues/draft";
 import { mapFeed, registerEntries, stepRatingOf } from "@/lib/issues/register";
 import { litIds } from "@/lib/map/highlight";
 import { companyMap } from "@/lib/overview/company-map";
@@ -53,6 +54,8 @@ export interface OverviewProps {
   parts: ProcessPart[];
   /** Tracked issues: the confirmed ones colour and badge the map. */
   issues: IssueRow[];
+  /** The workspace's sources, which the Acknowledge dialog can link to an issue. */
+  sources?: SourceRow[];
   mode: "live" | "demo" | "readonly";
   /** The workspace's analysis rules; omitted means the defaults. On the demo, the ones edited in this tab. */
   analysisRules?: AnalysisSettings;
@@ -64,6 +67,8 @@ export interface OverviewProps {
   issuesHref: string;
   rulesHref?: string;
 }
+
+const NO_SOURCES: SourceRow[] = [];
 
 /** The company's engine model, the same object while it is unchanged. */
 function useCompanyModel(bundle: ProcessBundle): { model: EngineModel | null; error: string | null } {
@@ -104,7 +109,7 @@ function Section({ title, description, action, help, children }: { title: string
   );
 }
 
-export function Overview({ workspaceName, live, parts, issues, mode, analysisRules, firstPrinciples, hrefs, processesHref, issuesHref, rulesHref }: OverviewProps) {
+export function Overview({ workspaceName, live, parts, issues, sources = NO_SOURCES, mode, analysisRules, firstPrinciples, hrefs, processesHref, issuesHref, rulesHref }: OverviewProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -140,8 +145,20 @@ export function Overview({ workspaceName, live, parts, issues, mode, analysisRul
     [base, baseResult, rules, live.process.id, absence, gaps, successMeasures],
   );
   // Acknowledging an insight tracks it here, so it badges the map straight away.
-  const state = useIssues(live.workspace.id, issues, mode);
-  const entries = useMemo(() => registerEntries(state.issues, findings ?? []), [state.issues, findings]);
+  // A dismissed insight stays away until its process's next published version: each part is at its live revision.
+  const liveRevisions = useMemo(() => Object.fromEntries(parts.map((p) => [p.process.id, p.revision.id])), [parts]);
+  const state = useIssues(live.workspace.id, issues, mode, liveRevisions);
+  const entries = useMemo(() => registerEntries(state.issues, findings ?? [], state.revisionOf), [state.issues, state.revisionOf, findings]);
+  const formOptions = useMemo(
+    () =>
+      issueFormOptions({
+        processes: parts.map((p) => ({ id: p.process.id, name: p.process.name })),
+        steps: parts.flatMap((p) => p.steps),
+        people: live.people.filter((p) => p.active),
+        sources,
+      }),
+    [parts, live.people, sources],
+  );
   // What the header counts and the list shows: the same insights (a dismissed one is in neither).
   const insightList = useMemo(() => (findings ? buildInsights(entries) : null), [findings, entries]);
   const feed = useMemo(() => mapFeed(entries), [entries]);
@@ -266,6 +283,7 @@ export function Overview({ workspaceName, live, parts, issues, mode, analysisRul
             detected={findings}
             processId={live.process.id}
             scenarios={[]}
+            formOptions={formOptions}
             currency={currency}
             stepName={(id) => stepNames.get(id) ?? null}
             processName={processNameOfStep}

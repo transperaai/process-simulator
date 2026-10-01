@@ -8,7 +8,7 @@ import { loadProcessFirstPrinciples } from "@/lib/first-principles/data";
 import { loadWorkspaceLeverSettings } from "@/lib/levers/data";
 import { processRatings } from "@/lib/processes/rows";
 import { loadWorkspaceAnalysisRules } from "@/lib/rules/data";
-import { loadProcessForEditing, loadProcessVersion, loadWorkspaceIssues, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
+import { loadProcessForEditing, loadProcessVersion, loadWorkspaceIssues, loadWorkspaceLiveRevisionIds, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
 
 /**
  * A process of the workspace on the canvas, at `/w/[slug]/p/[processId]` (any process, never-published ones
@@ -20,13 +20,15 @@ export async function WorkspaceProcessPage({ slug, processId, version }: { slug:
   const { live, draft, processes } = process;
   // `?version=N` shows an earlier version, read only; a number that isn't an earlier version shows live.
   const earlier = version ? await loadProcessVersion(live, version) : null;
-  const [canEdit, scenarios, issues, sources, rules, levers] = await Promise.all([
+  const [canEdit, scenarios, issues, sources, rules, levers, liveRevisions] = await Promise.all([
     canEditWorkspace(live.workspace.id),
     loadWorkspaceScenarios(live.workspace.id),
     loadWorkspaceIssues(live.workspace.id),
     loadWorkspaceSources(live.workspace.id),
     loadWorkspaceAnalysisRules(live.workspace.id),
     loadWorkspaceLeverSettings(live.workspace.id),
+    // Every process, so a dismissal on a step of a process inside this one is measured against that process.
+    loadWorkspaceLiveRevisionIds(live.workspace.id),
   ]);
   // First principles of the version on screen, and whether the draft has answers live doesn't (A54).
   const shown = earlier ?? (isUnpublished(live) && draft ? draft : live);
@@ -50,6 +52,7 @@ export async function WorkspaceProcessPage({ slug, processId, version }: { slug:
       scenarios={scenarios}
       issues={issues}
       sources={sources}
+      liveRevisions={liveRevisions}
       analysisRules={rules.settings}
       hiddenLevers={levers.hidden}
       registerHref={`${base}/issues`}

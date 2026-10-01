@@ -61,6 +61,7 @@ export function ProcessPage({
   scenarios = [],
   issues = [],
   sources = [],
+  liveRevisions,
   analysisRules,
   hiddenLevers,
   rating,
@@ -84,6 +85,8 @@ export function ProcessPage({
   scenarios?: ScenarioRow[];
   issues?: IssueRow[];
   sources?: SourceRow[];
+  /** Each process's live revision id, which a dismissed insight is measured against. Omitted: this bundle's, when it is the live one. */
+  liveRevisions?: Record<string, string>;
   analysisRules?: AnalysisSettings;
   /** The lever kinds the workspace has switched off in Settings -> Levers (the demo keeps its own in the tab). */
   hiddenLevers?: string[];
@@ -165,6 +168,9 @@ export function ProcessPage({
     registerHref,
     rulesHref: settingsHref ? `${settingsHref}/rules` : mode === "demo" ? "/demo/settings/rules" : undefined,
     analysisRules,
+    sources,
+    // A dismissed insight is measured against the live revision; an earlier version or a draft isn't one.
+    liveRevisions: liveRevisions ?? (viewingVersion === null && liveVersion > 0 ? { [bundle.process.id]: bundle.revision.id } : undefined),
     successMeasures,
     // A badge on the map takes you down to the issues on that step.
     onShowIssues: () => document.getElementById("issues")?.scrollIntoView({ behavior: "smooth", block: "start" }),

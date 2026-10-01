@@ -2,7 +2,7 @@ import Link from "next/link";
 import { northbeamIssues, northbeamScenarios, processesOf } from "@transpera-flow/db";
 import { IssuesPage } from "@/components/issues-page";
 import { Page } from "@/components/shell/page";
-import { demoBundle } from "@/lib/sources/demo";
+import { demoBundle, demoSources } from "@/lib/sources/demo";
 
 /** The Issues screen on the demo: Northbeam's sample issues plus what a fresh run detects, in memory. */
 export default function DemoIssuesPage() {
@@ -26,6 +26,7 @@ export default function DemoIssuesPage() {
         issues={northbeamIssues()}
         scenarios={northbeamScenarios()}
         processes={processesOf(bundle).map((p) => ({ id: p.id, name: p.name }))}
+        sources={demoSources()}
         mode="demo"
       />
     </Page>

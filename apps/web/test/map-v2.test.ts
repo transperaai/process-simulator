@@ -127,7 +127,7 @@ describe("what colours a step (D24: nothing reaches the map until it is acknowle
   });
 
   it("stops colouring a step once its issue is closed", () => {
-    const closed = registerEntries([{ ...promoted!, status: "done" }], []);
+    const closed = registerEntries([{ ...promoted!, status: "resolved" }], []);
     expect(confirmedRatings(closed)).toEqual({});
   });
 

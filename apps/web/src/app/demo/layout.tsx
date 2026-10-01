@@ -12,7 +12,7 @@ export default async function DemoLayout({ children }: LayoutProps<"/demo">) {
   const pendingSuggestions = demoSuggestions().filter((s) => s.status === "pending").length;
   const counts = {
     processes: processesOf(demoBundle()).length,
-    openIssues: northbeamIssues().filter((i) => i.status === "open" || i.status === "in_progress").length,
+    openIssues: northbeamIssues().filter((i) => i.status === "open" || i.status === "testing").length,
     pendingSuggestions,
   };
   const defaultOpen = (await cookies()).get("sidebar_state")?.value !== "false";

@@ -30,13 +30,17 @@ const det = (id: string, rating: Rating, perMonth: number | null, extra: Partial
 const keys = (ids: string[]) => ids.map((x) => `capacity:role:${x}`);
 
 /** The issue state the hooks give, over the in-memory store; `fail` makes every save fail. */
-function state(store: MemoryIssueStore, fail = false): Pick<IssuesState, "promote"> {
+function state(store: MemoryIssueStore, fail = false, revisions: Record<string, string> = {}): Pick<IssuesState, "promote" | "save" | "redismiss" | "revisionOf"> {
+  const done = async (run: () => Promise<{ status: "ok"; issue: import("@transpera-flow/db").IssueRow } | { status: "error"; message: string }>) => {
+    if (fail) return null;
+    const r = await run();
+    return r.status === "ok" ? r.issue : null;
+  };
   return {
-    promote: async (input) => {
-      if (fail) return null;
-      const r = await store.promote(input);
-      return r.status === "ok" ? r.issue : null;
-    },
+    promote: (input) => done(() => store.promote(input)),
+    save: (input) => done(() => store.save(input)),
+    redismiss: (id, revision) => done(() => store.redismiss(id, revision)),
+    revisionOf: (processId) => (processId ? revisions[processId] : undefined),
   };
 }
 const rowsOf = (store: MemoryIssueStore) => [...(store as unknown as { rows: Map<string, import("@transpera-flow/db").IssueRow> }).rows.values()];
@@ -122,8 +126,8 @@ describe("acknowledge and dismiss", () => {
     expect(status()).toBe("open");
     expect(status("open")).toBe("open");
     expect(status("dismissed")).toBe("dismissed");
-    expect(status("done")).toBe("invalid");
-    expect(status("in_progress")).toBe("invalid");
+    expect(status("resolved")).toBe("invalid");
+    expect(status("testing")).toBe("invalid");
   });
 });
 

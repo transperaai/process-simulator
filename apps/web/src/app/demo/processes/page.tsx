@@ -9,7 +9,7 @@ export default function DemoProcessesPage() {
     id: p.id,
     name: p.name,
     kind: p.kind,
-    href: p.id === pipeline.process.id ? "/demo" : `/demo?process=${p.id}`,
+    href: `/demo/p/${p.id}`,
   }));
   return <ProcessesList processes={processes} />;
 }

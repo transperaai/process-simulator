@@ -46,8 +46,7 @@ describe("workspaceNav: groups and order", () => {
 });
 
 describe("workspaceNav: the active item", () => {
-  it("is Processes on the workspace root, which is the map until Overview becomes the landing page", () =>
-    expect(active(nav("/w/s"))).toEqual(["processes"]));
+  it("is Overview on the workspace root, the landing page", () => expect(active(nav("/w/s"))).toEqual(["overview"]));
   it("is Processes on a process page and on the processes list", () => {
     expect(active(nav(`/w/s/p/${PID}`))).toEqual(["processes"]);
     expect(active(nav("/w/s/processes"))).toEqual(["processes"]);
@@ -98,7 +97,6 @@ describe("workspaceNav: hrefs", () => {
   it("marks the pages that are not built yet with the ticket that builds them", () => {
     const soon = flatItems(nav("/w/s")).filter((i) => i.soon).map((i) => [i.key, i.soon]);
     expect(soon).toEqual([
-      ["overview", "A35"],
       ["solutions", "A49"],
       ["library", "A51"],
     ]);
@@ -146,7 +144,8 @@ describe("demoNav", () => {
     expect(item(d("/demo"), "levers")?.href).toBe("/demo/settings/levers");
   });
   it("marks the active page", () => {
-    expect(active(d("/demo"))).toEqual(["processes"]);
+    expect(active(d("/demo"))).toEqual(["overview"]);
+    expect(active(d("/demo/p/abc"))).toEqual(["processes"]);
     expect(active(d("/demo/processes"))).toEqual(["processes"]);
     expect(active(d("/demo/issues"))).toEqual(["issues"]);
     expect(active(d("/demo/suggestions"))).toEqual(["suggestions"]);

@@ -135,6 +135,7 @@ to draft) waits until A37 and A54, so the extraction skill can write nested proc
 1. The redesign lives in **Milestone A** as A31–A58.
 2. Named clients are **hidden, with the data kept**.
 3. **B7 keeps the drag-and-drop timeline**: drag hire, leave and solution markers along it.
-4. **UI style:** Austin wants a more modern look now, from a shadcn theme or preset he'll supply. It's applied in A33
-   (app shell v2), and the prototype is re-skinned to match before the tickets are written.
+4. **UI style:** Austin's shadcn preset (`shadcn init --preset b1s91W1fU`, style radix-nova: Inter, teal-blue brand,
+   neutral greys) is applied to the codebase (commit 6149a6a) and the prototype. A33 builds the new shell on it. The
+   "Good, could improve" rating colour is lime green so it doesn't clash with the brand colour.
 5. B9's kanban is dropped (not objected to).

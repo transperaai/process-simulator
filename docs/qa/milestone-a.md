@@ -4,6 +4,11 @@ For Austin. Test on production, https://transpera-flow.vercel.app, signed in as 
 
 Tick a box when the **Expected** result happens. If it doesn't, don't stop: write it in the Notes template at the end and carry on.
 
+> **Redesign note (1 Oct 2026).** This pack was written for the old screens. The redesign (A31 to A58, see
+> `docs/plans/redesign-plan.md`) removes some of them. Struck-through items are removed features, each with a pointer to
+> the ticket that replaces it. The pack is rewritten as each replacing ticket lands, and you re-run QA on the new screens
+> after that. Removed: Reports, the Clients page, the Scenarios page, the Runs page, Track and Run fix.
+
 ## Before you start
 
 - Use a desktop browser (Chrome or Edge). Have a second browser or a private window ready for section 14.
@@ -22,7 +27,7 @@ Tick a box when the **Expected** result happens. If it doesn't, don't stop: writ
 - [ ] Click Continue with Google and sign in with your agency admin account. (#4) **Expected:** you land on **Workspaces** with a card for **Northbeam Digital**. (Note: the ticket says magic link; the app uses Google sign-in. That is expected, but tell us if you'd prefer the ticket's wording.)
 - [ ] Click the Northbeam Digital card. (#4) **Expected:** you go to `/w/northbeam` and see the process name as the page title, a key results strip, and the process map.
 - [ ] Look at the top of the sidebar and its foot. (#4, #93) **Expected:** the workspace name (it opens the list of workspaces), and at the foot your name and email; that menu has **API tokens** and **Sign out**.
-- [ ] Look at the sidebar. (#4, #76, #93) **Expected:** Map, Issues, Clients, People, Scenarios, Suggestions, Sources, Runs, Report, then Settings and Access at the bottom. (Report shows for editors, Access for managers.)
+- ~~Look at the sidebar. (#4, #76, #93) **Expected:** Map, Issues, Clients, People, Scenarios, Suggestions, Sources, Runs, Report, then Settings and Access at the bottom. (Report shows for editors, Access for managers.)~~ **Removed.** The sidebar changes in A33 (#98); Clients, Scenarios, Runs and Report leave it (A32, #97).
 - [ ] Optional, only if you have a second Google account with no access to any workspace: sign in with it. (#4) **Expected:** a **No workspace yet** page naming that account and offering **Sign out**; no workspace data is visible. Sign back in as yourself afterwards.
 - [ ] Click Sign out, then try to open `/w/northbeam` directly. (#4) **Expected:** you are sent back to the Sign in page. Sign in again to continue.
 
@@ -90,8 +95,8 @@ Everything in this section lands in a draft. You'll see "Saved to draft" beside 
 - [ ] Hover over each money tile (New MRR, Billed, LTV added, Lost revenue, Overtime cost). (#12) **Expected:** a definition appears. Money shows in the workspace currency with thousands separators; percentages and days look consistent from tile to tile.
 - [ ] In the right-hand panel, look at **Bottleneck**. (#26) **Expected:** the top constraint with evidence, and a **Shadow price · +1 Strategist** box that briefly says "Running N extra replications…" and then shows a number of "completions / quarter" with a range.
 - [ ] In **Utilisation**, switch between **roles** and **people**. (#6, #7) **Expected:** a bar per role, then a bar per named person (11 people); a tick marks the 85% ceiling; a dark line shows the 10th–90th percentile range; grey shows client work.
-- [ ] Click **Save this run**, accept the name, click **Save**, then **View saved runs**. (#25) **Expected:** "Saved <name>" and the run appears under Saved runs with its key results and an engine version (for example "engine 1.0.0"). (Save is offered only when you're on the live view, not while a draft is open.)
-- [ ] Open the saved run. (#25) **Expected:** a page with the name, when it was saved, replications and seed, results tiles, and the line "The model hasn't changed since this run" (or a **Model changed since this run** list).
+- ~~Click **Save this run**, accept the name, click **Save**, then **View saved runs**. (#25) **Expected:** "Saved <name>" and the run appears under Saved runs with its key results and an engine version (for example "engine 1.0.0"). (Save is offered only when you're on the live view, not while a draft is open.)~~ **Removed.** Runs page removed (A32, #97). Replaced by Process history, A40 (#105).
+- ~~Open the saved run. (#25) **Expected:** a page with the name, when it was saved, replications and seed, results tiles, and the line "The model hasn't changed since this run" (or a **Model changed since this run** list).~~ **Removed.** Runs page removed (A32, #97). Replaced by Process history, A40 (#105).
 
 ## 6. Playback
 
@@ -107,23 +112,27 @@ Everything in this section lands in a draft. You'll see "Saved to draft" beside 
 
 ## 7. Levers, scenarios and compare
 
+The Scenarios list and saved scenarios are removed (A32, #97), replaced by solutions (A49, #114; A50, #115). Levers and the compare area stay until those land.
+
 - [ ] Scroll below the map to **Levers**. (#15) **Expected:** groups **Demand**, **People**, **Process** (relative to today, ±%) and **Finances**, with sliders or number fields, and "Every change re-runs the simulation."
 - [ ] Move one lever (for example More leads per week). (#15) **Expected:** the text changes to "Re-ran in N ms" and the **Compare: baseline vs scenario** area fills in.
 - [ ] Read the compare headline. (#15) **Expected:** a plain-English sentence with a range, for example "…adds avg 2.1 wins/quarter (range 1.4–2.9)", plus a table of key results for baseline and scenario with differences.
 - [ ] Look at "Utilisation, side by side" and switch **Role** and **Person**. (#15) **Expected:** bars for baseline and scenario next to each other, red above the 85% tick.
 - [ ] Click **Reset N lever(s)**. (#15) **Expected:** levers return to today's values and the compare area goes back to "Move a lever or apply a saved scenario…".
-- [ ] Look at the **Scenarios** list. (#15) **Expected:** four saved scenarios: **Hire a strategist**, **Automate proposals**, **More leads**, **Downturn**, each with a description and what it changes.
-- [ ] Click **Apply** on "Hire a strategist". (#15) **Expected:** it gets a "1" badge and the compare area shows the effect (Strategist utilisation drops, wins rise).
-- [ ] Also apply "More leads". (#15) **Expected:** it gets a "2" badge and the comparison uses both stacked, in that order; **Remove all (2)** clears them.
-- [ ] Move a lever, type a name and click **Save N lever change(s)**. (#15) **Expected:** a new scenario appears in the list, already applied.
-- [ ] On your new scenario, click **Duplicate**, then **Delete** on the copy. (#15) **Expected:** a copy appears (named "… copy"), and deleting asks for confirmation before it goes. Delete your test scenario too.
-- [ ] Read the headline for a scenario, and compare it with the tiles. (#15) **Expected:** the wording is templated (the same shape every time) and the numbers match the table.
-- [ ] Break a scenario on purpose: open the Audit & proposal menu, choose **Split in two**. (#16) **Expected:** the draft bar says "publishing breaks 1 saved scenario"; in **Scenarios**, "Automate proposals" shows a red **Needs attention** badge and "Left out of the comparison and reports until this change is re-pointed", naming the step.
-- [ ] Click the **Point at …** button suggested under that scenario. (#16) **Expected:** the badge clears and the scenario can be applied again.
-- [ ] Open the **Issues** tab on the right while a scenario is broken. (#16, #17) **Expected:** a broken-scenario issue is listed, and it resolves itself once you re-point.
-- [ ] Finish: **Discard draft…** to remove the split. (#16) **Expected:** back to live with nothing broken.
+- ~~Look at the **Scenarios** list. (#15) **Expected:** four saved scenarios: **Hire a strategist**, **Automate proposals**, **More leads**, **Downturn**, each with a description and what it changes.~~ **Removed.** Scenarios page removed (A32, #97). Replaced by solutions, A49 (#114) and A50 (#115).
+- ~~Click **Apply** on "Hire a strategist". (#15) **Expected:** it gets a "1" badge and the compare area shows the effect (Strategist utilisation drops, wins rise).~~ **Removed.** Scenarios page removed (A32, #97). Replaced by solutions, A49 (#114) and A50 (#115).
+- ~~Also apply "More leads". (#15) **Expected:** it gets a "2" badge and the comparison uses both stacked, in that order; **Remove all (2)** clears them.~~ **Removed.** Scenarios page removed (A32, #97). Replaced by solutions, A49 (#114) and A50 (#115).
+- ~~Move a lever, type a name and click **Save N lever change(s)**. (#15) **Expected:** a new scenario appears in the list, already applied.~~ **Removed.** Scenarios page removed (A32, #97). Replaced by solutions, A49 (#114) and A50 (#115).
+- ~~On your new scenario, click **Duplicate**, then **Delete** on the copy. (#15) **Expected:** a copy appears (named "… copy"), and deleting asks for confirmation before it goes. Delete your test scenario too.~~ **Removed.** Scenarios page removed (A32, #97). Replaced by solutions, A49 (#114) and A50 (#115).
+- ~~Read the headline for a scenario, and compare it with the tiles. (#15) **Expected:** the wording is templated (the same shape every time) and the numbers match the table.~~ **Removed.** Scenarios page removed (A32, #97). Replaced by solutions, A49 (#114) and A50 (#115).
+- ~~Break a scenario on purpose: open the Audit & proposal menu, choose **Split in two**. (#16) **Expected:** the draft bar says "publishing breaks 1 saved scenario"; in **Scenarios**, "Automate proposals" shows a red **Needs attention** badge and "Left out of the comparison and reports until this change is re-pointed", naming the step.~~ **Removed.** Scenarios page removed (A32, #97). Replaced by solutions, A49 (#114) and A50 (#115).
+- ~~Click the **Point at …** button suggested under that scenario. (#16) **Expected:** the badge clears and the scenario can be applied again.~~ **Removed.** Scenarios page removed (A32, #97). Replaced by solutions, A49 (#114) and A50 (#115).
+- ~~Open the **Issues** tab on the right while a scenario is broken. (#16, #17) **Expected:** a broken-scenario issue is listed, and it resolves itself once you re-point.~~ **Removed.** Scenarios page removed (A32, #97). Replaced by solutions, A49 (#114) and A50 (#115).
+- ~~Finish: **Discard draft…** to remove the split. (#16) **Expected:** back to live with nothing broken.~~ **Removed.** Scenarios page removed (A32, #97). Replaced by solutions, A49 (#114) and A50 (#115).
 
 ## 8. Demand, services and clients
+
+The Clients page is removed (A32, #97), replaced by client groups (A55, #120). Named clients are hidden, but the data is kept.
 
 Settings save as you type and change live data. Note each old value and restore it.
 
@@ -140,11 +149,11 @@ Settings save as you type and change live data. Note each old value and restore 
 - [ ] Change one lead source's volume and check the tiles. (#13) **Expected:** Wins and Lost move in the same direction. Restore the value.
 - [ ] Demand: open **Seasonality** and change one month. (#13) **Expected:** each month has a multiplier, and **Reset to flat (every month 1)** restores it.
 - [ ] Demand: set **Monthly growth in leads**. (#13) **Expected:** it saves; results shift slightly if the horizon covers the growth. Set it back.
-- [ ] Open **Clients**. (#18) **Expected:** **Client load by person** (each person's hours a week against capacity, marked "Fits", "Needs overtime" or "Over capacity") above a **Roster** of 26 named clients, plus the simulated health and churn section.
-- [ ] Type in **Find a client**. (#18) **Expected:** the roster filters as you type.
-- [ ] Open one client and change its MRR, health or assigned person. (#18) **Expected:** each saves; the load table changes when you change who looks after them. Restore afterwards.
-- [ ] Use **Add client** (name and service). (#18) **Expected:** the client appears in the roster and adds load to its assigned person. Mark it Inactive or remove it after.
-- [ ] Open **Paste clients from a spreadsheet or CSV** and paste two test rows using the column order shown. (#18) **Expected:** a preview table lists each line, its services and assignments, with notes on anything it couldn't read; **Import N clients** adds them. Remove the test clients after.
+- ~~Open **Clients**. (#18) **Expected:** **Client load by person** (each person's hours a week against capacity, marked "Fits", "Needs overtime" or "Over capacity") above a **Roster** of 26 named clients, plus the simulated health and churn section.~~ **Removed.** Clients page removed (A32, #97). Replaced by client groups, A55 (#120), and the People page, B2 (#31).
+- ~~Type in **Find a client**. (#18) **Expected:** the roster filters as you type.~~ **Removed.** Clients page removed (A32, #97). Replaced by client groups, A55 (#120), and the People page, B2 (#31).
+- ~~Open one client and change its MRR, health or assigned person. (#18) **Expected:** each saves; the load table changes when you change who looks after them. Restore afterwards.~~ **Removed.** Clients page removed (A32, #97). Replaced by client groups, A55 (#120), and the People page, B2 (#31).
+- ~~Use **Add client** (name and service). (#18) **Expected:** the client appears in the roster and adds load to its assigned person. Mark it Inactive or remove it after.~~ **Removed.** Clients page removed (A32, #97). Replaced by client groups, A55 (#120), and the People page, B2 (#31).
+- ~~Open **Paste clients from a spreadsheet or CSV** and paste two test rows using the column order shown. (#18) **Expected:** a preview table lists each line, its services and assignments, with notes on anything it couldn't read; **Import N clients** adds them. Remove the test clients after.~~ **Removed.** Clients page removed (A32, #97). Replaced by client groups, A55 (#120), and the People page, B2 (#31).
 - [ ] Compare Overtime and utilisation before and after setting **Overtime cap** to 0 (then restore it). (#18) **Expected:** with no cap, the **Overtime** tile reads "none allowed (cap 0%)", people over their week show utilisation above 100%, and a critical capacity issue may appear in Issues.
 - [ ] Read the **Overtime** and **Overtime cost** tiles with the cap restored. (#18) **Expected:** hours and money with ranges.
 
@@ -154,8 +163,8 @@ Settings save as you type and change live data. Note each old value and restore 
 - [ ] In **Settings → Services**, look for the servicing links. (#19, #93) **Expected:** a "Servicing processes" area per service with **How often, per client** and **On time within**, and a **Link** button; "None: each client needs the fallback load below" for services with no link.
 - [ ] Read **Ongoing load per client (hours a month, by role)** on a service. (#19, #18) **Expected:** editable hours per role; blank means none.
 - [ ] Read the **Client health** settings. (#19) **Expected:** rules for how on-time, late and missed work move health, each with an "(estimated)" placeholder and an explanation of the churn formula.
-- [ ] On the Clients page, read **Simulated health and churn**. (#19) **Expected:** **Clients at risk**, **Churned**, **Touchpoints on time** (a percentage) and **Late · missed**, plus **Lowest simulated health at week N**.
-- [ ] Hover the health figure of a client in the roster. (#19) **Expected:** a tooltip with simulated health start → end (with a range), touchpoints on time, late and missed, and how often the client churned across runs.
+- ~~On the Clients page, read **Simulated health and churn**. (#19) **Expected:** **Clients at risk**, **Churned**, **Touchpoints on time** (a percentage) and **Late · missed**, plus **Lowest simulated health at week N**.~~ **Removed.** Clients page removed (A32, #97). Replaced by client groups, A55 (#120), and the People page, B2 (#31).
+- ~~Hover the health figure of a client in the roster. (#19) **Expected:** a tooltip with simulated health start → end (with a range), touchpoints on time, late and missed, and how often the client churned across runs.~~ **Removed.** Clients page removed (A32, #97). Replaced by client groups, A55 (#120), and the People page, B2 (#31).
 - [ ] Raise the weekly leads on a lever by a lot. (#19) **Expected:** more late or missed touchpoints, lower health, more churn and more clients at risk (the busier pipeline squeezes servicing).
 - [ ] In Issues, look for a churn-risk issue. (#19) **Expected:** if a client's simulated health falls below 50, a churn-risk item appears in the register (source: Detected).
 
@@ -174,11 +183,11 @@ Settings save as you type and change live data. Note each old value and restore 
 - [ ] Open **Issues**. (#17) **Expected:** **Issues register** with a count line ("N open issues · N critical · N serious") and filters for Process, Person, Severity, Source and Status.
 - [ ] Look at the three seeded items. (#17) **Expected:** "Every proposal is built by hand", "Only Maya Collins can do Audit & proposal" (Promoted) and "Lead scoring could skip unqualified discovery calls", each with severity, evidence and where it applies.
 - [ ] Look for detected issues (source: Detected). (#17) **Expected:** items the latest run found, such as a role over 85%, a queue growing without bound, a long wait or a rework or SLA problem; "Checking the latest run…" shows briefly first.
-- [ ] On a detected issue, click **Track**. (#17) **Expected:** it becomes a tracked issue (source: Promoted) with an owner and status you can set; it appears once, not twice, after the next run.
+- ~~On a detected issue, click **Track**. (#17) **Expected:** it becomes a tracked issue (source: Promoted) with an owner and status you can set; it appears once, not twice, after the next run.~~ **Removed.** Track removed (A32, #97). Replaced by Acknowledge on insights, A47 (#112) and A45 (#110).
 - [ ] Log a new issue: fill **Title**, Severity, Step, Person, Owner, Fix (scenario), Evidence, and submit. (#17) **Expected:** it appears in the register with all those fields.
 - [ ] Open **Edit** on it, change Status, Severity, Type, Owner and Evidence. (#17) **Expected:** each saves as you go; **Done editing** closes the form.
 - [ ] Use each filter (Process, Person, Severity, Source, Status). (#17) **Expected:** the list narrows to match; "No issues match these filters." appears when nothing does.
-- [ ] Click **Run the fix →** on "Every proposal is built by hand". (#17) **Expected:** you go to the process page with the linked scenario (Automate proposals) applied and the compare area open.
+- ~~Click **Run the fix →** on "Every proposal is built by hand". (#17) **Expected:** you go to the process page with the linked scenario (Automate proposals) applied and the compare area open.~~ **Removed.** Run fix removed (A32, #97). Replaced by Build solution from an issue, A49 (#114).
 - [ ] On the process page, open the panel beside the map (the panel button at the right of the top bar), then **Insights → Issues**. (#17, #93) **Expected:** the tab shows the open count ("Issues · N") and the same list; **Open the full register →** goes to the full page.
 - [ ] Look at Audit & proposal on the map. (#17) **Expected:** a small badge for its issues; clicking it opens that step's issues in the tab.
 - [ ] Delete or close your test issue. (#17) **Expected:** it disappears or moves to closed.
@@ -203,7 +212,7 @@ Settings save as you type and change live data. Note each old value and restore 
 
 - [ ] Open **Suggestions** with nothing pending. (#25) **Expected:** "Nothing waiting for review. When Claude changes people, clients, services, demand or company settings over MCP, its suggestions appear here." and the link shows no number badge.
 - [ ] In **Settings**, change a person's cost rate, then open **Recent changes to the company model** on the Suggestions page. (#25, #93) **Expected:** your edit applied immediately and is logged with your name and the time.
-- [ ] Open the saved run from section 5. (#25) **Expected:** a **Model changed since this run** notice lists the change (grouped under People) with a link **Run the model as it is now**. Restore the cost rate.
+- ~~Open the saved run from section 5. (#25) **Expected:** a **Model changed since this run** notice lists the change (grouped under People) with a link **Run the model as it is now**. Restore the cost rate.~~ **Removed.** Runs page removed (A32, #97). Replaced by Process history, A40 (#105).
 - [ ] [Claude] After section 15 has created suggestions, open **Suggestions**. (#25) **Expected:** each reads like "Claude suggests lead volume 15/wk, was 12" with old and new values, reasoning and any cited source, in tabs **Pending**, **Accepted**, **Rejected**, **All**, with counts.
 - [ ] [Claude] Click **Accept** on one. (#25) **Expected:** the value now shows in settings, marked with the source's provenance; if no source was cited it is recorded as an assumption to confirm.
 - [ ] [Claude] Click **Reject** on another and confirm. (#25) **Expected:** it moves to Rejected and the live value is untouched.
@@ -237,30 +246,32 @@ Use two windows: Chrome plus a private window, or two browsers. Sign in to both.
 - [ ] [API token][Claude] Ask it to update a step by an ambiguous name. (#24) **Expected:** it comes back with candidates rather than picking one.
 - [ ] [API token][Claude] Ask it to import a process over an existing one. (#24) **Expected:** it returns a diff against live and keeps values you already entered, flagging conflicts instead of overwriting.
 - [ ] [API token][Claude] Ask it to change lead volume, add a person and add a client. (#25) **Expected:** each becomes a pending suggestion; nothing changes in settings until you accept (see section 13).
-- [ ] [API token][Claude] Ask it to save a scenario and compare two. (#26) **Expected:** the scenario appears in the app's **Scenarios** list, and the comparison's headline and numbers match the app's compare area.
+- ~~[API token][Claude] Ask it to save a scenario and compare two. (#26) **Expected:** the scenario appears in the app's **Scenarios** list, and the comparison's headline and numbers match the app's compare area.~~ **Removed.** Scenarios page removed (A32, #97). Replaced by solutions, A49 (#114) and A50 (#115).
 - [ ] [API token][Claude] Ask: "What is the top bottleneck and its shadow price?" (#26) **Expected:** Strategist, with a completions-per-quarter figure matching the app's **Shadow price** box.
 - [ ] [API token][Claude] Ask it to check robustness. (#26) **Expected:** a verdict, or a partial result clearly marked as partial.
 - [ ] [API token][Claude] Ask it to log an issue on a step by name. (#26) **Expected:** it appears in the Issues register linked to that step.
-- [ ] [API token][Claude] Ask it to export a report as PDF. (#28) **Expected:** a working link that opens the PDF.
+- ~~[API token][Claude] Ask it to export a report as PDF. (#28) **Expected:** a working link that opens the PDF.~~ **Removed.** Reports removed (A32, #97). No replacement in Milestone A. Share snapshots are B3 (#32); map and issues export is B10 (#39).
 - [ ] Back on **API tokens**, look at the token you used. (#23) **Expected:** **Last used** has updated.
 - [ ] Click **Revoke** on the token, then ask Claude to list workspaces again. (#23) **Expected:** status "Revoked <date>" and Claude can no longer connect.
 - [ ] Look at the audit log of company changes. (#24, #25) **Expected:** Claude's changes read "Claude (API token of …)".
 
 ## 16. PDF report and narration
 
-- [ ] Click **Report** on the process page. (#28) **Expected:** a **Reports** page with a builder: **Sections** (Cover always on), **Scenarios to compare**, **Executive summary**, and **The run behind the numbers**.
-- [ ] Untick a couple of sections and tick two scenarios. (#28) **Expected:** the choices stick; scenarios that need attention are greyed out.
-- [ ] Click **Generate report**. (#28) **Expected:** "Generating…" with a note that it can take a minute or two, then a success line and an **Open printable report** link. First report is roughly 10–30 seconds.
-- [ ] Open the PDF. (#28) **Expected:** cover, executive summary, company map, process maps with bottleneck callouts, client health, issues by severity, scenario comparisons with ranges, utilisation charts, robustness verdict and sensitive inputs, an assumptions and evidence appendix, and a one-page methodology.
-- [ ] Scroll through the PDF page by page. (#28) **Expected:** no table or chart is cut in half by a page break; figures look sensible against the app.
-- [ ] Check the robustness section. (#28) **Expected:** it covers each scenario you included, without you having run it first.
-- [ ] Open **Earlier reports**. (#28) **Expected:** your report is listed with its date and a share link you can copy.
-- [ ] Open the printable page and use the browser's **Save as PDF**. (#28) **Expected:** an equivalent document.
-- [ ] In **Executive summary**, tick **Narrated summary** and generate (needs the API key, which is set in production). (#29) **Expected:** the note "The executive summary is narrated and every figure in it checked", with a figure count. If it says "The templated summary printed" it also tells you why.
-- [ ] Read the narrated summary against the report's tables. (#29) **Expected:** every number, in average-plus-range form and with the robustness verdict, matches the report; real people and client names appear (they're put back after the check).
-- [ ] Generate again without changing anything. (#29) **Expected:** the note says "(from the cache…)" and it doesn't redraft.
-- [ ] Edit the summary: use **Edit the summary before printing**, change a sentence, **Check figures**, then **Save and re-print**. (#29) **Expected:** "All N figures match the report." If you type a made-up number, it names the figure it can't find and won't print. After saving, the appendix says "edited by <your name>".
-- [ ] Open the saved run from section 5 and click **Explain this run**. (#29) **Expected:** "Drafting…" then a plain-English explanation, "Written by <model>; all N figures checked against the run"; clicking again offers **Explain again**, and a repeat says "(from the cache)".
+~~Reports~~ are removed (A32, #97). Only **Explain this run** and the privacy wording stay in this section.
+
+- ~~Click **Report** on the process page. (#28) **Expected:** a **Reports** page with a builder: **Sections** (Cover always on), **Scenarios to compare**, **Executive summary**, and **The run behind the numbers**.~~ **Removed.** Reports removed (A32, #97). No replacement in Milestone A. Share snapshots are B3 (#32); map and issues export is B10 (#39).
+- ~~Untick a couple of sections and tick two scenarios. (#28) **Expected:** the choices stick; scenarios that need attention are greyed out.~~ **Removed.** Reports removed (A32, #97). No replacement in Milestone A. Share snapshots are B3 (#32); map and issues export is B10 (#39).
+- ~~Click **Generate report**. (#28) **Expected:** "Generating…" with a note that it can take a minute or two, then a success line and an **Open printable report** link. First report is roughly 10–30 seconds.~~ **Removed.** Reports removed (A32, #97). No replacement in Milestone A. Share snapshots are B3 (#32); map and issues export is B10 (#39).
+- ~~Open the PDF. (#28) **Expected:** cover, executive summary, company map, process maps with bottleneck callouts, client health, issues by severity, scenario comparisons with ranges, utilisation charts, robustness verdict and sensitive inputs, an assumptions and evidence appendix, and a one-page methodology.~~ **Removed.** Reports removed (A32, #97). No replacement in Milestone A. Share snapshots are B3 (#32); map and issues export is B10 (#39).
+- ~~Scroll through the PDF page by page. (#28) **Expected:** no table or chart is cut in half by a page break; figures look sensible against the app.~~ **Removed.** Reports removed (A32, #97). No replacement in Milestone A. Share snapshots are B3 (#32); map and issues export is B10 (#39).
+- ~~Check the robustness section. (#28) **Expected:** it covers each scenario you included, without you having run it first.~~ **Removed.** Reports removed (A32, #97). No replacement in Milestone A. Share snapshots are B3 (#32); map and issues export is B10 (#39).
+- ~~Open **Earlier reports**. (#28) **Expected:** your report is listed with its date and a share link you can copy.~~ **Removed.** Reports removed (A32, #97). No replacement in Milestone A. Share snapshots are B3 (#32); map and issues export is B10 (#39).
+- ~~Open the printable page and use the browser's **Save as PDF**. (#28) **Expected:** an equivalent document.~~ **Removed.** Reports removed (A32, #97). No replacement in Milestone A. Share snapshots are B3 (#32); map and issues export is B10 (#39).
+- ~~In **Executive summary**, tick **Narrated summary** and generate (needs the API key, which is set in production). (#29) **Expected:** the note "The executive summary is narrated and every figure in it checked", with a figure count. If it says "The templated summary printed" it also tells you why.~~ **Removed.** Reports removed (A32, #97). No replacement in Milestone A. Share snapshots are B3 (#32); map and issues export is B10 (#39).
+- ~~Read the narrated summary against the report's tables. (#29) **Expected:** every number, in average-plus-range form and with the robustness verdict, matches the report; real people and client names appear (they're put back after the check).~~ **Removed.** Reports removed (A32, #97). No replacement in Milestone A. Share snapshots are B3 (#32); map and issues export is B10 (#39).
+- ~~Generate again without changing anything. (#29) **Expected:** the note says "(from the cache…)" and it doesn't redraft.~~ **Removed.** Reports removed (A32, #97). No replacement in Milestone A. Share snapshots are B3 (#32); map and issues export is B10 (#39).
+- ~~Edit the summary: use **Edit the summary before printing**, change a sentence, **Check figures**, then **Save and re-print**. (#29) **Expected:** "All N figures match the report." If you type a made-up number, it names the figure it can't find and won't print. After saving, the appendix says "edited by <your name>".~~ **Removed.** Reports removed (A32, #97). No replacement in Milestone A. Share snapshots are B3 (#32); map and issues export is B10 (#39).
+- [ ] Open the saved run from section 5 and click **Explain this run**. (#29) *The saved-run page goes with the Runs page (A32, #97); Explain this run moves to Process history, A40 (#105).* **Expected:** "Drafting…" then a plain-English explanation, "Written by <model>; all N figures checked against the run"; clicking again offers **Explain again**, and a repeat says "(from the cache)".
 
 ## 17. Privacy
 
@@ -276,7 +287,7 @@ Use two windows: Chrome plus a private window, or two browsers. Sign in to both.
 These are product calls, not bugs. Tell us what you want.
 
 1. **The lost-revenue definition.** Where: the **Lost revenue** tile in the key results strip on `/w/northbeam` (hover for the definition), and in the report's key results. Today it means: for each lost lead, what it would have been worth if won (price times expected tenure for a retainer). It counts every lost lead, including ones that were never a good fit. Is that the number you want to show clients? (PRD section 13.)
-2. **The starter scenarios.** Where: **Scenarios** list below the map on `/w/northbeam`. Northbeam has four: Hire a strategist, Automate proposals (hands-on time down 60% on audits), More leads (+25%), Downturn (30% fewer leads, churn up by half). A brand-new workspace gets generic versions ("Hire into the busiest role", "Automate the heaviest step", plus the same More leads and Downturn). Are these the right four, and are the 60%, 25% and 30% assumptions fair?
+2. ~~**The starter scenarios.** Where: **Scenarios** list below the map on `/w/northbeam`. Northbeam has four: Hire a strategist, Automate proposals (hands-on time down 60% on audits), More leads (+25%), Downturn (30% fewer leads, churn up by half). A brand-new workspace gets generic versions ("Hire into the busiest role", "Automate the heaviest step", plus the same More leads and Downturn). Are these the right four, and are the 60%, 25% and 30% assumptions fair?~~ **Removed.** The Scenarios page is gone (A32, #97); solutions replace it (A49, #114).
 3. **Whether Larkspur should be seeded in production.** Larkspur Creative is the second, messier sample agency (18 clients, overload, overtime, churn). Where: read-only at `/demo/larkspur` (public, no sign-in). It is **not** a workspace in production, so it won't appear under **Workspaces**. Do you want it as a real second workspace for demos, or kept out of production?
 4. **The `/privacy` wording about narration.** Where: `/privacy`, **Service providers**, the **Anthropic** bullet. It says Anthropic receives figures plus the names of the process, steps, roles and scenarios, that staff and client names are replaced with labels, and that Anthropic doesn't train models on it. Confirm the wording is acceptable, and that it is what you want to tell clients. (The consent screen for Google sign-in also points at this page.)
 

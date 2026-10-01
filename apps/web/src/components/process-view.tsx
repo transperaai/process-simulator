@@ -333,6 +333,8 @@ export function ProcessView({
   const { request: panelRequest } = useMapPanelRequest();
   const [seenRequest, setSeenRequest] = useState(panelRequest?.nonce ?? null);
 
+  const sourceTitles = useMemo(() => Object.fromEntries(sources.map((s) => [s.id, s.title])), [sources]);
+
   // Issues, levers and scenarios follow the model on screen (the draft, or live when shown).
   const issuesUi = useProcessIssues({
     bundle,
@@ -485,6 +487,9 @@ export function ProcessView({
           savedLabel={hasDraft ? "Saved to draft" : "Saved"}
           openIssues={issuesUi.openIssues}
           rating={issuesUi.rating}
+          stepExtras={issuesUi.stepExtras}
+          highlight={issuesUi.highlight}
+          sourceTitles={sourceTitles}
         />
         <MapSidePanel
           open={panelOpen}

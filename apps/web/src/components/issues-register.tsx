@@ -4,8 +4,6 @@
 // logged by hand and the issues the latest run detected, in one list with
 // filters. Detected issues are read-only and refresh on every run; tracking
 // one stores it (`source: promoted`) so later runs show it once, as tracked.
-// "Run the fix" applies the linked scenario (or the detection's suggested
-// what-if) and opens the compare view.
 
 import { useState, type FormEvent, type ReactNode } from "react";
 import type { IssueRow, IssueSource, IssueStatus, ScenarioRow } from "@transpera-flow/db";
@@ -20,9 +18,7 @@ import {
   entryView,
   filterEntries,
   fixFor,
-  promoteInput,
   registerEntries,
-  type FixRequest,
   type IssueFilters,
   type RegisterEntry,
 } from "@/lib/issues/register";
@@ -74,7 +70,6 @@ export function IssuesRegister({
   canEdit,
   stepFilter,
   onStepFilterChange,
-  onRunFix,
 }: {
   /** `rail`: narrow, beside the map; `page`: the full register screen. */
   layout: "rail" | "page";
@@ -94,7 +89,6 @@ export function IssuesRegister({
   /** Show only issues on this step (from a badge on the map). */
   stepFilter: string;
   onStepFilterChange: (stepId: string) => void;
-  onRunFix: (fix: Omit<FixRequest, "nonce">, entryId: string) => void;
 }) {
   const [filters, setFilters] = useState<IssueFilters>(NO_FILTERS);
   const [logging, setLogging] = useState(false);
@@ -215,9 +209,7 @@ export function IssuesRegister({
               brokenScenarios={brokenScenarios}
               canEdit={canEdit}
               state={state}
-              processId={processId}
               showProcess={processes.length > 1}
-              onRunFix={onRunFix}
             />
           ))}
         </ul>
@@ -235,9 +227,7 @@ function IssueItem({
   brokenScenarios,
   canEdit,
   state,
-  processId,
   showProcess,
-  onRunFix,
 }: {
   entry: RegisterEntry;
   names: { step: Map<string, string>; person: Map<string, string>; process: Map<string, string> };
@@ -247,15 +237,13 @@ function IssueItem({
   brokenScenarios: ReadonlySet<string>;
   canEdit: boolean;
   state: IssuesState;
-  processId: string;
   showProcess: boolean;
-  onRunFix: (fix: Omit<FixRequest, "nonce">, entryId: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const v = entryView(entry);
   const fix = fixFor(entry, scenarios);
-  // A fix that needs attention can't be run until it is re-pointed (issue #16).
+  // A fix that needs attention must be re-pointed (issue #16).
   const fixBroken = Boolean(fix?.scenarioId && brokenScenarios.has(fix.scenarioId));
   const issue = entry.kind === "tracked" ? entry.issue : null;
   const meta: ReactNode[] = [
@@ -296,25 +284,9 @@ function IssueItem({
       <div className="mt-1.5 flex flex-wrap items-center gap-1">
         {meta}
         <span className="ml-auto flex flex-wrap gap-1">
-          {entry.kind === "detected" && canEdit && (
-            <button
-              type="button"
-              className={button}
-              disabled={state.busy}
-              onClick={() => void state.promote(promoteInput(entry.detection, processId, scenarios))}
-              title="Keep this in the register with an owner and status; later runs will show it once, as tracked."
-            >
-              Track
-            </button>
-          )}
           {issue && canEdit && (
             <button type="button" className={button} aria-expanded={editing} onClick={() => setEditing((x) => !x)}>
               {editing ? "Done editing" : "Edit"}
-            </button>
-          )}
-          {fix && !fixBroken && v.type !== "broken_scenario" && (
-            <button type="button" className={primary} onClick={() => onRunFix(fix, v.id)} title={`Apply “${fix.name}” and compare it with the baseline`}>
-              Run the fix →
             </button>
           )}
         </span>
@@ -323,7 +295,7 @@ function IssueItem({
         <p className="mt-1 text-xs text-fg-3">Re-point its changes under Scenarios; this issue resolves itself once the scenario applies again.</p>
       ) : fixBroken ? (
         <p className="mt-1 text-xs text-crit" data-fix-broken>
-          Fix: {fix!.name} needs attention (a change in it no longer resolves), so it can&apos;t be run until it is re-pointed under Scenarios.
+          Fix: {fix!.name} needs attention (a change in it no longer resolves), so it needs re-pointing under Scenarios.
         </p>
       ) : (
         fix && <p className="mt-1 text-xs text-fg-3">Fix: {fix.name}</p>
@@ -389,8 +361,7 @@ function IssueFields({
         save={save("scenario_id")}
         options={options(scenarios)}
         noneLabel="No linked scenario"
-        hint={issue.detected_key ? "Without one, “Run the fix” uses the detection's suggestion." : undefined}
-      />
+              />
       <TextField label="Evidence" value={issue.evidence} save={save("evidence")} optional multiline />
     </>
   );

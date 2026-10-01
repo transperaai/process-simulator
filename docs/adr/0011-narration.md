@@ -1,6 +1,6 @@
 # 11. Narration: Claude drafts, a number check decides, the template is the floor
 
-Date: 30 Sep 2026 · Status: accepted · Issue: #29 · Implements PRD §7.3 "LLM", §5 `narrations`, §10 "LLM calls", D2, D15
+Date: 30 Sep 2026 · Status: accepted (the executive-summary narration was removed with reports in A32 (#97); "explain this run" remains) · Issue: #29 · Implements PRD §7.3 "LLM", §5 `narrations`, §10 "LLM calls", D2, D15
 
 ## Context
 

@@ -7,12 +7,11 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { demoBundle, demoSources } from "@/lib/sources/demo";
 
 /**
- * The Northbeam sample from the seed fixtures, no database needed. `?fix=<issue>`
- * runs that issue's fix; `?process=<id>` opens one of its servicing processes
- * (issue #19), which simulates beside the pipeline.
+ * The Northbeam sample from the seed fixtures, no database needed. `?process=<id>`
+ * opens one of its servicing processes (issue #19), which simulates beside the pipeline.
  */
 export default async function DemoPage(props: PageProps<"/demo">) {
-  const { fix, process } = await props.searchParams;
+  const { process } = await props.searchParams;
   // Sources disagree on audit time (a conflict) and kickoff time is an assumption, so the checklist and the publish check can be tried.
   const pipeline = demoBundle();
   const bundle = typeof process === "string" ? bundleForProcess(pipeline, process) : pipeline;
@@ -28,7 +27,6 @@ export default async function DemoPage(props: PageProps<"/demo">) {
       scenarios={northbeamScenarios()}
       issues={northbeamIssues()}
       sources={demoSources()}
-      initialFix={typeof fix === "string" ? fix : null}
       processPicker={<ProcessNav processes={processes} current={bundle.process.id} hrefs={hrefs} />}
       notice={
         <Alert role="note">

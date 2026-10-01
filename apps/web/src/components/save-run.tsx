@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useState, useTransition } from "react";
 import { companyOf, runResults, snapshotModel, type ProcessBundle } from "@transpera-flow/db";
 import type { EngineModel, SimulationResult } from "@transpera-flow/engine";
@@ -13,7 +12,7 @@ import { defaultRunName, type SaveRunInput, type SaveRunResult } from "@/lib/run
 // "Save this run" on the process page (issue #25): keeps the results shown
 // with a snapshot of the model behind them, so opening the run later says
 // what has changed since. Live: a Server Action that snapshots the model on
-// the server. Demo: kept in memory for /demo/runs.
+// the server. Demo: kept in memory.
 
 function saveInDemo(input: SaveRunInput, bundle: ProcessBundle): SaveRunResult {
   const id = crypto.randomUUID();
@@ -44,7 +43,6 @@ export function SaveRunBar({
   model,
   result,
   durationMs,
-  runsHref,
 }: {
   mode: "live" | "demo";
   /** The live revision the results are of. */
@@ -53,7 +51,6 @@ export function SaveRunBar({
   /** Null while the simulation runs. */
   result: SimulationResult | null;
   durationMs: number | null;
-  runsHref: string;
 }) {
   const [naming, setNaming] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<{ tone: "ok" | "error"; text: string; name?: string } | null>(null);
@@ -116,16 +113,7 @@ export function SaveRunBar({
         </form>
       )}
       <span role="status" aria-live="polite" className={outcome?.tone === "error" ? "text-destructive" : "text-muted-foreground"}>
-        {outcome?.tone === "ok" ? (
-          <>
-            Saved “{outcome.name}”.{" "}
-            <Link href={runsHref} className="underline">
-              View saved runs
-            </Link>
-          </>
-        ) : (
-          outcome?.text
-        )}
+        {outcome?.tone === "ok" ? <>Saved “{outcome.name}”.</> : outcome?.text}
       </span>
     </div>
   );

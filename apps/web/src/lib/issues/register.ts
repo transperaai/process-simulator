@@ -141,12 +141,10 @@ export function filterEntries(entries: readonly RegisterEntry[], f: IssueFilters
   });
 }
 
-/** What "Run the fix" applies: a saved scenario, or a detection's suggested patches. */
-export interface FixRequest {
-  /** Changes on every click, so running the same fix again re-applies it. */
-  nonce: number;
+/** A fix an issue links to: a saved scenario, or a detection's suggested patches. */
+export interface IssueFix {
   name: string;
-  /** A saved scenario to apply; null for a detection's suggestion. */
+  /** A saved scenario; null for a detection's suggestion. */
   scenarioId: string | null;
   patch: ScenarioPatch[];
 }
@@ -155,7 +153,7 @@ export interface FixRequest {
  * The fix an entry links to: its saved scenario if it has one that still
  * exists, otherwise the suggestion of its current detection, otherwise none.
  */
-export function fixFor(e: RegisterEntry, scenarios: readonly ScenarioRow[]): Omit<FixRequest, "nonce"> | null {
+export function fixFor(e: RegisterEntry, scenarios: readonly ScenarioRow[]): IssueFix | null {
   if (e.kind === "tracked" && e.issue.scenario_id) {
     const s = scenarios.find((x) => x.id === e.issue.scenario_id);
     if (s) return { name: s.name, scenarioId: s.id, patch: s.patch };

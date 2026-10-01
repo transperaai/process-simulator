@@ -1,24 +1,18 @@
 import "server-only";
 import { cache } from "react";
 import {
-  changesSinceRun,
   loadCompanyModel,
   loadLiveRevisions,
-  loadRun,
-  loadRuns,
   loadSources,
   loadSuggestions,
   snapshotModel,
   type CompanyModel,
-  type ModelChange,
-  type ModelSnapshot,
-  type RunRow,
   type SuggestionRow,
 } from "@transpera-flow/db";
 import { COMPANY_AUDIT_TABLES, type AuditEntry } from "./suggestions/audit";
 import { createClient } from "./supabase/server";
 
-// Reads for the Suggestions and Runs pages (issue #25), as the signed-in user
+// Reads for the Suggestions page (issue #25), as the signed-in user
 // (RLS decides what's visible).
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
@@ -110,50 +104,3 @@ export const pendingSuggestionCount = cache(async (workspaceId: string): Promise
   if (error) throw error;
   return count ?? 0;
 });
-
-export interface RunsPageData {
-  workspace: WorkspaceHead;
-  canEdit: boolean;
-  runs: (Omit<RunRow, "params_snapshot"> & { changes: number })[];
-}
-
-/** The saved runs, each with how many things have changed in the model since. */
-export async function loadRunsPage(slug: string): Promise<RunsPageData | null> {
-  const supabase = await createClient();
-  const workspace = await workspaceBySlug(supabase, slug);
-  if (!workspace) return null;
-  const [canEdit, runs, now] = await Promise.all([
-    supabase.rpc("can_edit_workspace", { ws: workspace.id }),
-    loadRuns(supabase, workspace.id),
-    currentModel(supabase, workspace),
-  ]);
-  if (canEdit.error) throw canEdit.error;
-  return {
-    workspace: { id: workspace.id, name: workspace.name, slug: workspace.slug },
-    canEdit: canEdit.data === true,
-    runs: runs.map(({ params_snapshot, ...run }) => ({ ...run, changes: changesSinceRun({ params_snapshot }, now.snapshot).length })),
-  };
-}
-
-export interface RunPageData {
-  workspace: WorkspaceHead;
-  run: RunRow;
-  changes: ModelChange[];
-  snapshot: ModelSnapshot;
-}
-
-/** One saved run, and what has changed in the model since it ran. */
-export async function loadRunPage(slug: string, id: string): Promise<RunPageData | null> {
-  const supabase = await createClient();
-  const workspace = await workspaceBySlug(supabase, slug);
-  if (!workspace) return null;
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-  const [run, now] = await Promise.all([loadRun(supabase, id), currentModel(supabase, workspace)]);
-  if (!run || run.workspace_id !== workspace.id) return null;
-  return {
-    workspace: { id: workspace.id, name: workspace.name, slug: workspace.slug },
-    run,
-    changes: changesSinceRun(run, now.snapshot),
-    snapshot: now.snapshot,
-  };
-}

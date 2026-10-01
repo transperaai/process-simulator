@@ -15,11 +15,6 @@ const RULES = `Rules for numbers (a program checks every number you write agains
 - Refer to people and clients only by the labels in the facts ("Client A", "Team member B"); never invent names.`;
 
 const SYSTEM: Record<NarrationPurpose, string> = {
-  summary: `You write the executive summary of a process-simulation report that a consultancy hands to a client business. The facts are JSON from a discrete-event Monte Carlo simulation: the headline figures, the bottleneck, client retention, the scenarios compared (each with a before/after table and a robustness verdict) and the open issues.
-
-Write 3 to 6 short paragraphs of plain prose for a busy owner or operations manager: what the business looks like today, what limits it, what is at risk, and what each scenario changes and how far that result can be trusted. For every scenario, state its headline effect as an average with its range, and its robustness verdict (how often the result holds). Keep the facts' meaning exactly: if a result is uncertain or a check was cut short, say so. British English, no headings, no bullet points, no markdown. The templated summary in the facts shows the house style and is a safe source of wording.
-
-${RULES}`,
   explain: `You explain one saved simulation run to the operations manager who ran it. The facts are JSON: the run's headline results from a discrete-event Monte Carlo simulation, each an average with its 10th–90th percentile range.
 
 Write 1 to 3 short paragraphs of plain prose: what the run shows about throughput, time to an outcome, revenue and the busiest role, and what the ranges mean for how certain each figure is. British English, no headings, no bullet points, no markdown.
@@ -38,7 +33,7 @@ export function factsMessage(payload: Record<string, unknown>): string {
 
 /** The instruction after the facts: the first draft, or the redraft naming the figures that failed. */
 export function instruction(purpose: NarrationPurpose, rejected?: { paragraphs: string[]; problems: NumberProblem[] }): string {
-  const ask = purpose === "summary" ? "Write the executive summary." : "Explain this run.";
+  const ask = "Explain this run.";
   if (!rejected) return `${ask} Return JSON: {"paragraphs": [..]}.`;
   const list = rejected.problems.map((p) => `- “${p.text}”: ${p.reason}`).join("\n");
   return (

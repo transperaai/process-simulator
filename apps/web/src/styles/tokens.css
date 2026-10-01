@@ -1,17 +1,17 @@
 /* Design tokens (docs/PRD.md §8.1), starting from the prototype. Components use
    these via Tailwind theme names; no raw hex in components. */
 :root {
-  --bg: #f3f4f2;
-  --panel: #ffffff;
-  --panel-2: #e9ebe7;
-  --line: #d5d8d2;
-  --line-2: #c2c6bf;
-  --fg: #15181a;
-  --fg-2: #4d5451;
-  --fg-3: #5f6761;
-  --accent: #1c5cab;
-  --accent-soft: #dbe7f7;
-  --accent-fg: #ffffff;
+  --bg: oklch(0.985 0 0);
+  --panel: oklch(1 0 0);
+  --panel-2: oklch(0.97 0 0);
+  --line: oklch(0.922 0 0);
+  --line-2: oklch(0.87 0 0);
+  --fg: oklch(0.145 0 0);
+  --fg-2: oklch(0.44 0 0);
+  --fg-3: oklch(0.53 0 0);
+  --accent: oklch(0.52 0.105 223.128);
+  --accent-soft: oklch(0.95 0.025 215);
+  --accent-fg: oklch(0.984 0.019 200.873);
   --good: #1baf7a;
   --warn: #eda100;
   --serious: #eb6834;
@@ -20,8 +20,8 @@
   --warn-soft: #fdf0d1;
   --good-soft: #d8f3e8;
   /* Work items in playback, and those heading to a lost end. */
-  --token: #2a78d6;
-  --token-lost: #9aa09a;
+  --token: oklch(0.609 0.126 221.723);
+  --token-lost: oklch(0.7 0 0);
   --destructive: #c93534; /* 5.2:1 on white; the report already uses it */
   --shadow-overlay: 0 8px 24px rgba(20, 24, 30, 0.12), 0 2px 6px rgba(20, 24, 30, 0.06);
   /* shadcn/ui semantic aliases: point at our tokens, never at raw values */
@@ -48,7 +48,13 @@
   --sidebar-accent-foreground: var(--fg);
   --sidebar-border: var(--line);
   --sidebar-ring: var(--accent);
-  --radius: 6px;
+  --radius: 0.625rem;
+  /* Chart series, from the theme preset. */
+  --chart-1: oklch(0.865 0.127 207.078);
+  --chart-2: oklch(0.715 0.143 215.221);
+  --chart-3: oklch(0.609 0.126 221.723);
+  --chart-4: oklch(0.52 0.105 223.128);
+  --chart-5: oklch(0.45 0.085 224.283);
   --shadow: 0 1px 2px rgba(20, 24, 30, 0.06), 0 4px 14px rgba(20, 24, 30, 0.05);
   /* Motion: durations only; every animation stops under prefers-reduced-motion. */
   --motion-fast: 150ms;
@@ -57,17 +63,17 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #151716;
-    --panel: #1e211f;
-    --panel-2: #272b29;
-    --line: #343936;
-    --line-2: #454b47;
-    --fg: #eceeea;
-    --fg-2: #b5bbb6;
-    --fg-3: #959c97;
-    --accent: #5598e7;
-    --accent-soft: #1f3350;
-    --accent-fg: #0b1220;
+    --bg: oklch(0.145 0 0);
+    --panel: oklch(0.205 0 0);
+    --panel-2: oklch(0.269 0 0);
+    --line: oklch(0.3 0 0);
+    --line-2: oklch(0.38 0 0);
+    --fg: oklch(0.985 0 0);
+    --fg-2: oklch(0.76 0 0);
+    --fg-3: oklch(0.68 0 0);
+    --accent: oklch(0.715 0.143 215.221);
+    --accent-soft: oklch(0.3 0.05 225);
+    --accent-fg: oklch(0.2 0.04 229.695);
     --good: #199e70;
     --warn: #c98500;
     --serious: #d95926;
@@ -75,8 +81,8 @@
     --crit-soft: #4a2424;
     --warn-soft: #45360f;
     --good-soft: #153f30;
-    --token: #5598e7;
-    --token-lost: #6a726d;
+    --token: oklch(0.715 0.143 215.221);
+    --token-lost: oklch(0.5 0 0);
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.3);
     --destructive: #e66767;
     --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
@@ -85,17 +91,17 @@
 }
 
 :root[data-theme="dark"] {
-  --bg: #151716;
-  --panel: #1e211f;
-  --panel-2: #272b29;
-  --line: #343936;
-  --line-2: #454b47;
-  --fg: #eceeea;
-  --fg-2: #b5bbb6;
-  --fg-3: #959c97;
-  --accent: #5598e7;
-  --accent-soft: #1f3350;
-  --accent-fg: #0b1220;
+  --bg: oklch(0.145 0 0);
+  --panel: oklch(0.205 0 0);
+  --panel-2: oklch(0.269 0 0);
+  --line: oklch(0.3 0 0);
+  --line-2: oklch(0.38 0 0);
+  --fg: oklch(0.985 0 0);
+  --fg-2: oklch(0.76 0 0);
+  --fg-3: oklch(0.68 0 0);
+  --accent: oklch(0.715 0.143 215.221);
+  --accent-soft: oklch(0.3 0.05 225);
+  --accent-fg: oklch(0.2 0.04 229.695);
   --good: #199e70;
   --warn: #c98500;
   --serious: #d95926;
@@ -103,8 +109,8 @@
   --crit-soft: #4a2424;
   --warn-soft: #45360f;
   --good-soft: #153f30;
-  --token: #5598e7;
-  --token-lost: #6a726d;
+  --token: oklch(0.715 0.143 215.221);
+  --token-lost: oklch(0.5 0 0);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.3);
   --destructive: #e66767;
   --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);

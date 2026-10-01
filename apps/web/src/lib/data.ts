@@ -4,6 +4,7 @@ import {
   DEMAND_SETTINGS_COLUMNS,
   LEAD_SOURCE_COLUMNS,
   listProcesses,
+  loadClientGroups,
   loadIssues,
   loadLiveProcessBySlug,
   loadProcessBySlug,
@@ -17,6 +18,7 @@ import {
   SERVICE_COLUMNS,
   SERVICE_SERVICING_COLUMNS,
   type ServiceServicingRow,
+  type ClientGroupRow,
   type DemandSettingsRow,
   type IssueRow,
   type LeadSourceRow,
@@ -162,6 +164,8 @@ export interface WorkspaceSettingsData {
   demand: DemandSettingsRow | null;
   /** Which servicing processes each service's clients run (issue #19). */
   servicingLinks: ServiceServicingRow[];
+  /** Clients counted per service (issue #120); a service with no row has none set up yet. */
+  clientGroups: ClientGroupRow[];
 }
 
 export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSettingsData | null> {
@@ -221,6 +225,7 @@ export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSett
     supabase.from("client_assignments").select("client_id, role_id").eq("workspace_id", ws),
   ]);
   const [leadSources, seasonality, demand, servicingLinks] = await demandQueries;
+  const clientGroups = await loadClientGroups(supabase, ws);
   for (const r of [canEdit, canManage, roles, steps, people, personRoles, personSkills, personLeave, services, tags, roleSteps, assignments, leadSources, seasonality, demand, servicingLinks]) {
     if (r.error) throw r.error;
   }
@@ -246,5 +251,6 @@ export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSett
     demand: demand.data as DemandSettingsRow | null,
     // recurrence and provenance are jsonb; the table's check limits recurrence to RecurrenceJson.
     servicingLinks: (servicingLinks.data ?? []) as unknown as ServiceServicingRow[],
+    clientGroups,
   };
 }

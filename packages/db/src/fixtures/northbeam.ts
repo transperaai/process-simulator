@@ -497,6 +497,9 @@ export function northbeamBundle(): ProcessBundle {
         churn_monthly: 0.03,
         retainer: 3800,
         overtime_cap: 0.1,
+        // Typical client health for a small SEO and PPC agency (issue #120), as an audit would enter it.
+        client_health_benchmark_low: 70,
+        client_health_benchmark_high: 80,
       },
     },
     roles: [

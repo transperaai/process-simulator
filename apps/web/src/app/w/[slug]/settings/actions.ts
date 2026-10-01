@@ -5,6 +5,13 @@ import type { SaveOutcome } from "@/lib/fields/field-controller";
 import { saveField, saveLinks } from "@/lib/fields/server";
 import { isGrowth, isMonth, isMultiplier, parseLeadSourceField, parseNewLeadSource, type LeadSourceField } from "@/lib/demand";
 import { parseNewRole, parseRoleField, type RoleField } from "@/lib/roles";
+import {
+  CLIENT_GROUP_FIELDS,
+  isBenchmarkBound,
+  isClientGroupField,
+  newGroupDefaults,
+  type ClientGroupField,
+} from "@/lib/client-groups";
 import { isTagList, parseNewService, parseServiceField, type ServiceField } from "@/lib/services";
 import { createClient } from "@/lib/supabase/server";
 
@@ -116,6 +123,55 @@ export async function saveServiceFallback(
   if (!isId(serviceId) || !isId(roleId) || !hours(value) || !(base === null || isFiniteNumber(base))) return invalid;
   if (!(await signedIn())) return signedOut;
   return saveField("services", { id: serviceId }, `fallback_ongoing_load.${roleId}`, base, value);
+}
+
+/**
+ * One number of a service's client group (issue #120): how many clients, their fee, normal churn, typical stay or
+ * starting health. A service with no group yet gets one on its first edit, starting from the service's own price,
+ * churn and tenure.
+ */
+export async function saveClientGroupField(
+  workspaceId: string,
+  serviceId: string,
+  field: ClientGroupField,
+  base: number | null,
+  value: number | null,
+): Promise<SaveOutcome<number | null>> {
+  if (!isId(workspaceId) || !isId(serviceId) || !isClientGroupField(field) || value === null || !CLIENT_GROUP_FIELDS[field](value)) return invalid;
+  if (!(base === null || isFiniteNumber(base))) return invalid;
+  if (!(await signedIn())) return signedOut;
+  const supabase = await createClient();
+  const { data: existing, error: readError } = await supabase.from("client_groups").select("id").eq("service_id", serviceId).maybeSingle();
+  if (readError) return { status: "error", message: "Couldn't save. Try again." };
+  if (existing) return saveField("client_groups", { service_id: serviceId }, field, base, value);
+  const { data: service, error: serviceError } = await supabase
+    .from("services")
+    .select("price, churn_monthly_base, tenure_months")
+    .eq("id", serviceId)
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+  if (serviceError || !service) return { status: "not_found" };
+  const { error } = await supabase
+    .from("client_groups")
+    .insert({ workspace_id: workspaceId, service_id: serviceId, ...newGroupDefaults(service), [field]: value });
+  if (error) {
+    // Someone set this group up a moment ago: ask for a fresh look rather than overwrite them.
+    if (error.code === "23505") return { status: "error", message: "Someone just set this up. Reload to see it." };
+    return { status: "error", message: error.code === "42501" ? "You don't have permission to change this." : "Couldn't save. Try again." };
+  }
+  return { status: "saved", value };
+}
+
+/** One end of the client-health benchmark the People page compares against (0 to 100); null clears it. */
+export async function saveClientHealthBenchmark(
+  workspaceId: string,
+  bound: "low" | "high",
+  base: number | null,
+  value: number | null,
+): Promise<SaveOutcome<number | null>> {
+  if (!isId(workspaceId) || (bound !== "low" && bound !== "high") || !isBenchmarkBound(value) || !(base === null || isFiniteNumber(base))) return invalid;
+  if (!(await signedIn())) return signedOut;
+  return saveField("workspaces", { id: workspaceId }, `settings.client_health_benchmark_${bound}`, base, value);
 }
 
 export interface ActionResult {

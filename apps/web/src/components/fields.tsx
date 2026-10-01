@@ -94,6 +94,7 @@ function Shell<T extends FieldValue>({
   hint,
   field,
   display,
+  hideLabel = false,
   children,
 }: {
   id: string;
@@ -102,15 +103,17 @@ function Shell<T extends FieldValue>({
   hint?: ReactNode;
   field: Field<T>;
   display: (v: T) => string;
+  /** The label stays for screen readers only, for an input under a column heading (that heading carries the (i)). */
+  hideLabel?: boolean;
   children: ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <span className="flex items-center">
+      <span className={hideLabel ? "sr-only" : "flex items-center"}>
         <label htmlFor={id} className="text-xs font-medium text-fg-2">
           {label}
         </label>
-        {help && <Help label={label} {...help} />}
+        {help && !hideLabel && <Help label={label} {...help} />}
       </span>
       {children}
       {hint && field.phase === "idle" && <p className="text-xs text-muted-foreground">{hint}</p>}
@@ -210,10 +213,13 @@ export function NumberField({
   disabled,
   hint,
   help,
+  hideLabel,
 }: {
   label: string;
   value: number | null;
   save: Saver<number | null>;
+  /** Show the label to screen readers only: for a table cell under a column heading. */
+  hideLabel?: boolean;
   optional?: boolean;
   /** Shown value = stored × scale, e.g. 100 to edit a fraction as a percentage. */
   scale?: number;
@@ -243,7 +249,7 @@ export function NumberField({
   });
   const display = (v: string) => (v === "" ? "blank" : unit ? `${v} ${unit}` : v);
   return (
-    <Shell id={id} label={label} help={help} hint={hint} field={field} display={display}>
+    <Shell id={id} label={label} help={help} hint={hint} field={field} display={display} hideLabel={hideLabel}>
       <span className="flex items-center gap-1.5">
         <Input
           id={id}

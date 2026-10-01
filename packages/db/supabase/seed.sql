@@ -3,7 +3,7 @@
 -- Northbeam Digital
 
 insert into public.workspaces (id, name, slug, settings) values
-  ('a0000000-0000-4000-8000-000000000001', 'Northbeam Digital', 'northbeam', '{"hours_per_week":40,"horizon_weeks":13,"currency":"GBP","leads_per_week":7,"active_clients":26,"churn_monthly":0.03,"retainer":3800,"overtime_cap":0.1}');
+  ('a0000000-0000-4000-8000-000000000001', 'Northbeam Digital', 'northbeam', '{"hours_per_week":40,"horizon_weeks":13,"currency":"GBP","leads_per_week":7,"active_clients":26,"churn_monthly":0.03,"retainer":3800,"overtime_cap":0.1,"client_health_benchmark_low":70,"client_health_benchmark_high":80}');
 
 insert into public.roles (id, workspace_id, name, color, default_cost_rate, headcount, ongoing_hours_per_client_week, active) values
   ('b0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'Sales', '#2a78d6', 45, 2, 0, true),

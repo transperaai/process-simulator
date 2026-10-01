@@ -1,5 +1,5 @@
 import { Info } from "lucide-react";
-import type { EngineModel, SimulationResult } from "@transpera-flow/engine";
+import { withClientGroups, type EngineModel, type SimulationResult } from "@transpera-flow/engine";
 import { Card } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatCurrency, formatDays, formatInitialState, formatNumber, formatPercent, formatRange } from "@/lib/format";
@@ -29,6 +29,8 @@ export function KpiStrip({ model, currency, result, status, durationMs }: KpiStr
   const bnId = result?.bnRole ?? null;
   const bn = bnId ? k?.roles[bnId] : undefined;
   const weeks = model.horizonWeeks;
+  // Clients counted per service become unnamed roster clients in the run (issue #120).
+  const hasClients = withClientGroups(model).clients !== undefined;
 
   const hours = (v: number) => `${formatNumber(v, 0)} h`;
   const cap = model.overtimeCap ?? 0;
@@ -67,8 +69,8 @@ export function KpiStrip({ model, currency, result, status, durationMs }: KpiStr
       label: `Billed / ${weeks} wks`,
       value: k ? money(k.billed.mean) : "–",
       detail: k ? formatRange(k.billed, money) : "",
-      definition: model.clients
-        ? "Revenue billed within the horizon: every client's monthly fee for the weeks it stays (the roster at its MRR, new wins at their service's price), stopping when it churns; one-off projects bill when won."
+      definition: hasClients
+        ? "Revenue billed within the horizon: every client's monthly fee for the weeks it stays (existing clients at their fee, new wins at their service's price), stopping when it churns; one-off projects bill when won."
         : "Revenue billed within the horizon by the clients won in it, net of churn; one-off projects bill when won. Add a client roster to include existing clients.",
     },
     {
@@ -91,7 +93,7 @@ export function KpiStrip({ model, currency, result, status, durationMs }: KpiStr
     },
   ];
   // Retention (docs/PRD.md §6.3.5, §13; issue #19): with a client roster, who is at risk and who leaves.
-  if (model.clients) {
+  if (hasClients) {
     const risk = k?.clientsAtRisk;
     const churned = k?.clientsChurned;
     const touch = k?.touchpoints;
@@ -101,7 +103,7 @@ export function KpiStrip({ model, currency, result, status, durationMs }: KpiStr
         value: risk ? formatNumber(risk.mean) : "–",
         detail: risk ? formatRange(risk, whole) : "",
         definition:
-          "Active clients whose simulated health ends the horizon below 50. Health starts from the roster (80 if not entered), recovers when servicing tasks are done on time and drops when they are late or missed.",
+          "Active clients whose simulated health ends the horizon below 50. Health starts from the client groups' starting health (80 if not entered), recovers when servicing tasks are done on time and drops when they are late or missed.",
         tone: risk && risk.mean >= 1 ? "crit" : undefined,
       },
       {

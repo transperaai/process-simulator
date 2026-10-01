@@ -65,7 +65,8 @@ describe("workspaceNav: the active item", () => {
     ] as const)
       expect(active(nav(path))).toEqual([key]);
   });
-  it("never marks People, which is a place within Settings", () => {
+  it("is People on its own page, and not on Settings", () => {
+    expect(active(nav("/w/s/people"))).toEqual(["people"]);
     for (const p of ["/w/s", "/w/s/settings", `/w/s/p/${PID}`]) expect(item(nav(p), "people")?.active).toBe(false);
   });
   it("marks at most one item", () => {
@@ -87,7 +88,7 @@ describe("workspaceNav: hrefs", () => {
       "/w/s/library",
       "/w/s/suggestions",
       "/w/s/sources",
-      "/w/s/settings#people-heading",
+      "/w/s/people",
       "/w/s/settings",
       "/w/s/settings/access",
     ]);
@@ -126,12 +127,12 @@ describe("workspaceNav: counts", () => {
 
 describe("demoNav", () => {
   const d = (pathname: string, counts = { pendingSuggestions: 2, openIssues: 5, processes: 4 }) => demoNav({ pathname, counts });
-  it("lists Northbeam's items in the same groups, without People, Settings or Access", () => {
+  it("lists Northbeam's items in the same groups, without Settings or Access", () => {
     const g = d("/demo");
     expect(g.map((x) => x.items.map((i) => i.key))).toEqual([
       ["overview", "processes"],
       ["issues", "solutions", "library", "suggestions"],
-      ["sources"],
+      ["sources", "people"],
     ]);
   });
   it("marks the active page", () => {
@@ -141,6 +142,7 @@ describe("demoNav", () => {
     expect(active(d("/demo/suggestions"))).toEqual(["suggestions"]);
     expect(active(d("/demo/sources"))).toEqual(["sources"]);
     expect(active(d("/demo/overview"))).toEqual(["overview"]);
+    expect(active(d("/demo/people"))).toEqual(["people"]);
   });
   it("sends Issues to its own page", () => expect(item(d("/demo"), "issues")).toMatchObject({ href: "/demo/issues" }));
   it("counts the seed's open issues, pending suggestions and processes", () => {

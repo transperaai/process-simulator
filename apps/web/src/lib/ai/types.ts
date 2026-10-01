@@ -60,6 +60,20 @@ export interface AiAnalysisView {
   revisionId: string;
 }
 
+export type AiMode = "live" | "readonly" | "demo";
+
+/** What a page needs to show AI for the version on screen. */
+export interface AiPanelData {
+  /** What was stored for the version on screen; null when there is nothing yet. */
+  view: AiAnalysisView | null;
+  /** Whether the server has an API key. */
+  configured: boolean;
+  /** Whether the version has first principles to review (the review judges the process against them). */
+  hasFirstPrinciples: boolean;
+  /** The version the analysis is of (null when unknown). */
+  versionNumber: number | null;
+}
+
 /** The text shown when the server has no API key (and elsewhere that AI can't run). */
 export const AI_NOT_SET_UP = "AI analysis isn't set up";
 

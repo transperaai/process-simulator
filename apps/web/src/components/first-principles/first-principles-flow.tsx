@@ -2,7 +2,7 @@
 
 // The first-principles flow (issue #119, A54): seven steps, a stepper, back and next, progress, and a panel of rule
 // checks beside every answer. Answers are saved as they are typed, per process version: into the draft (the page says
-// so), never the live version. The AI review is a labelled placeholder until the AI writer is switched on.
+// so), never the live version. Beside them, the AI review panel (A46) shows what AI wrote about the live version.
 
 import { Fragment, useMemo, type ReactNode } from "react";
 import Link from "next/link";
@@ -12,7 +12,8 @@ import type { ProcessBundle } from "@transpera-flow/db";
 import { countFilled, countFlags, FP_STEPS, firstPrinciplesFlags, isAttention, measuresMetToday, stepsFilled, type FirstPrinciples, type FpFlag, type FpStepKey } from "@transpera-flow/engine";
 import { Help } from "@/components/help";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
+import { AiReviewPanel } from "@/components/ai/ai-review-panel";
+import type { AiMode, AiPanelData } from "@/lib/ai/types";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -64,7 +65,10 @@ export function FirstPrinciplesFlow({
   processesHref,
   peopleHref,
   processPicker,
+  ai,
 }: {
+  /** What AI wrote about the live version (A46), for the AI review panel; omitted, the panel isn't shown. */
+  ai?: { mode: AiMode; data: AiPanelData; canRun: boolean };
   /** The version being edited (the draft if there is one, else live), for its steps, people and the run the checks read. */
   bundle: ProcessBundle;
   initial: FirstPrinciples;
@@ -277,18 +281,7 @@ export function FirstPrinciplesFlow({
               )}
             </ul>
 
-            <div data-placeholder="ai-review" className="flex flex-col gap-1.5 rounded-lg border border-dashed p-3">
-              <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                AI review
-                <Badge variant="outline">Not switched on yet</Badge>
-                <Help
-                  label="AI review"
-                  description="A reviewer that reads these answers next to the simulation's results and writes findings. It will use only numbers the simulation produced. Until it is switched on, only the rule checks above run."
-                  example="“You named proposal review; the simulation's bottleneck is the discovery call.”"
-                />
-              </p>
-              <p className="text-xs text-fg-2">AI review: not switched on yet. The checks above come straight from rules.</p>
-            </div>
+            {ai && <AiReviewPanel mode={ai.mode} processId={bundle.process.id} step={step.key} ai={ai.data} canRun={ai.canRun} />}
 
             <div className="flex flex-col gap-0.5 border-t border-line pt-3">
               <span className="text-xs font-semibold tracking-wide text-fg-2 uppercase">All steps</span>

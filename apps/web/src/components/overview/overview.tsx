@@ -37,7 +37,9 @@ import { rerate, visibleFindings } from "@/lib/rules/edit";
 import { useRatingSettings } from "@/lib/rules/use-rating-settings";
 import { useAbsenceTest } from "@/lib/sim/absence";
 import { useSimulation } from "@/lib/sim/use-simulation";
-import { AiReadPlaceholder, RatingCounts } from "./analysis-found";
+import { AiRead } from "@/components/ai/ai-read";
+import { aiDetections, type AiPanelData } from "@/lib/ai/types";
+import { RatingCounts } from "./analysis-found";
 import { LegendItem, MrrChart, RoleBusyChart } from "./charts";
 import { HeadlineCards } from "./headline-cards";
 import { InsightsSection } from "@/components/insights";
@@ -63,6 +65,8 @@ export interface OverviewProps {
   processesHref: string;
   issuesHref: string;
   rulesHref?: string;
+  /** What AI wrote about the company model's live version, for the AI read and the AI insights (A46). */
+  ai?: AiPanelData;
 }
 
 /** The company's engine model, the same object while it is unchanged. */
@@ -104,7 +108,7 @@ function Section({ title, description, action, help, children }: { title: string
   );
 }
 
-export function Overview({ workspaceName, live, parts, issues, mode, analysisRules, firstPrinciples, hrefs, processesHref, issuesHref, rulesHref }: OverviewProps) {
+export function Overview({ workspaceName, live, parts, issues, mode, analysisRules, firstPrinciples, hrefs, processesHref, issuesHref, rulesHref, ai }: OverviewProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -135,9 +139,11 @@ export function Overview({ workspaceName, live, parts, issues, mode, analysisRul
   const absence = useAbsenceTest(base && baseResult ? base : null, baseResult?.seed ?? 1, resolveMoney(rules).absenceWeeks);
   const successMeasures = useSuccessMeasures(live.process.id, mode === "demo", firstPrinciples);
   const gaps = useMemo(() => visibleFindings(rules, perceptionGapDetections(parts.flatMap((p) => p.steps))), [rules, parts]);
+  // What AI wrote about the live version (A46) joins the rules' findings, marked AI; it isn't rated by a rule, so no rule switch hides it.
+  const aiFindings = useMemo(() => aiDetections(ai?.view?.insights ?? []), [ai]);
   const findings = useMemo(
-    () => (base && baseResult ? sortFindings(visibleFindings(rules, [...rerate(base, baseResult, rules, live.process.id, absence, { successMeasures }), ...gaps])) : null),
-    [base, baseResult, rules, live.process.id, absence, gaps, successMeasures],
+    () => (base && baseResult ? sortFindings([...visibleFindings(rules, [...rerate(base, baseResult, rules, live.process.id, absence, { successMeasures }), ...gaps]), ...aiFindings]) : null),
+    [base, baseResult, rules, live.process.id, absence, gaps, successMeasures, aiFindings],
   );
   // Acknowledging an insight tracks it here, so it badges the map straight away.
   const state = useIssues(live.workspace.id, issues, mode);
@@ -260,7 +266,7 @@ export function Overview({ workspaceName, live, parts, issues, mode, analysisRul
             </Link>
           }
         >
-          <AiReadPlaceholder />
+          {ai && <AiRead mode={mode} scope="company" processId={live.process.id} ai={ai} firstPrinciplesHref={hrefs[live.process.id] ? `${hrefs[live.process.id]}/first-principles` : undefined} />}
           <InsightsSection
             state={state}
             detected={findings}

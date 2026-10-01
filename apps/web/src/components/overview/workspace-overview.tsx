@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { isBlank } from "@transpera-flow/engine";
 import { Overview } from "@/components/overview/overview";
+import { aiConfigured, loadAiViews } from "@/lib/ai/data";
 import { ShellHeader } from "@/components/shell/shell-header";
 import { loadLiveProcess, loadWorkspaceHead, loadWorkspaceIssues, loadWorkspaceOverview } from "@/lib/data";
 import { canEditWorkspace } from "@/lib/access-data";
@@ -18,12 +20,13 @@ export async function WorkspaceOverview({ slug }: { slug: string }) {
     return <EmptyOverview slug={slug} name={head.name} unpublished={overview?.processes ?? []} />;
   }
   const ws = live.workspace.id;
-  const [parts, issues, rules, canEdit, firstPrinciples] = await Promise.all([
+  const [parts, issues, rules, canEdit, firstPrinciples, aiViews] = await Promise.all([
     loadLiveParts(ws),
     loadWorkspaceIssues(ws),
     loadWorkspaceAnalysisRules(ws),
     canEditWorkspace(ws),
     loadLiveFirstPrinciples(live.process.id, live.revision.id),
+    loadAiViews([live.revision.id]),
   ]);
   const base = `/w/${slug}`;
   return (
@@ -39,6 +42,7 @@ export async function WorkspaceOverview({ slug }: { slug: string }) {
       processesHref={`${base}/processes`}
       issuesHref={`${base}/issues`}
       rulesHref={`${base}/settings/rules`}
+      ai={{ view: aiViews[live.revision.id] ?? null, configured: aiConfigured(), hasFirstPrinciples: firstPrinciples !== null && !isBlank(firstPrinciples), versionNumber: live.revision.number }}
     />
   );
 }

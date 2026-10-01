@@ -1,5 +1,7 @@
 import { northbeamIssues, partOf, processesOf } from "@transpera-flow/db";
 import { Overview } from "@/components/overview/overview";
+import { demoAiView } from "@/lib/ai/demo";
+import { DEMO_LIVE_VERSION } from "@/lib/history/demo";
 import { demoBundle } from "@/lib/sources/demo";
 
 /** The Overview of the Northbeam demo (issue #100): the landing page of `/demo`, also at `/demo/overview`. No database. */
@@ -18,6 +20,8 @@ export function DemoOverview() {
       processesHref="/demo/processes"
       issuesHref="/demo/issues"
       rulesHref="/demo/settings/rules"
+      // Written in advance: the demo never calls an AI.
+      ai={{ view: demoAiView(live.process.id), configured: true, hasFirstPrinciples: true, versionNumber: DEMO_LIVE_VERSION }}
     />
   );
 }

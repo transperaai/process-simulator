@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { createServicingProcess } from "@/app/w/[slug]/process-actions";
 import { isUnpublished } from "@transpera-flow/db";
+import { isBlank } from "@transpera-flow/engine";
+import { aiConfigured, loadAiViews } from "@/lib/ai/data";
 import { ProcessNav } from "@/components/process-nav";
 import { ProcessPage } from "@/components/process-page";
 import { canEditWorkspace } from "@/lib/access-data";
@@ -33,6 +35,8 @@ export async function WorkspaceProcessPage({ slug, processId, version }: { slug:
   const fpIds = [shown.revision.id, ...(draft && draft !== shown ? [draft.revision.id] : [])];
   const fp = await loadProcessFirstPrinciples(live.process.id, fpIds);
   const fpShown = fp[shown.revision.id]!;
+  // What AI wrote about the version on screen (A46). A draft that was never published has nothing.
+  const aiViews = isUnpublished(live) && !earlier ? {} : await loadAiViews([shown.revision.id]);
   const fpDraft = draft && draft !== shown && !earlier ? fp[draft.revision.id]! : null;
   const draftChanged = fpDraft !== null && JSON.stringify(fpDraft.doc) !== JSON.stringify(fpShown.doc);
   const base = `/w/${slug}`;
@@ -57,6 +61,7 @@ export async function WorkspaceProcessPage({ slug, processId, version }: { slug:
       rating={ratings[live.process.id] ?? null}
       editHref={canEdit ? `${base}/p/${live.process.id}/edit` : undefined}
       historyHref={`${base}/p/${live.process.id}/history`}
+      ai={{ view: aiViews[shown.revision.id] ?? null, configured: aiConfigured(), hasFirstPrinciples: fpShown.doc !== null && !isBlank(fpShown.doc), versionNumber: isUnpublished(live) ? null : shown.revision.number }}
       firstPrinciples={{ doc: fpShown.doc, href: `${base}/p/${live.process.id}/first-principles`, draftChanged, inheritedFrom: fpShown.inheritedFrom }}
       inside={processes.filter((p) => p.parentId === live.process.id).map((p) => ({ id: p.id, name: p.name, href: hrefs[p.id]! }))}
       processPicker={

@@ -10,6 +10,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { IssueRow, ProcessBundle, ScenarioRow, SourceRow } from "@transpera-flow/db";
 import { RATING_LABELS, type AnalysisSettings, type EngineModel, type FirstPrinciples, type Rating } from "@transpera-flow/engine";
 import { Help } from "@/components/help";
+import { AiRead } from "@/components/ai/ai-read";
+import type { AiPanelData } from "@/lib/ai/types";
 import { FirstPrinciplesCard } from "@/components/first-principles/first-principles-card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -72,7 +74,10 @@ export function ProcessPage({
   firstPrinciples,
   processPicker,
   notice,
+  ai,
 }: {
+  /** What AI wrote about the version on screen (A46): its read, and the insights that join the list marked AI. */
+  ai?: AiPanelData;
   /** The process at the version on screen: live, or an earlier one when `viewingVersion` is set. */
   bundle: ProcessBundle;
   /** The earlier version being shown (`?version=N`), or null for live. */
@@ -166,6 +171,7 @@ export function ProcessPage({
     rulesHref: settingsHref ? `${settingsHref}/rules` : mode === "demo" ? "/demo/settings/rules" : undefined,
     analysisRules,
     successMeasures,
+    aiInsights: ai?.view?.insights,
     // A badge on the map takes you down to the issues on that step.
     onShowIssues: () => document.getElementById("issues")?.scrollIntoView({ behavior: "smooth", block: "start" }),
   });
@@ -338,7 +344,10 @@ export function ProcessPage({
             example: "Proposals wait 38 h before review. Confirm it and it becomes an issue with a red badge on that step.",
           }}
         >
-          {issuesUi.insightsList}
+          <div className="flex flex-col gap-3">
+            {ai && <AiRead mode={mode} scope="process" processId={bundle.process.id} ai={ai} firstPrinciplesHref={firstPrinciples?.href} canRun={!old && !unpublished} />}
+            {issuesUi.insightsList}
+          </div>
         </Section>
 
         <Section

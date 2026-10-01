@@ -60,14 +60,14 @@ function hashOf(purpose: NarrationPurpose, payload: unknown): string {
 }
 
 /** The raw figures behind a stat, in the kind's units (shares as %). */
-function statFacts(key: string, kind: NumberKind, s: Stat, out: Fact[]) {
+export function statFacts(key: string, kind: NumberKind, s: Stat, out: Fact[]) {
   const scale = kind === "percent" ? 100 : 1;
   out.push({ key: `${key}.mean`, kind, value: s.mean * scale, step: 0 });
   out.push({ key: `${key}.p10`, kind, value: s.p10 * scale, step: 0 });
   out.push({ key: `${key}.p90`, kind, value: s.p90 * scale, step: 0 });
 }
 
-function context(payload: Record<string, unknown>, raw: Fact[], dates: string[], names: string[], currency: string, hoursPerWeek: number): CheckContext {
+export function context(payload: Record<string, unknown>, raw: Fact[], dates: string[], names: string[], currency: string, hoursPerWeek: number): CheckContext {
   const texts: [string, string][] = [];
   strings(payload, "", texts);
   const facts = [...raw];
@@ -104,25 +104,23 @@ export function runTemplate(r: RunResults, processName: string): string[] {
   return paragraphs;
 }
 
-/** "Explain this run": a saved run's headline results. No names but the process and the busiest role. */
-export function runNarrationInput(run: { id: string; name: string; created_at: string; results: RunResults }, processName: string): NarrationInput {
-  const r = run.results;
+/**
+ * A run's headline results as the model reads them (each an average with its range, as the report prints it), and
+ * the raw figures behind them for the number check. Shared by "explain this run" and the AI analysis, so both
+ * check against the same figures.
+ */
+export function headlineResults(r: RunResults): { run: Record<string, unknown>; results: Record<string, unknown>; raw: Fact[] } {
   const money = (v: number) => formatWholeCurrency(v, r.currency);
   const range = (s: Stat, f: (v: number) => string) => `range ${f(s.p10)}–${f(s.p90)}`;
   const count = (s: Stat) => `avg ${formatNumber(s.mean, 1)} (${range(s, (v) => formatNumber(v, 0))})`;
-  const template = runTemplate(r, processName);
-  const payload: Record<string, unknown> = {
-    run: { process: processName, period: `${r.horizon_weeks} weeks`, replications: r.reps, currency: r.currency, ranges: "Every range is the 10th to 90th percentile of the replications." },
-    results: {
-      wins: count(r.won),
-      lost: count(r.lost),
-      cycleTime: `avg ${formatDays(r.cycle.mean, r.hours_per_week)} (median ${formatDays(r.cycle.p50, r.hours_per_week)}, P90 ${formatDays(r.cycle.p90, r.hours_per_week)})`,
-      newMrr: `avg ${money(r.mrr_added.mean)} (${range(r.mrr_added, money)})`,
-      billed: `avg ${money(r.billed.mean)} (${range(r.billed, money)})`,
-      overtime: `avg ${formatHours(r.overtime_hours.mean)} (${range(r.overtime_hours, formatHours)})`,
-      busiestRole: r.bottleneck ? { role: r.bottleneck.role, utilisation: `avg ${formatPercent(r.bottleneck.util.mean)} (${range(r.bottleneck.util, formatPercent)})` } : null,
-    },
-    templatedExplanation: template,
+  const results = {
+    wins: count(r.won),
+    lost: count(r.lost),
+    cycleTime: `avg ${formatDays(r.cycle.mean, r.hours_per_week)} (median ${formatDays(r.cycle.p50, r.hours_per_week)}, P90 ${formatDays(r.cycle.p90, r.hours_per_week)})`,
+    newMrr: `avg ${money(r.mrr_added.mean)} (${range(r.mrr_added, money)})`,
+    billed: `avg ${money(r.billed.mean)} (${range(r.billed, money)})`,
+    overtime: `avg ${formatHours(r.overtime_hours.mean)} (${range(r.overtime_hours, formatHours)})`,
+    busiestRole: r.bottleneck ? { role: r.bottleneck.role, utilisation: `avg ${formatPercent(r.bottleneck.util.mean)} (${range(r.bottleneck.util, formatPercent)})` } : null,
   };
   const raw: Fact[] = [];
   statFacts("won", "plain", r.won, raw);
@@ -138,6 +136,20 @@ export function runNarrationInput(run: { id: string; name: string; created_at: s
     { key: "horizonWeeks", kind: "weeks", value: r.horizon_weeks, step: 0 },
   );
   if (r.bottleneck) statFacts("bottleneck.util", "percent", r.bottleneck.util, raw);
+  return { run: { period: `${r.horizon_weeks} weeks`, replications: r.reps, currency: r.currency, ranges: "Every range is the 10th to 90th percentile of the replications." }, results, raw };
+}
+
+/** "Explain this run": a saved run's headline results. No names but the process and the busiest role. */
+export function runNarrationInput(run: { id: string; name: string; created_at: string; results: RunResults }, processName: string): NarrationInput {
+  const r = run.results;
+  const template = runTemplate(r, processName);
+  const head = headlineResults(r);
+  const payload: Record<string, unknown> = {
+    run: { process: processName, ...head.run },
+    results: head.results,
+    templatedExplanation: template,
+  };
+  const raw = head.raw;
   const names = [processName, run.name, ...(r.bottleneck ? [r.bottleneck.role] : [])];
   return {
     purpose: "explain",

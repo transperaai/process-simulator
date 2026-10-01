@@ -1,0 +1,180 @@
+// What AI analysis is given, and what its output is checked against (issue #111, A46; docs/adr/0013-ai-analysis.md,
+// docs/adr/0011-narration.md). Pure: the same run, findings and first principles give the same input.
+//
+// The model reads more than it may quote. It is sent the run's headline results, the rule findings, the first
+// principles (the team's own words), the first-principles rule checks and, if the workspace allows, a few quotes from
+// linked sources. But the figures its text may state are only those the engine produced: the results, the findings'
+// own sentences, the success measures and their pass rates, and the rule checks' sentences. The first principles'
+// and the quotes' own digits ("within 4 hours") are not facts, so the model can't state them as numbers; a target the
+// team set shows up through its measure ("at most 21 working hours; met in 62% of runs"), which the engine wrote.
+//
+// Privacy as for narration: people's names become labels ("Team member A") and are mapped back after the check; the
+// workspace name and the people's utilisation never go. Quotes are short, and only when the switch is on.
+
+import { createHash } from "node:crypto";
+import type { RunResults } from "@transpera-flow/db";
+import { describeTarget, RATING_LABELS, type DetectedIssue, type FirstPrinciples, type FpFlags, type FpStepKey, type SuccessCheck, FP_STEPS } from "@transpera-flow/engine";
+import { formatIssueCost } from "@/lib/issues/register";
+import { formatPercent } from "@/lib/format";
+import { context, headlineResults } from "@/lib/narration/facts";
+import type { CheckContext, Fact } from "@/lib/narration/numbers";
+
+/** Bump when the payload or the prompt changes, so a stored analysis is seen as out of date. */
+export const AI_PROMPT_VERSION = 1;
+
+export interface AiInputArgs {
+  processName: string;
+  results: RunResults;
+  /** The rule findings of the run (what the Insights list shows from the rules), worst first. */
+  findings: readonly DetectedIssue[];
+  /** The process's steps (its own and those inside it), for naming where a finding sits and for the AI to point at. */
+  steps: readonly { id: string; name: string }[];
+  roles: readonly { name: string }[];
+  people: readonly { id: string; name: string }[];
+  firstPrinciples: FirstPrinciples | null;
+  /** The first-principles rule checks, as the process page shows them. */
+  flags: FpFlags | null;
+  /** The success measures with the share of runs that meet each today. */
+  measures: readonly { measure: FirstPrinciples["measures"][number]; check: SuccessCheck | null; metShare: number | null }[];
+  /** Short quotes from the sources linked to steps; null when the workspace hasn't switched source reading on. */
+  quotes: readonly { step: string; quote: string }[] | null;
+  /** Whether a market schedule is in the run (no figures: it only tells the model the months aren't all alike). */
+  marketOn: boolean;
+  currency: string;
+}
+
+export interface AiInput {
+  /** What the model is sent (people's names already replaced by labels). */
+  payload: Record<string, unknown>;
+  /** What its text is checked against. */
+  check: CheckContext;
+  /** Real name → label, for the payload; the model's text is mapped back. */
+  aliases: { name: string; label: string }[];
+  /** The step ids it may point at, with their names. */
+  steps: { id: string; name: string }[];
+  /** Quotes the model was given, lower-cased and squeezed, so a quotation in its text can be matched. */
+  quotes: string[];
+  /** SHA-256 of the payload and prompt version: the same hash means the stored analysis is current. */
+  hash: string;
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** People's names to labels: the full name, and the first name where it is unambiguous and long enough to be a name. */
+export function aliasesFor(people: readonly { name: string }[]): { name: string; label: string }[] {
+  const out: { name: string; label: string }[] = [];
+  const firsts = new Map<string, number>();
+  for (const p of people) {
+    const f = p.name.trim().split(/\s+/)[0] ?? "";
+    firsts.set(f.toLowerCase(), (firsts.get(f.toLowerCase()) ?? 0) + 1);
+  }
+  people.forEach((p, i) => {
+    const label = `Team member ${i < 26 ? String.fromCharCode(65 + i) : `${i + 1}`}`;
+    const full = p.name.trim();
+    if (full.length >= 3) out.push({ name: full, label });
+    const first = full.split(/\s+/)[0] ?? "";
+    if (first.length >= 3 && first !== full && firsts.get(first.toLowerCase()) === 1) out.push({ name: first, label });
+  });
+  return out;
+}
+
+/** Names to labels in a text (longest names first, whole words only). */
+export function applyAliases(text: string, aliases: readonly { name: string; label: string }[]): string {
+  let out = text;
+  for (const a of [...aliases].sort((x, y) => y.name.length - x.name.length)) {
+    out = out.replace(new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(a.name)}(?![\\p{L}\\p{N}])`, "giu"), a.label);
+  }
+  return out;
+}
+
+function mapStrings<T>(value: T, f: (s: string) => string): T {
+  if (typeof value === "string") return f(value) as T;
+  if (Array.isArray(value)) return value.map((v) => mapStrings(v, f)) as T;
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, mapStrings(v, f)])) as T;
+  return value;
+}
+
+/** Lower-case, one space between words, curly quotes made straight: how quotations are compared. */
+export const squeeze = (s: string): string =>
+  s
+    .toLowerCase()
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+
+const MAX_QUOTES = 12;
+const MAX_QUOTE_CHARS = 220;
+
+/** The first-principles answers the model reads, in the team's own words (no figures of theirs are facts). */
+function firstPrinciplesPayload(fp: FirstPrinciples, steps: readonly { id: string; name: string }[], people: readonly { id: string; name: string }[]) {
+  const stepName = (id: string | null) => steps.find((s) => s.id === id)?.name ?? null;
+  const personName = (id: string | null) => people.find((p) => p.id === id)?.name ?? null;
+  return {
+    job: fp.job,
+    truthsAndAssumptions: fp.statements.filter((s) => s.text.trim()).map((s) => ({ text: s.text, kind: s.kind, source: s.source, test: s.test })),
+    requirements: fp.requirements
+      .filter((r) => r.text.trim())
+      .map((r) => ({ text: r.text, owner: personName(r.owner_person_id) ?? (r.owner_text.trim() || null), why: r.why, verdict: r.verdict, step: stepName(r.step_id) })),
+    deleteCandidates: fp.deletes.map((d) => ({ step: stepName(d.step_id), breaksIfRemoved: d.breaks_if_removed, addedBack: d.added_back })),
+    improvements: fp.improvements.filter((i) => i.text.trim()).map((i) => ({ stage: i.stage, text: i.text, step: stepName(i.step_id) })),
+    why: fp.why,
+  };
+}
+
+/** Build what the model is sent and what its answer is checked against. */
+export function buildAiInput(args: AiInputArgs): AiInput {
+  const { results: r, findings, steps, flags, measures } = args;
+  const head = headlineResults(r);
+  const stepName = (id: string | null) => steps.find((s) => s.id === id)?.name ?? null;
+
+  const findingsPayload = findings.map((f) => ({
+    title: f.title,
+    rating: RATING_LABELS[f.rating],
+    step: stepName(f.stepId),
+    evidence: f.evidence,
+    cost: formatIssueCost(f.cost, args.currency),
+  }));
+  const checks = flags
+    ? FP_STEPS.flatMap((s) => (flags[s.key as FpStepKey] ?? []).map((f) => ({ step: s.key, level: f.level, check: f.code, text: f.text })))
+    : [];
+  const measuresPayload = measures.map((m) => ({
+    measure: m.measure.text || (m.measure.kpi ?? "Success measure"),
+    target: describeTarget(m.measure),
+    today: m.metShare === null ? "the simulation can't check this one" : `met in ${formatPercent(m.metShare)} of runs`,
+  }));
+
+  // Figures the text may state: engine-written only.
+  const factPayload: Record<string, unknown> = {
+    run: { process: args.processName, ...head.run },
+    results: head.results,
+    findings: findingsPayload,
+    firstPrinciplesChecks: checks,
+    successMeasures: measuresPayload,
+  };
+  const raw: Fact[] = [...head.raw];
+
+  const quotes = (args.quotes ?? []).slice(0, MAX_QUOTES).map((q) => ({ step: q.step, quote: q.quote.trim().slice(0, MAX_QUOTE_CHARS) })).filter((q) => q.quote);
+  const aliases = aliasesFor(args.people);
+  const payload = mapStrings(
+    {
+      ...factPayload,
+      market: args.marketOn ? "A market schedule is switched on, so some months are busier or quieter than others." : "No market changes are scheduled.",
+      steps: steps.map((s) => ({ id: s.id, name: s.name })),
+      firstPrinciples: args.firstPrinciples ? firstPrinciplesPayload(args.firstPrinciples, steps, args.people) : null,
+      ...(args.quotes ? { quotesFromSources: quotes } : {}),
+    },
+    (s) => applyAliases(s, aliases),
+  );
+  const checkPayload = mapStrings(factPayload, (s) => applyAliases(s, aliases));
+
+  const names = [args.processName, ...steps.map((s) => s.name), ...args.roles.map((x) => x.name), ...aliases.map((a) => a.label)];
+  return {
+    payload,
+    check: context(checkPayload, raw, [], names, r.currency, r.hours_per_week),
+    aliases,
+    steps: steps.map((s) => ({ id: s.id, name: s.name })),
+    quotes: quotes.map((q) => squeeze(q.quote)),
+    hash: createHash("sha256").update(JSON.stringify({ v: AI_PROMPT_VERSION, payload })).digest("hex"),
+  };
+}

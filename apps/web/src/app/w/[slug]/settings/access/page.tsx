@@ -28,26 +28,42 @@ const SOURCE_LABEL: Record<WorkspaceMember["source"], string> = {
 
 function RoleSelect({ value, name = "role" }: { value?: string; name?: string }) {
   return (
-    <NativeSelect name={name} defaultValue={value ?? "member"} aria-label="Role" className="w-auto">
-      {ASSIGNABLE_ROLES.map((r) => (
-        <option key={r} value={r}>
-          {r}
-        </option>
-      ))}
-    </NativeSelect>
+    <>
+      <NativeSelect name={name} defaultValue={value ?? "member"} aria-label="Role" className="w-auto">
+        {ASSIGNABLE_ROLES.map((r) => (
+          <option key={r} value={r}>
+            {r}
+          </option>
+        ))}
+      </NativeSelect>
+      <Help
+        label="Role"
+        description="What this person can do here. Owners manage the workspace and who has access, editors change the model and settings, members can look and run simulations, and viewers can only look."
+        example="Make Maya an editor so she can update times; leave new starters as members until they need to edit."
+        className="self-center"
+      />
+    </>
   );
 }
 
 function PersonSelect({ people, value }: { people: { id: string; name: string }[]; value?: string | null }) {
   return (
-    <NativeSelect name="person_id" defaultValue={value ?? ""} aria-label="Person record" className="w-auto">
-      <option value="">No person record</option>
-      {people.map((p) => (
-        <option key={p.id} value={p.id}>
-          {p.name}
-        </option>
-      ))}
-    </NativeSelect>
+    <>
+      <NativeSelect name="person_id" defaultValue={value ?? ""} aria-label="Person record" className="w-auto">
+        <option value="">No person record</option>
+        {people.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </NativeSelect>
+      <Help
+        label="Person record"
+        description="Links this sign-in to a person in your team, so the app knows which person is looking. Leave it empty for someone who isn't on the team."
+        example="Link maya@northbeam.example to Maya Collins."
+        className="self-center"
+      />
+    </>
   );
 }
 
@@ -114,6 +130,7 @@ export default async function AccessPage(props: PageProps<"/w/[slug]/settings/ac
           </ul>
           <form action={addDomain.bind(null, slug, workspace.id)} className="flex flex-wrap gap-2">
             <Input name="domain" required placeholder="acme.com" aria-label="Domain" className="w-full sm:w-64" />
+            <Help label="Domain" description="The part of a work email after the @. Everyone who signs in with a Google account on it can join." example="northbeam.example, for people at name@northbeam.example." className="self-center" />
             <Button type="submit">Add domain</Button>
           </form>
         </CardContent>
@@ -184,6 +201,7 @@ export default async function AccessPage(props: PageProps<"/w/[slug]/settings/ac
           </Table>
           <form action={addEmail.bind(null, slug, workspace.id)} className="flex flex-wrap gap-2">
             <Input name="email" type="email" required placeholder="name@company.com" aria-label="Email" className="w-full sm:w-64" />
+            <Help label="Email" description="The email address of one person you want to let in. When they sign in with it, they join with the role you pick." example="maya@northbeam.example, as an editor." className="self-center" />
             <RoleSelect />
             <PersonSelect people={people} />
             <Button type="submit">Add email</Button>

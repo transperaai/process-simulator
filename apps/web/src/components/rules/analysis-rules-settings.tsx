@@ -266,6 +266,7 @@ export function AnalysisRulesSettings({
                   disabled={!canEdit}
                   onChange={(v) => update(setMoney(settings, { absenceWeeks: v }))}
                 />
+                <Help {...SETTING_HELP.absenceWeeks} />
                 weeks off,
                 <MoneyBox
                   label="Times a year someone is away"
@@ -276,6 +277,7 @@ export function AnalysisRulesSettings({
                   disabled={!canEdit}
                   onChange={(v) => update(setMoney(settings, { absencesPerYear: v }))}
                 />
+                <Help {...SETTING_HELP.absenceTimes} />
                 <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                   times a year
                   <Help {...SETTING_HELP.absence} />
@@ -293,6 +295,7 @@ export function AnalysisRulesSettings({
                   disabled={!canEdit}
                   onChange={(v) => update(setMoney(settings, { waitHours: { pipeline: v } }))}
                 />
+                <Help {...SETTING_HELP.waitSales} />
                 h · client work
                 <MoneyBox
                   label="Normal wait for client work, in hours"
@@ -303,6 +306,7 @@ export function AnalysisRulesSettings({
                   disabled={!canEdit}
                   onChange={(v) => update(setMoney(settings, { waitHours: { servicing: v } }))}
                 />
+                <Help {...SETTING_HELP.waitClient} />
                 <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                   h
                   <Help {...SETTING_HELP.wait} />

@@ -7,15 +7,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Rating } from "@transpera-flow/engine";
 import type { StepBadge } from "@/lib/issues/register";
-
-const TONE: Record<Rating, string> = {
-  risk: "bg-crit text-white",
-  bad: "bg-serious text-white",
-  good: "bg-warn text-black",
-  great: "bg-accent text-accent-fg",
-};
 
 export function StepIssueBadges({ badges, onOpen }: { badges: Record<string, StepBadge>; onOpen: (stepId: string) => void }) {
   const [hosts, setHosts] = useState<[string, HTMLElement][]>([]);
@@ -43,7 +35,7 @@ export function StepIssueBadges({ badges, onOpen }: { badges: Record<string, Ste
   return hosts.map(([id, el]) => {
     const b = badges[id];
     if (!b) return null;
-    const label = `${b.count} open issue${b.count === 1 ? "" : "s"}: ${b.titles.join("; ")}`;
+    const label = `${b.count} confirmed issue${b.count === 1 ? "" : "s"}: ${b.titles.join("; ")}`;
     return createPortal(
       <button
         type="button"
@@ -51,7 +43,7 @@ export function StepIssueBadges({ badges, onOpen }: { badges: Record<string, Ste
         title={label}
         aria-label={`${label}. Show in the Issues tab.`}
         // nodrag/nopan: React Flow leaves pointer events on the badge alone.
-        className={`nodrag nopan absolute -top-2.5 -right-2.5 z-10 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs font-bold shadow-token ${TONE[b.rating]}`}
+        className={`nodrag nopan absolute -top-2.5 -right-2.5 z-10 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs font-bold shadow-token bg-crit text-white`}
         onClick={(e) => {
           e.stopPropagation();
           onOpen(id);

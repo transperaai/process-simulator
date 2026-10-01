@@ -3,6 +3,7 @@ export { flattenModel, isNested, NestingError } from "./flatten";
 export { ENGINE_VERSION } from "./version";
 export { DEFAULT_AVAILABILITY_FLOOR, initialState, pct, resolvePeople, runOnce, simulate, stat } from "./simulate";
 export { checkDemand, demandFactor, isFlatDemand, WEEKS_PER_CALENDAR_MONTH } from "./demand";
+export * from "./market";
 export { mulberry32 } from "./random";
 export {
   NORTHBEAM_FALLBACK_LOAD,
@@ -234,3 +235,26 @@ export {
   type ResolvedRule,
   type StoredSeverity,
 } from "./ratings";
+export {
+  ANALYSIS_RULE_IDS,
+  ANALYSIS_RULE_SPECS,
+  DEFAULT_MONEY,
+  MONEY_LIMITS,
+  inputsProblem,
+  inputsToCutoffs,
+  isDefaultAnalysisSettings,
+  parseAnalysisSettings,
+  resolveAnalysisRule,
+  resolveMoney,
+  ruleOfFinding,
+  toRatingConfig,
+  withoutDisabledRules,
+  type AnalysisMoney,
+  type AnalysisOverride,
+  type AnalysisRuleId,
+  type AnalysisRuleSettings,
+  type AnalysisRuleSpec,
+  type AnalysisSettings,
+  type AnalysisSettingsResult,
+  type ResolvedAnalysisRule,
+} from "./analysis-settings";

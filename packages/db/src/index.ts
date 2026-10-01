@@ -2,6 +2,7 @@ export * from "./types";
 export type { Database, Json } from "./database.types";
 export {
   ModelError,
+  engineMarket,
   engineDistribution,
   isHolderStep,
   isWorkingStep,
@@ -12,6 +13,7 @@ export {
   workingDaysBetween,
   type ModelOptions,
 } from "./model";
+export { loadAnalysisRules, saveAnalysisRules, type AnalysisRules, type SaveAnalysisRulesOutcome } from "./analysis-rules";
 export { isRetiredStep, partitionSteps } from "./retired";
 export {
   absolutePositions,
@@ -115,6 +117,9 @@ export {
   LEAD_SOURCE_COLUMNS,
   listProcesses,
   loadClients,
+  loadMarket,
+  MARKET_CONDITION_COLUMNS,
+  MARKET_SCHEDULE_COLUMNS,
   loadIssues,
   loadLiveProcessBySlug,
   loadProcessBundle,

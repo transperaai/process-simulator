@@ -1,7 +1,11 @@
 import {
+  factorsFromPercents,
   flattenModel,
   isFlatDemand,
+  isNeutralMarket,
+  marketFromSchedule,
   NestingError,
+  type EngineMarket,
   type EngineDemand,
   type Distribution as EngineDistribution,
   type EngineClient,
@@ -248,12 +252,14 @@ export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {})
   const people = resolvePeopleRows(bundle, working, startDate);
   const demand = engineDemand(bundle, startDate);
   const clients = engineClients(bundle, services, startDate);
+  const market = engineMarket(bundle);
 
   const model: EngineModel = {
     horizonWeeks: s.horizon_weeks,
     hoursPerWeek: s.hours_per_week,
     leadsPerWeek: arrivalsPerWeek(bundle, services),
     ...(demand ? { demand } : {}),
+    ...(market ? { market } : {}),
     activeClients: clients ? Object.keys(clients).length : s.active_clients,
     churnMonthly: s.churn_monthly,
     retainer: s.retainer,
@@ -497,6 +503,26 @@ function arrivalsPerWeek(bundle: ProcessBundle, here: Record<string, EngineServi
   if (!(all > 0)) return total;
   const mine = here ? mix(Object.values(here).map((sv) => sv.mixShare)) : 0;
   return mine === all ? total : (total * mine) / all;
+}
+
+/**
+ * The market schedule for the engine (A57): the 24 months from the workspace's
+ * schedule and conditions. Undefined with no schedule, or when every month is
+ * Stable, so such a workspace simulates exactly as before market conditions
+ * existed.
+ */
+export function engineMarket(bundle: ProcessBundle): EngineMarket | undefined {
+  const schedule = bundle.marketSchedule ?? [];
+  if (!schedule.length) return undefined;
+  const byId = new Map((bundle.marketConditions ?? []).map((c) => [c.id, c]));
+  const market = marketFromSchedule(
+    schedule.map((e) => ({ from: e.from_month, to: e.to_month, condition: e.condition_id })),
+    (id) => {
+      const c = byId.get(id);
+      return c ? factorsFromPercents(c) : undefined;
+    },
+  );
+  return isNeutralMarket(market) ? undefined : market;
 }
 
 /**

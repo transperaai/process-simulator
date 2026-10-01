@@ -5,8 +5,10 @@
 // page).
 import { useMemo, useState } from "react";
 import { ModelError, toEngineModel, type IssueRow, type ProcessBundle, type ScenarioRow } from "@transpera-flow/db";
-import { detectBrokenScenarios, detectIssues } from "@transpera-flow/engine";
+import { detectBrokenScenarios, type AnalysisSettings } from "@transpera-flow/engine";
 import { perceptionGapDetections } from "@/lib/issues/perception";
+import { rerate, visibleFindings } from "@/lib/rules/edit";
+import { useRatingSettings } from "@/lib/rules/use-rating-settings";
 import { useIssues } from "@/lib/issues/use-issues";
 import { retiredSteps } from "@/lib/scenarios/broken";
 import { useSimulation } from "@/lib/sim/use-simulation";
@@ -19,12 +21,15 @@ export function IssuesPage({
   scenarios,
   processes,
   mode,
+  analysisRules,
 }: {
   bundle: ProcessBundle;
   issues: IssueRow[];
   scenarios: ScenarioRow[];
   processes: Named[];
   mode: "live" | "demo" | "readonly";
+  /** The workspace's analysis rules (Settings → Analysis rules); omitted means the defaults. On the demo, the ones edited in this tab. */
+  analysisRules?: AnalysisSettings;
 }) {
   const state = useIssues(bundle.workspace.id, issues, mode);
   const [stepFilter, setStepFilter] = useState("");
@@ -42,9 +47,11 @@ export function IssuesPage({
   const broken = useMemo(() => (model ? detectBrokenScenarios(model, scenarios, retiredSteps(bundle)) : []), [model, scenarios, bundle]);
   // Perception gaps come from the steps' evidence, not the run (issue #21).
   const gaps = useMemo(() => perceptionGapDetections(bundle.steps), [bundle.steps]);
+  // A change to the rules re-rates this run; it is not simulated again.
+  const rules = useRatingSettings(mode === "demo", analysisRules);
   const detected = useMemo(
-    () => (model && result ? [...broken, ...detectIssues(model, result), ...gaps] : model ? null : gaps),
-    [model, result, broken, gaps],
+    () => (model && !result ? null : visibleFindings(rules, model && result ? [...broken, ...rerate(model, result, rules, bundle.process.id), ...gaps] : gaps)),
+    [model, result, broken, gaps, rules, bundle.process.id],
   );
   const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);
 

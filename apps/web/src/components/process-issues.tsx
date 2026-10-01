@@ -4,8 +4,10 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { IssueRow, ProcessBundle, ScenarioRow } from "@transpera-flow/db";
-import { detectBrokenScenarios, detectIssues, type EngineModel, type RetiredSteps, type SimulationResult } from "@transpera-flow/engine";
+import { detectBrokenScenarios, type AnalysisSettings, type EngineModel, type RetiredSteps, type SimulationResult } from "@transpera-flow/engine";
 import { perceptionGapDetections } from "@/lib/issues/perception";
+import { rerate, visibleFindings } from "@/lib/rules/edit";
+import { useRatingSettings } from "@/lib/rules/use-rating-settings";
 import { entryView, promoteInput, registerEntries, stepBadges, stepRatingOf } from "@/lib/issues/register";
 import { useIssues } from "@/lib/issues/use-issues";
 import { IssuesRegister } from "./issues-register";
@@ -41,6 +43,7 @@ export function useProcessIssues({
   initialScenarios,
   registerHref,
   retired = NO_RETIRED,
+  analysisRules,
   onShowIssues,
 }: {
   bundle: ProcessBundle;
@@ -54,6 +57,8 @@ export function useProcessIssues({
   registerHref?: string;
   /** Steps the model no longer has and what replaced them, for broken-scenario issues (issue #16). */
   retired?: RetiredSteps;
+  /** The workspace's analysis rules (Settings → Analysis rules); omitted means the defaults. On the demo, the ones edited in this tab. */
+  analysisRules?: AnalysisSettings;
   /** A step's issue badge was clicked: the caller opens the panel the Issues tab is in. */
   onShowIssues?: () => void;
 }): ProcessIssues {
@@ -64,9 +69,14 @@ export function useProcessIssues({
 
   // Saved scenarios whose targets no longer resolve raise a broken_scenario issue each (issue #16).
   const broken = useMemo(() => (model ? detectBrokenScenarios(model, scenarios, retired) : []), [model, scenarios, retired]);
-  // Perception gaps from the steps' evidence (issue #21).
-  const gaps = useMemo(() => perceptionGapDetections(bundle.steps), [bundle.steps]);
-  const detected = useMemo(() => (model && result ? [...broken, ...detectIssues(model, result), ...gaps] : null), [model, result, broken, gaps]);
+  // A change to the rules re-rates this run (and drops what a switched-off rule found); it is not simulated again.
+  const rules = useRatingSettings(mode === "demo", analysisRules);
+  // Perception gaps from the steps' evidence (issue #21), unless that rule is off.
+  const gaps = useMemo(() => visibleFindings(rules, perceptionGapDetections(bundle.steps)), [bundle.steps, rules]);
+  const detected = useMemo(
+    () => (model && result ? visibleFindings(rules, [...broken, ...rerate(model, result, rules, bundle.process.id), ...gaps]) : null),
+    [model, result, broken, gaps, rules, bundle.process.id],
+  );
   const brokenScenarios = useMemo(() => new Set(broken.flatMap((d) => (d.scenarioId ? [d.scenarioId] : []))), [broken]);
 
   // A tracked broken-scenario issue resolves itself once its scenario is fixed (re-pointed or deleted).

@@ -402,6 +402,40 @@ export interface DemandSettingsRow {
   provenance: ProvenanceMap;
 }
 
+/** A market condition (A57): seven factors as whole percents of today (100 = the same). The four presets are read-only. */
+export interface MarketConditionRow {
+  id: string;
+  workspace_id: string;
+  name: string;
+  /** boom, stable, soft or downturn for a preset; null for your own. */
+  preset: MarketPreset | null;
+  /** Enquiries. */
+  leads: number;
+  /** Enquiries that sign. */
+  conv: number;
+  /** Time to decide. */
+  cycle: number;
+  /** Prices you can charge. */
+  price: number;
+  /** Clients leaving. */
+  churn: number;
+  /** Time to hire. */
+  hire: number;
+  /** Late payments. */
+  pay: number;
+}
+
+export type MarketPreset = "boom" | "stable" | "soft" | "downturn";
+
+/** One change on the 24-month schedule: a condition from month `from_month` to `to_month` (1-based, inclusive). */
+export interface MarketScheduleRow {
+  id: string;
+  workspace_id: string;
+  from_month: number;
+  to_month: number;
+  condition_id: string;
+}
+
 /**
  * How often a client generates a servicing task (docs/PRD.md §5
  * `service_servicing.recurrence`): `times` tasks spread evenly over every
@@ -464,6 +498,12 @@ export interface ProcessBundle {
   leadSources?: LeadSourceRow[];
   seasonality?: SeasonalityRow[];
   demand?: DemandSettingsRow | null;
+  /**
+   * Market conditions (A57) and the 24-month schedule. With no schedule (or
+   * every month Stable) the model is simulated exactly as before.
+   */
+  marketConditions?: MarketConditionRow[];
+  marketSchedule?: MarketScheduleRow[];
   /**
    * The client roster (issue #18). With any clients, ongoing load is per
    * client and assigned person; with none (or omitted), the interim
@@ -643,6 +683,9 @@ export type _SchemaDriftChecks = [
   Assert<Matches<LeadSourceRow, "lead_sources">>,
   Assert<Matches<SeasonalityRow, "seasonality">>,
   Assert<Matches<DemandSettingsRow, "demand_settings">>,
+  // preset is check-constrained to MarketPreset.
+  Assert<Matches<Omit<MarketConditionRow, "preset">, "market_conditions">>,
+  Assert<Matches<MarketScheduleRow, "market_schedule">>,
   Assert<Matches<WorkspaceDomainRow, "workspace_domains">>,
   Assert<Matches<AccessEmailRow, "workspace_access_emails">>,
   // patch is jsonb; ScenarioPatch[] is its checked shape.

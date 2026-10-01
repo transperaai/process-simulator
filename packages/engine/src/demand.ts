@@ -7,6 +7,7 @@
 // multiplier changes how far each draw reaches, not the draws themselves, so
 // a seasonal scenario and a flat baseline share their random numbers.
 
+import { activeMarket } from "./market";
 import type { EngineDemand, EngineModel } from "./model";
 import { expo, type Rng } from "./random";
 
@@ -25,6 +26,8 @@ interface Calendar {
   firstMonth: number;
   seasonality: number[];
   growth: number;
+  /** Market months' multipliers on the rate (market.ts), counted from t = 0; null with no market effect on enquiries. */
+  leads: number[] | null;
 }
 
 /** x^n for a whole n by repeated squaring (plain multiplication, so identical in every JS engine). */
@@ -58,15 +61,18 @@ export function isFlatDemand(demand: EngineDemand | undefined): boolean {
 function calendar(model: EngineModel): Calendar | null {
   const { demand } = model;
   checkDemand(demand);
-  if (isFlatDemand(demand)) return null;
-  const startMonth = demand!.startMonth ?? 0;
+  const market = activeMarket(model);
+  const leads = market && market.months.some((m) => m.leads !== 1) ? market.months.map((m) => m.leads) : null;
+  if (isFlatDemand(demand) && !leads) return null;
+  const startMonth = demand?.startMonth ?? 0;
   return {
     base: model.leadsPerWeek / model.hoursPerWeek,
     monthHours: WEEKS_PER_CALENDAR_MONTH * model.hoursPerWeek,
     startMonth,
     firstMonth: Math.floor(startMonth),
-    seasonality: demand!.seasonality ?? new Array<number>(MONTHS).fill(1),
-    growth: demand!.growthMonthly ?? 0,
+    seasonality: demand?.seasonality ?? new Array<number>(MONTHS).fill(1),
+    growth: demand?.growthMonthly ?? 0,
+    leads,
   };
 }
 
@@ -86,7 +92,9 @@ function monthFactor(c: Calendar, j: number): number {
  */
 export function demandFactor(model: EngineModel, t: number): number {
   const c = calendar(model);
-  return c ? monthFactor(c, Math.floor(c.startMonth + t / c.monthHours)) : 1;
+  if (!c) return 1;
+  const market = c.leads ? c.leads[t < 0 ? 0 : Math.min(Math.floor(t / c.monthHours), c.leads.length - 1)]! : 1;
+  return monthFactor(c, Math.floor(c.startMonth + t / c.monthHours)) * market;
 }
 
 /**
@@ -127,12 +135,18 @@ function walk(c: Calendar, limit: number, dir: 1 | -1, rng: Rng): number[] {
   const pos = c.startMonth;
   let j = c.firstMonth;
   let t = 0;
+  // The market month the walk is in (forwards only: before t = 0 it is month 1's), and its multiplier.
+  const leads = c.leads;
+  let mk = 0;
+  const marketEdge = () => (dir > 0 && leads && mk < leads.length - 1 ? (mk + 1) * c.monthHours : Infinity);
   // Distance from t = 0 to the edge of month j in the walking direction.
   const edge = (m: number) => dir * ((dir > 0 ? m + 1 : m) - pos) * c.monthHours;
   let need = expo(rng, 1);
   while (t < limit) {
-    const rate = c.base * monthFactor(c, j);
-    const end = Math.min(limit, edge(j));
+    const rate = c.base * monthFactor(c, j) * (leads ? leads[mk]! : 1);
+    const calEdge = edge(j);
+    const mEdge = marketEdge();
+    const end = Math.min(limit, calEdge, mEdge);
     const room = (end - t) * rate;
     if (rate > 0 && need < room) {
       t += need / rate;
@@ -142,7 +156,8 @@ function walk(c: Calendar, limit: number, dir: 1 | -1, rng: Rng): number[] {
     } else {
       need -= room;
       t = end;
-      j += dir;
+      if (end === calEdge) j += dir;
+      if (end === mEdge) mk++;
     }
   }
   return out;

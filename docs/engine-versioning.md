@@ -78,6 +78,24 @@ way.
    approved, which bumps the version.
 4. Ledger versions only increase, and each has a reason.
 
+## Market conditions (engine 1.2.0)
+
+`EngineModel.market` holds a schedule of seven factors per month (`packages/engine/src/market.ts`, decision D29). A
+model with no market, or with every factor 1 in every month, runs exactly as before: `activeMarket` returns null and
+every code path is the old one, so no golden number moved and 1.2.0 was approved with `golden:approve --bump`.
+Enquiries change the arrival rate month by month (`demand.ts`). Enquiries that sign scale, once per path, the
+probability of the edges to the sale at the step that decides it: the step whose edges all lead only to a win or
+only to a loss (Northbeam's and Larkspur's `decision`); earlier steps, whose edges can still end either way, are
+left alone. Time to decide scales external waits at steps before the sale (steps that can still reach a lost end),
+not onboarding, delivery or servicing. Prices scale the fee of each client won (new MRR, billed, LTV added). Clients
+leaving scale churn. Known limits, for the churn driver (A56): `lostRevenue` is valued at today's price, LTV uses
+today's tenure, a roster client's reported `churnMonthly` is its base rate, and the pooled billing estimate uses the
+churn factor of the month a client is won in. `withMarketCondition` replaces any schedule on the model. The
+`northbeam-downturn` golden model runs Northbeam as seeded under Downturn, so a change to this maths shows up in the
+golden test. Time to hire and late payments are stored but change
+nothing, as the engine has no hiring or cash-flow model yet. To run a model under one condition (the stress test
+on solution pages): `simulate(withMarketCondition(model, MARKET_PRESETS.downturn.factors), reps, seed)`.
+
 ## Where the version goes
 
 - `SimulationResult.engineVersion` on every run, in the browser worker and on the server.

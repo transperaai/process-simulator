@@ -1,6 +1,6 @@
 # Redesign plan: Milestone A redesign wave, and Milestones B and C rewritten
 
-Draft for Austin's approval, 1 Oct 2026. Nothing here is ticketed or built yet.
+Approved by Austin, 1 Oct 2026. Ticketed as #96–#123 (see Tickets below); nothing is built yet.
 
 It comes from four things:
 
@@ -102,6 +102,43 @@ Two rules apply to every UI ticket:
 
 Then Austin re-runs QA on the new screens. `docs/qa/milestone-a.md` is rewritten as each ticket lands. #27 (transcript
 to draft) waits until A37 and A54, so the extraction skill can write nested processes and first principles.
+
+## Tickets
+
+Created 1 Oct 2026 as sub-issues of #1. Blockers in each issue use these numbers.
+
+| Ticket | Issue |
+|---|---|
+| A31 Record the redesign | #96 |
+| A32 Remove what's going | #97 |
+| A33 App shell v2 | #98 |
+| A34 Map v2 | #99 |
+| A35 Overview page | #100 |
+| A36 Processes page and switcher | #101 |
+| A37 Processes inside processes | #102 |
+| A38 Process page v2 (review) | #103 |
+| A39 Editor as its own screen | #104 |
+| A40 Process history | #105 |
+| A41 Engine: rating model | #106 |
+| A42 Engine: new rules | #107 |
+| A43 Cost per month | #108 |
+| A44 Settings → Analysis rules | #109 |
+| A45 Insights v2 | #110 |
+| A46 AI analysis | #111 |
+| A47 Issues v2: data and acknowledge | #112 |
+| A48 Issues pages | #113 |
+| A49 Solutions as their own thing | #114 |
+| A50 Solution page and list | #115 |
+| A51 Block library | #116 |
+| A52 Suggestions v2 | #117 |
+| A53 Sources must link | #118 |
+| A54 First principles flow | #119 |
+| A55 Client groups | #120 |
+| A56 Churn drivers | #121 |
+| A57 Market conditions | #122 |
+| A58 Levers, settings help and 24-month horizon | #123 |
+
+Milestone B and C changes: #37 (B8) and #42 (C3) closed as duplicates of #102 and #105; #38 (B9) closed, issues CSV moved to #39 (B10); #30, #31, #32, #33, #35, #36 rewritten; #40, #41, #43, #44 got a short note.
 
 ---
 

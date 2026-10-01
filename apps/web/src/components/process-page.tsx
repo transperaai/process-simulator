@@ -320,10 +320,12 @@ function Section({
   return (
     <section id={id} aria-labelledby={`${id}-heading`} className="flex min-w-0 scroll-mt-16 flex-col gap-3">
       <div>
-        <h2 id={`${id}-heading`} className="flex items-center font-display text-lg font-bold">
-          {title}
+        <div className="flex items-center">
+          <h2 id={`${id}-heading`} className="font-display text-lg font-bold">
+            {title}
+          </h2>
           {help && <Help {...help} />}
-        </h2>
+        </div>
         {hint && <p className="text-sm text-fg-2">{hint}</p>}
       </div>
       {children}

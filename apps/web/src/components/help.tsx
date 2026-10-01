@@ -38,7 +38,7 @@ export function Help({ label, description, example, className }: HelpProps) {
           data-slot="help"
           className={cn(
             "ml-1 inline-grid size-[18px] shrink-0 cursor-help place-items-center rounded-full border-[1.5px] border-fg-3 bg-panel align-middle font-serif text-[11px] leading-none font-bold text-fg-2 italic",
-            "outline-none hover:border-accent hover:bg-accent hover:text-accent-fg focus-visible:border-accent focus-visible:bg-accent focus-visible:text-accent-fg focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:border-accent data-[state=open]:bg-accent data-[state=open]:text-accent-fg",
+            "outline-none hover:border-accent hover:bg-accent hover:text-accent-fg focus-visible:border-accent focus-visible:bg-accent focus-visible:text-accent-fg focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:border-accent data-[state=open]:bg-accent data-[state=open]:text-accent-fg",
             className,
           )}
           onClick={activate}

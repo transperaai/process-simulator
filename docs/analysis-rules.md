@@ -210,6 +210,24 @@ It writes insights marked **AI**. It may suggest a rating, but every number it u
 insights go through the same Acknowledge step as rule insights. AI also runs the first-principles checks (see the
 research note), such as automation proposed for a step that is still a delete candidate.
 
+## Acknowledge and dismiss
+
+An insight is what a run found. It becomes an **issue** only when someone acknowledges it (the Acknowledge dialog:
+title, how bad it is, what it touches, owners, target, sources). Until then it is not on the map and not in the issues
+register.
+
+**Dismissing** an insight says "this isn't a problem". It lasts **until the process's next published version**, not
+forever:
+
+- The dismissal is stored with the process's live version at the time (`issues.dismissed_revision_id`).
+- While the process is still on that version, the insight stays hidden, run after run.
+- When a newer version of the process is published and the analysis still finds the insight, it is listed again, as an
+  insight, and can be acknowledged or dismissed again. A new dismissal moves the stored version on.
+- If the analysis no longer finds it, nothing is listed.
+- A dismissed insight is never an issue: it is not in the issues register, not on the map, not in the counts, and it
+  has no issue number. It gets a number only if someone acknowledges it later.
+- A dismissal recorded before this rule, with no version on record, stays hidden.
+
 ## Changes from today
 
 - One rating scale instead of critical / serious / warning / info.

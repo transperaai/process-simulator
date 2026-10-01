@@ -444,11 +444,11 @@ export async function saveIssue(db: Db, args: SaveIssueArgs): Promise<{ id: stri
   const fields = Object.fromEntries(Object.entries(args.fields).filter(([, v]) => v !== undefined)) as Record<string, Json>;
   const { data, error } = await db.rpc("save_issue", {
     p_workspace: args.workspaceId,
-    p_id: args.id as string,
+    ...(args.id ? { p_id: args.id } : {}),
     p_fields: fields,
-    p_links: (args.links ?? null) as unknown as Json,
-    p_owners: (args.owners ?? null) as unknown as string[],
-    p_sources: (args.sources ?? null) as unknown as string[],
+    ...(args.links ? { p_links: args.links as unknown as Json } : {}),
+    ...(args.owners ? { p_owners: [...args.owners] } : {}),
+    ...(args.sources ? { p_sources: [...args.sources] } : {}),
   });
   if (error) return { error };
   return { id: (data as { id: string }).id };

@@ -10,7 +10,9 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
-  ISSUE_COLUMNS,
+  isVisibleIssue,
+  loadIssue,
+  saveIssue,
   listProcesses,
   loadAnalysisRules,
   loadIssues,
@@ -19,7 +21,6 @@ import {
   ModelError,
   SCENARIO_COLUMNS,
   toEngineModel,
-  type IssueRow,
   type Json,
   type ProcessBundle,
   type ScenarioRow,
@@ -28,6 +29,11 @@ import { absenceTest, applyPatches, detectIssues, ENGINE_VERSION, isBlocking, IS
 import { bottleneckReport, checkScenarioRobustness, compareScenarios, matchNamed, type NamedScenario } from "./analysis";
 import { resolveProcess, resolveWorkspace, revisionIdFor, type ProcessWithDraft, type ToolContext, type WorkspaceRef } from "./context";
 import { runTool, ToolError } from "./result";
+
+/** The statuses a tool may give or filter an issue by: the four a person sees, and the two old spellings of testing and resolved. */
+const ISSUE_STATUS_INPUT = ["open", "testing", "resolved", "wont_fix", "in_progress", "done"] as const;
+const normaliseStatus = (s: (typeof ISSUE_STATUS_INPUT)[number] | undefined): "open" | "testing" | "resolved" | "wont_fix" =>
+  s === "in_progress" ? "testing" : s === "done" ? "resolved" : (s ?? "open");
 
 export const ANALYSIS_TOOL_NAMES = ["save_scenario", "compare_scenarios", "check_robustness", "get_bottlenecks", "log_issue", "list_issues"] as const;
 
@@ -370,7 +376,7 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
         client: z.string().optional().describe("Client on the roster the issue is about (id or name)."),
         owner: z.string().optional().describe("Person who owns the fix (id or name)."),
         scenario: z.string().optional().describe("Saved scenario that tests the fix (id or name)."),
-        status: z.enum(["open", "in_progress", "done", "dismissed"]).optional().describe("Default open."),
+        status: z.enum(ISSUE_STATUS_INPUT).optional().describe("open, testing (testing solutions), resolved or wont_fix. Default open. in_progress and done are deprecated spellings of testing and resolved."),
         workspace: workspaceArg,
       },
     },
@@ -396,28 +402,29 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
         const rating = args.rating ?? (args.severity ? ratingOfStored(args.severity) : "good");
         if (!args.rating && args.severity) assumptions.push(`severity '${args.severity}' is deprecated; read as rating '${rating}'.`);
         else if (!args.rating) assumptions.push("rating defaulted to good (could improve).");
-        const { data, error } = await ctx.db
-          .from("issues")
-          .insert({
-            workspace_id: ws.id,
+        const status = normaliseStatus(args.status);
+        if (args.status && status !== args.status) assumptions.push(`status '${args.status}' is deprecated; read as '${status}'.`);
+        // One call writes the issue with what it touches and who owns it, so its history starts with one entry.
+        const saved = await saveIssue(ctx.db, {
+          workspaceId: ws.id,
+          fields: {
             title: args.title.trim(),
             type: args.type,
             severity: storedOfRating(rating),
             evidence: args.evidence?.trim() || null,
-            status: args.status ?? "open",
+            status,
             source: "manual",
-            process_id: proc?.id ?? null,
-            step_id: step?.id ?? null,
             person_id: person?.id ?? null,
             role_id: role?.id ?? null,
             client_id: client?.id ?? null,
-            owner_person_id: owner?.id ?? null,
             scenario_id: scenario?.id ?? null,
-          })
-          .select(ISSUE_COLUMNS)
-          .single();
-        if (error) throw writeError(error, "log issues");
-        const row = data as unknown as IssueRow;
+          },
+          links: step ? [{ process_id: proc?.id ?? null, step_id: step.id }] : proc ? [{ process_id: proc.id, step_id: null }] : [],
+          owners: owner ? [owner.id] : [],
+        });
+        if ("error" in saved) throw writeError(saved.error, "log issues");
+        const row = await loadIssue(ctx.db, ws.id, saved.id);
+        if (!row) throw writeError({ code: "42501" }, "log issues");
         return {
           workspace: { id: ws.id, name: ws.name },
           issue: {
@@ -444,7 +451,7 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
         "each links to. Filter by status, type, process or client. With include_detected, also runs the live process and lists what the run detects " +
         "that isn't tracked yet.",
       inputSchema: {
-        status: z.enum(["open", "in_progress", "done", "dismissed"]).optional(),
+        status: z.enum(ISSUE_STATUS_INPUT).optional().describe("open, testing, resolved or wont_fix (in_progress and done are deprecated spellings)."),
         type: z.enum(ISSUE_TYPES).optional(),
         process: z.string().optional().describe("Only issues about this process (id or name)."),
         client: z.string().optional().describe("Only issues about this client on the roster (id or name)."),
@@ -466,9 +473,11 @@ export function registerAnalysisTools(server: McpServer, ctx: ToolContext): void
           ctx.db.from("clients").select("id, name").eq("workspace_id", ws.id).order("name"),
         ]);
         const client = args.client ? matchNamed(check(clients), args.client, "client", ` in '${ws.name}'`) : null;
-        const filtered = issues.filter(
+        const wanted = args.status ? normaliseStatus(args.status) : null;
+        // A dismissed insight is not an issue, so it is never listed.
+        const filtered = issues.filter(isVisibleIssue).filter(
           (i) =>
-            (!args.status || i.status === args.status) &&
+            (!wanted || i.status === wanted) &&
             (!args.type || i.type === args.type) &&
             (!args.process || i.process_id === proc?.id) &&
             (!client || i.client_id === client.id),

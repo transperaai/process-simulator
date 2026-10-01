@@ -160,7 +160,7 @@ afterAll(async () => {
 
 type Client = pg.Client;
 const save = async (c: Client, workspace: string, id: string | null, fields: Record<string, unknown>, links: unknown = null, owners: string[] | null = null, sources: string[] | null = null) =>
-  (await c.query("select public.save_issue($1, $2, $3, $4, $5, $6) as r", [workspace, id, JSON.stringify(fields), links === null ? null : JSON.stringify(links), owners, sources])).rows[0].r as { id: string; number: number; type: string; [column: string]: unknown };
+  (await c.query("select public.save_issue($1, $2, $3, $4, $5, $6) as r", [workspace, JSON.stringify(fields), id, links === null ? null : JSON.stringify(links), owners, sources])).rows[0].r as { id: string; number: number; type: string; [column: string]: unknown };
 /** Expect `run` to fail with `pattern`, inside the caller's transaction (a savepoint keeps it usable). */
 const fails = async (c: Client, run: () => Promise<unknown>, pattern: RegExp) => {
   await c.query("savepoint s");

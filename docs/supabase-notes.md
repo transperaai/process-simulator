@@ -136,3 +136,12 @@ Checked on plain Postgres 16 with the auth shim (`packages/db/test/churn-drivers
 - The 25-driver cap is a `before insert` trigger that takes `pg_advisory_xact_lock(hashtextextended('churn_drivers:' || workspace_id, 0))` before counting, as `market_schedule`'s overlap check does. Supabase allows advisory locks inside a transaction; over PostgREST each request is one transaction.
 - The partial unique index `churn_drivers_driver_key (workspace_id, driver) where driver is not null` is not a valid `ON CONFLICT` target for supabase-js `upsert`, so the app selects, then inserts or updates, and retries the update when the insert loses a race (`23505`).
 - `stamp_provenance` is given a boolean column (`enabled`) as well as numbers; it compares `to_jsonb(new) -> col` values, so it works for either, but that is only exercised here.
+
+## Issues v2 (A47, migration 20261120000000)
+
+Checked on plain Postgres 16 with the auth shim (`packages/db/test/issues-v2.test.ts`); not confirmed on Supabase itself, and the PostgREST end-to-end tests run only in CI:
+
+- Issue numbers come from `private.next_issue_number`, an `insert ... on conflict do update ... returning` on a one-row-per-workspace counter table. The row lock serialises concurrent inserts (tested with two connections). The trigger function that calls it (`private.issues_before_write`) is `security definer`, so the `authenticated` role needs no access to the `private` schema; Supabase's `authenticated` role has none either.
+- The history log is written by `security definer` triggers that call `auth.uid()` for the actor. On plain Postgres the shim's `auth.uid()` reads `request.jwt.claims`; Supabase's reads the same setting, but the actor on a real session is unconfirmed.
+- Link-table events are skipped when the same transaction already logged the issue, using `txid_current()` stored on each event. Over PostgREST each request is one transaction, so `save_issue` (one RPC) logs one entry.
+- `public.save_issue` is `security invoker` with defaults on every argument after `p_fields`, so supabase-js can leave out `p_id`, `p_links`, `p_owners` and `p_sources` (PostgREST resolves the call by argument names). Only called with all of them present here.

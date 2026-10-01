@@ -2406,10 +2406,10 @@ export type Database = {
       save_issue: {
         Args: {
           p_fields: Json
-          p_id: string
-          p_links: Json
-          p_owners: string[]
-          p_sources: string[]
+          p_id?: string
+          p_links?: Json
+          p_owners?: string[]
+          p_sources?: string[]
           p_workspace: string
         }
         Returns: Json

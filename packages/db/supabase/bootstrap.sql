@@ -12653,7 +12653,7 @@ revoke all on public.blocks from anon;
 -- they matter):
 --
 --   begin;
---   drop function if exists public.save_issue(uuid, uuid, jsonb, jsonb, uuid[], uuid[]);
+--   drop function if exists public.save_issue(uuid, jsonb, uuid, jsonb, uuid[], uuid[]);
 --   drop table if exists public.issue_events, public.issue_sources, public.issue_owners, public.issue_links;
 --   drop trigger if exists issue_log on public.issues;
 --   drop function if exists private.log_issue_change();
@@ -13029,12 +13029,14 @@ revoke all on public.issue_links, public.issue_owners, public.issue_sources, pub
 -- save_issue: create or edit an issue with its links, owners and sources, in one transaction
 -- ---------------------------------------------------------------------------
 
--- p_id null creates; otherwise edits that issue. p_fields holds only the columns to set (the allow-list below).
+-- p_id null (or left out) creates; otherwise edits that issue. Everything after p_fields is optional, so a client that
+-- names its arguments (PostgREST) can leave out what it doesn't set. p_fields holds only the columns to set (the allow-list below).
 -- p_links is [{"process_id": uuid|null, "step_id": uuid|null}, ...], p_owners and p_sources are arrays of ids; null
 -- leaves the existing set alone, an array replaces it (only the differences are written, so an unchanged save writes
 -- no history). Returns the issue row. Security invoker: row-level security applies to every write, and the caller must be
 -- able to edit the workspace (checked first, so a viewer's save fails loudly instead of changing nothing).
-create function public.save_issue(p_workspace uuid, p_id uuid, p_fields jsonb, p_links jsonb, p_owners uuid[], p_sources uuid[])
+create function public.save_issue(
+  p_workspace uuid, p_fields jsonb, p_id uuid default null, p_links jsonb default null, p_owners uuid[] default null, p_sources uuid[] default null)
 returns jsonb
 language plpgsql
 security invoker
@@ -13127,8 +13129,8 @@ begin
 end;
 $$;
 
-revoke all on function public.save_issue(uuid, uuid, jsonb, jsonb, uuid[], uuid[]) from public, anon;
-grant execute on function public.save_issue(uuid, uuid, jsonb, jsonb, uuid[], uuid[]) to authenticated;
+revoke all on function public.save_issue(uuid, jsonb, uuid, jsonb, uuid[], uuid[]) from public, anon;
+grant execute on function public.save_issue(uuid, jsonb, uuid, jsonb, uuid[], uuid[]) to authenticated;
 
 insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261120000000', 'issues_v2', array['-- Issues v2: data (issue #112, ticket A47). An issue is a problem someone confirmed, from acknowledging an insight
 -- or added by hand. This migration reshapes the register''s data; the Acknowledge dialog (apps/web) writes it.
@@ -13193,7 +13195,7 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 -- they matter):
 --
 --   begin;
---   drop function if exists public.save_issue(uuid, uuid, jsonb, jsonb, uuid[], uuid[]);
+--   drop function if exists public.save_issue(uuid, jsonb, uuid, jsonb, uuid[], uuid[]);
 --   drop table if exists public.issue_events, public.issue_sources, public.issue_owners, public.issue_links;
 --   drop trigger if exists issue_log on public.issues;
 --   drop function if exists private.log_issue_change();
@@ -13569,12 +13571,14 @@ revoke all on public.issue_links, public.issue_owners, public.issue_sources, pub
 -- save_issue: create or edit an issue with its links, owners and sources, in one transaction
 -- ---------------------------------------------------------------------------
 
--- p_id null creates; otherwise edits that issue. p_fields holds only the columns to set (the allow-list below).
+-- p_id null (or left out) creates; otherwise edits that issue. Everything after p_fields is optional, so a client that
+-- names its arguments (PostgREST) can leave out what it doesn''t set. p_fields holds only the columns to set (the allow-list below).
 -- p_links is [{"process_id": uuid|null, "step_id": uuid|null}, ...], p_owners and p_sources are arrays of ids; null
 -- leaves the existing set alone, an array replaces it (only the differences are written, so an unchanged save writes
 -- no history). Returns the issue row. Security invoker: row-level security applies to every write, and the caller must be
 -- able to edit the workspace (checked first, so a viewer''s save fails loudly instead of changing nothing).
-create function public.save_issue(p_workspace uuid, p_id uuid, p_fields jsonb, p_links jsonb, p_owners uuid[], p_sources uuid[])
+create function public.save_issue(
+  p_workspace uuid, p_fields jsonb, p_id uuid default null, p_links jsonb default null, p_owners uuid[] default null, p_sources uuid[] default null)
 returns jsonb
 language plpgsql
 security invoker
@@ -13667,8 +13671,8 @@ begin
 end;
 $$;
 
-revoke all on function public.save_issue(uuid, uuid, jsonb, jsonb, uuid[], uuid[]) from public, anon;
-grant execute on function public.save_issue(uuid, uuid, jsonb, jsonb, uuid[], uuid[]) to authenticated;
+revoke all on function public.save_issue(uuid, jsonb, uuid, jsonb, uuid[], uuid[]) from public, anon;
+grant execute on function public.save_issue(uuid, jsonb, uuid, jsonb, uuid[], uuid[]) to authenticated;
 ']);
 
 -- seed.sql

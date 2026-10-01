@@ -109,7 +109,7 @@ export function HistoryView({
         />
       </div>
 
-      <div className="overflow-x-auto rounded-token border bg-card">
+      <div className="relative overflow-x-auto rounded-token border bg-card">
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">

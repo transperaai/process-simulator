@@ -12,7 +12,7 @@ interface DemoVersion {
   publishedAt: string;
   authorKind: AuthorKind;
   authorName: string | null;
-  /** Work-time factors for the process's three longest steps (1 is as it is today). */
+  /** Work-time factors for the process's three longest steps (work plus waiting) (1 is as it is today). */
   factors: [number, number, number];
 }
 
@@ -29,8 +29,8 @@ const revisionId = (n: number) => `d0000000-0000-4000-8000-00000000000${n}`;
 /** The process's longest steps, which the older versions give more time to. */
 function longestSteps(steps: readonly StepRow[]): string[] {
   return [...steps]
-    .filter((s) => s.work_hours > 0)
-    .sort((a, b) => b.work_hours - a.work_hours || a.id.localeCompare(b.id))
+    .filter((s) => s.work_hours + s.wait_hours > 0)
+    .sort((a, b) => b.work_hours + b.wait_hours - (a.work_hours + a.wait_hours) || a.id.localeCompare(b.id))
     .slice(0, 3)
     .map((s) => s.id);
 }
@@ -42,7 +42,8 @@ function atVersion(bundle: ProcessBundle, v: DemoVersion): ProcessBundle {
     revision: { ...bundle.revision, id: revisionId(v.number), number: v.number, status: v.number === VERSIONS.length ? "published" : "superseded" },
     steps: bundle.steps.map((s) => {
       const i = longest.indexOf(s.id);
-      return i < 0 ? s : { ...s, work_hours: Math.round(s.work_hours * v.factors[i]! * 10) / 10 };
+      const f = i < 0 ? 1 : v.factors[i]!;
+      return i < 0 ? s : { ...s, work_hours: Math.round(s.work_hours * f * 10) / 10, wait_hours: Math.round(s.wait_hours * f * 10) / 10 };
     }),
   };
 }
@@ -57,7 +58,7 @@ export function demoHistory(processId: string): { versions: VersionMeta[]; model
     const now = bundles[i]!;
     const before = i > 0 ? bundles[i - 1]! : null;
     models[revisionId(v.number)] = { model: toEngineModel(now) };
-    const changed = before ? now.steps.filter((s, k) => s.work_hours !== before.steps[k]!.work_hours).map((s) => s.id) : [];
+    const changed = before ? now.steps.filter((s, k) => s.work_hours !== before.steps[k]!.work_hours || s.wait_hours !== before.steps[k]!.wait_hours).map((s) => s.id) : [];
     const changes: RevisionChanges | null = before ? { steps: { added: [], removed: [], changed }, edges: { added: [], removed: [], changed: [] } } : null;
     return { revisionId: revisionId(v.number), number: v.number, live: v.number === VERSIONS.length, publishedAt: v.publishedAt, authorKind: v.authorKind, authorName: v.authorName, changes };
   });

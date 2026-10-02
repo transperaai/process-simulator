@@ -21,6 +21,8 @@ Interview 1 (new process):
 - Routing with no app evidence: Send report's one in ten goes in its `notes`.
 - A process-level promise (five working days) that belongs on the servicing link in Settings.
 - Five suggestions: two people, two clients, one lead source.
+- First principles from the same transcript: a cited truth (the five-day promise), two assumptions with tests (one quoted, one reasoned), a requirement with a named owner, a simplify idea, a success measure from the stated five-day promise (`cycleHours`, `atMost`, 40 working hours: five days at 8 h), and the sections left empty because nobody said anything (deletes, root cause). Each item carries a quote as `"<quote>" [<source title> | <speaker> | <time>]` or begins `Assumed:`.
+- No nesting, on purpose. Send report ("Export to PDF, email it, a quick note") and Owen's Technical check (errors, broken links, page speed) are lists of small actions with one stated time each, so they stay single steps: the case where the skill says not to nest. The skill's own worked example shows a group and a child process.
 
 Interview 2 (`target`):
 - Owen's self-correction cited as one number, which conflicts with Hana's and becomes a triangular 1 / 2 / 3 range plus a perception-gap issue.
@@ -38,5 +40,5 @@ Interview 2 (`target`):
 
 ## Used by
 
-- `packages/mcp/test/extraction-fixtures.test.ts` lints both runs against the transcripts with no database: every quote verbatim, from a listed speaker, on the line at its timestamp; every number cited or reasoned; symmetric ranges cite their midpoint; suggestions carry evidence in their own shape.
+- `packages/mcp/test/extraction-fixtures.test.ts` lints both runs against the transcripts with no database: every quote verbatim, from a listed speaker, on the line at its timestamp; every number cited or reasoned; symmetric ranges cite their midpoint; suggestions carry evidence in their own shape; every first-principles item holds a verbatim quote or says `Assumed:`; steps inside groups and child processes are checked like any other, and a group carries no numbers of its own.
 - `packages/mcp/test/postgrest-extraction.test.ts` replays them through the MCP server against PostgREST and Postgres (skipped unless `POSTGREST_URL` is set; see the README's "MCP end-to-end suites"). Set `EXTRACTION_RESPONSES_FILE` to keep the observed responses.

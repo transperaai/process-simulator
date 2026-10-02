@@ -36,8 +36,15 @@ The prompt is a skill: [`.agents/skills/extract-process/SKILL.md`](../../.agents
 
 1. Attach or paste the transcript, and say which workspace it belongs to.
 2. Answer the questions it asks (workspace, new process or an existing one).
-3. Read its summary: conflicts, assumptions, suggestions, open questions, timing notes and a ledger of every number heard.
-4. In the app: the canvas checklist rail (conflicts first), confirm or override each value, accept or reject on the workspace's Suggestions page, then Publish.
+3. Read its summary: conflicts, assumptions, first principles, suggestions, open questions, timing notes and a ledger of every number heard.
+4. In the app: the canvas checklist rail (conflicts first), confirm or override each value, check the process's first principles card, accept or reject on the workspace's Suggestions page, then Publish (child processes are published too).
+
+## What it writes
+
+- **Sources.** One `add_source` per transcript with `link_later: true` (or `links` when it supports something that exists), then `link_source {process}` for every transcript once the draft exists. A source with no link shows as "Not linked to anything yet" and does not count as evidence.
+- **Steps.** `import_process`, every number cited with a verbatim quote or assumed with reasoning. A step the interviewee breaks into parts, each with its own time, becomes a **group** (`steps` inside the step); a sub-procedure that is a piece of work of its own becomes a **child process** (`process`, or `child_process` for an existing one) with its own page and versions. A list of small actions with one stated time stays one step. The numbers always sit on the inner steps.
+- **First principles.** `update_first_principles` writes the seven answers into the draft: only what a transcript supports, each item citing a quote as `"<quote>" [<source title> | <speaker> | <time>]` or starting `Assumed:` with its reasoning. A stated target becomes a success measure with the KPI's unit and an explicit comparator (`atMost` for "within", with days converted at the workspace's hours per day); with no KPI that fits, `kpi` is left out. Sections nobody spoke to (deletes, root cause) stay empty and become open questions. The flags it returns (a team as owner, no deletes, no root cause) go in the summary.
+- **Suggestions.** People, clients, roles and demand through `upsert_*` and `set_demand`. Problems and ideas through `propose_issue` and `propose_solution_idea`, which land on the Suggestions page too; the skill never logs an issue itself. Perception-gap issues appear on their own when two speakers' numbers are twice as far apart or more. `propose_*` answer `switched_off` when an owner has turned the AI switch off in Settings, AI analysis, and the skill reports the item as an open question.
 
 ## A second interview
 
@@ -56,6 +63,9 @@ Same conversation or a new one; tell it the process name. Expect `created: false
 ## Known limits
 
 - Routing has no evidence: a routing disagreement cannot become a conflict in the app, and the summary reports it as untracked.
+- First principles have no evidence field either: quotes are written into the text and checked by the fixture lint, not by the app.
+- Groups and child processes are written only through `import_process`; a step cannot be moved into a group with `update_step`.
+- A solution idea needs an issue that already exists: a wish with no issue goes into first principles, and the issue is proposed first.
 - A range cited without a value cannot conflict. The skill cites the midpoint of a symmetric hedge as the value.
 - `get_workspace_summary` lists no clients, services or lead sources, and there is no list of sources.
 - Servicing links and their SLAs are set in Settings; MCP cannot set them.
@@ -63,5 +73,5 @@ Same conversation or a new one; tell it the process name. Expect `created: false
 
 ## Examples and QA
 
-- `docs/extraction/examples/tidewater`: a solved dry run on invented interviews, replayed by the test suite.
+- `docs/extraction/examples/tidewater`: a solved dry run on invented interviews, replayed by the test suite. It includes a first-principles call; nesting is shown in the skill's worked example, not in this run (nothing in these interviews calls for it).
 - `docs/extraction/qa`: the timed QA pack for issue #27 (see its `README.md`).

@@ -60,6 +60,8 @@ export interface CheckContext {
   currency: string;
   /** Working hours in a day (hours per week / 5), to read hours as days. */
   hoursPerDay: number;
+  /** Lower-cased text the facts print: a ratio phrase that appears in it verbatim ("1 in 10") is not refused. */
+  phrases?: readonly string[];
 }
 
 export interface CheckedNumber {
@@ -94,7 +96,33 @@ const SLASH_DATE = /\b(\d{1,2})\/(\d{1,2})\/(\d{2,4})\b/g;
 const PERCENTILE = /\b(?:P(?:10|50|90)\b|(?:10|50|90)th(?:\s*(?:–|-|to)\s*(?:10|50|90)th)?\s+percentiles?\b)/gi;
 const WEEK_NUMBER = /\b(?:week|wk)\s+(\d{1,3})\b/gi;
 const QUARTER = /\b(?:Q[1-4]|H[12]|FY\s?\d{2,4})\b/g;
-const MULTIPLES = /\b(?:twice|thrice|double[sd]?|doubling|triple[sd]?|tripling|quadruple[sd]?|halve[sd]?|halving|half|(?:two|three|four|five|ten)fold)\b/gi;
+// Fractions and ratios in words or slashes ("a third", "three quarters of", "3/4", "one in ten", "1 in 10", "seven figures"):
+// like "half" and "twice", they state a ratio nobody computed, and the digits or number words in them would otherwise
+// pass for figures.
+/** Slash phrases that are idioms, not fractions: "24/7" (always on) and "50/50" (an even split no run computed, and no figure is claimed). */
+/** `said` occurs in `phrase` on word and number boundaries: "1 in 1" is not in "add back about 1 in 10". */
+function said_in(phrase: string, said: string): boolean {
+  for (let at = phrase.indexOf(said); at !== -1; at = phrase.indexOf(said, at + 1)) {
+    const before = phrase[at - 1];
+    const after = phrase[at + said.length];
+    if (!(before && /[\p{L}\p{N}]/u.test(before)) && !(after && /[\p{L}\p{N}]/u.test(after))) return true;
+  }
+  return false;
+}
+
+const IDIOMS =/^(?:24\s?\/\s?7|50\s?\/\s?50)$/;
+const FRACTION_WORD =String.raw`(?:thirds?|fourths?|quarters?|fifths?|sixths?|sevenths?|eighths?|ninths?|tenths?)`;
+const RATIOS = new RegExp(
+  [
+    // "a quarter of", "three thirds of": the "of" is what makes it a share ("Wins in a quarter" is a period, not a fraction).
+    String.raw`\b(?:a|an|one|two|three|four|five|six|seven|eight|nine)[-\s]${FRACTION_WORD}\s+of\b`,
+    String.raw`(?<![\d/.])\d{1,3}\s?/\s?\d{1,3}(?![\d/])`,
+    String.raw`\b(?:one|two|three|four|five|1|2|3|4|5)\s+(?:in|out\s+of)\s+(?:\d[\d,]*|a\s+(?:hundred|thousand|million)|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|forty|fifty|hundred|thousand)\b`,
+    String.raw`\b(?:two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)[-\s]figures?\b`,
+  ].join("|"),
+  "gi",
+);
+const MULTIPLES =/\b(?:twice|thrice|double[sd]?|doubling|triple[sd]?|tripling|quadruple[sd]?|halve[sd]?|halving|half|(?:two|three|four|five|ten)fold)\b/gi;
 
 const SMALL: Record<string, number> = {
   zero: 0, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
@@ -229,7 +257,7 @@ export interface Scan {
 }
 
 /** Every number, date and number word in `input`. Names in `names` are removed first. */
-export function scanNumbers(input: string, names: readonly string[] = []): Scan {
+export function scanNumbers(input: string, names: readonly string[] = [], phrases: readonly string[] = []): Scan {
   let text = input.replace(/[   ]/g, " ");
   for (const name of [...names].filter((n) => /\d/.test(n)).sort((a, b) => b.length - a.length)) {
     text = text.split(name).join(BLANK.repeat(name.length));
@@ -257,6 +285,12 @@ export function scanNumbers(input: string, names: readonly string[] = []): Scan 
   text = blank(text, WEEK_NUMBER, (m) => void periods.push({ text: m[0], week: Number(m[1]) }));
   text = blank(text, QUARTER, (m) => void periods.push({ text: m[0], week: null }));
   const multiples: string[] = [];
+  text = blank(text, RATIOS, (m) => {
+    const said = m[0].toLowerCase().replace(/\s+/g, " ");
+    // Idioms that are not fractions, and a ratio the facts themselves print (the engine's "add back about 1 in 10"), are not refused.
+    if (IDIOMS.test(said) || phrases.some((p) => said_in(p, said))) return;
+    multiples.push(m[0]);
+  });
   text = blank(text, MULTIPLES, (m) => void multiples.push(m[0]));
 
   const tokens: NumberToken[] = [];
@@ -364,7 +398,7 @@ const KIND_WORDS: Record<NumberKind, string> = {
 
 /** Check every number in `text` against the context's facts. */
 export function checkNumbers(text: string, ctx: CheckContext): CheckResult {
-  const scan = scanNumbers(text, ctx.names);
+  const scan = scanNumbers(text, ctx.names, ctx.phrases);
   const numbers: CheckedNumber[] = [];
   const problems: NumberProblem[] = [];
   const years = new Set(ctx.dates.map((d) => Number(d.slice(0, 4))));

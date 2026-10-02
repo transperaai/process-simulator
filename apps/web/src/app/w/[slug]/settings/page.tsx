@@ -12,6 +12,9 @@ import { RolesSettings } from "./roles-settings";
 import { ServicesSettings } from "./services-settings";
 import { HealthSettings } from "./servicing-settings";
 
+/** AI analysis runs here after a publish or a market change (A46): allow it time. */
+export const maxDuration = 300;
+
 export default async function WorkspaceSettingsPage(props: PageProps<"/w/[slug]/settings">) {
   const { slug } = await props.params;
   const [data, bundle] = await Promise.all([loadWorkspaceSettings(slug), loadLiveProcess(slug)]);
@@ -27,6 +30,9 @@ export default async function WorkspaceSettingsPage(props: PageProps<"/w/[slug]/
           </Link>
           <Link href={`/w/${slug}/settings/rules`} className={buttonVariants({ variant: "outline", size: "sm" })}>
             Analysis rules
+          </Link>
+          <Link href={`/w/${slug}/settings/ai`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+            AI analysis
           </Link>
         </>
       }

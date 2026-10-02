@@ -9,6 +9,11 @@ export interface ToolContext {
   activeWorkspaceId: string | null;
   /** ISO date used when a tool needs "today". */
   today: string;
+  /**
+   * Called after `publish_process` has made a version live (A46: the web app starts its AI analysis here, after the
+   * response). A failure in it never reaches the caller.
+   */
+  onPublished?: (processId: string) => void;
 }
 
 export interface WorkspaceRef {

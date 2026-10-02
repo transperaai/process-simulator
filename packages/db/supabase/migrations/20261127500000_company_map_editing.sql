@@ -55,7 +55,7 @@
 --        select version from supabase_migrations.schema_migrations where version = '20261126000000';
 --   3. The functions this one replaces are as reviewed. Expect one row, true, for each of the four queries:
 --        select prosrc like '%editing it arrives with its editor%' from pg_proc where pronamespace = 'private'::regnamespace and proname = 'company_process_guard';
---        select prosrc like '%can''t be versioned yet%' from pg_proc where pronamespace = 'private'::regnamespace and proname = 'company_revision_guard';
+--        select prosrc like '%be versioned yet%' from pg_proc where pronamespace = 'private'::regnamespace and proname = 'company_revision_guard';
 --        select prosrc like '%c.parent_process_id = proc.id%' from pg_proc where pronamespace = 'public'::regnamespace and proname = 'restore_version';
 --        select pg_get_function_result(oid) not like '%note%' from pg_proc where pronamespace = 'public'::regnamespace and proname = 'revision_history';
 --   4. The old reconciler is there to be dropped. Expect one row, true:

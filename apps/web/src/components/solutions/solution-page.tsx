@@ -414,7 +414,15 @@ function LinkIssueDialog({ open, issues, onLink, onClose }: { open: boolean; iss
   );
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md" data-link-issue-dialog>
+      <DialogContent
+        className="sm:max-w-md"
+        data-link-issue-dialog
+        onOpenAutoFocus={(e) => {
+          // Not the (i): its popover would cover the buttons. Focus the choice.
+          e.preventDefault();
+          (e.currentTarget as HTMLElement).querySelector<HTMLSelectElement>("select")?.focus();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Link an issue</DialogTitle>
           <DialogDescription>Test this solution against another open issue about the same process. It gets its own automatic verdict.</DialogDescription>

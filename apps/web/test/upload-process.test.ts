@@ -18,6 +18,13 @@ describe("sourceLabel", () => {
     expect(sourceLabel("")).toBe("uploaded file");
   });
 
+  it("logs a link as its origin and path, without the query string, fragment or credentials", () => {
+    expect(sourceLabel("https://claude.ai/design/abc?token=SECRET&x=1#frag")).toBe("https://claude.ai/design/abc");
+    expect(sourceLabel("https://user:pw@example.com/p?k=v")).toBe("https://example.com/p");
+    expect(sourceLabel("https://example.com")).toBe("https://example.com/");
+    expect(sourceLabel("https://exa mple.com/p?token=SECRET")).not.toContain("SECRET");
+  });
+
   it("cuts a very long name", () => {
     expect(sourceLabel(`${"a".repeat(300)}.json`)).toHaveLength(200);
   });

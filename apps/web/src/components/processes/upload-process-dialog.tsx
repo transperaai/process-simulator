@@ -7,18 +7,18 @@
 
 import { useState, useTransition, type DragEvent } from "react";
 import { FileJson, Upload } from "lucide-react";
-import { claudePrompt, PROCESS_FILE_EXAMPLE } from "@transpera-flow/db/process-file";
+import { claudePrompt, PROCESS_FILE_EXAMPLE, processTextFrom } from "@transpera-flow/db/process-file";
 import { Help } from "@/components/help";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import { downloadHref, isRedirect, uploadSizeProblem, type CreateUploadInput, type CreateUploadResult, type PreviewResult, type UploadPreview } from "@/lib/processes/upload";
+import { downloadHref, fileSizeProblem, isRedirect, uploadSizeProblem, type CreateUploadInput, type CreateUploadResult, type PreviewInput, type PreviewResult, type UploadPreview } from "@/lib/processes/upload";
 import { cn } from "@/lib/utils";
 
 export interface UploadProcess {
   /** Check the file and say what it would create (writes nothing). */
-  preview: (input: { text: string; fileName: string }) => Promise<PreviewResult>;
+  preview: (input: PreviewInput) => Promise<PreviewResult>;
   /** Create the process as a draft. Opens it in the editor, so it only comes back with an error. */
   create: (input: CreateUploadInput) => Promise<CreateUploadResult>;
 }
@@ -32,8 +32,8 @@ const norm = (s: string) => s.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "
 export const UPLOAD_HELP = {
   upload: {
     label: "Upload process",
-    description: "Brings in a process someone, usually Claude, wrote as a file, and makes it a new draft. Nothing is live until you publish it, and it never changes your people, roles or clients.",
-    example: "Ask Claude to describe your sales process using the prompt from this dialog, save its reply as a .json file, and upload it here.",
+    description: "Brings in a process someone, usually Claude, wrote as a JSON file, a Claude Design page (HTML file or link), and makes it a new draft. Nothing is live until you publish it, and it never changes your people, roles or clients.",
+    example: "Ask Claude to describe your sales process using the prompt from this dialog, save its reply as a .json file (or let Claude Design make a page), and upload it here.",
   },
   roles: {
     label: "Roles in the file",
@@ -62,7 +62,7 @@ export function UploadProcessDialog({ open, onOpenChange, upload }: { open: bool
       <DialogContent className="max-h-[92svh] overflow-y-auto sm:max-w-xl" data-upload-dialog>
         <DialogHeader>
           <DialogTitle>Upload a process</DialogTitle>
-          <DialogDescription>Bring in a process as a file. It becomes a new draft for you to check; nothing goes live until you publish it.</DialogDescription>
+          <DialogDescription>Bring in a process from a file or a link. It becomes a new draft for you to check; nothing goes live until you publish it.</DialogDescription>
         </DialogHeader>
         {/* Keyed on opening, so each time starts from the file choice. */}
         {open && <Flow upload={upload} onCancel={() => onOpenChange(false)} />}
@@ -89,21 +89,42 @@ function Choose({ upload, onLoaded, onCancel }: { upload: UploadProcess; onLoade
   const [over, setOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<"yes" | "blocked" | null>(null);
+  const [link, setLink] = useState("");
   const [pending, start] = useTransition();
 
   const read = (file: File | undefined) => {
     if (!file) return;
     setError(null);
-    const tooBig = uploadSizeProblem(file.size);
+    const tooBig = fileSizeProblem(file.size);
     if (tooBig) return setError(tooBig);
     start(async () => {
       try {
-        const text = await file.text();
-        const r = await upload.preview({ text, fileName: file.name });
+        // A .json file is the process; an HTML page carries it in one embedded block, and only that block is sent on.
+        const content = await file.text();
+        // A .json file (or JSON content type) is the process as it is; anything else is a page, searched for its one embedded block.
+        const found = processTextFrom(content, { json: /\.json$/i.test(file.name) || file.type === "application/json" });
+        if (found.error !== undefined) return setError(found.error);
+        const big = uploadSizeProblem(new Blob([found.text]).size);
+        if (big) return setError(big);
+        const r = await upload.preview({ kind: "file", text: found.text, fileName: file.name });
         if (r.error !== undefined) setError(r.error);
-        else onLoaded({ text, preview: r.preview });
+        else onLoaded({ text: found.text, preview: r.preview });
       } catch {
         setError("Couldn't read that file. Try again.");
+      }
+    });
+  };
+  const fetchLink = () => {
+    const url = link.trim();
+    if (!url) return setError("Paste the link to the page first.");
+    setError(null);
+    start(async () => {
+      try {
+        const r = await upload.preview({ kind: "link", url });
+        if (r.error !== undefined) setError(r.error);
+        else onLoaded({ text: r.text ?? "", preview: r.preview });
+      } catch {
+        setError("Couldn't open that link. Try again.");
       }
     });
   };
@@ -150,12 +171,12 @@ function Choose({ upload, onLoaded, onCancel }: { upload: UploadProcess; onLoade
         )}
       >
         <FileJson aria-hidden className="size-8 text-fg-3" />
-        <span className="text-sm font-medium">{pending ? "Reading…" : "Drop a .json file here, or choose one"}</span>
-        <span className="text-xs text-muted-foreground">A process file in the transpera-process/1 format.</span>
+        <span className="text-sm font-medium">{pending ? "Reading…" : "Drop a .json or .html file here, or choose one"}</span>
+        <span className="text-xs text-muted-foreground">A process file in the transpera-process/1 format, or a Claude Design page that carries one.</span>
         <input
           id="upload-file"
           type="file"
-          accept=".json,application/json"
+          accept=".json,.html,.htm,application/json,text/html"
           className="sr-only"
           onChange={(e) => {
             read(e.target.files?.[0]);
@@ -164,6 +185,24 @@ function Choose({ upload, onLoaded, onCancel }: { upload: UploadProcess; onLoade
           }}
         />
       </label>
+      <form
+        className="flex flex-col gap-1.5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          fetchLink();
+        }}
+      >
+        <label htmlFor="upload-link" className="text-sm font-medium">
+          Or paste a link to a Claude Design page
+        </label>
+        <div className="flex gap-2">
+          <Input id="upload-link" type="url" inputMode="url" placeholder="https://" value={link} onChange={(e) => setLink(e.target.value)} disabled={pending} data-upload-link />
+          <Button type="submit" variant="outline" disabled={pending || !link.trim()} data-upload-fetch>
+            Fetch
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">The page has to be viewable by anyone with the link.</p>
+      </form>
       {error && (
         <p role="alert" className="text-sm text-crit" data-upload-error>
           {error}

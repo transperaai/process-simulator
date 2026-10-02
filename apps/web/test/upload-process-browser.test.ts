@@ -71,7 +71,7 @@ async function choose(page: Page, f: ReturnType<typeof file>, next: "preview" | 
 describe("the Upload process dialog", () => {
   it("offers a file drop, 'Copy prompt for Claude' and 'Download example'", async () => {
     const { page, errors } = await mount();
-    await page.getByText("Drop a .json file here, or choose one").waitFor();
+    await page.getByText("Drop a .json or .html file here, or choose one").waitFor();
     expect(await page.getByRole("button", { name: "Copy prompt for Claude" }).count()).toBe(1);
     expect(await page.getByRole("link", { name: "Download example" }).count()).toBe(1);
     expect(errors).toEqual([]);
@@ -158,7 +158,7 @@ describe("the Upload process dialog", () => {
     expect(await page.locator("[data-upload-create]").count()).toBe(0);
     expect(await page.locator("#upload-name").count()).toBe(0);
     await page.getByRole("button", { name: "Choose a different file" }).click();
-    await page.getByText("Drop a .json file here, or choose one").waitFor();
+    await page.getByText("Drop a .json or .html file here, or choose one").waitFor();
     // The same file name can be chosen again after fixing it.
     f.links[1].to = "call";
     await choose(page, file("bad.json", json(f)));
@@ -250,6 +250,63 @@ describe("the Upload process dialog", () => {
     const items = await page.locator("[data-upload-problems=warning] li").allInnerTexts();
     expect(items).toHaveLength(21);
     expect(items.at(-1)).toBe("…and 10 more.");
+    await page.close();
+  }, 60_000);
+
+  it("takes an HTML file, reading only its embedded process block", async () => {
+    const html = `<!doctype html><html><head><script>var decoy = {"format":"transpera-process/1","name":"Decoy"};</script></head><body><svg></svg><script type="application/vnd.transpera-process+json">${json(example())}</script></body></html>`;
+    const { page, errors } = await mount();
+    await page.setInputFiles("#upload-file", { name: "design.html", mimeType: "text/html", buffer: Buffer.from(html) });
+    await page.waitForSelector("[data-upload-step=preview]");
+    expect(await page.locator("#upload-name").inputValue()).toBe("Enquiry to signed client");
+    expect(await page.locator("[data-upload-counts]").innerText()).toBe("8 steps · 7 links · a pipeline");
+    await page.locator("[data-upload-create]").click();
+    await page.waitForFunction(() => window.uploads.length === 1);
+    // What is sent on is the process text, not the page, and the change log names the file.
+    expect(await page.evaluate(() => window.uploads[0])).toMatchObject({ source: "design.html" });
+    expect(JSON.parse(await page.evaluate(() => window.uploads[0]!.text)).name).toBe("Enquiry to signed client");
+    expect(errors).toEqual([]);
+    await page.close();
+  }, 60_000);
+
+  it("says plainly when an HTML file has no process block, and points to the prompt", async () => {
+    const { page } = await mount();
+    await page.setInputFiles("#upload-file", { name: "plain.html", mimeType: "text/html", buffer: Buffer.from("<html><body><svg></svg></body></html>") });
+    await page.waitForSelector("[data-upload-error]");
+    const text = await page.locator("[data-upload-error]").innerText();
+    expect(text).toContain("This page has no Transpera process in it");
+    expect(text).toContain("Copy prompt for Claude");
+    expect(await page.evaluate(() => window.previews)).toBe(0);
+    await page.close();
+  }, 60_000);
+
+  it("takes a link: the server fetches it, and the preview is the same as for a file, with the link as the source", async () => {
+    const url = "https://claude.example/design/abc";
+    const page$ = `<html><body><script type="application/vnd.transpera-process+json">${json(example())}</script></body></html>`;
+    const { page } = await mount({ ...COMPANY, links: { [url]: page$ } });
+    expect(await page.locator("[data-upload-fetch]").isDisabled()).toBe(true);
+    await page.locator("#upload-link").fill(url);
+    await page.locator("#upload-link").press("Enter");
+    await page.waitForSelector("[data-upload-step=preview]");
+    expect(await page.locator("[data-upload-counts]").innerText()).toBe("8 steps · 7 links · a pipeline");
+    expect(await page.locator("[data-upload-step=preview]").innerText()).toContain(url);
+    await page.locator("[data-upload-create]").click();
+    await page.waitForFunction(() => window.uploads.length === 1);
+    expect(await page.evaluate(() => window.uploads[0])).toMatchObject({ source: url, name: "Enquiry to signed client" });
+    await page.close();
+  }, 60_000);
+
+  it("shows what is wrong with a link in plain words: not found, and a page with no block", async () => {
+    const page$ = "<html><body>Just a drawing</body></html>";
+    const { page } = await mount({ ...COMPANY, links: { "https://claude.example/blank": page$ } });
+    await page.locator("#upload-link").fill("https://nowhere.example/x");
+    await page.locator("[data-upload-fetch]").click();
+    await page.waitForSelector("[data-upload-error]");
+    expect(await page.locator("[data-upload-error]").innerText()).toContain("Couldn't find that web address");
+    await page.locator("#upload-link").fill("https://claude.example/blank");
+    await page.locator("[data-upload-fetch]").click();
+    await page.waitForFunction(() => document.querySelector("[data-upload-error]")?.textContent?.includes("no Transpera process"));
+    expect(await page.locator("[data-upload-step=preview]").count()).toBe(0);
     await page.close();
   }, 60_000);
 });

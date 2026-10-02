@@ -2,10 +2,10 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { checkProcessFileText, type ProcessFileCheck } from "@transpera-flow/db/process-file";
-import { importProcessFile, previewProcessFile, ToolError } from "@transpera-flow/mcp";
+import { checkProcessFileText, processTextFrom, type ProcessFileCheck } from "@transpera-flow/db/process-file";
+import { fetchPublicPage, importProcessFile, LinkError, previewProcessFile, ToolError } from "@transpera-flow/mcp";
 import { isId } from "@/lib/editor/validate";
-import { sourceLabel, uploadSizeProblem, type CreateUploadInput, type CreateUploadResult, type PreviewResult, type UploadPreview } from "@/lib/processes/upload";
+import { sourceLabel, uploadSizeProblem, type CreateUploadInput, type CreateUploadResult, type PreviewInput, type PreviewResult, type UploadPreview } from "@/lib/processes/upload";
 import { NOTICE_COOKIE, noticeValue } from "@/lib/processes/upload-notice";
 import { createClient } from "@/lib/supabase/server";
 
@@ -51,20 +51,42 @@ const failure = (check: ProcessFileCheck, source: string): UploadPreview => ({
   nameTaken: null,
 });
 
-/** Check an uploaded file and say what creating it would do, without writing anything. */
-export async function previewUpload(workspaceId: string, _slug: string, input: { text: string; fileName: string }): Promise<PreviewResult> {
-  if (!isId(workspaceId) || typeof input?.text !== "string" || typeof input.fileName !== "string") return { error: GENERIC };
-  // Cheap checks first, and the person before the file: nothing is parsed for someone who may not upload.
+/**
+ * Check an uploaded file, or a page fetched from a link, and say what creating it would do, without writing anything. For a
+ * link the server does the fetching (https only, public addresses only: packages/mcp/src/fetch-link.ts) and hands the process
+ * text back, so creating it later doesn't fetch the page a second time.
+ */
+export async function previewUpload(workspaceId: string, _slug: string, input: PreviewInput): Promise<PreviewResult> {
+  const link = input?.kind === "link";
+  if (!isId(workspaceId) || (input?.kind !== "file" && !link)) return { error: GENERIC };
+  if (input.kind === "link" ? typeof input.url !== "string" : typeof input.text !== "string" || typeof input.fileName !== "string") return { error: GENERIC };
+  // Cheap checks first, and the person before the file: nothing is fetched or parsed for someone who may not upload.
   const who = await editorContext(workspaceId);
   if ("error" in who) return { error: who.error };
-  const source = sourceLabel(input.fileName);
-  const tooBig = uploadSizeProblem(Buffer.byteLength(input.text));
+  let content: string;
+  let source: string;
+  if (input.kind === "link") {
+    source = sourceLabel(input.url);
+    try {
+      content = await fetchPublicPage(input.url);
+    } catch (e) {
+      return { error: e instanceof LinkError ? e.message : "Couldn't open that link. Make the page viewable by anyone with the link, or download the HTML and upload that." };
+    }
+    const found = processTextFrom(content);
+    if (found.error !== undefined) return { error: found.error };
+    content = found.text;
+  } else {
+    source = sourceLabel(input.fileName);
+    content = input.text;
+  }
+  const tooBig = uploadSizeProblem(Buffer.byteLength(content));
   if (tooBig) return { preview: failure({ file: null, errors: [tooBig], warnings: [] }, source) };
-  const check = checkProcessFileText(input.text);
+  const check = checkProcessFileText(content);
   if (!check.file) return { preview: failure(check, source) };
   try {
     const p = await previewProcessFile(who.ctx, workspaceId, check.file);
     return {
+      ...(input.kind === "link" ? { text: content } : {}),
       preview: {
         source,
         name: check.file.name,

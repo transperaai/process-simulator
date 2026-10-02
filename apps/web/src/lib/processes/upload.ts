@@ -29,8 +29,21 @@ export interface UploadPreview {
   nameTaken: string | null;
 }
 
-/** What the preview action returns: a preview to show, or why there isn't one. */
-export type PreviewResult = { preview: UploadPreview; error?: undefined } | { preview?: undefined; error: string };
+/** What the preview action returns: a preview to show (with the process text, for a link, which the server fetched), or why there isn't one. */
+export type PreviewResult = { preview: UploadPreview; text?: string; error?: undefined } | { preview?: undefined; text?: undefined; error: string };
+
+/** What is previewed: the process text of a file (the browser has already taken it out of an HTML page), or a link for the server to fetch. */
+export type PreviewInput = { kind: "file"; text: string; fileName: string } | { kind: "link"; url: string };
+
+/** The biggest file the browser will read: an HTML page can be large, and only the process block in it is sent on. */
+export const MAX_FILE_BYTES = 5_000_000;
+
+/** Why a chosen file can't be read at all, before it is read. */
+export function fileSizeProblem(bytes: number): string | null {
+  return bytes > MAX_FILE_BYTES
+    ? `That file is ${Math.round(bytes / 1000).toLocaleString("en-GB")} KB, which is too big to be a process file or a Claude Design page. Upload the file Claude made.`
+    : null;
+}
 
 export interface CreateUploadInput {
   /** The file's text, checked again on the server. */
@@ -54,8 +67,19 @@ export function uploadSizeProblem(bytes: number): string | null {
     : null;
 }
 
-/** The file name as the change log says it: no folders, no control characters, at most 200 characters. */
+/** What the change log says the upload came from: a link as it is, a file by its name (no folders); no control characters, at most 300 characters. */
 export function sourceLabel(fileName: string): string {
+  if (/^https:\/\//i.test(fileName.trim())) {
+    // A link is logged as its origin and path only: a query string or fragment can carry a token, and the log is read by others.
+    let shown = fileName.trim();
+    try {
+      const u = new URL(shown);
+      shown = `${u.origin}${u.pathname}`;
+    } catch {
+      shown = shown.split(/[?#]/)[0]!;
+    }
+    return shown.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 300);
+  }
   const base = fileName.split(/[\\/]/).pop() ?? "";
   const clean = base.replace(/[\u0000-\u001f\u007f]/g, "").trim();
   return (clean || "uploaded file").slice(0, 200);

@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { createClient } from "@supabase/supabase-js";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { checkProcessFile, PROCESS_FILE_EXAMPLE, type Database, type ProcessFile } from "@transpera-flow/db";
-import { importProcessFile, previewProcessFile, ToolError } from "../src";
+import { checkProcessFile, checkProcessFileText, PROCESS_FILE_EXAMPLE, processTextFrom, type Database, type ProcessFile } from "@transpera-flow/db";
+import { fetchPublicPage, importProcessFile, previewProcessFile, PUBLIC_POLICY, ToolError } from "../src";
 import type { ToolContext } from "../src/context";
 import { signJwt } from "./helpers";
 
@@ -250,6 +252,42 @@ describe.skipIf(!POSTGREST_URL)("uploading a process file over PostgREST (a draf
     expect((await previewProcessFile(editorCtx, workspaceId, file)).nameTaken).toBeNull();
     const r = await importProcessFile(editorCtx, file, { workspaceId, source: "company.json" });
     expect(r.process.name).toBe(company.name);
+  });
+
+  it("a JSON file, an HTML page with the embedded block, and a link to that page all create the same draft", async () => {
+    const raw = JSON.stringify({ ...JSON.parse(JSON.stringify(PROCESS_FILE_EXAMPLE)), steps: (PROCESS_FILE_EXAMPLE.steps as readonly object[]).map((s) => ({ ...s, ...((s as { role?: string }).role === "Managing director" ? { role: "Consultant" } : {}) })) });
+    const html = `<!doctype html><html><body><svg></svg><script type="application/vnd.transpera-process+json">${raw}</script></body></html>`;
+    const server = createServer((_req, res) => void res.writeHead(200, { "content-type": "text/html" }).end(html));
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const port = (server.address() as AddressInfo).port;
+    try {
+      const policy = { ...PUBLIC_POLICY, allowHttp: true, allowPrivate: true, anyPort: true };
+      const inputs: [string, () => Promise<string>][] = [
+        ["Same: from JSON", async () => raw],
+        ["Same: from HTML", async () => html],
+        ["Same: from a link", () => fetchPublicPage(`http://127.0.0.1:${port}/`, policy)],
+      ];
+      const made = [];
+      for (const [name, get] of inputs) {
+        const found = processTextFrom(await get());
+        expect(found.error).toBeUndefined();
+        const checked = checkProcessFileText(found.text!);
+        expect(checked.errors).toEqual([]);
+        const r = await importProcessFile(editorCtx, checked.file!, { workspaceId, source: name.endsWith("link") ? `http://127.0.0.1:${port}/` : "x", name });
+        const steps = await stepsOf(r.revision_id);
+        const edges = await edgesOf(r.revision_id);
+        const nameOf = new Map(steps.map((s) => [s.id, s.name]));
+        made.push({
+          steps: steps.map((s) => [s.name, s.kind, s.role_id, Number(s.work_hours), Number(s.wait_hours), Number(s.rework_rate), s.x, s.y]).sort(),
+          edges: edges.map((e) => [nameOf.get(e.from_step_id), nameOf.get(e.to_step_id), Number(e.probability), e.label]).sort(),
+        });
+      }
+      expect(made[0]!.steps).toHaveLength(8);
+      expect(made[1]).toEqual(made[0]);
+      expect(made[2]).toEqual(made[0]);
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
   });
 
   it("whatever the preview accepts, create writes: every file the checker passes becomes a draft", async () => {

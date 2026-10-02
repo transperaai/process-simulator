@@ -35,15 +35,16 @@ None: the process is new.
 
 ### First principles
 
-Stored in the draft: 4 of 7 steps changed, 4 filled in (the job, truths, requirements, simplify). `warnings: []`; 3 flags, listed below.
+Stored in the draft: 5 of 7 steps changed and filled in (the job, truths, requirements, simplify, success measures). `warnings: []`; the requirement's `owner_person_id` came back set (Callum Reid); 2 flags, listed below.
 
 - Job: situation is left empty (nobody described it); progress is cited ("What moved, why, what we're doing next month", 00:01:44) and done is cited ("Report within five working days of month end", 00:05:14); who is assumed (retainer clients, from Hana's talk of "the client" and the retainer terms).
 - Truth, with its source: the five-day promise, "Report within five working days of month end" (00:05:14), which Hana says is in the retainer terms.
 - Assumptions, each with a test: the wait for Callum is meetings, not slowness (quoted, 00:03:12); a tracker export that times out costs little to redo (assumed: Hana would not guess, Owen to ask).
 - Requirement: Callum reviews every report ("He reviews every report before it goes out", 00:02:41), owner Callum Reid, step Director review, verdict challenge. Assumed: Hana does not say who set the rule or why, so Callum is named as the person who does the review.
 - Simplify: a template for the commentary ("A template for the commentary", 00:07:51), on Write commentary. Hana calls it a wish.
-- Left empty: delete candidates, root cause and success measures. Nobody proposed a deletion, chained a "why", or stated a target other than the five-day promise (a measure that servicing alone cannot simulate).
-- Flags: no deletes proposed, no root cause, no measures (all open questions below).
+- Measure: the five-day promise as `cycleHours`, `atMost`, target 40 working hours (five working days at 8 h a day; the 40 is assumed arithmetic, the promise is quoted). Servicing alone cannot be simulated yet, so it is not rated until a pipeline runs beside it.
+- Left empty: delete candidates and root cause. Nobody proposed a deletion or chained a "why".
+- Flags: no deletes proposed, no root cause (both open questions below).
 - Nesting: none. Send report ("Export to PDF, email it, a quick note. A quarter of an hour, tops") is a list of small actions with one stated time, so it stays one step.
 
 ### Suggestions
@@ -59,7 +60,7 @@ Five pending, from Hana; nothing changes until someone accepts them on the Sugge
 ### Open questions
 
 - Callum: who set the rule that every report is reviewed, and what would break if some went out without it? (Requirement owner is assumed; no delete candidate.)
-- What is the root cause of the day or two a report waits for Callum, and which target should success measures use? Only the five-day promise was stated.
+- What is the root cause of the day or two a report waits for Callum? Only the five-day promise was stated as a target, so it is the only success measure.
 - How long does Callum's review take? Hana does not know; ask him (Director review `work_hours` is an assumed 0.5).
 - What does Quayside Vets pay per month? Hana: "that was Callum's deal".
 - How often does the tracker export time out, and what does a rerun cost? Hana will not guess; Owen may know.

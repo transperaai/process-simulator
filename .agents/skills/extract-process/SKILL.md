@@ -40,7 +40,7 @@ Leading words, used throughout: **cited**, **assumed**, **ledger** (one line per
    - A child process written in the same import is a separate process: link each transcript to it too when the child's steps cite it.
    - Done when `ok: true`.
 5. **Check the draft.**
-   - Read `warnings`, `checklist`, `conflicts`, `not_overwritten` and the response's `assumptions`.
+   - Read `warnings`, `checklist`, `conflicts`, `not_overwritten` and the response's `assumptions`, then the same fields of every entry in `children[]` (each child process written in the call has its own, with the step that holds it in `step`). Fix a child's problems with the step tools, naming the child process.
    - Fix branch sums or "Nothing leaves this step yet" with `set_routing {step, routes: [{to, probability}]}` (routes sum to 1) or `connect_steps`.
    - For any checklist assumption with no evidence whose `reasoning` starts "Server default for a" or "Given without a cited source", call `update_step {process, step, <field>: <the value you mean>, assumptions: [{field, reasoning}]}`. Reasoning alone keeps the default number.
    - Optional: when an interviewee stated an end-to-end time, call `run_scenario {process, revision: "draft"}` and put `kpi.cycle.mean` (working hours) beside the stated time in the timing notes. A servicing process alone returns `invalid_model` (it runs beside a pipeline): note that and move on.
@@ -90,11 +90,11 @@ When not to nest:
 - A detail given only in passing, with no numbers or people: `notes`.
 
 How (the real shapes, written in the `process_json` of `import_process`):
-- Group: give the step `steps: [...]`. The group takes no `role`, hours, rework, `sla_hours`, `current_wip` or evidence of its own: every number, citation and reasoning goes on the steps inside. `entry` names its first step (default: the first listed). Groups can hold groups. A flat list with `parent: "<group name>"` on each inner step is equivalent.
+- Group: give the step `steps: [...]`. The group takes no `role`, hours, rework, `sla_hours`, `current_wip` or evidence of its own: every number, citation and reasoning goes on the steps inside. `entry` names its first step (default: the first listed). Groups can hold groups. The flat form is equivalent: list the inner steps beside it with `parent: "<group name>"`, and give the group step `kind: "group"` (a step holding a child process takes `kind: "subprocess"`); without the kind the group would be an ordinary task.
 - Child process: give the step `process: {name?, kind?, entity_name?, steps, edges}` (a new process, created in the same call; its name defaults to the step's name), or `child_process: "<existing process id or name>"` (adopted as the child; it must not already sit inside another process, and a process cannot hold itself or an ancestor). The step is then a `subprocess` step with no numbers of its own; the child's steps carry them, with the child's own `start` and `end`.
 - Edges: the parent's `edges` name the group or sub-process step itself on the way in and out (`Qualify to Discovery`). Edges between the steps inside a group go in the same `edges` list, by name. A child process's edges go in its own `process.edges`. Step names stay unique across the whole JSON.
 - Evidence, assumptions, ranges and conflicts work on inner steps exactly as on top-level ones: every number inside still needs a citation or a reasoned value. One import is still one interview, children included.
-- A second interview adds to an existing group or child by listing the group (or the sub-process step with `process: {steps: [...]}`) and only the inner steps it says something about, by their existing names.
+- A second interview adds to an existing group or child by listing the group (or the sub-process step with `process: {steps: [...]}`) and only the inner steps it says something about, by their existing names. Read the child first with `get_process {process: <child name or id>, revision}` for its exact step names; the parent's `get_process` lists the sub-process step but not the child's steps.
 - Report each child process in the summary: it has its own canvas path, checklist and draft, and the consultant publishes it too.
 
 ## First principles
@@ -102,17 +102,21 @@ How (the real shapes, written in the `process_json` of `import_process`):
 Each process has seven short answers about why it exists: the job, hard truths against assumptions, requirements with a named owner, steps that might be deleted, what to simplify then accelerate then automate, the root cause, and success measures. You fill in only what the transcripts support. `update_first_principles` writes to the process's draft (opening one if needed), never to live. `get_first_principles` reads what is there: call it first, and again on a second interview so you add to it.
 
 The tool has no evidence field, so cite inside the text, the way process numbers are cited:
-- A quote goes in as `"<verbatim quote>" (<speaker>, <recorded date>, <hh:mm:ss>)`. The date identifies the interview. The quote rules from "Cited numbers" apply: shortest verbatim span, one contiguous stretch, the speaker's label exactly as written.
-- Anything no speaker said is an assumption: begin it with `Assumed:` and give the reasoning, as for a step assumption. Never present your own reading as a quote, and never leave an item with neither a quote nor `Assumed:`.
+- A quote goes in as `"<verbatim quote>" [<source title> | <speaker> | <hh:mm:ss>]`, with the title exactly as given to `add_source` (it tells two interviews apart, even on the same day). The quote rules from "Cited numbers" apply: shortest verbatim span, one contiguous stretch, the speaker's label exactly as written.
+- Anything no speaker said is an assumption: begin it with `Assumed:` and give the reasoning, as for a step assumption. Never present your own reading as a quote, never put double quotes around words that are not a cited quote (paraphrase with single quotes or none), and never leave an item with neither a quote nor `Assumed:`.
 
 Sections (arguments of `update_first_principles`, all optional; `mode` is `merge` by default, which adds and updates but removes nothing):
 - `job {who, progress, situation, done}`: who the process serves, the progress they want, the situation they come in with, what done looks like. Leave out what nobody described.
 - `statements [{text, kind, source, test}]`: `kind: "truth"` only for something that cannot be argued away (law, contract, a hard capacity), with the quote naming where it comes from in `source` (a truth with no source is shown as an assumption). A belief or habit is `kind: "assumption"`: `source` holds the quote that voiced it, or `Assumed: <reasoning>`, and `test` is one way to prove it wrong.
-- `requirements [{text, owner, why, verdict, step}]`: a rule the process follows. `owner` is a person's name from People, never a team (a team is flagged). If nobody said who set the rule, name the person who enforces it and say so after `Assumed:` in `why`. `why` carries the quote or `Assumed:`. `verdict` is `keep`, `change`, `drop` or `challenge` (default challenge): choose another only if a speaker said so. `step` is the step the rule creates.
+- `requirements [{text, owner, why, verdict, step}]`: a rule the process follows. `owner` is a person's name from People, never a team (a team is flagged). If nobody said who set the rule, name the person who enforces it and say so after `Assumed:` in `why`. `why` carries the quote or `Assumed:`. `verdict` is `keep`, `change`, `drop` or `challenge` (default challenge): choose another only if a speaker said so. `step` is the step the rule creates. A name that matches nobody in People is stored as typed text with no warning, so read `first_principles.requirements[].owner_person_id` in the response: when it is `null`, fix the name (or suggest the person) and send the requirement again.
 - `deletes [{step, breaks_if_removed, agreed_by}]`: only when a speaker says a step may not be needed. Otherwise leave it empty, invent no candidates, and mention the empty list in the summary (the app flags it).
 - `improvements [{stage, text, step}]`: `simplify`, `accelerate` or `automate`, for a change a speaker wished for or described, preferring them in that order. Never accelerate or automate a delete candidate.
 - `why {problem, chain, root}`: the biggest problem a speaker names and each answer to "why?"; `root` is something in the process, not a person. Fill it only when the chain was spoken; otherwise an open question.
-- `measures [{text, kpi, comparator, target, horizon}]`: only a target someone stated ("within five working days"), tied to the engine number it maps to (`kpi`) when there is one; with none, leave `kpi` out and it shows as "not checked by simulation". Make up no target.
+- `measures [{text, kpi, comparator, target, horizon}]`: a target someone stated becomes a measure; make up no target. These rules decide the stored values:
+  - `kpi` is the engine number the target is about: `cycleHours` (average time to complete), `winRate`, `winsPerWeek`, `won`, `newMrr`, `billed`, `labour` or `wipEnd`. If none fits, leave `kpi` and `target` out (it shows as "not checked by simulation") and keep the sentence in `text`.
+  - `target` is in that KPI's unit, as a person reads it: working hours for `cycleHours` (convert days with the workspace's `hours_per_week / 5`, so five working days at 8 h is 40), a percentage for `winRate` (30 means 30%), a currency amount for `newMrr`, `billed` and `labour`, a count for `won`, `winsPerWeek` and `wipEnd`.
+  - `comparator` defaults to `atLeast`, which is wrong for a limit. Words like "within", "under", "no more than", "at most" need `comparator: "atMost"`; "at least", "over" need `atLeast`. Always send it.
+  - Example: Hana says "Report within five working days of month end", the week is 40 hours: `{"text": "...", "kpi": "cycleHours", "comparator": "atMost", "target": 40}`. Without `atMost` the stored measure would read "at least 40 working hours".
 
 After the call, read `warnings` (a step or person name that did not match: fix the name and send again) and `flags` (an owner that is a team, a root cause that stops at a person, an empty delete list, a measure the simulation cannot compute). Fix a flag by re-sending the item, or list it as an open question.
 
@@ -120,7 +124,7 @@ After the call, read `warnings` (a step or person name that did not match: fix t
 
 Issues and solution ideas you find are suggestions for a person to accept on the Suggestions page, never written directly.
 - `propose_issue {title, detail?, rating?, type?, process?, steps?, evidence?, note?}`: a problem a speaker names that touches a step or the process (the tracker export that times out and redoes a client). `detail` says what was said and where, `evidence` uses the suggestion shape (see "Suggestions"), `note` gives your reading, `rating` is `great`, `good`, `bad` or `risk`.
-- `propose_solution_idea {issue, title, steps, evidence?, note?}`: only for an issue that already exists and is open (a number from `list_issues`), with the steps you would place, in order. A change a speaker wished for with no issue behind it goes into first principles `improvements`; if the pain is worth tracking, propose the issue and keep the idea as an open question until it exists.
+- `propose_solution_idea {issue, title, steps, evidence?, note?}`: only for an issue that already exists and is open or being tested (a number from `list_issues`), with the steps you would place, in order. A change a speaker wished for with no issue behind it goes into first principles `improvements`; if the pain is worth tracking, propose the issue and keep the idea as an open question until it exists.
 - Never `log_issue`, and never write an issue or a solution directly. Perception-gap issues are not yours to raise: the app logs one itself when two speakers' numbers for a field are a factor of two or more apart (see "Disagreements and conflicts").
 - If a call answers `switched_off`, an owner has turned that AI switch off (Settings, AI analysis): list the item as an open question and carry on.
 
@@ -261,14 +265,17 @@ A nested step from the same interview. Sam also describes onboarding a client in
 
 If Sam had described onboarding as a process the delivery team runs on its own, the step would instead be `{"name": "Onboard client", "process": {"name": "Client onboarding", "steps": [...], "edges": [...]}}`, or `{"name": "Onboard client", "child_process": "Client onboarding"}` when that process already exists. Had Sam said only "onboarding takes about three hours", it stays one step.
 
-First principles from the same interview, where Sam also said at `[00:08:10]` "the contract says the brief goes out within two days" and at `[00:08:40]` "Dana signs off every brief before it goes". Interview recorded 2026-10-05 (arguments of `update_first_principles`):
+First principles from the same interview, where Sam also said at `[00:08:10]` "the contract says the brief goes out within two days" and at `[00:08:40]` "Dana signs off every brief before it goes". The source was added with the title "Example Co interview: Sam, account manager (2026-10-05)", a 40 hour week (a working day is 8 h). Arguments of `update_first_principles`:
 
 ```json
 {"process": "Client brief",
  "statements": [
-  {"text": "A brief goes out within two days.", "kind": "truth", "source": "\"the contract says the brief goes out within two days\" (Sam, 2026-10-05, 00:08:10)"},
+  {"text": "A brief goes out within two days.", "kind": "truth", "source": "\"the contract says the brief goes out within two days\" [Example Co interview: Sam, account manager (2026-10-05) | Sam | 00:08:10]"},
   {"text": "Every brief needs sign-off before it goes.", "kind": "assumption", "source": "Assumed: Sam names a sign-off but not a rule behind it; it may be habit.", "test": "Send three briefs without sign-off and see whether anyone objects."}],
  "requirements": [
   {"text": "Dana signs off every brief", "owner": "Dana Webb", "step": "Send brief", "verdict": "challenge",
-   "why": "\"Dana signs off every brief before it goes\" (Sam, 2026-10-05, 00:08:40). Assumed: Sam does not say why; Dana is named as owner because she does the sign-off."}]}
+   "why": "\"Dana signs off every brief before it goes\" [Example Co interview: Sam, account manager (2026-10-05) | Sam | 00:08:40]. Assumed: Sam does not say why; Dana is named as owner because she does the sign-off."}],
+ "measures": [
+  {"text": "A brief goes out within two days: \"the contract says the brief goes out within two days\" [Example Co interview: Sam, account manager (2026-10-05) | Sam | 00:08:10]. Assumed: two working days at 8 hours a day is 16 working hours.",
+   "kpi": "cycleHours", "comparator": "atMost", "target": 16}]}
 ```

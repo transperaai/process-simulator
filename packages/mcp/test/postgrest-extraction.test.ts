@@ -172,7 +172,8 @@ describe.skipIf(!POSTGREST_URL)("extraction dry run (Tidewater Digital) over Pos
     // the report's steps are lists of small actions with one stated time each, so none is split into a group.
     const principles = results.find((r) => r.tool === "update_first_principles")!;
     expect(principles.data.warnings).toEqual([]);
-    expect(principles.data.filled).toMatchObject({ job: true, truths: true, reqs: true, saa: true, del: false, why: false, measures: false });
+    expect(principles.data.filled).toMatchObject({ job: true, truths: true, reqs: true, saa: true, del: false, why: false, measures: true });
+    expect(principles.data.first_principles.measures).toEqual([expect.objectContaining({ kpi: "cycleHours", comparator: "atMost", target: 40 })]);
     expect(principles.data.first_principles.requirements[0]).toMatchObject({ owner_person_id: expect.any(String), step_id: step("Director review").id });
     expect(principles.data.first_principles.statements.map((s: { kind: string }) => s.kind)).toEqual(["truth", "assumption", "assumption"]);
     expect(steps.filter((s) => s.parent_step_id !== null || s.kind === "group" || s.kind === "subprocess")).toEqual([]);

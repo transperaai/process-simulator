@@ -264,19 +264,19 @@
         "process": "Monthly client report",
         "job": {
           "who": "Assumed: Tidewater's retainer clients. Hana speaks of 'the client' throughout and the five-day promise is in the retainer terms.",
-          "progress": "Know what moved in their search results, why, and what Tidewater does next: \"What moved, why, what we're doing next month\" (Hana Iqbal, 2026-10-05, 00:01:44).",
-        "done": "The report is in their inbox within five working days of month end: \"Report within five working days of month end\" (Hana Iqbal, 2026-10-05, 00:05:14)."
+          "progress": "Know what moved in their search results, why, and what Tidewater does next: \"What moved, why, what we're doing next month\" [Tidewater Digital interview: Hana Iqbal, account manager (2026-10-05) | Hana Iqbal | 00:01:44].",
+          "done": "The report is in their inbox within five working days of month end: \"Report within five working days of month end\" [Tidewater Digital interview: Hana Iqbal, account manager (2026-10-05) | Hana Iqbal | 00:05:14]."
         },
         "statements": [
           {
             "text": "A report reaches the client within five working days of month end.",
             "kind": "truth",
-            "source": "\"Report within five working days of month end\" (Hana Iqbal, 2026-10-05, 00:05:14). Hana says it is in the retainer terms."
+            "source": "\"Report within five working days of month end\" [Tidewater Digital interview: Hana Iqbal, account manager (2026-10-05) | Hana Iqbal | 00:05:14]. Hana says it is in the retainer terms."
           },
           {
             "text": "A report waits a day or two for the director because he is in meetings, not because he is slow.",
             "kind": "assumption",
-            "source": "\"It sits in Callum's inbox a day or two, because he's always in meetings\" (Hana Iqbal, 2026-10-05, 00:03:12)",
+            "source": "\"It sits in Callum's inbox a day or two, because he's always in meetings\" [Tidewater Digital interview: Hana Iqbal, account manager (2026-10-05) | Hana Iqbal | 00:03:12]",
             "test": "Compare Callum's calendar with the days several reports actually waited."
           },
           {
@@ -290,7 +290,7 @@
           {
             "text": "The director reviews every report before it goes out.",
             "owner": "Callum Reid",
-            "why": "\"He reviews every report before it goes out\" (Hana Iqbal, 2026-10-05, 00:02:41). Assumed: Hana does not say who set the rule or why; Callum is named as owner because he does the review.",
+            "why": "\"He reviews every report before it goes out\" [Tidewater Digital interview: Hana Iqbal, account manager (2026-10-05) | Hana Iqbal | 00:02:41]. Assumed: Hana does not say who set the rule or why; Callum is named as owner because he does the review.",
             "verdict": "challenge",
             "step": "Director review"
           }
@@ -298,8 +298,16 @@
         "improvements": [
           {
             "stage": "simplify",
-            "text": "A template for the commentary: \"A template for the commentary\" (Hana Iqbal, 2026-10-05, 00:07:51). Hana calls it a wish, not how it works today.",
+            "text": "A template for the commentary: \"A template for the commentary\" [Tidewater Digital interview: Hana Iqbal, account manager (2026-10-05) | Hana Iqbal | 00:07:51]. Hana calls it a wish, not how it works today.",
             "step": "Write commentary"
+          }
+        ],
+        "measures": [
+          {
+            "text": "The report is in the client's inbox within five working days of month end: \"Report within five working days of month end\" [Tidewater Digital interview: Hana Iqbal, account manager (2026-10-05) | Hana Iqbal | 00:05:14]. Assumed: five working days at 8 hours a day is 40 working hours.",
+            "kpi": "cycleHours",
+            "comparator": "atMost",
+            "target": 40
           }
         ]
       }

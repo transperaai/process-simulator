@@ -21,7 +21,7 @@ Interview 1 (new process):
 - Routing with no app evidence: Send report's one in ten goes in its `notes`.
 - A process-level promise (five working days) that belongs on the servicing link in Settings.
 - Five suggestions: two people, two clients, one lead source.
-- First principles from the same transcript: a cited truth (the five-day promise), two assumptions with tests (one quoted, one reasoned), a requirement with a named owner, a simplify idea, and the sections left empty because nobody said anything (deletes, root cause, measures). Each item carries a quote as `"<quote>" (<speaker>, <date>, <time>)` or begins `Assumed:`.
+- First principles from the same transcript: a cited truth (the five-day promise), two assumptions with tests (one quoted, one reasoned), a requirement with a named owner, a simplify idea, a success measure from the stated five-day promise (`cycleHours`, `atMost`, 40 working hours: five days at 8 h), and the sections left empty because nobody said anything (deletes, root cause). Each item carries a quote as `"<quote>" [<source title> | <speaker> | <time>]` or begins `Assumed:`.
 - No nesting, on purpose. Send report ("Export to PDF, email it, a quick note") and Owen's Technical check (errors, broken links, page speed) are lists of small actions with one stated time each, so they stay single steps: the case where the skill says not to nest. The skill's own worked example shows a group and a child process.
 
 Interview 2 (`target`):

@@ -84,4 +84,27 @@ describe("Tidewater dry run fixtures", () => {
     expect(text).toMatch(/step 'Check rankings': work_hours is given with neither a citation nor reasoning/);
     expect(text).toMatch(/step 'Draft': work_hours is given with neither a citation nor reasoning/);
   });
+
+  it("refuses numbers on a group written in the flat form (kind group, inner steps naming a parent)", () => {
+    const run = clone(readRun("run-1.json"));
+    const pj = run.calls.find((c) => c.tool === "import_process")!.arguments.process_json as { steps: Record<string, unknown>[] };
+    pj.steps[1] = { ...pj.steps[1]!, name: "Ranking pack", kind: "group" };
+    expect(lintRun(run).join("\n")).toMatch(/step 'Ranking pack': a group or sub-process step has no role, work_hours, wait_hours, rework_rate, evidence, assumptions of its own/);
+  });
+
+  it("refuses an invented quote inside an Assumed: item, a citation of an unknown source, and a target with no comparator", () => {
+    const run = clone(readRun("run-1.json"));
+    const fp = run.calls.find((c) => c.tool === "update_first_principles")!.arguments as {
+      statements: { source: string }[];
+      requirements: { why: string }[];
+      measures: { comparator?: string }[];
+    };
+    fp.statements[2]!.source = 'Assumed: Hana said "it costs nothing to redo".';
+    fp.requirements[0]!.why = fp.requirements[0]!.why.replace("Tidewater Digital interview: Hana Iqbal, account manager (2026-10-05)", "Another interview");
+    delete fp.measures[0]!.comparator;
+    const text = lintRun(run).join("\n");
+    expect(text).toMatch(/a quote outside the citation format/);
+    expect(text).toMatch(/no source is titled "Another interview"/);
+    expect(text).toMatch(/a target needs an explicit comparator/);
+  });
 });

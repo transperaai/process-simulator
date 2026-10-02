@@ -75,6 +75,11 @@ for (const [net4, bits] of [
 for (const [net6, bits] of [
   ["::", 128],
   ["::1", 128],
+  // IPv4-compatible (::a.b.c.d) and IPv4-translated (::ffff:0:a.b.c.d) forms, the local-use NAT64 prefix, and site-local: refused whole.
+  ["::", 96],
+  ["::ffff:0:0:0", 96],
+  ["64:ff9b:1::", 48],
+  ["fec0::", 10],
   // IPv4-mapped and NAT64 forms wrap an IPv4 address (possibly a private one): refuse the forms rather than unpick them.
   ["::ffff:0:0", 96],
   ["64:ff9b::", 96],
@@ -97,6 +102,9 @@ export function isPublicAddress(ip: string): boolean {
   return family === 4 ? !blocked4.check(bare, "ipv4") : !blocked6.check(bare, "ipv6");
 }
 
+/** The longest link taken; real page links are a few hundred characters. */
+export const MAX_LINK = 2_048;
+
 export type Resolver = (host: string) => Promise<string[]>;
 
 const resolveAll: Resolver = async (host) => {
@@ -104,10 +112,12 @@ const resolveAll: Resolver = async (host) => {
   return (await dns.promises.lookup(host, { all: true, verbatim: true })).map((a) => a.address);
 };
 
+const TIMEOUT = "That link took too long to answer. Try again, or download the HTML and upload that.";
 const refused = (what: string) => new LinkError("not_public", `${what} ${NOT_PUBLIC_ADVICE}`);
 
 /** Parse and check a link before anything is fetched. */
 export function checkLink(input: string, policy: FetchPolicy = PUBLIC_POLICY): URL {
+  if (input.length > MAX_LINK) throw new LinkError("invalid", `That link is too long (over ${MAX_LINK.toLocaleString("en-GB")} characters). Paste the plain link to the page.`);
   let url: URL;
   try {
     url = new URL(input.trim());
@@ -123,12 +133,18 @@ export function checkLink(input: string, policy: FetchPolicy = PUBLIC_POLICY): U
 }
 
 /** The address to connect to: the host's, if every address it has is public. */
-async function vet(url: URL, policy: FetchPolicy, resolve: Resolver): Promise<string> {
+async function vet(url: URL, policy: FetchPolicy, resolve: Resolver, signal: AbortSignal): Promise<string> {
   const host = url.hostname.replace(/^\[|\]$/g, "");
   let addresses: string[];
   try {
-    addresses = await resolve(host);
-  } catch {
+    // The name lookup counts against the time limit too: it is raced against the abort, so a resolver that hangs ends the fetch.
+    addresses = await new Promise<string[]>((ok, no) => {
+      if (signal.aborted) return no(new LinkError("timeout", TIMEOUT));
+      signal.addEventListener("abort", () => no(new LinkError("timeout", TIMEOUT)), { once: true });
+      resolve(host).then(ok, no);
+    });
+  } catch (e) {
+    if (e instanceof LinkError) throw e;
     throw new LinkError("not_found", "Couldn't find that web address. Check the link and try again.");
   }
   if (!addresses.length) throw new LinkError("not_found", "Couldn't find that web address. Check the link and try again.");
@@ -161,6 +177,9 @@ function hop(url: URL, address: string, policy: FetchPolicy, signal: AbortSignal
           else cb(null, address, family);
         }) as never,
         signal,
+        // Our own agent, not the global one: an environment proxy (NODE_USE_ENV_PROXY, HTTPS_PROXY) would connect to the proxy and
+        // let it resolve the name, skipping the checked address above.
+        agent: url.protocol === "https:" ? new https.Agent({ keepAlive: false }) : new http.Agent({ keepAlive: false }),
       },
       (res) => {
         const status = res.statusCode ?? 0;
@@ -205,13 +224,13 @@ export async function fetchPublicPage(link: string, policy: FetchPolicy = PUBLIC
   const timer = setTimeout(() => abort.abort(), policy.timeoutMs);
   try {
     for (let redirects = 0; ; redirects++) {
-      const address = await vet(url, policy, resolve);
+      const address = await vet(url, policy, resolve, abort.signal);
       let res: Hop;
       try {
         res = await hop(url, address, policy, abort.signal);
       } catch (e) {
         if (e instanceof LinkError) throw e;
-        if (abort.signal.aborted) throw new LinkError("timeout", "That link took too long to answer. Try again, or download the HTML and upload that.");
+        if (abort.signal.aborted) throw new LinkError("timeout", TIMEOUT);
         throw new LinkError("failed", `Couldn't open that link. ${NOT_PUBLIC_ADVICE}`);
       }
       if (res.status >= 300 && res.status < 400 && res.location) {

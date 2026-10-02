@@ -666,22 +666,109 @@ export function rolesInFile(file: ProcessFile): { name: string; steps: number }[
 
 export const NO_BLOCK_MESSAGE = `This page has no Transpera process in it. The importer only reads a <script type="${PROCESS_FILE_BLOCK_TYPE}"> block and never guesses from the drawing. Ask Claude to add that block, using 'Copy prompt for Claude'.`;
 
+/** Longest attribute section of a script tag that is looked at; a real tag is a few dozen characters. */
+const MAX_TAG = 2_000;
+
+/** The value of the `type` attribute in a script tag's attribute text (`a="b" type='c'`), or null. Linear; the name must be exactly `type`. */
+function typeAttribute(attrs: string): string | null {
+  const n = attrs.length;
+  let i = 0;
+  while (i < n) {
+    while (i < n && /[\s/]/.test(attrs[i]!)) i++;
+    const start = i;
+    while (i < n && !/[\s=/]/.test(attrs[i]!)) i++;
+    const name = attrs.slice(start, i).toLowerCase();
+    while (i < n && /\s/.test(attrs[i]!)) i++;
+    if (attrs[i] !== "=") {
+      if (i === start) i++;
+      continue;
+    }
+    i++;
+    while (i < n && /\s/.test(attrs[i]!)) i++;
+    let value: string;
+    const quote = attrs[i];
+    if (quote === '"' || quote === "'") {
+      const end = attrs.indexOf(quote, i + 1);
+      value = attrs.slice(i + 1, end === -1 ? n : end);
+      i = end === -1 ? n : end + 1;
+    } else {
+      const from = i;
+      while (i < n && !/\s/.test(attrs[i]!)) i++;
+      value = attrs.slice(from, i);
+    }
+    if (name === "type") return value.trim().toLowerCase();
+  }
+  return null;
+}
+
 /**
  * The text of the process block in an HTML page, or why there isn't one. Only a script block of type
- * `application/vnd.transpera-process+json` counts; the first one wins. Text that is already a JSON object (a .json file)
- * is returned as it is.
+ * `application/vnd.transpera-process+json` counts; the first one wins. Comments are skipped, `type` has to be the attribute's
+ * own name (not `data-type`), and a `>` inside a quoted attribute value doesn't end the tag. One pass over the page with
+ * `indexOf`, so a hostile page can't make it slow.
+ *
+ * Text that is already a JSON object is returned as it is: always with `json: true` (a .json file, or a JSON content type);
+ * otherwise only when it parses as JSON, so a page that starts with "{" is still searched for its block.
  */
-export function processTextFrom(content: string): { text: string; error?: undefined } | { text?: undefined; error: string } {
-  const trimmed = content.replace(/^﻿/, "").trim();
-  if (trimmed.startsWith("{")) return { text: trimmed };
-  const blocks = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
-  for (let m = blocks.exec(content); m; m = blocks.exec(content)) {
-    const type = /\btype\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(m[1]!);
-    const value = (type?.[1] ?? type?.[2] ?? type?.[3] ?? "").trim().toLowerCase();
-    if (value !== PROCESS_FILE_BLOCK_TYPE) continue;
-    const body = m[2]!.trim();
-    if (!body) return { error: "The process block in this page is empty. Ask Claude to fill it in, using 'Copy prompt for Claude'." };
-    return { text: body };
+export function processTextFrom(content: string, opts: { json?: boolean } = {}): { text: string; error?: undefined } | { text?: undefined; error: string } {
+  const trimmed = content.replace(/^\uFEFF/, "").trim();
+  if (trimmed.startsWith("{")) {
+    if (opts.json) return { text: trimmed };
+    try {
+      JSON.parse(trimmed);
+      return { text: trimmed };
+    } catch {
+      // Not JSON: look for a block.
+    }
+  } else if (opts.json) return { text: trimmed };
+  const lower = content.toLowerCase();
+  let at = 0;
+  let nextScript = lower.indexOf("<script", at);
+  let nextComment = lower.indexOf("<!--", at);
+  while (nextScript !== -1) {
+    if (nextComment !== -1 && nextComment < at) nextComment = lower.indexOf("<!--", at);
+    if (nextComment !== -1 && nextComment < nextScript) {
+      const end = lower.indexOf("-->", nextComment + 4);
+      if (end === -1) break;
+      at = end + 3;
+      if (nextScript < at) nextScript = lower.indexOf("<script", at);
+      nextComment = lower.indexOf("<!--", at);
+      continue;
+    }
+    const open = nextScript + 7;
+    const after = lower[open];
+    if (after !== undefined && !/[\s>/]/.test(after)) {
+      at = open;
+      nextScript = lower.indexOf("<script", at);
+      continue;
+    }
+    // The tag ends at the first ">" outside quotes.
+    let i = open;
+    let quote = "";
+    const limit = Math.min(lower.length, open + MAX_TAG);
+    for (; i < limit; i++) {
+      const c = lower[i]!;
+      if (quote) {
+        if (c === quote) quote = "";
+      } else if (c === '"' || c === "'") quote = c;
+      else if (c === ">") break;
+    }
+    if (i >= limit) {
+      // No end to the tag within reason: not a tag we read, and what it swallowed isn't looked at again (this keeps the pass linear).
+      at = limit;
+      nextScript = lower.indexOf("<script", at);
+      continue;
+    }
+    const close = lower.indexOf("</script", i + 1);
+    if (close === -1) break;
+    if (typeAttribute(content.slice(open, i)) === PROCESS_FILE_BLOCK_TYPE) {
+      const body = content.slice(i + 1, close).trim();
+      if (!body) return { error: "The process block in this page is empty. Ask Claude to fill it in, using 'Copy prompt for Claude'." };
+      return { text: body };
+    }
+    at = close + 8;
+    nextScript = lower.indexOf("<script", at);
+    if (nextComment !== -1 && nextComment < at) nextComment = lower.indexOf("<!--", at);
   }
   return { error: NO_BLOCK_MESSAGE };
 }

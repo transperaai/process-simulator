@@ -69,7 +69,17 @@ export function uploadSizeProblem(bytes: number): string | null {
 
 /** What the change log says the upload came from: a link as it is, a file by its name (no folders); no control characters, at most 300 characters. */
 export function sourceLabel(fileName: string): string {
-  if (/^https:\/\//i.test(fileName.trim())) return fileName.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 300);
+  if (/^https:\/\//i.test(fileName.trim())) {
+    // A link is logged as its origin and path only: a query string or fragment can carry a token, and the log is read by others.
+    let shown = fileName.trim();
+    try {
+      const u = new URL(shown);
+      shown = `${u.origin}${u.pathname}`;
+    } catch {
+      shown = shown.split(/[?#]/)[0]!;
+    }
+    return shown.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 300);
+  }
   const base = fileName.split(/[\\/]/).pop() ?? "";
   const clean = base.replace(/[\u0000-\u001f\u007f]/g, "").trim();
   return (clean || "uploaded file").slice(0, 200);

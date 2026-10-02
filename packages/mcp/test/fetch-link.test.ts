@@ -100,6 +100,7 @@ describe("which addresses are public", () => {
       "127.0.0.1", "127.255.255.254", "0.0.0.0", "10.0.0.1", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.169.254", "100.64.0.1",
       "192.0.0.1", "198.18.0.1", "224.0.0.1", "255.255.255.255", "240.0.0.1",
       "::1", "::", "fe80::1", "fc00::1", "fd12:3456::1", "ff02::1", "::ffff:127.0.0.1", "::ffff:7f00:1", "::ffff:10.0.0.1", "64:ff9b::7f00:1", "2002:7f00:1::", "2001:db8::1",
+      "::7f00:1", "::a00:5", "::127.0.0.1", "::ffff:0:7f00:1", "64:ff9b:1::7f00:1", "64:ff9b:1:ffff::1", "fec0::1", "feff::1",
     ]) {
       expect(isPublicAddress(ip), ip).toBe(false);
     }
@@ -199,5 +200,35 @@ describe("fetching from a local server standing in for a public one", () => {
     // The name would resolve to the private address the second time; one lookup is made and its answer is used.
     expect(await fetchPublicPage(`http://ok.test:${port}/page`, local(), flip)).toBe(PAGE);
     expect(lookups).toBe(1);
+  });
+
+  it("a link is limited to 2,048 characters", async () => {
+    expect(() => checkLink(`https://example.com/${"a".repeat(2_100)}`)).toThrow(/too long/);
+    expect(() => checkLink(`https://example.com/${"a".repeat(1_900)}`)).not.toThrow();
+  });
+
+  it("counts the name lookup against the time limit (a resolver that hangs ends the fetch)", async () => {
+    const hangs = () => new Promise<string[]>(() => undefined);
+    const started = Date.now();
+    await refusedWith(() => fetchPublicPage("https://slow.test/x", local({ timeoutMs: 300 }), hangs), "timeout", /took too long/);
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
+  it("connects to the checked address even when an environment proxy is configured", async () => {
+    const saved = { use: process.env.NODE_USE_ENV_PROXY, http: process.env.HTTP_PROXY, https: process.env.HTTPS_PROXY };
+    process.env.NODE_USE_ENV_PROXY = "1";
+    // A proxy that is not there: if the request went through it, it would fail.
+    process.env.HTTP_PROXY = "http://127.0.0.1:1";
+    process.env.HTTPS_PROXY = "http://127.0.0.1:1";
+    const before = seen.length;
+    try {
+      expect(await fetchPublicPage(`http://ok.test:${port}/page`, local(), resolver)).toBe(PAGE);
+      expect(seen.length).toBe(before + 1);
+    } finally {
+      for (const [k, v] of [["NODE_USE_ENV_PROXY", saved.use], ["HTTP_PROXY", saved.http], ["HTTPS_PROXY", saved.https]] as const) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
   });
 });

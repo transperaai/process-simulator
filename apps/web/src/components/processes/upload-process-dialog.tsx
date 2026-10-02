@@ -101,8 +101,8 @@ function Choose({ upload, onLoaded, onCancel }: { upload: UploadProcess; onLoade
       try {
         // A .json file is the process; an HTML page carries it in one embedded block, and only that block is sent on.
         const content = await file.text();
-        // Anything that looks like a page (an .html name, or text starting with a tag) is searched for the block; the rest is JSON and checked as such.
-        const found = /\.html?$/i.test(file.name) || /^\s*</.test(content) ? processTextFrom(content) : { text: content, error: undefined };
+        // A .json file (or JSON content type) is the process as it is; anything else is a page, searched for its one embedded block.
+        const found = processTextFrom(content, { json: /\.json$/i.test(file.name) || file.type === "application/json" });
         if (found.error !== undefined) return setError(found.error);
         const big = uploadSizeProblem(new Blob([found.text]).size);
         if (big) return setError(big);

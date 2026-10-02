@@ -51,7 +51,10 @@ function Harness({ options }: { options: HarnessOptions }) {
     };
   }, [open, editor]);
   return (
-    <div style={{ width: 1300, height: 560, display: "flex" }}>
+    // Where the app puts the map: an editor's map fills a flex panel; a read-only one sits in a block, as wide as the page.
+    // (In a bare flex row a read-only map shrinks to its toolbar, and the "drag the map" hint it adds after framing widens
+    // that toolbar, so the panel resizes and the map refits at a time that depends on load: the flake in #99's test.)
+    <div style={options.editable ? { width: 1300, height: 560, display: "flex" } : { width: 1300 }}>
       <ProcessCanvas
         bundle={state?.bundle ?? base}
         editor={editor}

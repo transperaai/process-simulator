@@ -28,14 +28,27 @@ function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] 
 const MRR_HEIGHT = 244;
 
 /** Monthly recurring revenue: the average as a line, and the 10-90% range of the 30 runs as a band behind it. */
-export function MrrChart({ points, horizonMonths, currency }: { points: MrrPoint[]; horizonMonths: number; currency: string }) {
+export function MrrChart({
+  points,
+  horizonMonths,
+  currency,
+  compare,
+  compareName = "With solution",
+}: {
+  points: MrrPoint[];
+  horizonMonths: number;
+  currency: string;
+  /** A second line drawn over the first (the Solution page's "with this solution", same months), in the edit colour. */
+  compare?: MrrPoint[];
+  compareName?: string;
+}) {
   const [ref, measured] = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
   const width = measured || 560;
   const compact = width < 480;
   const m = { l: compact ? 52 : 62, r: compact ? 58 : 72, t: 14, b: 30 };
-  const lows = points.map((p) => p.lo);
-  const highs = points.map((p) => p.hi);
+  const lows = [...points, ...(compare ?? [])].map((p) => p.lo);
+  const highs = [...points, ...(compare ?? [])].map((p) => p.hi);
   const ticks = niceTicks(Math.min(...lows), Math.max(...highs));
   const y0 = ticks[0]!;
   const y1 = ticks[ticks.length - 1]!;
@@ -48,6 +61,8 @@ export function MrrChart({ points, horizonMonths, currency }: { points: MrrPoint
     .reverse()
     .join(" ")} Z`;
   const last = points[points.length - 1]!;
+  const line2 = compare?.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.mean).toFixed(1)}`).join(" ");
+  const last2 = compare?.[compare.length - 1];
   const labelled = new Set(labelIndexes(points.length, Math.max(2, Math.floor((width - m.l - m.r) / 72) + 1)));
   const shown = hover !== null ? points[hover] : null;
   const pointerMove = (clientX: number, left: number) => {
@@ -62,7 +77,7 @@ export function MrrChart({ points, horizonMonths, currency }: { points: MrrPoint
         width={width}
         height={MRR_HEIGHT}
         role="img"
-        aria-label={`Monthly recurring revenue, from ${money(points[0]!.mean)} now to ${money(last.mean)} after ${monthLabel(last.month, horizonMonths).toLowerCase()}, with a range of ${money(last.lo)} to ${money(last.hi)}.`}
+        aria-label={`Monthly recurring revenue, from ${money(points[0]!.mean)} now to ${money(last.mean)} after ${monthLabel(last.month, horizonMonths).toLowerCase()}, with a range of ${money(last.lo)} to ${money(last.hi)}.${last2 ? ` ${compareName}: ${money(last2.mean)} after the same time.` : ""}`}
         className="block overflow-visible"
         onPointerMove={(e) => pointerMove(e.clientX, e.currentTarget.getBoundingClientRect().left)}
         onPointerLeave={() => setHover(null)}
@@ -86,9 +101,18 @@ export function MrrChart({ points, horizonMonths, currency }: { points: MrrPoint
         <path d={line} fill="none" stroke="var(--accent)" strokeWidth={2.25} strokeLinejoin="round" strokeLinecap="round" />
         {points.length <= 8 && points.map((p, i) => <circle key={p.month} cx={x(i)} cy={y(p.mean)} r={3} fill="var(--panel)" stroke="var(--accent)" strokeWidth={2} />)}
         <circle cx={x(points.length - 1)} cy={y(last.mean)} r={4.5} fill="var(--accent)" />
-        <text x={x(points.length - 1) + 9} y={y(last.mean) + 4} className="fill-fg text-[12px] font-semibold tabular-nums">
+        <text x={x(points.length - 1) + 9} y={y(last.mean) + (last2 && last2.mean > last.mean ? 12 : 4)} className="fill-fg text-[12px] font-semibold tabular-nums">
           {money(last.mean)}
         </text>
+        {line2 && last2 && (
+          <g data-compare-line>
+            <path d={line2} fill="none" stroke="var(--edit)" strokeWidth={2.25} strokeLinejoin="round" strokeLinecap="round" strokeDasharray="6 3" />
+            <circle cx={x(compare!.length - 1)} cy={y(last2.mean)} r={4.5} fill="var(--edit)" />
+            <text x={x(compare!.length - 1) + 9} y={y(last2.mean) + (last2.mean > last.mean ? -2 : 12)} className="fill-fg text-[12px] font-semibold tabular-nums">
+              {money(last2.mean)}
+            </text>
+          </g>
+        )}
         {hover !== null && (
           <g pointerEvents="none">
             <line x1={x(hover)} x2={x(hover)} y1={m.t} y2={MRR_HEIGHT - m.b} stroke="var(--fg-3)" strokeDasharray="3 3" />
@@ -119,15 +143,17 @@ export function MrrChart({ points, horizonMonths, currency }: { points: MrrPoint
             <th scope="col">Average</th>
             <th scope="col">Low (10%)</th>
             <th scope="col">High (90%)</th>
+            {compare && <th scope="col">{compareName}</th>}
           </tr>
         </thead>
         <tbody>
-          {points.map((p) => (
+          {points.map((p, i) => (
             <tr key={p.month}>
               <th scope="row">{monthLabel(p.month, horizonMonths)}</th>
               <td>{money(p.mean)}</td>
               <td>{money(p.lo)}</td>
               <td>{money(p.hi)}</td>
+              {compare && <td>{compare[i] ? money(compare[i]!.mean) : ""}</td>}
             </tr>
           ))}
         </tbody>

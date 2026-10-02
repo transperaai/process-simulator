@@ -9,6 +9,8 @@ import { shortDate, type SolutionSummary, type SolutionTest } from "@/lib/issues
 export interface SolutionsData {
   solutions: SolutionRow[];
   links: SolutionIssueRow[];
+  /** Ids of solutions that were built from an AI idea (a built proposal names them). Left out when that isn't known: they read "By hand". */
+  aiIds?: string[];
 }
 
 export const NO_SOLUTIONS_DATA: SolutionsData = { solutions: [], links: [] };
@@ -24,12 +26,11 @@ export const solutionsListHref = (base: string): string => `${base}/solutions`;
 export type SolutionType = "By hand" | "AI block";
 
 /**
- * How a solution was made. A solution does not record which blocks it was built from, so every saved one reads "By hand" for now;
- * A52 (AI ideas, "Build it") will record an AI block's origin and this is where it will show.
+ * How a solution was made: "AI block" when it was built from an AI idea (a built `suggestion_proposals` row records the solution's id in
+ * `applied.solution_id`, passed here as `aiIds`), else "By hand". With no data it reads "By hand".
  */
-export function solutionType(solution: Pick<SolutionRow, "id">): SolutionType {
-  void solution;
-  return "By hand";
+export function solutionType(solution: Pick<SolutionRow, "id">, aiIds?: readonly string[]): SolutionType {
+  return aiIds?.includes(solution.id) ? "AI block" : "By hand";
 }
 
 /**
@@ -104,7 +105,7 @@ export function solutionTests(issueId: string, data: SolutionsData, base: string
   return solutionsForIssue(data, issueId).map(({ solution, link }) => ({
     id: solution.id,
     name: solution.name,
-    type: solutionType(solution),
+    type: solutionType(solution, data.aiIds),
     built: builtDate(solution, now),
     auto: link.auto_verdict ?? "unchecked",
     holds: link.holds_pct === null ? null : link.holds_pct / 100,

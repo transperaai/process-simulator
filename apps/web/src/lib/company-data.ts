@@ -5,12 +5,18 @@ import {
   loadCompanyModel,
   loadLiveRevisions,
   loadSources,
+  loadProposals,
   loadSuggestions,
+  countPendingProposals,
   snapshotModel,
   type CompanyModel,
+  type IssueProposalPayload,
+  type ProposalRow,
+  type SolutionIdeaPayload,
   type SuggestionRow,
 } from "@transpera-flow/db";
 import { COMPANY_AUDIT_TABLES, type AuditEntry } from "./suggestions/audit";
+import type { ProposalLookups } from "./suggestions/proposals";
 import { createClient } from "./supabase/server";
 
 // Reads for the Suggestions page (issue #25), as the signed-in user
@@ -40,6 +46,10 @@ export interface SuggestionsPageData {
   workspace: WorkspaceHead;
   canEdit: boolean;
   suggestions: SuggestionRow[];
+  /** Proposed issues and solution ideas (A52), newest first. */
+  proposals: ProposalRow[];
+  /** What the proposals point at, by name. */
+  lookups: ProposalLookups;
   model: CompanyModel;
   /** Titles of the sources suggestions cite. */
   sources: Record<string, string>;
@@ -49,16 +59,37 @@ export interface SuggestionsPageData {
   people: Record<string, string>;
 }
 
+/** The names the proposals' cards show: processes, steps and the issues ideas are for. */
+export async function proposalLookups(supabase: Awaited<ReturnType<typeof createClient>>, ws: string, proposals: readonly ProposalRow[]): Promise<ProposalLookups> {
+  const links = proposals.flatMap((p) => (p.kind === "issue" ? ((p.payload as IssueProposalPayload).links ?? []) : []));
+  const stepIds = [
+    ...new Set([...links.flatMap((l) => (l.step_id ? [l.step_id] : [])), ...proposals.flatMap((p) => (p.kind === "solution_idea" ? ((p.payload as SolutionIdeaPayload).replaces_step_ids ?? []) : []))]),
+  ];
+  const issueIds = [...new Set(proposals.flatMap((p) => (p.issue_id ? [p.issue_id] : [])))];
+  const [processes, steps, issues] = await Promise.all([
+    links.some((l) => l.process_id) ? supabase.from("processes").select("id, name").eq("workspace_id", ws) : null,
+    stepIds.length ? supabase.from("steps").select("id, name").eq("workspace_id", ws).in("id", stepIds) : null,
+    issueIds.length ? supabase.from("issues").select("id, number, title").eq("workspace_id", ws).in("id", issueIds) : null,
+  ]);
+  for (const r of [processes, steps, issues]) if (r?.error) throw r.error;
+  return {
+    processes: Object.fromEntries((processes?.data ?? []).map((r) => [r.id, r.name])),
+    steps: Object.fromEntries((steps?.data ?? []).map((r) => [r.id, r.name])),
+    issues: Object.fromEntries((issues?.data ?? []).map((r) => [r.id, { number: r.number, title: r.title }])),
+  };
+}
+
 /** The Suggestions page. */
 export async function loadSuggestionsPage(slug: string): Promise<SuggestionsPageData | null> {
   const supabase = await createClient();
   const workspace = await workspaceBySlug(supabase, slug);
   if (!workspace) return null;
   const ws = workspace.id;
-  const [canEdit, canManage, suggestions, model, sources] = await Promise.all([
+  const [canEdit, canManage, suggestions, proposals, model, sources] = await Promise.all([
     supabase.rpc("can_edit_workspace", { ws }),
     supabase.rpc("can_manage_workspace", { ws }),
     loadSuggestions(supabase, ws),
+    loadProposals(supabase, ws),
     loadCompanyModel(supabase, workspace),
     loadSources(supabase, ws),
   ]);
@@ -87,6 +118,8 @@ export async function loadSuggestionsPage(slug: string): Promise<SuggestionsPage
     workspace: { id: workspace.id, name: workspace.name, slug: workspace.slug },
     canEdit: canEdit.data === true,
     suggestions,
+    proposals,
+    lookups: await proposalLookups(supabase, ws, proposals),
     model,
     sources: Object.fromEntries(sources.map((s) => [s.id, s.title])),
     changes,
@@ -109,14 +142,13 @@ export const shellCounts = cache(async (workspaceId: string): Promise<{ processe
   return { processes: processes.count ?? 0, openIssues: issues.count ?? 0, unlinkedSources: unlinked.error ? 0 : (unlinked.data ?? 0) };
 });
 
-/** How many suggestions wait for review (for the workspace nav). */
+/** How many suggestions wait for review (for the workspace nav): company-model changes, proposed issues and solution ideas. */
 export const pendingSuggestionCount = cache(async (workspaceId: string): Promise<number> => {
   const supabase = await createClient();
-  const { count, error } = await supabase
-    .from("suggestions")
-    .select("id", { count: "exact", head: true })
-    .eq("workspace_id", workspaceId)
-    .eq("status", "pending");
-  if (error) throw error;
-  return count ?? 0;
+  const [changes, proposals] = await Promise.all([
+    supabase.from("suggestions").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId).eq("status", "pending"),
+    countPendingProposals(supabase, workspaceId),
+  ]);
+  if (changes.error) throw changes.error;
+  return (changes.count ?? 0) + proposals;
 });

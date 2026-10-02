@@ -2635,6 +2635,83 @@ export type Database = {
           },
         ]
       }
+      suggestion_proposals: {
+        Row: {
+          applied: Json | null
+          created_at: string
+          created_by: string | null
+          created_via: string
+          detail: string | null
+          evidence: Json
+          id: string
+          issue_id: string | null
+          kind: string
+          note: string | null
+          payload: Json
+          proposer_email: string | null
+          proposer_name: string | null
+          review_note: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          title: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          applied?: Json | null
+          created_at?: string
+          created_by?: string | null
+          created_via?: string
+          detail?: string | null
+          evidence?: Json
+          id?: string
+          issue_id?: string | null
+          kind: string
+          note?: string | null
+          payload?: Json
+          proposer_email?: string | null
+          proposer_name?: string | null
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          applied?: Json | null
+          created_at?: string
+          created_by?: string | null
+          created_via?: string
+          detail?: string | null
+          evidence?: Json
+          id?: string
+          issue_id?: string | null
+          kind?: string
+          note?: string | null
+          payload?: Json
+          proposer_email?: string | null
+          proposer_name?: string | null
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "suggestion_proposals_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       suggestions: {
         Row: {
           applied: Json | null
@@ -2878,6 +2955,10 @@ export type Database = {
           source_revision: string
           target_process: string
         }
+        Returns: Json
+      }
+      review_proposals: {
+        Args: { decision: string; ids: string[]; note?: string }
         Returns: Json
       }
       review_suggestions: {

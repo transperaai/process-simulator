@@ -6,7 +6,9 @@ import { reviewSuggestions } from "@/app/w/[slug]/suggestion-actions";
 import { demoSuggestionBackend, useDemoCompany } from "@/lib/demo/company-store";
 import { describeAuditEntry, type AuditEntry } from "@/lib/suggestions/audit";
 import { reviewSummary, type ReviewDecision, type ReviewOutcome } from "@/lib/suggestions/review";
+import { Help } from "@/components/help";
 import { Button } from "@/components/ui/button";
+import { SUGGESTIONS_HELP } from "@/lib/suggestions/proposals";
 import { Input } from "@/components/ui/input";
 
 // The Suggestions page (docs/PRD.md §8 screen 8, §7.1c; issue #25): company-
@@ -100,20 +102,23 @@ export function SuggestionsView({ suggestions, model, sources, canEdit, review, 
 
   return (
     <div className="flex flex-col gap-3">
-      <div role="tablist" aria-label="Which suggestions" className="flex flex-wrap gap-1">
-        {(["pending", "accepted", "rejected", "all"] as const).map((f) => (
-          <Button
-            key={f}
-            type="button"
-            role="tab"
-            aria-selected={filter === f}
-            onClick={() => setFilter(f)}
-            variant={filter === f ? "secondary" : "ghost"}
-            className={filter === f ? "ring-1 ring-border" : undefined}
-          >
-            {f === "all" ? "All" : STATUS_LABEL[f]} <span className="tabular-nums text-muted-foreground">{counts[f]}</span>
-          </Button>
-        ))}
+      <div className="flex flex-wrap items-center gap-1">
+        <div role="tablist" aria-label="Which suggestions" className="flex flex-wrap gap-1">
+          {(["pending", "accepted", "rejected", "all"] as const).map((f) => (
+            <Button
+              key={f}
+              type="button"
+              role="tab"
+              aria-selected={filter === f}
+              onClick={() => setFilter(f)}
+              variant={filter === f ? "secondary" : "ghost"}
+              className={filter === f ? "ring-1 ring-border" : undefined}
+            >
+              {f === "all" ? "All" : STATUS_LABEL[f]} <span className="tabular-nums text-muted-foreground">{counts[f]}</span>
+            </Button>
+          ))}
+        </div>
+        <Help {...SUGGESTIONS_HELP.show} />
       </div>
 
       {canEdit && selectable.length > 0 && (
@@ -129,6 +134,7 @@ export function SuggestionsView({ suggestions, model, sources, canEdit, review, 
             />
             {chosen.length ? `${chosen.length} selected` : "Select all"}
           </label>
+          <Help {...SUGGESTIONS_HELP.bulk} />
           <span className="grow" />
           <Button
             type="button"

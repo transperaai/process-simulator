@@ -949,6 +949,61 @@ export interface SuggestionRow {
   created_by: string | null;
 }
 
+/** What is proposed besides company-model changes (A52, docs/PRD.md §7.1c): an issue, or an idea for a solution. */
+export type ProposalKind = "issue" | "solution_idea";
+/** An issue is accepted or rejected; a solution idea is dismissed (or, in slice 2, built). */
+export type ProposalStatus = "pending" | "accepted" | "rejected" | "dismissed" | "built";
+
+/** A proposed issue's payload: what it would be logged with. A type alias, so it stays assignable to jsonb. */
+export type IssueProposalPayload = {
+  severity?: "critical" | "serious" | "warning" | "info";
+  type?: IssueType;
+  /** What it touches: a whole process (step_id null) or steps. */
+  links?: IssueLinkRef[];
+  target_measure?: string;
+  target_now?: string;
+  target_goal?: string;
+};
+
+/** One step an idea would place. `block_id` names the library block it comes from; `ai` marks an AI block. */
+export type ProposedStep = { key: string; name: string; kind?: string; role?: string; block_id?: string | null; ai?: boolean };
+
+/** A solution idea's payload: the steps it would place and the ones they replace. Its block map is slice 2. */
+export type SolutionIdeaPayload = {
+  steps: ProposedStep[];
+  edges?: { from: string; to: string }[];
+  replaces_step_ids?: string[];
+  /** What the AI expects, in plain words. Not simulated. */
+  expect?: string;
+};
+
+/** What accepting a proposed issue did. */
+export type ProposalApplied = { issue_id: string; number: number | null };
+
+/** A proposed issue or solution idea waiting for a person (docs/PRD.md §5 `suggestion_proposals`). */
+export interface ProposalRow {
+  id: string;
+  workspace_id: string;
+  kind: ProposalKind;
+  title: string;
+  detail: string | null;
+  payload: IssueProposalPayload | SolutionIdeaPayload;
+  evidence: EvidenceCitation[];
+  note: string | null;
+  /** The issue a solution idea is for. */
+  issue_id: string | null;
+  status: ProposalStatus;
+  created_via: "mcp" | "play_link";
+  /** A play-link visitor's name (B4). Their email is stored but not readable by the app's users; B4 decides who sees it. */
+  proposer_name: string | null;
+  applied: ProposalApplied | null;
+  review_note: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  created_by: string | null;
+}
+
 /** An allowed email domain: managed Google accounts on it join as `member`. */
 export interface WorkspaceDomainRow {
   id: string;
@@ -1035,4 +1090,6 @@ export type _SchemaDriftChecks = [
   Assert<Matches<Omit<SolutionIssueRow, "auto_verdict" | "user_verdict">, "solution_issues">>,
   // patch, evidence and applied are jsonb; the check constraints limit the text columns.
   Assert<Matches<Omit<SuggestionRow, "patch" | "evidence" | "applied">, "suggestions">>,
+  // payload, evidence and applied are jsonb; the check constraints limit the text columns.
+  Assert<Matches<Omit<ProposalRow, "payload" | "evidence" | "applied" | "kind" | "status" | "created_via">, "suggestion_proposals">>,
 ];

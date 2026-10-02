@@ -91,6 +91,29 @@ export function SourceLinkingProvider({ workspaceId, mode, sources: initialSourc
     [store, mode],
   );
 
+  const syncIssue = useCallback(
+    async (issueId: string, sourceIds: readonly string[]) => {
+      if (mode === "live") {
+        // The save already took the links of removed sources away and the list's own additions make their links: ask the page again.
+        router.refresh();
+        return;
+      }
+      const target: SourceLinkTarget = { kind: "issue", issueId };
+      const current = linkedTo(target);
+      for (const c of current) {
+        if (sourceIds.includes(c.source.id)) continue;
+        const r = await store.unlink(c.link.id);
+        if (r.status === "ok") setState((s) => ({ ...s, links: s.links.filter((l) => l.id !== c.link.id) }));
+      }
+      for (const id of sourceIds) {
+        if (current.some((c) => c.source.id === id)) continue;
+        const r = await store.link(id, target);
+        if (r.status === "ok") setState((s) => ({ ...s, links: [...s.links, r.link] }));
+      }
+    },
+    [mode, router, store, linkedTo],
+  );
+
   const value = useMemo<SourceLinking>(
     () => ({
       canEdit: mode !== "readonly",
@@ -99,10 +122,11 @@ export function SourceLinkingProvider({ workspaceId, mode, sources: initialSourc
       linkedTo,
       open: (target, label) => setDialog({ target, label }),
       unlink,
+      syncIssue,
       error,
       busy,
     }),
-    [mode, sources, links, linkedTo, unlink, error, busy],
+    [mode, sources, links, linkedTo, unlink, syncIssue, error, busy],
   );
 
   const already = dialog ? new Set(linkedTo(dialog.target).map((x) => x.source.id)) : new Set<string>();

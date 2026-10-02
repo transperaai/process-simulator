@@ -74,7 +74,7 @@ export function Inspector({
             className="flex flex-col gap-1.5 border-t border-line pt-3"
             target={{ kind: "step", processId: step.process_id, stepId: step.id }}
             label={`Step: ${step.name}`}
-            empty="No source linked to this step yet."
+            empty="None linked"
           />
           {isGroup(step) && <GroupPanel bundle={bundle} editor={editor} group={step} setSelection={setSelection} blocks={blocks} />}
           {warnings.get(step.id) && <p role="note" className="rounded-token border border-warn bg-warn-soft px-2 py-1.5 text-xs">{warnings.get(step.id)}</p>}

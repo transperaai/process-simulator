@@ -114,6 +114,17 @@
       }
     },
     {
+      "tool": "link_source",
+      "arguments": {
+        "source": "$source2",
+        "links": [
+          {
+            "process": "Monthly client report"
+          }
+        ]
+      }
+    },
+    {
       "tool": "run_scenario",
       "arguments": {
         "process": "Monthly client report",

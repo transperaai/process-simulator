@@ -92,6 +92,15 @@ export async function linkSource(sourceId: unknown, target: unknown): Promise<Li
 
 /** Take a link away. The source stays; with no link left it is flagged on the Sources page. */
 export async function unlinkSource(linkId: unknown): Promise<RemoveSourceResult> {
+  // A source on an issue's own list that has no link row shows as a link with a made-up id: taking it off is taking it off the list.
+  const listed = typeof linkId === "string" ? /^issue-source:([0-9a-f-]{36}):([0-9a-f-]{36})$/i.exec(linkId) : null;
+  if (listed && isId(listed[1]) && isId(listed[2])) {
+    const supabase = await signedInClient();
+    if (!supabase) return signedOut;
+    const { data, error } = await supabase.from("issue_sources").delete().eq("issue_id", listed[1]).eq("source_id", listed[2]).select("issue_id");
+    if (error) return failure(error);
+    return data?.length ? { status: "ok" } : forbidden;
+  }
   if (!isId(linkId)) return invalid;
   const supabase = await signedInClient();
   if (!supabase) return signedOut;

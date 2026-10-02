@@ -379,7 +379,7 @@ function InsightDialog({
 
             {linking ? (
               // Where the page loads source links: the links themselves, with the Add / Link source dialog. An insight is linked by its detection key.
-              <LinkedSources target={{ kind: "insight", insightKey: insight.key }} label={`Insight: ${insight.title}`} empty="None linked yet." className="flex flex-col gap-1.5" />
+              <LinkedSources target={{ kind: "insight", insightKey: insight.key }} label={`Insight: ${insight.title}`} empty="None linked" linkText="+ Link a source" className="flex flex-col gap-1.5" />
             ) : (
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center justify-between gap-2">

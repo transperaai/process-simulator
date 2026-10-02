@@ -65,7 +65,7 @@ import {
 } from "./building";
 import { resolveProcess, resolveWorkspace, type ProcessWithDraft, type ToolContext, type WorkspaceRef } from "./context";
 import { runTool, ToolError } from "./result";
-import { NEEDS_LINKS, linkJson, linksArg, resolveLinks } from "./source-links";
+import { NEEDS_LINKS, linkJson, linksArg, recordIssueSources, resolveLinks } from "./source-links";
 import { PROCESS_TEMPLATES, type ProcessTemplate } from "./templates";
 
 export const BUILDING_TOOL_NAMES = [
@@ -857,8 +857,8 @@ export function registerBuildingTools(server: McpServer, ctx: ToolContext): void
         "Store a transcript, notes, a data export or a screenshot link from the audit as a source of the workspace, with its speakers and date, and " +
         "link it to what it is evidence for: `links` is required (a process, step, insight, issue or solution; each by id or name). A source linked to " +
         "nothing doesn't count as evidence. Returns the source id that step tools cite in `evidence` (with speaker, verbatim quote, timestamp and the value stated). " +
-        "When you are adding a source only to cite it in the next call (import_process, add_step or update_step evidence), pass `link_later: true` instead of `links`: " +
-        "citing it links it to those steps.",
+        "Only when you are adding a source to cite in import_process, add_step or update_step evidence, and the process it describes does not exist yet, pass `link_later: true` instead of `links`: " +
+        "citing it links it to those steps, and you then call link_source for the process.",
       inputSchema: {
         title: z.string().trim().min(1).max(200),
         kind: z.enum(["transcript", "notes", "data", "screenshot"]).optional().describe("Default transcript."),
@@ -867,7 +867,7 @@ export function registerBuildingTools(server: McpServer, ctx: ToolContext): void
         body: z.string().max(500_000).optional().describe("The transcript or notes text."),
         file_url: z.string().regex(/^https?:\/\/\S+$/).max(2000).optional().describe("Link to the recording or screenshot."),
         links: linksArg.optional().describe("What the source is evidence for: at least one of { process }, { step } (with `process` if the name is not unique), { insight } (a detection key), { issue } (number, id or title), { solution }."),
-        link_later: z.boolean().optional().describe("Only when `links` is left out: you will cite this source in the next call, which links it. Until then it shows as 'Not linked to anything yet'."),
+        link_later: z.boolean().optional().describe("import_process / add_step / update_step only, when `links` is left out: citing the source in their evidence links it to those steps, and you then call link_source for the process. Until then it shows as 'Not linked to anything yet'."),
         workspace: workspaceArg,
       },
     },
@@ -896,6 +896,7 @@ export function registerBuildingTools(server: McpServer, ctx: ToolContext): void
           const { data: id, error } = await ctx.db.rpc("add_source", { p_workspace: ws.id, p_source: fields, p_links: resolved.targets.map(linkJson) });
           if (error || !id) throw writeError(error ?? {}, "add sources");
           sourceId = id;
+          await recordIssueSources(ctx, ws.id, id, resolved.targets);
         } else {
           const { data, error } = await ctx.db.from("sources").insert({ workspace_id: ws.id, ...fields }).select("id").single();
           if (error) throw writeError(error, "add sources");
@@ -938,7 +939,10 @@ export function registerBuildingTools(server: McpServer, ctx: ToolContext): void
         const already: string[] = [];
         for (const [i, t] of resolved.targets.entries()) {
           const { error } = await ctx.db.from("source_links").insert({ workspace_id: ws.id, source_id: source.id, ...linkColumns(t) });
-          if (!error) added.push(resolved.text[i]!);
+          if (!error) {
+            added.push(resolved.text[i]!);
+            await recordIssueSources(ctx, ws.id, source.id, [t]);
+          }
           else if (error.code === "23505") already.push(resolved.text[i]!);
           else throw writeError(error, "link sources");
         }

@@ -119,7 +119,7 @@ export function StepDetail({
           className="mt-3 flex flex-col gap-1.5"
           target={{ kind: "step", processId: step.process_id, stepId: step.id }}
           label={`Step: ${step.name}`}
-          empty="No source linked to this step yet."
+          empty="None linked"
         />
       ) : (
         <List title="Sources" items={sources} empty="No source cited for this step's numbers." />

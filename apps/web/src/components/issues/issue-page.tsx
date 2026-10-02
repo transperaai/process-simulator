@@ -28,6 +28,7 @@ import { draftFromIssue, issueFormOptions, toSaveInput } from "@/lib/issues/draf
 import { historyLines, isOpenIssue, issueHref, loggedLine, resolvedBar, type HistoryNames, type SolutionTest } from "@/lib/issues/pages";
 import { mapFeed, registerEntries, stepRatingOf } from "@/lib/issues/register";
 import { useIssues } from "@/lib/issues/use-issues";
+import { editSourceIds } from "@/lib/sources/links";
 import { NO_SOLUTIONS_DATA, effectiveVerdict, solutionHref, solutionTests, solutionsForIssue, type SolutionsData } from "@/lib/solutions/cards";
 import { useDemoSolutions } from "@/lib/solutions/demo";
 import { ratingOfStored } from "@transpera-flow/engine";
@@ -395,13 +396,15 @@ export function IssuePage(props: IssuePageProps) {
       <AcknowledgeDialog
         open={edit}
         mode="edit"
-        draft={draftFromIssue(issue)}
+        // Where the page loads source links, the sources it shows are the links (they change under "+ Link" and the x, which this
+        // issue's copy from the page load doesn't see): the dialog starts from those, or saving would put back what was just removed.
+        draft={{ ...draftFromIssue(issue), sourceIds: editSourceIds(issue.source_ids, sourceLinking ? sourceLinking.linkedTo({ kind: "issue", issueId: issue.id }).map((x) => x.source.id) : null) }}
         issueNumber={issue.number}
         options={options}
         busy={state.busy}
         error={state.error}
         onClose={() => setEdit(false)}
-        onSubmit={(draft) => state.save(toSaveInput(draft, options)).then((r) => r && (refresh(), r))}
+        onSubmit={(draft) => state.save(toSaveInput(draft, options)).then((r) => r && (void sourceLinking?.syncIssue(issue.id, draft.sourceIds), refresh(), r))}
       />
       <ResolveDialog
         open={resolving}

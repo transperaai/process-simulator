@@ -34,6 +34,11 @@ export interface SourceLinking {
   /** Open the Add / Link source dialog for a thing. `label` is what it is called ("Step: Check fit"). */
   open: (target: SourceLinkTarget, label: string) => void;
   unlink: (link: SourceLinkRow) => Promise<void>;
+  /**
+   * The issue's own list of sources was just saved with these (the issue page's Edit dialog): bring the links in line, so the page
+   * shows what the dialog saved. Live, the server has done it and the page is asked for again; in the demo the tab's store is updated.
+   */
+  syncIssue: (issueId: string, sourceIds: readonly string[]) => Promise<void>;
   error: string | null;
   busy: boolean;
 }
@@ -56,6 +61,7 @@ export function LinkedSources({
   target,
   label,
   empty = "None linked yet.",
+  linkText = "+ Link",
   heading = "Sources",
   hideTitle = false,
   className,
@@ -64,6 +70,8 @@ export function LinkedSources({
   /** What the thing is called, for the dialog ("Step: Check fit"). */
   label: string;
   empty?: string;
+  /** The button's words ("+ Link a source" in the insight pop-up). */
+  linkText?: string;
   heading?: string;
   /** The page already has a title for it (a section called Sources): show only the "+ Link". */
   hideTitle?: boolean;
@@ -84,7 +92,7 @@ export function LinkedSources({
         {linking.canEdit && (
           <span className="flex items-center">
             <Button type="button" variant="ghost" size="sm" onClick={() => linking.open(target, label)} aria-label={`Link a source to ${label}`}>
-              + Link
+              {linkText}
             </Button>
             <Help {...LINKED_SOURCES_HELP.link} />
           </span>

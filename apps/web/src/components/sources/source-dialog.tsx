@@ -56,6 +56,11 @@ export const SOURCE_DIALOG_HELP = {
     description: "What this source is evidence for. A source that isn't linked to anything doesn't count as evidence, so pick at least one thing. You can link it to more things afterwards.",
     example: "A step, when the quote is about how long that step takes.",
   },
+  choice: {
+    label: "New or existing source",
+    description: "Add a new source here, or link one you have already added to this. Either way, it is linked to the thing you opened this from.",
+    example: "Use a source you already have when the ops notes also back up this step.",
+  },
   existing: {
     label: "Source",
     description: "A source you have already added. Linking it here doesn't change what else it is linked to.",
@@ -172,13 +177,14 @@ function Form({ targets, source, preset, presetLabel, existingSources, onSubmit,
       }}
     >
       {canPickExisting && (
-        <div role="group" aria-label="New or existing" className="flex flex-wrap gap-1.5">
+        <div role="group" aria-label="New or existing" className="flex flex-wrap items-center gap-1.5">
           <ChoiceChip on={use === "new"} onPick={() => setUse("new")}>
             Add a new source
           </ChoiceChip>
           <ChoiceChip on={use === "existing"} onPick={() => setUse("existing")}>
             Use a source you already have
           </ChoiceChip>
+          <Help {...SOURCE_DIALOG_HELP.choice} />
         </div>
       )}
       {existing ? (

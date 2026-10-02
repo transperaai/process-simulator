@@ -128,6 +128,22 @@ export function targetValue(target: SourceLinkTarget): string {
   }
 }
 
+/**
+ * The sources the issue's Edit dialog starts with. Where the page loads source links, those (they change under "+ Link" and the x,
+ * which the issue's copy from the page load doesn't see: starting from it would put back what was just removed and drop what was just
+ * linked); otherwise the issue's own list.
+ */
+export const editSourceIds = (issueSourceIds: readonly string[], linked: readonly string[] | null): string[] => [...(linked ?? issueSourceIds)];
+
+/**
+ * The sources a save takes off an issue's list: on it before, not in what was saved. Only their links go: a link made elsewhere
+ * meanwhile (another tab, the MCP `link_source`) is on no list the save knew of, and stays.
+ */
+export const sourcesRemovedBySave = (listedBefore: readonly string[], saved: readonly string[]): string[] => {
+  const kept = new Set(saved);
+  return listedBefore.filter((id) => !kept.has(id));
+};
+
 /** The plain message under the "Link it to (required)" picker when nothing is chosen (the prototype's words). */
 export const NEEDS_A_LINK = "Pick what this source is evidence for.";
 export const NEEDS_A_TITLE = "Give the source a title.";

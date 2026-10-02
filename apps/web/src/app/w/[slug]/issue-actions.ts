@@ -5,6 +5,7 @@ import type { SaveOutcome } from "@/lib/fields/field-controller";
 import { saveField, saveFields } from "@/lib/fields/server";
 import { ALREADY_RESOLVED, ALREADY_TRACKED, type RemoveIssueResult, type SaveIssueResult } from "@/lib/issues/store";
 import { cleanFieldValue, isId, isIssueField, parseIssueInput, parsePromoteInput, parseResolveInput, parseSaveInput, type Scalar } from "@/lib/issues/validate";
+import { sourcesRemovedBySave } from "@/lib/sources/links";
 import { createClient } from "@/lib/supabase/server";
 
 // Logging, tracking, editing and deleting issues (issue #17, reworked in #112). Every write runs
@@ -56,14 +57,17 @@ async function write(
 ): Promise<SaveIssueResult> {
   const supabase = await signedInClient();
   if (!supabase) return signedOut;
+  // The issue's own list of sources before the save: the sources this save takes off it are the ones whose links go too (A53). A link
+  // made elsewhere meanwhile (another tab, the MCP link_source) is not on that list and stays.
+  const before =
+    args.id && args.sources
+      ? ((await supabase.from("issue_sources").select("source_id").eq("issue_id", args.id)).data ?? []).map((r) => r.source_id)
+      : [];
   const saved = await saveIssue(supabase, { workspaceId, ...args });
   if ("error" in saved) return failure(saved.error);
-  // The issue's sources were replaced by `sources`: a source taken off the list is taken off the issue's source links too (A53),
-  // or the issue would still show it. (Adding needs nothing: a trigger links what the list gains.)
   if (args.sources && args.id) {
-    const kept = args.sources.filter((s) => /^[0-9a-f-]{36}$/i.test(s));
-    const gone = supabase.from("source_links").delete().eq("kind", "issue").eq("issue_id", saved.id);
-    await (kept.length ? gone.not("source_id", "in", `(${kept.join(",")})`) : gone);
+    const removed = sourcesRemovedBySave(before, args.sources);
+    if (removed.length) await supabase.from("source_links").delete().eq("kind", "issue").eq("issue_id", saved.id).in("source_id", removed);
   }
   const issue = await loadIssue(supabase, workspaceId, saved.id);
   return issue ? { status: "ok", issue } : forbidden;

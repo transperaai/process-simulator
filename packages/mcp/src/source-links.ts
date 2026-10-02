@@ -110,6 +110,16 @@ export async function resolveLinks(ctx: ToolContext, workspace: { id: string; na
   return { targets, known, text: targets.map((t) => describeLink(t, known)) };
 }
 
+/**
+ * An issue keeps its own list of sources too (`issue_sources`), which its history records ("linked a source"): add a source to it
+ * when it is linked to the issue, as the app does. Best effort: a detected issue has no list, and a source already on it is fine.
+ */
+export async function recordIssueSources(ctx: ToolContext, workspaceId: string, sourceId: string, targets: readonly SourceLinkTarget[]): Promise<void> {
+  for (const t of targets) {
+    if (t.kind === "issue") await ctx.db.from("issue_sources").insert({ issue_id: t.issueId, source_id: sourceId, workspace_id: workspaceId });
+  }
+}
+
 /** The JSON `add_source` takes for a link. */
 export const linkJson = (t: SourceLinkTarget) => {
   const c = linkColumns(t);

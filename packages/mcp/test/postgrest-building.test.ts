@@ -421,6 +421,9 @@ describe.skipIf(!POSTGREST_URL)("MCP process building over PostgREST (drafts onl
     expect(ok.data.links).toEqual(["Process: Sales pipeline", "Step: Discovery", `Issue #${issueNumber}`]);
     const made = await admin.query("select kind from source_links where source_id = $1 order by kind", [ok.data.source.id]);
     expect(made.rows.map((r) => r.kind)).toEqual(["issue", "process", "step"]);
+    // The issue's own list of sources records it too, so its history says "linked a source".
+    const listed = await admin.query("select count(*)::int as n from issue_sources s join issues i on i.id = s.issue_id where s.source_id = $1 and i.number = $2 and i.workspace_id = $3", [ok.data.source.id, issueNumber, workspaceId]);
+    expect(listed.rows[0].n).toBe(1);
 
     // link_source adds more, and says what was already there.
     const more = await call<{ added: string[]; already_linked: string[] }>(editor, "link_source", {
@@ -430,6 +433,11 @@ describe.skipIf(!POSTGREST_URL)("MCP process building over PostgREST (drafts onl
     expect(more.ok, JSON.stringify(more)).toBe(true);
     expect(more.data.already_linked).toEqual(["Process: Sales pipeline"]);
     expect(more.data.added).toHaveLength(2);
+    // link_source to an issue does the same.
+    const second = await call<{ added: string[] }>(editor, "link_source", { source: "Ops notes", links: [{ issue: issueNumber }] });
+    expect(second.ok, JSON.stringify(second)).toBe(true);
+    const listed2 = await admin.query("select count(*)::int as n from issue_sources s join issues i on i.id = s.issue_id join sources o on o.id = s.source_id where o.title = 'Ops notes' and i.number = $1 and i.workspace_id = $2", [issueNumber, workspaceId]);
+    expect(listed2.rows[0].n).toBe(1);
     // An empty list is refused by the tool's input schema (at least one link), before the tool runs: the client gets a protocol error, not a result.
     const empty = await editor.callTool({ name: "link_source", arguments: { source: "Ops walkthrough", links: [] } }).catch((e: Error) => e);
     expect(empty instanceof Error ? empty.message : JSON.stringify(empty)).toMatch(/at least 1|too_small|Too small/i);

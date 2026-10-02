@@ -62,6 +62,7 @@ export function lintRun(run: Run): string[] {
   const sources = new Map<string, Transcript>();
   let imports = 0;
   let adds = 0;
+  const lateSources = new Map<string, number>();
 
   const transcriptOf = (ref: unknown, where: string): Transcript | null => {
     const t = typeof ref === "string" ? sources.get(ref.replace(/^\$/, "")) : undefined;
@@ -146,6 +147,7 @@ export function lintRun(run: Run): string[] {
       const body = substitute(args.body) as string;
       const speakers = (args.speakers as string[] | undefined) ?? [];
       // A source must be linked to something: either named now (`links`), or by the import that cites it (`link_later`).
+      if (args.link_later === true && call.save) lateSources.set(call.save, i);
       if (!arr(args.links).length && args.link_later !== true) problems.push(`${where}: pass link_later: true (the import links it) or links`);
       if (call.save) sources.set(call.save, { speakers, body });
       else problems.push(`${where}: save the source id so later calls can cite it`);
@@ -170,6 +172,11 @@ export function lintRun(run: Run): string[] {
       } else lintEvidence(args.evidence, where);
       if (!String(args.note ?? "").trim() && call.tool !== "set_demand") problems.push(`${where}: a suggestion carries a note with your reading`);
     }
+  }
+  // A source added with link_later is linked to the process after the import that cites it.
+  for (const [id, at] of lateSources) {
+    const linked = run.calls.some((c, i) => i > at && c.tool === "link_source" && c.arguments.source === `$${id}`);
+    if (!linked) problems.push(`source '${id}' is added with link_later but never linked with link_source after the import`);
   }
   if (imports !== adds) problems.push(`${imports} imports for ${adds} sources: one import per interview`);
   return problems;

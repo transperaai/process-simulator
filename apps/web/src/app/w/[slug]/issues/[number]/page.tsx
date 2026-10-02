@@ -42,7 +42,7 @@ export default async function WorkspaceIssuePage(props: PageProps<"/w/[slug]/iss
   const base = `/w/${slug}`;
   return (
     <Page title={issue.number ? `Issue #${issue.number}` : "Issue"} eyebrow="Improve" width="max-w-6xl" hideHeader>
-      <SourceLinkingScope workspaceId={ws} sources={sources} canEdit={canEdit}>
+      <SourceLinkingScope workspaceId={ws} sources={sources} canEdit={canEdit} issueSources={{ issueId: issue.id, sourceIds: issue.source_ids }}>
       <IssuePage
         issue={issue}
         issues={issues}

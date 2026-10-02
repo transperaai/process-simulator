@@ -51,6 +51,22 @@ see the whole picture; it needs editing, history and versions.
   the map are for closed cards, as before).
 - Anything that lists processes must go through `listProcesses` (which excludes the company map unless asked) or
   filter `is_company`. MCP `get_workspace_summary` and `get_process` show the map; every other tool refuses it.
+- Until slice 2, the company process is **locked against signed-in people**: guards on `processes` and
+  `process_revisions` refuse renames, kind, parent and revision-pointer changes, any process taking it as parent, and any
+  creation, change or deletion of its revisions (so `open_draft`, `publish_process`, `restore_version` stop on it);
+  `duplicate_version` refuses it. Slice 2 lifts these guards for editors (`private.company_signed_in`).
+- **Slice 2 blockers (known, not fixed in slice 1):**
+  1. `sync_company_map` deletes `subprocess` steps whose `child_process_id` is null and re-adds a holder for any
+     top-level process the revision lacks, including in an open draft: a holder someone deliberately removed from a draft
+     would come back, and an empty holder step they added would be deleted. Slice 2 must decide what "off the map" means
+     (a removed holder is a choice) before the editor exists.
+  2. `restore_version` keeps a holder's `child_process_id` only when the child's parent is the owner process, so
+     restoring a company-map version would unlink every holder (the company map has no children by parent), and
+     `duplicate_version` would copy holders with no children. Both need the same awareness as `holder_allows`.
+  3. The sync triggers (`sync_company_map`, the rename and kind updates) edit the live (published) revision, and a
+     draft, in place as `SECURITY DEFINER`, bypassing `edit_drafts_only`. That is fine for a layout that follows the
+     processes, but versions in the history are then not immutable. Slice 2 must route sync into the draft (and publish
+     it as a new version) instead.
 - Slice 2 needs: an editor route for the company process, a loader that includes it (`listProcesses(..., { includeCompany: true })`),
   and a decision on whether placing a process on a map in a draft should also create the holder in a later published
   version (the sync trigger already adds holders to an open draft).

@@ -70,8 +70,8 @@ export function defaultCompanyPart(workspaceId: string, parts: readonly ProcessP
   const tallest = Math.max(0, ...heights);
   const steps: StepRow[] = [];
   columns.forEach((col, ci) => {
-    const x = ci * (COMPANY_CARD.width + COMPANY_GAP.x);
-    let y = (tallest - heights[ci]!) / 2;
+    // Pipelines are always column 0 and servicing processes column 1, even when the other kind is missing.
+    const x = col[0]!.process.kind === "servicing" ? COMPANY_CARD.width + COMPANY_GAP.x : 0;    let y = (tallest - heights[ci]!) / 2;
     for (const part of col) {
       steps.push(holder(workspaceId, revisionId, part, x, y));
       y += COMPANY_CARD.height + COMPANY_GAP.y;

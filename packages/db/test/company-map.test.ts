@@ -122,6 +122,58 @@ describe("keeping the map in step with the processes", () => {
   });
 });
 
+describe("the map follows a process's kind, and fixed columns", () => {
+  it("moves a process to the other column and rebuilds its handoff lines when its kind changes", async () => {
+    const ws = (await q("insert into workspaces (name, slug) values ('Kinds', 'kinds-company-map') returning id"))[0].id;
+    const [a, b] = [randomUUID(), randomUUID()];
+    await q("insert into processes (id, workspace_id, name, kind) values ($1, $2, 'Sales', 'pipeline'), ($3, $2, 'Delivery', 'servicing')", [a, ws, b]);
+    expect((await stored(ws)).edges).toEqual([{ f: a, t: b }]);
+    await q("update processes set kind = 'servicing' where id = $1", [a]);
+    const got = await stored(ws);
+    expect(got.holders.find((h) => h.pid === a)).toMatchObject({ x: 288 });
+    // Both are servicing now: no pipeline hands anything on.
+    expect(got.edges).toEqual([]);
+    await q("update processes set kind = 'pipeline' where id = $1", [b]);
+    const back = await stored(ws);
+    expect(back.holders.find((h) => h.pid === b)).toMatchObject({ x: 0 });
+    expect(back.edges).toEqual([{ f: b, t: a }]);
+  });
+
+  it("keeps pipelines in column 0 and servicing in column 1 when the first processes were servicing", async () => {
+    const ws = (await q("insert into workspaces (name, slug) values ('Columns', 'columns-company-map') returning id"))[0].id;
+    const [s, p] = [randomUUID(), randomUUID()];
+    await q("insert into processes (id, workspace_id, name, kind) values ($1, $2, 'Delivery', 'servicing')", [s, ws]);
+    await q("select private.relayout_company_map($1)", [ws]);
+    expect((await stored(ws)).holders[0]).toMatchObject({ x: 288, y: 0 });
+    await q("insert into processes (id, workspace_id, name, kind) values ($1, $2, 'Sales', 'pipeline')", [p, ws]);
+    const got = await stored(ws);
+    expect(got.holders.find((h) => h.pid === p)).toMatchObject({ x: 0, y: 0 });
+    expect(got.edges).toEqual([{ f: p, t: s }]);
+  });
+
+  it("gives processes made at the same moment their own place and lines", async () => {
+    const ws = (await q("insert into workspaces (name, slug) values ('Together', 'together-company-map') returning id"))[0].id;
+    await q("insert into processes (workspace_id, name, kind) values ($1, 'Seed pipeline', 'pipeline')", [ws]);
+    const other = new (await import("pg")).default.Client({ connectionString: db.url });
+    await other.connect();
+    try {
+      await db.client.query("begin");
+      const first = randomUUID();
+      await db.client.query("insert into processes (id, workspace_id, name, kind) values ($1, $2, 'First', 'pipeline')", [first, ws]);
+      // A second connection inserts while the first is still open: it waits for the first's sync, then adds below it.
+      const second = randomUUID();
+      const racing = other.query("insert into processes (id, workspace_id, name, kind) values ($1, $2, 'Second', 'pipeline')", [second, ws]);
+      await new Promise((r) => setTimeout(r, 300));
+      await db.client.query("commit");
+      await racing;
+      const ys = (await stored(ws)).holders.map((h) => h.y);
+      expect(new Set(ys).size).toBe(ys.length);
+    } finally {
+      await other.end();
+    }
+  });
+});
+
 describe("who may touch the company map", () => {
   const ws = northbeamBundle().workspace.id;
 
@@ -146,7 +198,32 @@ describe("who may touch the company map", () => {
     await rejects((c) => c.query("update processes set is_company = false where id = $1", [company.id]), /become, or stop being/);
     await rejects((c) => c.query("update processes set is_company = true where id = (select id from processes where workspace_id = $1 and not is_company limit 1)", [ws]), /become, or stop being/);
     await rejects((c) => c.query("delete from processes where id = $1", [company.id]), /can't be deleted/);
-    await rejects((c) => c.query("update processes set parent_process_id = (select id from processes where workspace_id = $1 and not is_company limit 1) where id = $2", [ws, company.id]), /processes_company_is_top/);
+    await rejects((c) => c.query("update processes set parent_process_id = (select id from processes where workspace_id = $1 and not is_company limit 1) where id = $2", [ws, company.id]), /can.t be changed yet|processes_company_is_top/);
+  });
+
+  it("refuses a company map as a process's parent, and any change to the company row by an editor", async () => {
+    const [company] = await q("select id, live_revision_id from processes where workspace_id = $1 and is_company", [ws]);
+    const [svc] = await q("select id from processes where workspace_id = $1 and kind = 'servicing' order by id limit 1", [ws]);
+    await rejects((c) => c.query("update processes set parent_process_id = $1 where id = $2", [company.id, svc.id]), /can't be a process's parent/);
+    await rejects((c) => c.query("insert into processes (workspace_id, name, parent_process_id) values ($1, 'Under the map', $2)", [ws, company.id]), /can't be a process's parent/);
+    await rejects((c) => c.query("update processes set name = 'Renamed' where id = $1", [company.id]), /can't be changed yet/);
+    await rejects((c) => c.query("update processes set kind = 'servicing' where id = $1", [company.id]), /can't be changed yet/);
+    await rejects((c) => c.query("update processes set live_revision_id = null where id = $1", [company.id]), /can't be changed yet/);
+    await rejects((c) => c.query("update processes set draft_revision_id = live_revision_id where id = $1", [company.id]), /can't be changed yet/);
+    // Its revisions can't be made, changed or deleted, which stops every way of editing and publishing it.
+    await rejects((c) => c.query("select open_draft($1)", [company.id]), /can't be versioned yet/);
+    await rejects((c) => c.query("insert into process_revisions (workspace_id, process_id, number, status) values ($1, $2, 2, 'draft')", [ws, company.id]), /can't be versioned yet/);
+    await rejects((c) => c.query("update process_revisions set status = 'superseded' where id = $1", [company.live_revision_id]), /can't be versioned yet/);
+    await rejects((c) => c.query("delete from process_revisions where id = $1", [company.live_revision_id]), /can't be versioned yet/);
+    // A copy of it is refused, and restoring it has nothing to do (there is no older version, and drafts are refused above).
+    await asEditor(async (c) => {
+      expect((await c.query("select duplicate_version($1, $2) as r", [company.live_revision_id, "Copy"])).rows[0].r).toEqual({ status: "not_found" });
+      expect((await c.query("select count(*)::int n from processes where name = $1", ["Copy"])).rows[0].n).toBe(0);
+      expect((await c.query("select restore_version($1, $2, true) as r", [company.id, company.live_revision_id])).rows[0].r).toEqual({ status: "already_live" });
+    });
+    // Nothing changed, and every seeded process is still held.
+    expect((await stored(ws)).holders).toHaveLength(3);
+    expect((await q("select name, kind, parent_process_id from processes where id = $1", [company.id]))[0]).toEqual({ name: "Company map", kind: "pipeline", parent_process_id: null });
   });
 
   it("holds a process once: a parent-less process on the company map only, a child in its parent only", async () => {
@@ -202,6 +279,9 @@ describe("the backfill", () => {
       .join("\n");
     const nested = readFileSync(new URL("../supabase/migrations/20261108000000_nested_processes.sql", import.meta.url), "utf8");
     const restored = nested.match(/create function private\.check_step_nesting\(\)[\s\S]*?\n\$\$;/)![0].replace("create function", "create or replace function");
+    const history = readFileSync(new URL("../supabase/migrations/20261118000000_process_history.sql", import.meta.url), "utf8");
+    const duplicate = history.match(/create function public\.duplicate_version\([\s\S]*?\n\$\$;/)![0].replace("create function", "create or replace function");
+    await db.client.query(duplicate);
     await db.client.query(steps.replace("delete from supabase_migrations.schema_migrations where version = '20261126000000';", "").replace("commit;", () => `${restored}\ncommit;`));
     expect((await q("select count(*)::int n from information_schema.columns where table_name = 'processes' and column_name = 'is_company'"))[0].n).toBe(0);
     expect((await q("select count(*)::int n from steps where child_process_id is not null"))[0].n).toBe(0);

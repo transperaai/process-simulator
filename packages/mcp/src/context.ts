@@ -91,7 +91,9 @@ export async function resolveProcess(
   const company = everything.find((p) => p.is_company);
   if (ref && company) {
     const asked = ref.trim().toLowerCase();
-    if (company.id === asked || company.name.toLowerCase() === asked) {
+    // By id always; by name only when no ordinary process has that name (a process may be called "Company map" too).
+    const ordinaryByName = processes.some((p) => p.name.trim().toLowerCase() === asked);
+    if (company.id === asked || (company.name.toLowerCase() === asked && !ordinaryByName)) {
       if (allowCompany) return company;
       throw new ToolError(
         "company_map",

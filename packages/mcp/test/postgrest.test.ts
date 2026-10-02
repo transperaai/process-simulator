@@ -195,6 +195,22 @@ describe.skipIf(!POSTGREST_URL)("MCP over PostgREST (acts as the user under RLS)
     await client.close();
   });
 
+  it("lets an ordinary process be called 'Company map': the name reaches it, the company map only by id (B11)", async () => {
+    await admin.query("insert into processes (workspace_id, name) values ($1, 'Company map')", [otherWorkspaceId]);
+    const client = await connect(strangerToken, options);
+    // The ordinary process has no live revision: that is the answer, not the company map's own (which would be ok).
+    const byName = await call(client, "get_process", { process: "Company map", workspace: "other-co" });
+    expect(byName).toMatchObject({ ok: false, error: { code: "not_found" } });
+    expect(byName.error!.message).toMatch(/no live revision/);
+    const run = await call(client, "run_scenario", { process: "Company map", workspace: "other-co" });
+    expect(run.error?.code).not.toBe("company_map");
+    // The company map answers to its id.
+    const company = (await admin.query("select id from processes where workspace_id = $1 and is_company", [otherWorkspaceId])).rows[0].id;
+    expect(await call(client, "run_scenario", { process: company, workspace: "other-co" })).toMatchObject({ ok: false, error: { code: "company_map" } });
+    await client.close();
+    await admin.query("delete from processes where workspace_id = $1 and name = 'Company map' and not is_company", [otherWorkspaceId]);
+  });
+
   it("run_scenario returns the browser's numbers for the same model and seed", async () => {
     const startDate = "2026-10-05";
     const client = await connect(memberToken, options);

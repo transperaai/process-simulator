@@ -24,7 +24,8 @@ export async function createServicingProcess(workspaceId: string, slug: string, 
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims?.claims?.sub) return { error: "Your session has ended. Sign in again." };
 
-  const { data: existing } = await supabase.from("processes").select("name").eq("workspace_id", workspaceId);
+  // The company map isn't an ordinary process: its name doesn't count (the MCP server's import ignores it too).
+  const { data: existing } = await supabase.from("processes").select("name").eq("workspace_id", workspaceId).eq("is_company", false);
   if ((existing ?? []).some((p) => p.name.trim().toLowerCase() === name.toLowerCase())) return { error: `There is already a process called '${name}'.` };
 
   const { data: proc, error } = await supabase

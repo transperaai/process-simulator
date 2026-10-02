@@ -35,8 +35,8 @@ const failsAtRoot = async (run: () => Promise<unknown>, pattern: RegExp) => {
     await db.client.query("rollback");
   }
 };
-const newIssue = async (workspace = ws) =>
-  (await db.client.query("insert into issues (workspace_id, title, type, severity, source) values ($1, 'Fresh', 'delay', 'warning', 'manual') returning id", [workspace])).rows[0].id as string;
+const newIssue = async (workspace = ws, process: string | null = NORTHBEAM_PROCESS_ID, extra = "") =>
+  (await db.client.query(`insert into issues (workspace_id, process_id, title, type, severity, source ${extra ? ", " + extra.split("=")[0] : ""}) values ($1, $2, 'Fresh', 'delay', 'warning', 'manual' ${extra ? ", " + extra.split("=")[1] : ""}) returning id`, [workspace, process])).rows[0].id as string;
 const fails = async (c: pg.Client, run: () => Promise<unknown>, pattern: RegExp) => {
   await c.query("savepoint s");
   try {
@@ -59,7 +59,7 @@ beforeAll(async () => {
   await db.client.query("insert into processes (id, workspace_id, name) values ($1, $2, 'Theirs')", [otherProcess, otherWs]);
   await db.client.query("insert into process_revisions (id, workspace_id, process_id, number, status) values ($1, $2, $3, 1, 'draft')", [otherRevision, otherWs, otherProcess]);
   await db.client.query("update process_revisions set status = 'published' where id = $1", [otherRevision]);
-  otherIssue = (await db.client.query("insert into issues (workspace_id, title, type, severity, source) values ($1, 'Theirs', 'delay', 'warning', 'manual') returning id", [otherWs])).rows[0].id;
+  otherIssue = (await db.client.query("insert into issues (workspace_id, process_id, title, type, severity, source) values ($1, $2, 'Theirs', 'delay', 'warning', 'manual') returning id", [otherWs, otherProcess])).rows[0].id;
 });
 
 afterAll(async () => {
@@ -142,7 +142,6 @@ describe("solutions: row-level security", () => {
       await fails(c, () => c.query("insert into solutions (workspace_id, process_id, base_revision_id, name, steps) values ($1, $2, $3, 'x', '{\"steps\": {}, \"edges\": []}')", [ws, NORTHBEAM_PROCESS_ID, NORTHBEAM_REVISION_ID]), /violates check/);
       const id = (await solution(c)).rows[0].id;
       await link(c, id, openIssue);
-      await fails(c, () => c.query("update solution_issues set auto_verdict = 'maybe' where solution_id = $1", [id]), /violates check/);
       await fails(c, () => c.query("update solution_issues set user_verdict = 'maybe' where solution_id = $1", [id]), /violates check/);
       await fails(c, () => c.query("insert into solution_issues (solution_id, issue_id, workspace_id, holds_pct) values ($1, $2, $3, 101)", [id, openIssue, ws]), /violates check/);
     });
@@ -151,10 +150,10 @@ describe("solutions: row-level security", () => {
 
 describe("solutions: links never cross workspaces", () => {
   it("refuses a solution on another workspace's process or revision", async () => {
-    await failsAtRoot(() => solution(db.client, ws, otherProcess, otherRevision), /foreign key/);
-    await failsAtRoot(() => solution(db.client, otherWs, NORTHBEAM_PROCESS_ID, NORTHBEAM_REVISION_ID), /foreign key/);
+    await failsAtRoot(() => solution(db.client, ws, otherProcess, otherRevision), /foreign key|published version/);
+    await failsAtRoot(() => solution(db.client, otherWs, NORTHBEAM_PROCESS_ID, NORTHBEAM_REVISION_ID), /foreign key|published version/);
     // A revision of the right workspace but another process.
-    await failsAtRoot(() => solution(db.client, ws, NORTHBEAM_PROCESS_ID, otherRevision), /foreign key/);
+    await failsAtRoot(() => solution(db.client, ws, NORTHBEAM_PROCESS_ID, otherRevision), /foreign key|published version/);
   });
 
   it("refuses to link a solution to an issue of another workspace, whichever workspace the link claims", async () => {
@@ -194,7 +193,6 @@ describe("solutions: links never cross workspaces", () => {
     await link(db.client, o, otherIssue, otherWs);
     await db.client.query("delete from issues where id = $1", [otherIssue]);
     expect((await db.client.query("select 1 from solution_issues where solution_id = $1", [o])).rowCount).toBe(0);
-    otherIssue = (await db.client.query("insert into issues (workspace_id, title, type, severity, source) values ($1, 'Theirs', 'delay', 'warning', 'manual') returning id", [otherWs])).rows[0].id;
     await db.client.query("delete from processes where id = $1", [otherProcess]);
     expect((await db.client.query("select 1 from solutions where id = $1", [o])).rowCount).toBe(0);
   });
@@ -247,15 +245,15 @@ describe("linking a solution to an issue", () => {
     });
   });
 
-  it("keeps a resolved issue resolved, and still logs the solution", async () => {
-    await db.as(users.editor!.claims, async (c) => {
-      await c.query("update issues set status = 'done' where id = $1", [openIssue]);
-      const before = (await events(c, openIssue)).length;
-      await save(c, [{ issue_id: openIssue, auto_verdict: "pass", holds_pct: 70 }]);
-      expect(await issueStatus(c, openIssue)).toBe("done");
-      const added = (await events(c, openIssue)).slice(before);
-      expect(added.map((e) => e.kind)).toEqual(["solution_tested"]);
-    });
+  it("refuses an issue that is resolved, won't fix or dismissed, with a clear message", async () => {
+    for (const [status, resolution] of [["done", null], ["done", "wont_fix"], ["dismissed", null]]) {
+      const closed = await newIssue();
+      await db.client.query("update issues set status = $2, resolution = $3 where id = $1", [closed, status, resolution]);
+      await db.as(users.editor!.claims, async (c) => {
+        await fails(c, () => save(c, [{ issue_id: closed, auto_verdict: "pass", holds_pct: 70 }]), /issue is closed/);
+      });
+      await db.client.query("delete from issues where id = $1", [closed]);
+    }
   });
 
   it("lets an editor record their own verdict and notes, and change the link's verdicts", async () => {
@@ -311,5 +309,50 @@ describe("saving a solution never changes live or the draft (D18)", () => {
         expect(drafts).toBe(withDraft ? 1 : 0);
       });
     }
+  });
+});
+
+describe("what may be linked and what may be changed", () => {
+  it("refuses a solution based on a draft, and discard_draft still works (D18)", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      await c.query("select public.open_draft($1)", [NORTHBEAM_PROCESS_ID]);
+      const draft = (await c.query("select id from process_revisions where process_id = $1 and status = 'draft'", [NORTHBEAM_PROCESS_ID])).rows[0].id;
+      await fails(c, () => c.query("select public.save_solution($1, $2, $3, 'On a draft', $4::jsonb)", [ws, NORTHBEAM_PROCESS_ID, draft, bundle]), /published version/);
+      // The table refuses it too, for any writer.
+      await fails(c, () => solution(c, ws, NORTHBEAM_PROCESS_ID, draft), /published version/);
+      await save(c);
+      await c.query("select public.discard_draft($1)", [NORTHBEAM_PROCESS_ID]);
+      expect((await c.query("select count(*)::int as n from process_revisions where process_id = $1 and status = 'draft'", [NORTHBEAM_PROCESS_ID])).rows[0].n).toBe(0);
+    });
+    await failsAtRoot(() => solution(db.client, ws, NORTHBEAM_PROCESS_ID, otherRevision), /foreign key|published version/);
+  });
+
+  it("refuses an issue about another process or a detection, with plain messages", async () => {
+    const elsewhere = await newIssue(ws, null);
+    const detected = (await db.client.query("insert into issues (workspace_id, process_id, title, type, severity, source, detected_key) values ($1, $2, 'Seen', 'delay', 'warning', 'detected', 'delay:p:step1') returning id", [ws, NORTHBEAM_PROCESS_ID])).rows[0].id as string;
+    await db.as(users.editor!.claims, async (c) => {
+      await fails(c, () => save(c, [{ issue_id: detected, auto_verdict: "pass", holds_pct: 90 }]), /only a detection/);
+      await fails(c, () => save(c, [{ issue_id: elsewhere, auto_verdict: "pass", holds_pct: 90 }]), /about another process/);
+    });
+    // Linked to the process through an issue link, it is accepted.
+    await db.client.query("insert into issue_links (issue_id, workspace_id, process_id) values ($1, $2, $3)", [elsewhere, ws, NORTHBEAM_PROCESS_ID]);
+    await db.as(users.editor!.claims, async (c) => {
+      await save(c, [{ issue_id: elsewhere, auto_verdict: "pass", holds_pct: 90 }]);
+    });
+    await db.client.query("delete from issues where id = any($1)", [[elsewhere, detected]]);
+  });
+
+  it("denies changing which issue, the verdicts, the copy or the base revision after saving", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      const s = await save(c, [{ issue_id: openIssue, auto_verdict: "fail", holds_pct: 30 }]);
+      for (const col of ["issue_id = $2", "auto_verdict = 'pass'", "holds_pct = 99", "auto_note = 'x'", "solution_id = $2", "workspace_id = $2"]) {
+        await fails(c, () => c.query(`update solution_issues set ${col.replace("$2", `'${testingIssue}'`)} where solution_id = $1`, [s.id]), /permission denied/);
+      }
+      for (const col of ["steps = '{\"steps\": [], \"edges\": []}'", `base_revision_id = '${NORTHBEAM_REVISION_ID}'`, "process_id = $2", "changed_step_ids = '[]'", "lever_changes = '[]'", "workspace_id = $2"]) {
+        await fails(c, () => c.query(`update solutions set ${col.replace("$2", `'${NORTHBEAM_PROCESS_ID}'`)} where id = $1`, [s.id]), /permission denied/);
+      }
+      expect((await c.query("update solution_issues set user_verdict = 'pass', user_notes = 'ok' where solution_id = $1", [s.id])).rowCount).toBe(1);
+      expect((await c.query("update solutions set name = 'Renamed', notes = 'n' where id = $1", [s.id])).rowCount).toBe(1);
+    });
   });
 });

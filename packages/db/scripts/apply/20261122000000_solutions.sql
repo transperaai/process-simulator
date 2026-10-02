@@ -20,6 +20,7 @@
 -- anon cannot select from either, public.save_solution exists, and the schema_migrations row exists.
 
 begin;
+set local lock_timeout = '5s';
 
 -- Solutions as their own thing (issue #114, ticket A49; decisions D18 amended by D25, D22).
 --
@@ -44,15 +45,23 @@ begin;
 --   * Linking a solution to an issue moves the issue to Testing solutions and logs a `solution_tested` event. It reuses
 --     A47's mechanism rather than a second one: an Open issue is updated to the stored status `in_progress` (see
 --     packages/db/src/issue-status.ts), and A47's `issue_log` trigger writes the event; this migration's trigger then adds
---     the solution to that event's detail. An issue already being tested (or resolved) keeps its status, and a
+--     the solution to that event's detail. An issue already being tested keeps its status, and a
 --     `solution_tested` event is written for the new link in the same table.
 --   * `public.save_solution(...)`: creates a solution and its links in one transaction (security invoker, so row-level
 --     security applies to every write), so a solution is never saved without the link the person asked for.
 --
 -- Row-level security as the other workspace tables: every member of the workspace reads, owners, editors and agency
--- admins write (`can_edit_workspace`), `anon` has no access. A link is refused for an issue that is only a detection.
+-- admins write (`can_edit_workspace`), `anon` has no access. Updates are limited by column grants: a solution's name and
+-- notes, a link's user verdict and notes; everything else (the copy, the base revision, which issue, the automatic verdict)
+-- is fixed when it is saved, so a link cannot be rewritten without the history logging it.
 --
--- STRICTLY ADDITIVE: two tables, their indexes, triggers, policies, one trigger function and one function. No existing
+-- Checks in the database (before-insert triggers, so they hold for every writer, with plain messages):
+--   * a solution's base revision must be a published revision of its process. A draft can be discarded, and a solution
+--     pointing at one would block that (D18: drafts stay single and are never a solution's base);
+--   * an issue can be linked only if it is about the solution's process (its own process, or one of its links), is not a
+--     detection, and is still open or being tested (not resolved, won't fix or dismissed).
+--
+-- STRICTLY ADDITIVE: two tables, their indexes, triggers, policies, three trigger functions and one function. No existing
 -- table, column, constraint or function is changed. It needs A47's `issue_events` and `issues` (applied before this) and
 -- the `can_read_workspace`, `can_edit_workspace` and `set_updated_at` helpers. It creates the unique index on
 -- process_revisions (id, process_id, workspace_id) only if A54 has not already.
@@ -65,7 +74,7 @@ begin;
 --        select version from supabase_migrations.schema_migrations where version >= '20261122000000';
 --   3. A47 is applied (its history table exists). Expect 1:
 --        select count(*) from information_schema.tables where table_schema = 'public' and table_name = 'issue_events';
---   4. The helpers the policies use exist. Expect 3 rows:
+--   4. The helpers the policies and triggers use exist. Expect 3 rows:
 --        select proname from pg_proc where pronamespace = 'public'::regnamespace and proname in ('can_read_workspace', 'can_edit_workspace', 'set_updated_at');
 --
 -- Rollback (run as one transaction):
@@ -74,7 +83,9 @@ begin;
 --   drop function if exists public.save_solution(uuid, uuid, uuid, text, jsonb, jsonb, jsonb, jsonb);
 --   drop table if exists public.solution_issues;   -- its trigger, policies and indexes go with it
 --   drop function if exists private.solution_issue_tested();
+--   drop function if exists private.solution_issues_before_insert();
 --   drop table if exists public.solutions;         -- its trigger, policies and indexes go with it
+--   drop function if exists private.solutions_before_write();
 --   delete from supabase_migrations.schema_migrations where version = '20261122000000';
 --   commit;
 --
@@ -127,6 +138,28 @@ create index on public.solutions (base_revision_id);
 create trigger set_updated_at before update on public.solutions
   for each row execute function public.set_updated_at();
 
+-- A solution's base is a published revision of its process, never a draft (D18): discarding a draft deletes its revision,
+-- which a solution pointing at it would block.
+create function private.solutions_before_write() returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not exists (
+    select 1 from public.process_revisions r
+    where r.id = new.base_revision_id and r.process_id = new.process_id and r.workspace_id = new.workspace_id and r.status = 'published'
+  ) then
+    raise exception 'solutions: the base revision must be a published version of the process' using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+revoke all on function private.solutions_before_write() from public, anon, authenticated;
+
+create trigger solutions_before_write before insert or update of base_revision_id, process_id, workspace_id on public.solutions
+  for each row execute function private.solutions_before_write();
+
 create table public.solution_issues (
   solution_id uuid not null,
   issue_id uuid not null,
@@ -152,6 +185,41 @@ create index on public.solution_issues (workspace_id, issue_id);
 
 create trigger set_updated_at before update on public.solution_issues
   for each row execute function public.set_updated_at();
+
+-- What may be linked: an issue about the solution's process that is still being worked on. Runs before row-level security
+-- looks at the row, so the refusal says what is wrong.
+create function private.solution_issues_before_insert() returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  iss record;
+  sol_process uuid;
+begin
+  select i.status, i.source, i.process_id into iss from public.issues i where i.id = new.issue_id and i.workspace_id = new.workspace_id;
+  select s.process_id into sol_process from public.solutions s where s.id = new.solution_id and s.workspace_id = new.workspace_id;
+  if iss is null or sol_process is null then
+    return new;  -- the foreign keys refuse it
+  end if;
+  if iss.source = 'detected' then
+    raise exception 'solutions: that issue is only a detection, so it cannot be linked' using errcode = '23514';
+  end if;
+  if iss.status not in ('open', 'in_progress') then
+    raise exception 'solutions: that issue is closed, so it cannot be linked' using errcode = '23514';
+  end if;
+  if iss.process_id is distinct from sol_process and not exists (
+    select 1 from public.issue_links l where l.issue_id = new.issue_id and l.workspace_id = new.workspace_id and l.process_id = sol_process
+  ) then
+    raise exception 'solutions: that issue is about another process' using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+revoke all on function private.solution_issues_before_insert() from public, anon, authenticated;
+
+create trigger solution_issues_before_insert before insert on public.solution_issues
+  for each row execute function private.solution_issues_before_insert();
 
 -- ---------------------------------------------------------------------------
 -- Linking moves the issue to Testing solutions and logs it, through A47's mechanism
@@ -186,7 +254,7 @@ begin
   if ev_id is not null then
     update public.issue_events set detail = detail || extra where id = ev_id;
   else
-    -- Already being tested, or already resolved: the status stays, and the new link is still a solution tested.
+    -- Already being tested: the status stays, and the new link is still a solution tested.
     insert into public.issue_events (issue_id, workspace_id, kind, actor, detail)
       values (new.issue_id, new.workspace_id, 'solution_tested', auth.uid(), extra);
   end if;
@@ -224,7 +292,10 @@ create policy "update solution_issues" on public.solution_issues for update to a
 create policy "delete solution_issues" on public.solution_issues for delete to authenticated
   using (public.can_edit_workspace(workspace_id));
 
-grant select, insert, update, delete on public.solutions, public.solution_issues to authenticated;
+-- Updates only to what a person edits later; the copy, the base, the issue and the automatic verdict are fixed once saved.
+grant select, insert, delete on public.solutions, public.solution_issues to authenticated;
+grant update (name, notes) on public.solutions to authenticated;
+grant update (user_verdict, user_notes) on public.solution_issues to authenticated;
 revoke all on public.solutions, public.solution_issues from anon;
 
 -- ---------------------------------------------------------------------------
@@ -253,6 +324,12 @@ begin
   end if;
   if p_links is not null and jsonb_typeof(p_links) <> 'array' then
     raise exception 'solutions: links must be an array' using errcode = '22023';
+  end if;
+  if not exists (
+    select 1 from public.process_revisions r
+    where r.id = p_base_revision and r.process_id = p_process and r.workspace_id = p_workspace and r.status = 'published'
+  ) then
+    raise exception 'solutions: the base revision must be a published version of the process' using errcode = '23514';
   end if;
   insert into public.solutions (workspace_id, process_id, base_revision_id, name, steps, changed_step_ids, lever_changes)
     values (p_workspace, p_process, p_base_revision, p_name, p_steps, coalesce(p_changed, '[]'), coalesce(p_levers, '[]'))
@@ -292,15 +369,23 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --   * Linking a solution to an issue moves the issue to Testing solutions and logs a `solution_tested` event. It reuses
 --     A47's mechanism rather than a second one: an Open issue is updated to the stored status `in_progress` (see
 --     packages/db/src/issue-status.ts), and A47's `issue_log` trigger writes the event; this migration's trigger then adds
---     the solution to that event's detail. An issue already being tested (or resolved) keeps its status, and a
+--     the solution to that event's detail. An issue already being tested keeps its status, and a
 --     `solution_tested` event is written for the new link in the same table.
 --   * `public.save_solution(...)`: creates a solution and its links in one transaction (security invoker, so row-level
 --     security applies to every write), so a solution is never saved without the link the person asked for.
 --
 -- Row-level security as the other workspace tables: every member of the workspace reads, owners, editors and agency
--- admins write (`can_edit_workspace`), `anon` has no access. A link is refused for an issue that is only a detection.
+-- admins write (`can_edit_workspace`), `anon` has no access. Updates are limited by column grants: a solution's name and
+-- notes, a link's user verdict and notes; everything else (the copy, the base revision, which issue, the automatic verdict)
+-- is fixed when it is saved, so a link cannot be rewritten without the history logging it.
 --
--- STRICTLY ADDITIVE: two tables, their indexes, triggers, policies, one trigger function and one function. No existing
+-- Checks in the database (before-insert triggers, so they hold for every writer, with plain messages):
+--   * a solution's base revision must be a published revision of its process. A draft can be discarded, and a solution
+--     pointing at one would block that (D18: drafts stay single and are never a solution's base);
+--   * an issue can be linked only if it is about the solution's process (its own process, or one of its links), is not a
+--     detection, and is still open or being tested (not resolved, won't fix or dismissed).
+--
+-- STRICTLY ADDITIVE: two tables, their indexes, triggers, policies, three trigger functions and one function. No existing
 -- table, column, constraint or function is changed. It needs A47's `issue_events` and `issues` (applied before this) and
 -- the `can_read_workspace`, `can_edit_workspace` and `set_updated_at` helpers. It creates the unique index on
 -- process_revisions (id, process_id, workspace_id) only if A54 has not already.
@@ -313,7 +398,7 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --        select version from supabase_migrations.schema_migrations where version >= '20261122000000';
 --   3. A47 is applied (its history table exists). Expect 1:
 --        select count(*) from information_schema.tables where table_schema = 'public' and table_name = 'issue_events';
---   4. The helpers the policies use exist. Expect 3 rows:
+--   4. The helpers the policies and triggers use exist. Expect 3 rows:
 --        select proname from pg_proc where pronamespace = 'public'::regnamespace and proname in ('can_read_workspace', 'can_edit_workspace', 'set_updated_at');
 --
 -- Rollback (run as one transaction):
@@ -322,7 +407,9 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --   drop function if exists public.save_solution(uuid, uuid, uuid, text, jsonb, jsonb, jsonb, jsonb);
 --   drop table if exists public.solution_issues;   -- its trigger, policies and indexes go with it
 --   drop function if exists private.solution_issue_tested();
+--   drop function if exists private.solution_issues_before_insert();
 --   drop table if exists public.solutions;         -- its trigger, policies and indexes go with it
+--   drop function if exists private.solutions_before_write();
 --   delete from supabase_migrations.schema_migrations where version = '20261122000000';
 --   commit;
 --
@@ -375,6 +462,28 @@ create index on public.solutions (base_revision_id);
 create trigger set_updated_at before update on public.solutions
   for each row execute function public.set_updated_at();
 
+-- A solution's base is a published revision of its process, never a draft (D18): discarding a draft deletes its revision,
+-- which a solution pointing at it would block.
+create function private.solutions_before_write() returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not exists (
+    select 1 from public.process_revisions r
+    where r.id = new.base_revision_id and r.process_id = new.process_id and r.workspace_id = new.workspace_id and r.status = 'published'
+  ) then
+    raise exception 'solutions: the base revision must be a published version of the process' using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+revoke all on function private.solutions_before_write() from public, anon, authenticated;
+
+create trigger solutions_before_write before insert or update of base_revision_id, process_id, workspace_id on public.solutions
+  for each row execute function private.solutions_before_write();
+
 create table public.solution_issues (
   solution_id uuid not null,
   issue_id uuid not null,
@@ -400,6 +509,41 @@ create index on public.solution_issues (workspace_id, issue_id);
 
 create trigger set_updated_at before update on public.solution_issues
   for each row execute function public.set_updated_at();
+
+-- What may be linked: an issue about the solution's process that is still being worked on. Runs before row-level security
+-- looks at the row, so the refusal says what is wrong.
+create function private.solution_issues_before_insert() returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  iss record;
+  sol_process uuid;
+begin
+  select i.status, i.source, i.process_id into iss from public.issues i where i.id = new.issue_id and i.workspace_id = new.workspace_id;
+  select s.process_id into sol_process from public.solutions s where s.id = new.solution_id and s.workspace_id = new.workspace_id;
+  if iss is null or sol_process is null then
+    return new;  -- the foreign keys refuse it
+  end if;
+  if iss.source = 'detected' then
+    raise exception 'solutions: that issue is only a detection, so it cannot be linked' using errcode = '23514';
+  end if;
+  if iss.status not in ('open', 'in_progress') then
+    raise exception 'solutions: that issue is closed, so it cannot be linked' using errcode = '23514';
+  end if;
+  if iss.process_id is distinct from sol_process and not exists (
+    select 1 from public.issue_links l where l.issue_id = new.issue_id and l.workspace_id = new.workspace_id and l.process_id = sol_process
+  ) then
+    raise exception 'solutions: that issue is about another process' using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+revoke all on function private.solution_issues_before_insert() from public, anon, authenticated;
+
+create trigger solution_issues_before_insert before insert on public.solution_issues
+  for each row execute function private.solution_issues_before_insert();
 
 -- ---------------------------------------------------------------------------
 -- Linking moves the issue to Testing solutions and logs it, through A47's mechanism
@@ -434,7 +578,7 @@ begin
   if ev_id is not null then
     update public.issue_events set detail = detail || extra where id = ev_id;
   else
-    -- Already being tested, or already resolved: the status stays, and the new link is still a solution tested.
+    -- Already being tested: the status stays, and the new link is still a solution tested.
     insert into public.issue_events (issue_id, workspace_id, kind, actor, detail)
       values (new.issue_id, new.workspace_id, 'solution_tested', auth.uid(), extra);
   end if;
@@ -472,7 +616,10 @@ create policy "update solution_issues" on public.solution_issues for update to a
 create policy "delete solution_issues" on public.solution_issues for delete to authenticated
   using (public.can_edit_workspace(workspace_id));
 
-grant select, insert, update, delete on public.solutions, public.solution_issues to authenticated;
+-- Updates only to what a person edits later; the copy, the base, the issue and the automatic verdict are fixed once saved.
+grant select, insert, delete on public.solutions, public.solution_issues to authenticated;
+grant update (name, notes) on public.solutions to authenticated;
+grant update (user_verdict, user_notes) on public.solution_issues to authenticated;
 revoke all on public.solutions, public.solution_issues from anon;
 
 -- ---------------------------------------------------------------------------
@@ -501,6 +648,12 @@ begin
   end if;
   if p_links is not null and jsonb_typeof(p_links) <> 'array' then
     raise exception 'solutions: links must be an array' using errcode = '22023';
+  end if;
+  if not exists (
+    select 1 from public.process_revisions r
+    where r.id = p_base_revision and r.process_id = p_process and r.workspace_id = p_workspace and r.status = 'published'
+  ) then
+    raise exception 'solutions: the base revision must be a published version of the process' using errcode = '23514';
   end if;
   insert into public.solutions (workspace_id, process_id, base_revision_id, name, steps, changed_step_ids, lever_changes)
     values (p_workspace, p_process, p_base_revision, p_name, p_steps, coalesce(p_changed, '[]'), coalesce(p_levers, '[]'))

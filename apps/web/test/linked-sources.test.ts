@@ -154,7 +154,8 @@ describe("every screen has it", () => {
     expect(read("app/demo/layout.tsx")).toContain("<DemoSourceLinkingScope");
   });
 
-  it("leaves the solution page for A50 with a note, since it isn't built yet", () => {
-    expect(read("components/sources/linking-context.tsx")).toContain("TODO(A50)");
+  it("shows <LinkedSources> on the solution page for its own kind, and loads the links there", () => {
+    expect(read("components/solutions/solution-page.tsx")).toMatch(/<LinkedSources target=\{\{ kind: "solution"/);
+    expect(read("app/w/[slug]/solutions/[id]/page.tsx")).toContain("<SourceLinkingScope");
   });
 });

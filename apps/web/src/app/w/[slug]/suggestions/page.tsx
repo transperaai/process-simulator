@@ -30,7 +30,7 @@ export default async function SuggestionsPage(props: PageProps<"/w/[slug]/sugges
         initial={data.proposals}
         lookups={data.lookups}
         canEdit={data.canEdit}
-        issueBase={`/w/${slug}/issues`}
+        base={`/w/${slug}`}
       >
         <LiveSuggestions
           workspaceId={data.workspace.id}

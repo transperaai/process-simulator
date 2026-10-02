@@ -4,7 +4,8 @@
 // creates it through the Acknowledge path (`save_issue`), rejecting one drops it, and a solution idea can only be
 // dismissed for now (building it in the Editor is slice 2).
 
-import type { ProposalApplied, ProposalRow, SolutionIdeaPayload, IssueProposalPayload } from "@transpera-flow/db";
+import type { ProposalApplied, ProposalRow, IssueProposalPayload } from "@transpera-flow/db";
+import { readIdea } from "@/lib/suggestions/idea";
 import { RATING_LABELS, ratingOfStored } from "@transpera-flow/engine";
 import type { IssueStore } from "@/lib/issues/store";
 import type { HelpProps } from "@/components/help";
@@ -30,8 +31,8 @@ export interface ProposalBackend {
 export interface ProposalLookups {
   processes: Record<string, string>;
   steps: Record<string, string>;
-  /** Issue id to its number and title (a solution idea is for one). */
-  issues: Record<string, { number: number | null; title: string }>;
+  /** Issue id to its number, title and process (a solution idea is for one; Build it opens the Editor on the process). */
+  issues: Record<string, { number: number | null; title: string; processId?: string | null }>;
 }
 
 export interface ProposalView {
@@ -55,7 +56,7 @@ export function describeProposal(p: ProposalRow, lookups: ProposalLookups): Prop
   if (p.kind === "issue") {
     const payload = p.payload as IssueProposalPayload;
     const rating = RATING_LABELS[ratingOfStored(STORED.includes(payload.severity as never) ? payload.severity! : "warning")];
-    const links = payload.links ?? [];
+    const links = (Array.isArray(payload.links) ? payload.links : []).filter((l) => typeof l === "object" && l !== null);
     const steps = links.flatMap((l) => (l.step_id ? [lookups.steps[l.step_id] ?? "a step that has gone"] : []));
     const processes = [...new Set(links.flatMap((l) => (!l.step_id && l.process_id ? [lookups.processes[l.process_id] ?? "a process that has gone"] : [])))];
     const touches = steps.length ? `Touches ${list(steps)}.` : processes.length ? `Touches the whole of ${list(processes)}.` : "Touches nothing in particular yet.";
@@ -66,13 +67,13 @@ export function describeProposal(p: ProposalRow, lookups: ProposalLookups): Prop
     if (p.detail) lines.push(p.detail);
     return { kind: "Issue", from, title: p.title, lines, issue: null };
   }
-  const payload = p.payload as SolutionIdeaPayload;
+  const idea = readIdea(p.payload);
   const target = p.issue_id ? lookups.issues[p.issue_id] : undefined;
   const lines: string[] = [];
   if (p.detail) lines.push(p.detail);
-  const replaced = (payload.replaces_step_ids ?? []).map((id) => lookups.steps[id] ?? "a step that has gone");
-  lines.push(`Proposed steps: ${payload.steps.map((s) => s.name).join(" → ")}${replaced.length ? `. Would replace ${list(replaced)}` : ""}.`);
-  if (payload.expect) lines.push(`${payload.expect} Not simulated yet.`);
+  const replaced = idea.replaces.map((id) => lookups.steps[id] ?? "a step that has gone");
+  lines.push(`Proposed steps: ${idea.steps.length ? idea.steps.map((s) => s.name).join(" → ") : "none that can be shown"}${replaced.length ? `. Would replace ${list(replaced)}` : ""}.`);
+  if (idea.expect) lines.push(`${idea.expect} Not simulated yet.`);
   return {
     kind: "Solution idea",
     from,
@@ -161,8 +162,18 @@ export async function reviewProposalsInMemory(
 export const SUGGESTIONS_HELP = {
   ideas: {
     label: "Solution ideas",
-    description: "Ideas for fixing an issue, from AI or from someone trying their own changes. They are not built and not simulated, and nothing changes until someone acts on them.",
+    description: "Ideas for fixing an issue, from AI or from someone trying their own changes. They are not built and not simulated. Build one to open the Editor with the steps placed, or dismiss it. Nothing changes until you do.",
     example: "“Fast-track partner leads past Check fit”, for the issue about slow first contact.",
+  },
+  buildIt: {
+    label: "Build it",
+    description: "Opens the Editor in solution mode with the idea's steps already placed. Adjust them, simulate, then save: that turns the idea into a real solution, tested against the issue.",
+    example: "Build “Fast-track partner leads”, check the new steps, and save it as a solution.",
+  },
+  ideaMap: {
+    label: "Proposed steps",
+    description: "A small picture of the steps the idea would add, left to right. If it would replace a step you already have, that step is named beside it.",
+    example: "Partner lead arrives, then Book discovery call, then Quick check by AI.",
   },
   dismiss: {
     label: "Dismiss",

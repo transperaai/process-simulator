@@ -6,12 +6,12 @@ import { aiConfigured, loadAiViews } from "@/lib/ai/data";
 import { ProcessNav } from "@/components/process-nav";
 import { ProcessPage } from "@/components/process-page";
 import { SourceLinkingScope } from "@/components/sources/linking-scope";
-import { canEditWorkspace } from "@/lib/access-data";
+import { canEditWorkspace, currentUserId } from "@/lib/access-data";
 import { loadProcessFirstPrinciples } from "@/lib/first-principles/data";
 import { loadWorkspaceLeverSettings } from "@/lib/levers/data";
 import { processRatings } from "@/lib/processes/rows";
 import { loadWorkspaceAnalysisRules } from "@/lib/rules/data";
-import { loadProcessForEditing, loadProcessVersion, loadWorkspaceIssues, loadWorkspaceLiveRevisionIds, loadWorkspaceScenarios, loadWorkspaceSolutions, loadWorkspaceSources } from "@/lib/data";
+import { loadMemberNames, loadProcessForEditing, loadProcessVersion, loadWorkspaceIssues, loadWorkspaceLiveRevisionIds, loadWorkspaceScenarios, loadWorkspaceSolutions, loadWorkspaceSources } from "@/lib/data";
 
 /**
  * A process of the workspace on the canvas, at `/w/[slug]/p/[processId]` (any process, never-published ones
@@ -23,7 +23,7 @@ export async function WorkspaceProcessPage({ slug, processId, version }: { slug:
   const { live, draft, processes } = process;
   // `?version=N` shows an earlier version, read only; a number that isn't an earlier version shows live.
   const earlier = version ? await loadProcessVersion(live, version) : null;
-  const [canEdit, scenarios, issues, sources, rules, levers, liveRevisions, solutions] = await Promise.all([
+  const [canEdit, scenarios, issues, sources, rules, levers, liveRevisions, solutions, viewerId, memberNames] = await Promise.all([
     canEditWorkspace(live.workspace.id),
     loadWorkspaceScenarios(live.workspace.id),
     loadWorkspaceIssues(live.workspace.id),
@@ -33,6 +33,8 @@ export async function WorkspaceProcessPage({ slug, processId, version }: { slug:
     // Every process, so a dismissal on a step of a process inside this one is measured against that process.
     loadWorkspaceLiveRevisionIds(live.workspace.id),
     loadWorkspaceSolutions(live.workspace.id, live.process.id),
+    currentUserId(),
+    loadMemberNames(live.workspace.id),
   ]);
   // First principles of the version on screen, and whether the draft has answers live doesn't (A54).
   const shown = earlier ?? (isUnpublished(live) && draft ? draft : live);
@@ -67,7 +69,7 @@ export async function WorkspaceProcessPage({ slug, processId, version }: { slug:
       rating={ratings[live.process.id] ?? null}
       editHref={canEdit ? `${base}/p/${live.process.id}/edit` : undefined}
       historyHref={`${base}/p/${live.process.id}/history`}
-      solutions={{ data: solutions, base }}
+      solutions={{ data: solutions, base, viewerId, memberNames }}
       ai={{ view: aiViews[shown.revision.id] ?? null, configured: aiConfigured(), hasFirstPrinciples: fpShown.doc !== null && !isBlank(fpShown.doc), versionNumber: isUnpublished(live) ? null : shown.revision.number }}
       firstPrinciples={{ doc: fpShown.doc, href: `${base}/p/${live.process.id}/first-principles`, draftChanged, inheritedFrom: fpShown.inheritedFrom }}
       inside={processes.filter((p) => p.parentId === live.process.id).map((p) => ({ id: p.id, name: p.name, href: hrefs[p.id]! }))}

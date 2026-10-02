@@ -25,10 +25,6 @@ export const LINKED_SOURCES_HELP = {
   },
 } as const;
 
-// TODO(A50): the solution page isn't built yet (PR #156). When it lands, give it
-// <LinkedSources target={{ kind: "solution", solutionId }} label={`Solution: ${name}`} /> inside a <SourceLinkingScope> (live) like
-// the issue page, and its "+ Link" works without anything else here: the dialog and the link table already take solutions.
-
 export interface SourceLinking {
   canEdit: boolean;
   sources: readonly SourceRow[];

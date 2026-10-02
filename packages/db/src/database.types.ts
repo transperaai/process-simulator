@@ -978,6 +978,7 @@ export type Database = {
           resolution: string | null
           resolution_note: string | null
           resolved_how: string | null
+          resolved_solution_id: string | null
           resolved_at: string | null
           role_id: string | null
           scenario_id: string | null
@@ -1010,6 +1011,7 @@ export type Database = {
           resolution?: string | null
           resolution_note?: string | null
           resolved_how?: string | null
+          resolved_solution_id?: string | null
           resolved_at?: string | null
           role_id?: string | null
           scenario_id?: string | null
@@ -1042,6 +1044,7 @@ export type Database = {
           resolution?: string | null
           resolution_note?: string | null
           resolved_how?: string | null
+          resolved_solution_id?: string | null
           resolved_at?: string | null
           role_id?: string | null
           scenario_id?: string | null
@@ -2902,6 +2905,20 @@ export type Database = {
         Args: { p_links: Json; p_source: Json; p_workspace: string }
         Returns: string
       }
+      build_proposal: {
+        Args: {
+          p_base_revision: string
+          p_changed: Json
+          p_levers: Json
+          p_links: Json
+          p_name: string
+          p_process: string
+          p_proposal: string
+          p_steps: Json
+          p_workspace: string
+        }
+        Returns: Json
+      }
       can_edit_workspace: { Args: { ws: string }; Returns: boolean }
       can_manage_workspace: { Args: { ws: string }; Returns: boolean }
       can_read_workspace: { Args: { ws: string }; Returns: boolean }
@@ -2977,16 +2994,28 @@ export type Database = {
           status: string
         }[]
       }
-      resolve_issue: {
-        Args: {
-          p_how: string
-          p_id: string
-          p_note?: string
-          p_status?: string
-          p_workspace: string
-        }
-        Returns: Json
-      }
+      resolve_issue:
+        | {
+            Args: {
+              p_how: string
+              p_id: string
+              p_note?: string
+              p_status?: string
+              p_workspace: string
+            }
+            Returns: Json
+          }
+        | {
+            Args: {
+              p_how: string
+              p_id: string
+              p_note: string
+              p_solution: string
+              p_status: string
+              p_workspace: string
+            }
+            Returns: Json
+          }
       save_fields: {
         Args: { base: Json; changes: Json; key: Json; target: string }
         Returns: Json

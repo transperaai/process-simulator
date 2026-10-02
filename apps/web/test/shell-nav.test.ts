@@ -96,9 +96,8 @@ describe("workspaceNav: hrefs", () => {
   });
   it("marks the pages that are not built yet with the ticket that builds them", () => {
     const soon = flatItems(nav("/w/s")).filter((i) => i.soon).map((i) => [i.key, i.soon]);
-    expect(soon).toEqual([
-      ["solutions", "A49"],
-    ]);
+    // Solutions arrived with A49 and A50: nothing in the sidebar is waiting for a ticket now.
+    expect(soon).toEqual([]);
   });
 });
 

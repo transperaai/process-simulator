@@ -155,7 +155,7 @@ Checked on plain Postgres 16 with the auth shim (`packages/db/test/issues-v2.tes
 - Link-table events are skipped when the same transaction already logged the issue, using `txid_current()` stored on each event. Over PostgREST each request is one transaction, so `save_issue` (one RPC) logs one entry.
 - `public.save_issue` is `security invoker` with defaults on every argument after `p_fields`, so supabase-js can leave out `p_id`, `p_links`, `p_owners` and `p_sources` (PostgREST resolves the call by argument names). Only called with all of them present here.
 
-## Issue resolution (A48, migration 20261123000000)
+## Issue resolution (A48, migration 20261121500000)
 
 Checked on plain Postgres 16 with the auth shim (`packages/db/test/issue-resolution.test.ts`); not confirmed on Supabase itself:
 

@@ -44,8 +44,8 @@ Open PRs (each gets an Opus review; findings go back to the builder; I apply the
 | Ticket | PR | Migration | State |
 |---|---|---|---|
 | A46 AI analysis (#111) | #150 | 20261121000000 (row 33) | in review |
-| A49 solutions (#114) | not yet open | 20261122000000 (row 34) | building |
-| A48 issues pages (#113) | not yet open | 20261123000000 (row 35) if needed | building |
+| A49 solutions (#114) | not yet open | 20261122000000 (row 35) | building |
+| A48 issues pages (#113) | #152 | 20261121500000 (row 34) | re-check passed; waiting for A46 to merge, then merge main |
 
 Next: A50 solution page (after A49), A52 suggestions (after A49 and A46), A53 sources must link (last).
 

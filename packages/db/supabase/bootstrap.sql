@@ -14863,7 +14863,7 @@ revoke all on function public.save_issue(uuid, jsonb, uuid, jsonb, uuid[], uuid[
 grant execute on function public.save_issue(uuid, jsonb, uuid, jsonb, uuid[], uuid[]) to authenticated;
 ']);
 
--- 20261123000000_issue_resolution.sql
+-- 20261121500000_issue_resolution.sql
 -- Issues pages: how an issue was resolved, and a note (issue #113, A48).
 --
 -- A resolved issue records how it was resolved ('solution': a solution fixed it; 'process_change': we changed the
@@ -14885,7 +14885,7 @@ grant execute on function public.save_issue(uuid, jsonb, uuid, jsonb, uuid[], uu
 --   1. The columns do not exist yet. Expect 0:
 --        select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'issues' and column_name in ('resolved_how', 'resolution_note');
 --   2. Nothing of ours is applied past 20261120000000. Expect 0 rows:
---        select version from supabase_migrations.schema_migrations where version >= '20261123000000';
+--        select version from supabase_migrations.schema_migrations where version >= '20261121500000';
 --
 -- Rollback (run as one transaction; loses the recorded how and note on current rows, and the log entries keep theirs):
 --
@@ -14961,7 +14961,7 @@ grant execute on function public.save_issue(uuid, jsonb, uuid, jsonb, uuid[], uu
 --   -- then drop the columns:
 --   alter table public.issues drop constraint if exists issues_resolved_how_check, drop constraint if exists issues_resolution_note_length,
 --     drop column resolved_how, drop column resolution_note;
---   delete from supabase_migrations.schema_migrations where version = '20261123000000';
+--   delete from supabase_migrations.schema_migrations where version = '20261121500000';
 --   commit;
 
 alter table public.issues
@@ -15067,6 +15067,7 @@ set search_path = ''
 as $$
 declare
   result jsonb;
+  v_status text;
 begin
   if not coalesce(public.can_edit_workspace(p_workspace), false) then
     raise exception 'resolve_issue: you cannot change issues in this workspace' using errcode = '42501';
@@ -15077,10 +15078,12 @@ begin
   if p_status is null or p_status not in ('resolved', 'wont_fix') then
     raise exception 'resolve_issue: status must be resolved or wont_fix' using errcode = '22023';
   end if;
-  if not exists (select 1 from public.issues where id = p_id and workspace_id = p_workspace and status <> 'dismissed') then
+  -- One locked read for both checks: two people resolving at the same moment take turns, so the second sees `done`.
+  select i.status into v_status from public.issues i where i.id = p_id and i.workspace_id = p_workspace for update;
+  if v_status is null or v_status = 'dismissed' then
     raise exception 'resolve_issue: no such issue' using errcode = '42501';
   end if;
-  if exists (select 1 from public.issues where id = p_id and status = 'done') then
+  if v_status = 'done' then
     raise exception 'resolve_issue: that issue is already resolved' using errcode = '22023';
   end if;
   update public.issues
@@ -15097,7 +15100,7 @@ $$;
 revoke all on function public.resolve_issue(uuid, uuid, text, text, text) from public, anon;
 grant execute on function public.resolve_issue(uuid, uuid, text, text, text) to authenticated;
 
-insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261123000000', 'issue_resolution', array['-- Issues pages: how an issue was resolved, and a note (issue #113, A48).
+insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261121500000', 'issue_resolution', array['-- Issues pages: how an issue was resolved, and a note (issue #113, A48).
 --
 -- A resolved issue records how it was resolved (''solution'': a solution fixed it; ''process_change'': we changed the
 -- process directly; ''not_a_problem'': no longer a problem) and a note. `issue_events.detail` is written only by the
@@ -15118,7 +15121,7 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --   1. The columns do not exist yet. Expect 0:
 --        select count(*) from information_schema.columns where table_schema = ''public'' and table_name = ''issues'' and column_name in (''resolved_how'', ''resolution_note'');
 --   2. Nothing of ours is applied past 20261120000000. Expect 0 rows:
---        select version from supabase_migrations.schema_migrations where version >= ''20261123000000'';
+--        select version from supabase_migrations.schema_migrations where version >= ''20261121500000'';
 --
 -- Rollback (run as one transaction; loses the recorded how and note on current rows, and the log entries keep theirs):
 --
@@ -15194,7 +15197,7 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --   -- then drop the columns:
 --   alter table public.issues drop constraint if exists issues_resolved_how_check, drop constraint if exists issues_resolution_note_length,
 --     drop column resolved_how, drop column resolution_note;
---   delete from supabase_migrations.schema_migrations where version = ''20261123000000'';
+--   delete from supabase_migrations.schema_migrations where version = ''20261121500000'';
 --   commit;
 
 alter table public.issues
@@ -15300,6 +15303,7 @@ set search_path = ''''
 as $$
 declare
   result jsonb;
+  v_status text;
 begin
   if not coalesce(public.can_edit_workspace(p_workspace), false) then
     raise exception ''resolve_issue: you cannot change issues in this workspace'' using errcode = ''42501'';
@@ -15310,10 +15314,12 @@ begin
   if p_status is null or p_status not in (''resolved'', ''wont_fix'') then
     raise exception ''resolve_issue: status must be resolved or wont_fix'' using errcode = ''22023'';
   end if;
-  if not exists (select 1 from public.issues where id = p_id and workspace_id = p_workspace and status <> ''dismissed'') then
+  -- One locked read for both checks: two people resolving at the same moment take turns, so the second sees `done`.
+  select i.status into v_status from public.issues i where i.id = p_id and i.workspace_id = p_workspace for update;
+  if v_status is null or v_status = ''dismissed'' then
     raise exception ''resolve_issue: no such issue'' using errcode = ''42501'';
   end if;
-  if exists (select 1 from public.issues where id = p_id and status = ''done'') then
+  if v_status = ''done'' then
     raise exception ''resolve_issue: that issue is already resolved'' using errcode = ''22023'';
   end if;
   update public.issues

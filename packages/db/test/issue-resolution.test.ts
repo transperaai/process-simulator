@@ -99,7 +99,7 @@ describe("resolve_issue", () => {
   });
 
   it("the header's rollback works as written: with the columns gone, status changes still log", async () => {
-    const sql = readFileSync(new URL("../supabase/migrations/20261123000000_issue_resolution.sql", import.meta.url), "utf8");
+    const sql = readFileSync(new URL("../supabase/migrations/20261121500000_issue_resolution.sql", import.meta.url), "utf8");
     const header = sql.slice(sql.indexOf("-- Rollback"), sql.indexOf("\nalter table public.issues\n  add column"));
     const steps = header
       .split("\n")
@@ -122,6 +122,37 @@ describe("resolve_issue", () => {
       expect(kinds).toEqual(["created", "resolved", "reopened"]);
     } finally {
       await db.client.query("rollback");
+    }
+  });
+
+  it("locks the issue row while it checks it, so two people resolving at once take turns", async () => {
+    const def = (await db.client.query("select pg_get_functiondef('public.resolve_issue(uuid, uuid, text, text, text)'::regprocedure) as d")).rows[0].d as string;
+    expect(def).toMatch(/for update/i);
+    // A second connection that resolves while the first holds the row waits, then sees it resolved.
+    const second = new (await import("pg")).default.Client({ connectionString: db.url });
+    await second.connect();
+    try {
+      await db.client.query("begin");
+      await db.client.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify(users.editor!.claims)]);
+      await db.client.query("set local role authenticated");
+      await resolve(db.client, target, "solution", "First");
+      await second.query("begin");
+      await second.query("set local role authenticated");
+      await second.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify(users.editor!.claims)]);
+      const racing = second.query("select public.resolve_issue($1, $2, 'not_a_problem', 'Second', 'resolved')", [ws, target]).then(
+        () => "passed",
+        (e: Error) => e.message,
+      );
+      // It is blocked on the row lock until the first transaction ends.
+      const early = await Promise.race([racing, new Promise((r) => setTimeout(() => r("waiting"), 400))]);
+      expect(early).toBe("waiting");
+      await db.client.query("commit");
+      expect(await racing).toMatch(/already resolved/);
+      await second.query("rollback");
+      // Put the issue back for later tests.
+      await db.client.query("update issues set status = 'open' where id = $1", [target]);
+    } finally {
+      await second.end();
     }
   });
 

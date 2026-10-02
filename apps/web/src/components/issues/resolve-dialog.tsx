@@ -34,7 +34,15 @@ export function ResolveDialog(props: ResolveDialogProps) {
   const { open, issueNumber, issueTitle, onClose } = props;
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[92svh] overflow-y-auto sm:max-w-lg" data-resolve-dialog>
+      <DialogContent
+        className="max-h-[92svh] overflow-y-auto sm:max-w-lg"
+        data-resolve-dialog
+        onOpenAutoFocus={(e) => {
+          // Not the first (i): its popover would cover the options. Focus the chosen option.
+          e.preventDefault();
+          (e.currentTarget as HTMLElement).querySelector<HTMLInputElement>("input[type=radio]:checked")?.focus();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{issueNumber ? `Resolve #${issueNumber}` : "Resolve issue"}</DialogTitle>
           <DialogDescription>{issueTitle}</DialogDescription>

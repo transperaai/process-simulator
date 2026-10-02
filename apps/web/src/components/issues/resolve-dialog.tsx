@@ -9,7 +9,9 @@ import { Help, HelpLabel } from "@/components/help";
 import { RESOLVE_HELP } from "@/lib/issues/help";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
+import { RESOLVE_SOLUTION_HELP } from "@/lib/solutions/help";
 import { MAX_NOTE } from "@/lib/issues/validate";
 import { RESOLVE_HOW_LABELS } from "@/lib/issues/pages";
 
@@ -20,11 +22,21 @@ const OPTIONS: { how: ResolveHow; help: (typeof RESOLVE_HELP)[keyof typeof RESOL
   { how: "not_a_problem", help: RESOLVE_HELP.gone, text: "Something else changed, or it was a one-off." },
 ];
 
+/** A solution linked to the issue, which can be picked as the one that fixed it. */
+export interface ResolveSolutionOption {
+  id: string;
+  name: string;
+  /** The verdict that counts: yours, else the automatic one; null when neither exists. */
+  verdict: "pass" | "fail" | null;
+}
+
 export interface ResolveDialogProps {
   open: boolean;
+  /** The solutions linked to this issue (A50): "A solution fixed it" asks which one. */
+  solutions?: readonly ResolveSolutionOption[];
   issueNumber: number | null;
   issueTitle: string;
-  onSubmit: (how: ResolveHow, note: string | null) => Promise<unknown>;
+  onSubmit: (how: ResolveHow, note: string | null, solution: { id: string; name: string } | null) => Promise<unknown>;
   onClose: () => void;
   busy?: boolean;
   error?: string | null;
@@ -53,14 +65,18 @@ export function ResolveDialog(props: ResolveDialogProps) {
   );
 }
 
-function Form({ onSubmit, onClose, busy, error }: ResolveDialogProps) {
+function Form({ onSubmit, onClose, busy, error, solutions = [] }: ResolveDialogProps) {
   const [how, setHow] = useState<ResolveHow>("process_change");
+  // The best verdict first, so the likely one is already chosen.
+  const ordered = [...solutions].sort((a, b) => Number(b.verdict === "pass") - Number(a.verdict === "pass"));
+  const [picked, setPicked] = useState("");
+  const pick = how === "solution" ? (ordered.find((s) => s.id === picked) ?? ordered[0] ?? null) : null;
   const [note, setNote] = useState("");
   const [working, setWorking] = useState(false);
   const submit = async () => {
     setWorking(true);
     try {
-      if (await onSubmit(how, note.trim() || null)) onClose();
+      if (await onSubmit(how, note.trim() || null, pick ? { id: pick.id, name: pick.name } : null)) onClose();
     } finally {
       setWorking(false);
     }
@@ -99,12 +115,29 @@ function Form({ onSubmit, onClose, busy, error }: ResolveDialogProps) {
         </div>
       </fieldset>
 
+      {how === "solution" &&
+        (ordered.length ? (
+          <label className="flex flex-col gap-0.5" data-resolve-solution>
+            <HelpLabel {...RESOLVE_SOLUTION_HELP} />
+            <NativeSelect aria-label="Which solution fixed it?" value={pick?.id ?? ""} onChange={(e) => setPicked(e.target.value)}>
+              {ordered.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} · {s.verdict ? s.verdict.toUpperCase() : "NOT CHECKED"}
+                </option>
+              ))}
+            </NativeSelect>
+          </label>
+        ) : (
+          <p className="text-xs text-muted-foreground" data-resolve-no-solution>
+            No solutions have been tested for this issue yet, so it will be recorded as fixed by a solution without naming one.
+          </p>
+        ))}
 
       <label className="flex flex-col gap-0.5">
         <HelpLabel {...RESOLVE_HELP.note} />
         <Textarea value={note} maxLength={MAX_NOTE} placeholder="e.g. Built into Sales version 8" onChange={(e) => setNote(e.target.value)} />
       </label>
-      <p className="text-xs text-muted-foreground">The issue leaves the map and the open list, but keeps its history.</p>
+      <p className="text-xs text-muted-foreground">The issue leaves the map and the open list, but keeps its history and its solutions.</p>
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}

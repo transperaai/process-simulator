@@ -83,13 +83,12 @@ export function listIssues(issues: readonly IssueRow[], state: ListState, costOf
 export { RATINGS_WORST_FIRST };
 
 // ---------------------------------------------------------------------------
-// Solutions tested (A49 fills these in)
+// Solutions tested (the rows are built in lib/solutions/cards.ts)
 // ---------------------------------------------------------------------------
 
 /**
- * What the list says about the solutions tested for each issue, and the page lists. A49 (solutions) builds the tables;
- * until then nothing is tested and AI ideas are A52's. Wire A49 in by returning real rows from `solutionsOf` (the
- * issue page) and `solutionSummaries` (the list); the components already render them.
+ * What the list says about the solutions tested for each issue, and the page lists. The rows come from
+ * `solutionTests` and `solutionSummaries` in lib/solutions/cards.ts (A50); AI ideas are A52's.
  */
 export interface SolutionTest {
   id: string;
@@ -98,7 +97,7 @@ export interface SolutionTest {
   type: string;
   built: string;
   /** The automatic verdict against this issue's target. */
-  auto: "pass" | "fail" | "unclear" | null;
+  auto: "pass" | "fail" | "unchecked" | null;
   /** How often it holds across the simulated runs, as a share (0 to 1), or null. */
   holds: number | null;
   /** The person's own verdict. */
@@ -115,17 +114,6 @@ export interface SolutionSummary {
 }
 
 export const NO_SOLUTIONS: SolutionSummary = { tested: 0, passed: false, ideas: 0 };
-
-/** Solutions tested for one issue. Empty until A49 builds solutions. */
-export function solutionsOf(issueId: string): SolutionTest[] {
-  void issueId;
-  return [];
-}
-
-/** Each issue's summary for the list, by issue id. Empty until A49: every issue reads "None yet". */
-export function solutionSummaries(): Record<string, SolutionSummary> {
-  return {};
-}
 
 // ---------------------------------------------------------------------------
 // The issue page
@@ -183,11 +171,17 @@ export const RESOLVE_HOW_BAR: Record<ResolveHow, string> = {
 };
 
 /** The bar on a resolved issue: "Resolved 5 Oct · by changing the process directly · note". Null for an open issue. */
-export function resolvedBar(issue: Pick<IssueRow, "status" | "resolved_at" | "resolved_how" | "resolution_note">, now?: Date): string | null {
+export function resolvedBar(
+  issue: Pick<IssueRow, "status" | "resolved_at" | "resolved_how" | "resolution_note">,
+  now?: Date,
+  /** The solution that fixed it, when one was picked (A50): "by solution “Lead scoring”". */
+  solutionName?: string | null,
+): string | null {
   if (issue.status !== "resolved" && issue.status !== "wont_fix") return null;
   const head = issue.status === "wont_fix" ? "Won't fix" : "Resolved";
   const date = shortDate(issue.resolved_at, now);
-  return [`${head}${date ? ` ${date}` : ""}`, issue.resolved_how ? RESOLVE_HOW_BAR[issue.resolved_how] : null, issue.resolution_note?.trim() || null].filter(Boolean).join(" · ");
+  const how = issue.resolved_how ? (issue.resolved_how === "solution" && solutionName ? `by solution “${solutionName}”` : RESOLVE_HOW_BAR[issue.resolved_how]) : null;
+  return [`${head}${date ? ` ${date}` : ""}`, how, issue.resolution_note?.trim() || null].filter(Boolean).join(" · ");
 }
 
 export interface HistoryNames {
@@ -230,6 +224,8 @@ export function historyText(e: Pick<IssueEventRow, "kind" | "detail">, names: Om
     to?: string;
     how?: ResolveHow;
     note?: string;
+    solution?: string;
+    solution_verdict?: { solution?: string; verdict?: "pass" | "fail" | null; was?: "pass" | "fail" | null; notes_changed?: boolean };
     fields?: string[];
     linked?: LinkedDetail;
   };
@@ -240,7 +236,7 @@ export function historyText(e: Pick<IssueEventRow, "kind" | "detail">, names: Om
     case "solution_tested":
       return "Started testing solutions.";
     case "resolved": {
-      const how = d.how ? ` ${RESOLVE_HOW_BAR[d.how]}` : "";
+      const how = d.how ? ` ${d.how === "solution" && d.solution ? `by solution “${d.solution}”` : RESOLVE_HOW_BAR[d.how]}` : "";
       const label = d.to === "wont_fix" ? "Marked Won't fix" : "Marked resolved";
       return `${label}${how}.${d.note ? ` “${d.note}”` : ""}`;
     }
@@ -248,6 +244,12 @@ export function historyText(e: Pick<IssueEventRow, "kind" | "detail">, names: Om
       return "Reopened.";
     default: {
       const parts: string[] = [];
+      const sv = d.solution_verdict;
+      if (sv) {
+        const name = sv.solution ? `“${sv.solution}”` : "a solution";
+        if (sv.verdict !== sv.was) parts.push(sv.verdict ? `Your verdict on ${name}: ${sv.verdict === "pass" ? "Pass" : "Fail"}` : `Cleared your verdict on ${name}`);
+        if (sv.notes_changed) parts.push(`Updated your note on ${name}`);
+      }
       if (d.fields?.length) parts.push(`Changed ${list(d.fields.map((f) => FIELD_WORDS[f] ?? f))}`);
       const l = d.linked;
       if (l?.steps?.added?.length) parts.push(`Linked ${list(l.steps.added.map((s) => (s.step_id ? (names.step(s.step_id) ?? "a step") : "the whole process")))}`);

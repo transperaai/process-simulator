@@ -17,12 +17,11 @@ import {
   ratingCounts,
   resolvedBar,
   showCounts,
-  solutionSummaries,
-  solutionsOf,
 } from "@/lib/issues/pages";
 import { mapFeed, registerEntries } from "@/lib/issues/register";
 import { MemoryIssueStore } from "@/lib/issues/store";
 import { parseResolveInput } from "@/lib/issues/validate";
+import { NO_SOLUTIONS_DATA, solutionSummaries, solutionTests } from "@/lib/solutions/cards";
 
 // The Issues pages (issue #113, A48): the list's filters and URL, the sort, resolving and reopening (with the map badges
 // and the history), the resolved bar, and the (i) on every control.
@@ -115,10 +114,10 @@ describe("the issue's address", () => {
   });
 });
 
-describe("solutions tested (A49 fills these in)", () => {
-  it("are empty until the solution tables exist, so the list says none and the page its empty state", () => {
-    expect(solutionsOf(northbeamIssues()[0]!.id)).toEqual([]);
-    expect(solutionSummaries()).toEqual({});
+describe("solutions tested", () => {
+  it("are empty with no solutions, so the list says none and the page its empty state", () => {
+    expect(solutionTests(northbeamIssues()[0]!.id, NO_SOLUTIONS_DATA, "/demo")).toEqual([]);
+    expect(solutionSummaries(NO_SOLUTIONS_DATA)).toEqual({});
   });
 });
 
@@ -137,7 +136,12 @@ describe("resolving and reopening", () => {
   it("refuses a way that isn't one of the three", async () => {
     expect(parseResolveInput({ how: "magic", note: null }).ok).toBe(false);
     expect(parseResolveInput({ how: "solution", note: "x".repeat(2001) }).ok).toBe(false);
-    expect(parseResolveInput({ how: "not_a_problem", note: "  " })).toEqual({ ok: true, value: { how: "not_a_problem", note: null } });
+    expect(parseResolveInput({ how: "not_a_problem", note: "  " })).toEqual({ ok: true, value: { how: "not_a_problem", note: null, solutionId: null } });
+    // A solution (A50) can only be named with "A solution fixed it", and must look like an id.
+    const sol = "00000000-0000-4000-8000-0000000000bb";
+    expect(parseResolveInput({ how: "solution", note: null, solutionId: sol })).toEqual({ ok: true, value: { how: "solution", note: null, solutionId: sol } });
+    expect(parseResolveInput({ how: "process_change", note: null, solutionId: sol }).ok).toBe(false);
+    expect(parseResolveInput({ how: "solution", note: null, solutionId: "nope" }).ok).toBe(false);
     const r = await store().resolve(northbeamIssues()[0]!.id, "magic" as never, null);
     expect(r.status).toBe("error");
   });

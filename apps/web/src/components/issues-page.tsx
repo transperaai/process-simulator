@@ -15,7 +15,9 @@ import { RatingPill } from "@/components/overview/rating-pill";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { emptyDraft, issueFormOptions, toSaveInput } from "@/lib/issues/draft";
-import { NO_SOLUTIONS, RATINGS_WORST_FIRST, SHOW_FILTERS, SHOW_LABELS, isOpenIssue, issueHref, listIssues, listQuery, parseListState, ratingCounts, shortDate, showCounts, solutionSummaries, statusLabel, type ListState } from "@/lib/issues/pages";
+import { NO_SOLUTIONS, RATINGS_WORST_FIRST, SHOW_FILTERS, SHOW_LABELS, isOpenIssue, issueHref, listIssues, listQuery, parseListState, ratingCounts, shortDate, showCounts, statusLabel, type ListState } from "@/lib/issues/pages";
+import { NO_SOLUTIONS_DATA, solutionSummaries, type SolutionsData } from "@/lib/solutions/cards";
+import { useDemoSolutions } from "@/lib/solutions/demo";
 import { perceptionGapDetections } from "@/lib/issues/perception";
 import { useIssues } from "@/lib/issues/use-issues";
 import { useDetectedIssues } from "@/lib/issues/use-detected";
@@ -44,6 +46,7 @@ export function IssuesPage({
   firstPrinciples,
   base,
   liveRevisions,
+  solutions,
 }: {
   bundle: ProcessBundle;
   /** The live version's first principles, whose success measures rule 11 (goals met) rates. */
@@ -59,6 +62,8 @@ export function IssuesPage({
   /** Where the workspace's pages live: `/w/<slug>` or `/demo`. An issue's page is `<base>/issues/<number>`. */
   base: string;
   liveRevisions?: Record<string, string>;
+  /** The workspace's solutions and which issues they solve, for the "Solutions" column (the demo keeps its own in this tab). */
+  solutions?: SolutionsData;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -89,7 +94,9 @@ export function IssuesPage({
   const stepNames = useMemo(() => new Map([...bundle.steps, ...(bundle.otherProcesses ?? []).flatMap((p) => p.steps)].map((s) => [s.id, s.name])), [bundle]);
   const processNames = useMemo(() => new Map(processes.map((p) => [p.id, p.name])), [processes]);
   const peopleNames = useMemo(() => new Map(bundle.people.map((p) => [p.id, p.name])), [bundle.people]);
-  const summaries = useMemo(() => solutionSummaries(), []);
+  const inTab = useDemoSolutions();
+  const solutionData = mode === "demo" ? inTab : (solutions ?? NO_SOLUTIONS_DATA);
+  const summaries = useMemo(() => solutionSummaries(solutionData), [solutionData]);
 
   const counts = showCounts(state.issues);
   const ratings = ratingCounts(state.issues, filters.show);

@@ -24,9 +24,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { NativeSelect } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { draftFromIssue, issueFormOptions, toSaveInput } from "@/lib/issues/draft";
-import { historyLines, isOpenIssue, issueHref, loggedLine, resolvedBar, solutionsOf, type HistoryNames, type SolutionTest } from "@/lib/issues/pages";
+import { historyLines, isOpenIssue, issueHref, loggedLine, resolvedBar, type HistoryNames, type SolutionTest } from "@/lib/issues/pages";
 import { mapFeed, registerEntries, stepRatingOf } from "@/lib/issues/register";
 import { useIssues } from "@/lib/issues/use-issues";
+import { NO_SOLUTIONS_DATA, effectiveVerdict, solutionHref, solutionTests, solutionsForIssue, type SolutionsData } from "@/lib/solutions/cards";
+import { useDemoSolutions } from "@/lib/solutions/demo";
 import { ratingOfStored } from "@transpera-flow/engine";
 
 // The map is heavy; load it when the page has drawn.
@@ -59,6 +61,10 @@ export interface IssuePageProps {
   liveRevisions?: Record<string, string>;
   /** The "AI ideas" section's content (A52): the ideas waiting for this issue, each with Build it and Dismiss. Without it the section says there are none. */
   ideas?: ReactNode;
+  /** The workspace's solutions and which issues they solve (the demo keeps its own in this tab). */
+  solutions?: SolutionsData;
+  /** Member names by user id (the person linked to each membership), so the history says who by name. */
+  memberNames?: Readonly<Record<string, string>>;
 }
 
 export function IssuePage(props: IssuePageProps) {
@@ -110,15 +116,20 @@ export function IssuePage(props: IssuePageProps) {
     if (target && target.id !== issue.id) router.push(issueHref(base, target));
   };
 
-  const solutions: SolutionTest[] = solutionsOf(issue.id);
+  const inTab = useDemoSolutions();
+  const solutionData = mode === "demo" ? inTab : (props.solutions ?? NO_SOLUTIONS_DATA);
+  const solutions: SolutionTest[] = solutionTests(issue.id, solutionData, base);
+  // What the Resolve dialog can pick, and the one that fixed a resolved issue.
+  const linked = solutionsForIssue(solutionData, issue.id).map(({ solution, link }) => ({ id: solution.id, name: solution.name, verdict: effectiveVerdict(link) }));
+  const fixedBy = issue.resolved_solution_id ? (solutionData.solutions.find((s) => s.id === issue.resolved_solution_id) ?? null) : null;
   const names: HistoryNames = {
     step: (id) => stepName.get(id),
     person: (id) => personName.get(id),
     source: (id) => sourceTitle.get(id),
-    who: (actor) => (actor && actor === viewerId ? "You" : mode === "demo" ? "You" : actor ? "A team member" : "System"),
+    who: (actor) => (actor && actor === viewerId ? "You" : mode === "demo" ? "You" : actor ? (props.memberNames?.[actor] ?? "A team member") : "System"),
   };
   const lines = historyLines(events, names);
-  const bar = resolvedBar(issue);
+  const bar = resolvedBar(issue, undefined, fixedBy?.name);
   const owners = issue.owner_ids.length ? issue.owner_ids : issue.owner_person_id ? [issue.owner_person_id] : [];
   const processIdOf = issue.links.find((l) => l.process_id)?.process_id ?? issue.process_id ?? bundle.process.id;
 
@@ -186,6 +197,14 @@ export function IssuePage(props: IssuePageProps) {
           <span aria-hidden>✓ </span>
           <b>{bar.split(" · ")[0]}</b>
           {bar.includes(" · ") ? ` · ${bar.split(" · ").slice(1).join(" · ")}` : ""}
+          {fixedBy && (
+            <>
+              {" "}
+              <Link href={solutionHref(base, fixedBy.id)} className="font-medium underline" data-resolved-solution>
+                Open the solution
+              </Link>
+            </>
+          )}
         </div>
       )}
 
@@ -374,10 +393,11 @@ export function IssuePage(props: IssuePageProps) {
         open={resolving}
         issueNumber={issue.number}
         issueTitle={issue.title}
+        solutions={linked}
         busy={state.busy}
         error={state.error}
         onClose={() => setResolving(false)}
-        onSubmit={(how, note) => state.resolve(issue.id, how, note).then((r) => r && (refresh(), r))}
+        onSubmit={(how, note, solution) => state.resolve(issue.id, how, note, solution).then((r) => r && (refresh(), r))}
       />
       <LinkSourceDialog
         open={linking}
@@ -427,7 +447,7 @@ function Chip({ children }: { children: React.ReactNode }) {
   return <span className="inline-flex h-6 items-center rounded-full border border-border px-2 text-xs">{children}</span>;
 }
 
-const VERDICT_LABELS = { pass: "Pass", fail: "Fail", unclear: "Unclear" } as const;
+const VERDICT_LABELS = { pass: "Pass", fail: "Fail", unchecked: "Not checked" } as const;
 const Verdict = ({ v }: { v: keyof typeof VERDICT_LABELS | null }) => (v ? <span className="font-medium">{VERDICT_LABELS[v]}</span> : <span className="text-muted-foreground">—</span>);
 
 /** The solutions tested for the issue, as the prototype's table. A49 supplies the rows. */

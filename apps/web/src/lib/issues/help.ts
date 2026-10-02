@@ -113,7 +113,7 @@ export const RESOLVE_HELP = {
   },
   solution: {
     label: "A solution fixed it",
-    description: "Pick this when one of the solutions you tested is the fix, and you have built it into the live process. The history says a solution fixed it; it does not record which one yet.",
+    description: "Pick this when one of the solutions you tested is the fix, and you have built it into the live process. Then choose which solution it was: the issue and its history will name it.",
     example: "“Lead scoring” passed its test, and you built it into the live process.",
   },
   process: {

@@ -978,6 +978,7 @@ export type Database = {
           resolution: string | null
           resolution_note: string | null
           resolved_how: string | null
+          resolved_solution_id: string | null
           resolved_at: string | null
           role_id: string | null
           scenario_id: string | null
@@ -1010,6 +1011,7 @@ export type Database = {
           resolution?: string | null
           resolution_note?: string | null
           resolved_how?: string | null
+          resolved_solution_id?: string | null
           resolved_at?: string | null
           role_id?: string | null
           scenario_id?: string | null
@@ -1042,6 +1044,7 @@ export type Database = {
           resolution?: string | null
           resolution_note?: string | null
           resolved_how?: string | null
+          resolved_solution_id?: string | null
           resolved_at?: string | null
           role_id?: string | null
           scenario_id?: string | null
@@ -2991,16 +2994,28 @@ export type Database = {
           status: string
         }[]
       }
-      resolve_issue: {
-        Args: {
-          p_how: string
-          p_id: string
-          p_note?: string
-          p_status?: string
-          p_workspace: string
-        }
-        Returns: Json
-      }
+      resolve_issue:
+        | {
+            Args: {
+              p_how: string
+              p_id: string
+              p_note?: string
+              p_status?: string
+              p_workspace: string
+            }
+            Returns: Json
+          }
+        | {
+            Args: {
+              p_how: string
+              p_id: string
+              p_note: string
+              p_solution: string
+              p_status: string
+              p_workspace: string
+            }
+            Returns: Json
+          }
       save_fields: {
         Args: { base: Json; changes: Json; key: Json; target: string }
         Returns: Json

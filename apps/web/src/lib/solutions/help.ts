@@ -94,23 +94,48 @@ export const SOLUTION_PAGE_HELP = {
   },
   compare: {
     label: "Live vs this solution",
-    description: "The live map and the solution's map side by side, opening and closing together, with new or changed steps marked. It arrives in the next release.",
-    example: "Open Check fit on one side and the same group opens on the other.",
+    description: "The two maps open and close together. Steps that are new or changed in the solution are marked on its map, and steps it removed show struck through. “Live” is the version of the process this solution was copied from, not whatever is live today, so the maps show exactly what the solution changed and match its automatic verdict. If the process has been published since, a note says so.",
+    example: "Open Check fit on one side and the same group opens on the other; the new AI step is marked on the right.",
+  },
+  compareSide: {
+    label: "Which map is which",
+    description: "Left is the process as it was when this solution was copied from it. Right is the same process with the solution's changes. Click a group's arrow on either map to open or close it on both.",
+    example: "Close Sales on the left and it closes on the right too.",
+  },
+  horizon: {
+    label: "Projection",
+    description: "How far ahead the measures, the revenue chart and the stress test look. Longer shows slower effects such as clients leaving, but takes a little longer to run.",
+    example: "12m shows the next year; the stress test then checks each market over the same year.",
   },
   measures: {
     label: "Measures",
-    description: "The numbers that matter for live and for the solution, and whether each got better or worse. It arrives in the next release.",
+    description: "The same simulation run for live and for the solution, 30 times each, side by side. The last column says whether the solution is better or worse; a result inside the normal run-to-run spread is “About the same”.",
     example: "Cycle time 12 days live, 9 days with the solution: better.",
+  },
+  measuresChange: {
+    label: "Better or worse",
+    description: "Better when the solution is clearly ahead of live across the runs, Worse when clearly behind, and About the same when the difference could be chance. A cost with no right answer (labour) is not rated.",
+    example: "Wins +1.2 is Better. New MRR −£300 is Worse.",
   },
   mrr: {
     label: "MRR over time",
-    description: "Monthly recurring revenue over the months you choose, live against with the solution. It arrives in the next release.",
+    description: "Monthly recurring revenue month by month over the horizon you chose: live as a line with its 10 to 90% range, and with this solution as a dashed line. Each point comes from simulating that far ahead.",
     example: "After 12 months the solution is £4k a month ahead of live.",
   },
   stress: {
     label: "Market stress test",
-    description: "Does the solution still work under Stable, Soft, Downturn and Boom markets, and your own? It arrives in the next release.",
-    example: "Passes in Stable and Boom, fails in Downturn.",
+    description: "Does the solution still work if the market changes? It is run again under each market condition on its own (Stable, Soft, Downturn, Boom and any of your own from Settings), and each linked issue's goal is checked the same way as the automatic verdict. Pass means every issue it could check still meets its goal.",
+    example: "Passes in Stable and Boom, fails in Downturn because first contact slips to 5 hours.",
+  },
+  stressResult: {
+    label: "Result under a market",
+    description: "Pass or fail for the issues this solution solves, with the market applied for the whole run. “Not checked” means no linked issue has a goal the simulation can measure.",
+    example: "Downturn: Fail. Stable: Pass.",
+  },
+  stressNumber: {
+    label: "Key number",
+    description: "The number each result rests on, checked against the issue's goal, then monthly recurring revenue at the end of the horizon for the solution against live in that market.",
+    example: "Wait at Check fit: 5.2 h on average, against under 4 hours. MRR £41k, live £38k.",
   },
 } as const;
 

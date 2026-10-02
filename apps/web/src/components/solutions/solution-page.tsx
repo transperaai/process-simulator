@@ -1,17 +1,20 @@
 "use client";
 
-// The Solution page (issue #115, A50 slice 1; prototype: route "compare"): the header, the issues the solution solves with an
-// automatic verdict each and your own pass or fail, "+ Link an issue", and notes. The two maps side by side, the measures, the MRR
-// chart and the market stress test are slice 2: their places are marked below and nothing is drawn in them yet.
+// The Solution page (issue #115, A50; prototype: route "compare"): the header, the issues the solution solves with an automatic
+// verdict each and your own pass or fail, "+ Link an issue", the comparison with live (the two maps, the measures, the MRR chart and
+// the market stress test: components/solutions/solution-compare.tsx) and notes.
 // Your verdict and notes are saved on the solution's links and logged on each issue's history by the database.
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { IssueRow, SolutionIssueRow, SolutionRow, SolutionVerdict } from "@transpera-flow/db";
+import { bundleForProcess, type IssueRow, type ProcessBundle, type SolutionIssueRow, type SolutionRow, type SolutionVerdict } from "@transpera-flow/db";
 import { StatusChip } from "@/components/issues-page";
 import { Help, HelpLabel } from "@/components/help";
 import { VerdictWord } from "@/components/solutions/solution-cards";
+import { SolutionCompare } from "@/components/solutions/solution-compare";
+import { demoMarket } from "@/lib/market-demo";
+import { demoBundle } from "@/lib/sources/demo";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -42,6 +45,10 @@ export interface SolutionPageProps {
   mode: "live" | "demo" | "readonly";
   viewerId?: string | null;
   memberNames?: Readonly<Record<string, string>>;
+  /** The version of the process the solution was copied from, for the comparison. The demo works it out itself. */
+  compareBase?: ProcessBundle | null;
+  /** A sentence when the process has been published since the solution was copied from it. */
+  movedOn?: string | null;
 }
 
 export function SolutionPage(props: SolutionPageProps) {
@@ -78,7 +85,9 @@ export function SolutionPage(props: SolutionPageProps) {
   const links = linksOf(data, solution.id);
   const issueById = new Map(issues.map((i) => [i.id, i]));
   const processName = processes.find((p) => p.id === solution.process_id)?.name ?? "a process";
-  const type = solutionType(solution);
+  const type = solutionType(solution, data.aiIds);
+  // The demo has no server: the version the solution was copied from is the demo's own process.
+  const compareBase = mode === "demo" ? bundleForProcess(demoBundle(), solution.process_id) : (props.compareBase ?? null);
   const toLink = linkableIssues(issues, solution.process_id, new Set(links.map((l) => l.issue_id)));
 
   const putLink = (link: SolutionIssueRow) =>
@@ -178,11 +187,13 @@ export function SolutionPage(props: SolutionPageProps) {
         )}
       </section>
 
-      {/* Slice 2 (issue #115 continues): the places for what comes next. Nothing is drawn in them yet. */}
-      <Slice2 id="compare" title="Live vs this solution" help={SOLUTION_PAGE_HELP.compare} text="The live map and this solution's map side by side, opening and closing together, with new or changed steps marked." />
-      <Slice2 id="measures" title="Measures" help={SOLUTION_PAGE_HELP.measures} text="Live, solution, and whether each measure is better or worse." />
-      <Slice2 id="mrr" title="MRR over time" help={SOLUTION_PAGE_HELP.mrr} text="Monthly recurring revenue over the chosen horizon, live against with this solution." />
-      <Slice2 id="stress" title="Market stress test" help={SOLUTION_PAGE_HELP.stress} text="Pass or fail and the key number under each market condition: Stable, Soft, Downturn, Boom and your own." />
+      {compareBase ? (
+        <SolutionCompare key={solution.id} base={compareBase} solution={solution} links={links} issues={issues} movedOn={props.movedOn} marketConditions={mode === "demo" ? demoMarket().marketConditions : undefined} />
+      ) : (
+        <p className="text-sm text-muted-foreground" data-compare-unavailable>
+          The comparison with live isn&apos;t available: the process this solution was copied from can&apos;t be loaded.
+        </p>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2">
         <NotesCard
@@ -343,20 +354,6 @@ function SolvesCard({
         </label>
       )}
     </Card>
-  );
-}
-
-function Slice2({ id, title, text, help }: { id: string; title: string; text: string; help: { label: string; description: string; example: string } }) {
-  return (
-    <section className="flex flex-col gap-2" data-section={id} data-slice="2">
-      <h2 className={`${CARD_TITLE} flex items-center`}>
-        {title}
-        <Help {...help} />
-      </h2>
-      <div className="rounded-token border border-dashed border-line p-4 text-sm text-muted-foreground" data-coming-next>
-        Coming next. {text}
-      </div>
-    </section>
   );
 }
 

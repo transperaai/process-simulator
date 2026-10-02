@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { SolutionPage } from "@/components/solutions/solution-page";
 import { Page } from "@/components/shell/page";
 import { canEditWorkspace, currentUserId } from "@/lib/access-data";
-import { loadLiveProcess, loadMemberNames, loadProcessNames, loadWorkspaceIssues, loadWorkspaceSolutions } from "@/lib/data";
+import { loadLiveProcess, loadMemberNames, loadSolutionBase, loadProcessNames, loadWorkspaceIssues, loadWorkspaceSolutions } from "@/lib/data";
 import { isId } from "@/lib/sources/validate";
 
 /**
@@ -25,6 +25,8 @@ export default async function WorkspaceSolutionPage(props: PageProps<"/w/[slug]/
   ]);
   const solution = solutions.solutions.find((s) => s.id === id);
   if (!solution) notFound();
+  // The version the solution was copied from, for the comparison. If it can't be read the rest of the page still works.
+  const compare = await loadSolutionBase(slug, solution.process_id, solution.base_revision_id).catch(() => null);
   return (
     <Page title={solution.name} eyebrow="Improve" width="max-w-6xl" hideHeader>
       <SolutionPage
@@ -37,6 +39,8 @@ export default async function WorkspaceSolutionPage(props: PageProps<"/w/[slug]/
         mode={canEdit ? "live" : "readonly"}
         viewerId={viewerId}
         memberNames={memberNames}
+        compareBase={compare?.base ?? null}
+        movedOn={compare?.movedOn ?? null}
       />
     </Page>
   );

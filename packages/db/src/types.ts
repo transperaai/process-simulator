@@ -489,6 +489,27 @@ export interface SourceRow {
   updated_at: string;
 }
 
+/** What a source can be linked to (issue #118, A53). */
+export type SourceLinkKind = "process" | "step" | "insight" | "issue" | "solution";
+
+/**
+ * One thing a source is evidence for (`source_links`): the column of its kind is set and the others are null. A step is
+ * named by its stable id and the process it is in; an insight by its detection key.
+ */
+export interface SourceLinkRow {
+  id: string;
+  workspace_id: string;
+  source_id: string;
+  kind: SourceLinkKind;
+  process_id: string | null;
+  step_id: string | null;
+  insight_key: string | null;
+  issue_id: string | null;
+  solution_id: string | null;
+  created_at: string;
+  created_by: string | null;
+}
+
 /** Where qualified leads come from (docs/PRD.md §5 `lead_sources`). */
 export interface LeadSourceRow {
   id: string;
@@ -1005,6 +1026,8 @@ export type _SchemaDriftChecks = [
   Assert<Matches<Omit<IssueRow, "evidence_metrics" | "links" | "owner_ids" | "source_ids" | "status" | "resolved_how">, "issues">>,
   Assert<Matches<Omit<IssueEventRow, "kind" | "detail">, "issue_events">>,
   Assert<Matches<SourceRow, "sources">>,
+  // The check constraint limits kind to SourceLinkKind.
+  Assert<Matches<Omit<SourceLinkRow, "kind">, "source_links">>,
   // steps is jsonb; BlockBundle is its checked shape, and the check constraint limits type to BlockType.
   Assert<Matches<Omit<BlockRow, "steps" | "type">, "blocks">>,
   // steps, changed_step_ids and lever_changes are jsonb; SolutionRow has their checked shapes. The verdicts are check-constrained.

@@ -2348,6 +2348,77 @@ export type Database = {
           },
         ]
       }
+      source_links: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          insight_key: string | null
+          issue_id: string | null
+          kind: string
+          process_id: string | null
+          solution_id: string | null
+          source_id: string
+          step_id: string | null
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          insight_key?: string | null
+          issue_id?: string | null
+          kind: string
+          process_id?: string | null
+          solution_id?: string | null
+          source_id: string
+          step_id?: string | null
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          insight_key?: string | null
+          issue_id?: string | null
+          kind?: string
+          process_id?: string | null
+          solution_id?: string | null
+          source_id?: string
+          step_id?: string | null
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "source_links_issue_id_workspace_id_fkey"
+            columns: ["issue_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "issues"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "source_links_process_id_workspace_id_fkey"
+            columns: ["process_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "source_links_solution_id_workspace_id_fkey"
+            columns: ["solution_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "solutions"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "source_links_source_id_workspace_id_fkey"
+            columns: ["source_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "sources"
+            referencedColumns: ["id", "workspace_id"]
+          },
+        ]
+      }
       sources: {
         Row: {
           body: string | null
@@ -2750,6 +2821,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      add_source: {
+        Args: { p_links: Json; p_source: Json; p_workspace: string }
+        Returns: string
+      }
       can_edit_workspace: { Args: { ws: string }; Returns: boolean }
       can_manage_workspace: { Args: { ws: string }; Returns: boolean }
       can_read_workspace: { Args: { ws: string }; Returns: boolean }
@@ -2868,6 +2943,10 @@ export type Database = {
           p_workspace: string
         }
         Returns: Json
+      }
+      unlinked_source_count: {
+        Args: { p_workspace: string }
+        Returns: number
       }
       workspace_members: {
         Args: { ws: string }

@@ -33,6 +33,7 @@ import type {
   SeasonalityRow,
   ServiceRow,
   ServiceServicingRow,
+  SourceLinkRow,
   SourceRow,
   StepRow,
   SuggestionRow,
@@ -503,6 +504,16 @@ export async function loadSources(db: Db, workspaceId: string): Promise<SourceRo
     .order("id");
   // The check constraint limits kind to SourceRow's union.
   return rows(r) as unknown as SourceRow[];
+}
+
+/** The `SourceLinkRow` columns. */
+export const SOURCE_LINK_COLUMNS = "id, workspace_id, source_id, kind, process_id, step_id, insight_key, issue_id, solution_id, created_at, created_by" as const;
+
+/** What every source of the workspace is linked to, oldest link first (RLS: everyone in the workspace can read them). */
+export async function loadSourceLinks(db: Db, workspaceId: string): Promise<SourceLinkRow[]> {
+  const r = await db.from("source_links").select(SOURCE_LINK_COLUMNS).eq("workspace_id", workspaceId).order("created_at").order("id");
+  // The check constraint limits kind to SourceLinkRow's union.
+  return rows(r) as unknown as SourceLinkRow[];
 }
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];

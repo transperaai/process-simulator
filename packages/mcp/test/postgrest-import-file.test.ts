@@ -189,7 +189,7 @@ describe.skipIf(!POSTGREST_URL)("uploading a process file over PostgREST (a draf
     expect(preview.canEdit).toBe(true);
     expect(preview.nameTaken).toBeNull();
 
-    const mapped = await importProcessFile(editorCtx, withRole("Roles mapped"), { workspaceId, source: "roles.json", roleMap: { "Sales lead": managerId, "Retired role": null } });
+    const mapped = await importProcessFile(editorCtx, withRole("Roles mapped"), { workspaceId, source: "roles.json", roleMap: new Map([["Sales lead", managerId], ["Retired role", null]]) });
     const mappedSteps = Object.fromEntries((await stepsOf(mapped.revision_id)).map((s) => [s.name, s]));
     expect(mappedSteps["Review enquiry"].role_id).toBe(managerId);
     expect(mappedSteps["Discovery call"].role_id).toBe(managerId);
@@ -210,7 +210,7 @@ describe.skipIf(!POSTGREST_URL)("uploading a process file over PostgREST (a draf
       f.name = "Wrong role";
       f.steps[1].role = "Sales lead";
     });
-    await expect(importProcessFile(editorCtx, file, { workspaceId, source: "x.json", roleMap: { "Sales lead": otherWorkspaceRoleId } })).rejects.toThrow(/isn't one of this company's/);
+    await expect(importProcessFile(editorCtx, file, { workspaceId, source: "x.json", roleMap: new Map([["Sales lead", otherWorkspaceRoleId]]) })).rejects.toThrow(/isn't one of this company's/);
     expect(await processCount()).toBe(before);
   });
 
@@ -287,6 +287,80 @@ describe.skipIf(!POSTGREST_URL)("uploading a process file over PostgREST (a draf
       expect(made[2]).toEqual(made[0]);
     } finally {
       await new Promise((r) => server.close(r));
+    }
+  });
+
+  it("whatever the preview accepts, create writes: every file the checker passes becomes a draft", async () => {
+    const mk = (name: string, change: (f: ReturnType<typeof JSON.parse>) => void) => example((f) => {
+      f.name = `Parity ${name}`;
+      change(f);
+    });
+    const fixtures: ProcessFile[] = [
+      mk("example", () => {}),
+      // No start step: each way the checker handles it.
+      mk("no start, plain first step", (f) => {
+        f.steps = f.steps.filter((s: { id: string }) => s.id !== "enquiry");
+        f.links = f.links.filter((l: { from: string }) => l.from !== "enquiry");
+        delete f.steps[0].hands_on_hours;
+        delete f.steps[0].wait_hours;
+        delete f.steps[0].role;
+        delete f.steps[0].notes;
+      }),
+      mk("no start, first step has hours and a role", (f) => {
+        f.steps = f.steps.filter((s: { id: string }) => s.id !== "enquiry");
+        f.links = f.links.filter((l: { from: string }) => l.from !== "enquiry");
+      }),
+      mk("no start, a loop through a decision", () => {}),
+      mk("positions and groups", (f) => {
+        f.steps[1].x = 10;
+        f.steps[1].y = 20;
+        f.groups = [{ name: "Box", steps: ["call", "proposal"] }];
+      }),
+      mk("only one end", (f) => {
+        f.steps = f.steps.filter((s: { id: string }) => s.id !== "declined" && s.id !== "unqualified");
+        f.links = f.links.filter((l: { to: string }) => l.to !== "declined" && l.to !== "unqualified");
+        f.links.find((l: { from: string }) => l.from === "review").probability = 1;
+        f.links.find((l: { from: string }) => l.from === "decides").probability = 1;
+      }),
+      mk("odd names", (f) => {
+        f.steps[1].name = "Review & approve (v2)!";
+        f.steps[2].role = "constructor";
+      }),
+      mk("servicing", (f) => {
+        f.kind = "servicing";
+        f.entity_name = "task";
+      }),
+    ];
+    // A loop through a decision, written out (no start step, everything has something leading into it).
+    fixtures[3] = (() => {
+      const checked = checkProcessFile({
+        format: "transpera-process/1",
+        name: "Parity no start, a loop through a decision",
+        steps: [
+          { id: "a", name: "Draft", type: "step" },
+          { id: "b", name: "Approved?", type: "decision" },
+          { id: "c", name: "Done", type: "end" },
+        ],
+        links: [
+          { from: "a", to: "b" },
+          { from: "b", to: "a", probability: 0.3 },
+          { from: "b", to: "c", probability: 0.7 },
+        ],
+      });
+      expect(checked.errors).toEqual([]);
+      return checked.file!;
+    })();
+    for (const file of fixtures) {
+      const r = await importProcessFile(editorCtx, file, { workspaceId, source: "parity.json" }).catch((e) => e);
+      expect(r instanceof Error ? r.message : null, file.name).toBeNull();
+      const steps = await stepsOf(r.revision_id);
+      expect(steps.filter((s) => s.kind === "start"), file.name).toHaveLength(1);
+      // A step that was turned into the start lost nothing: it had no numbers or role to lose.
+      for (const s of file.steps) {
+        const row = steps.find((x) => x.name === s.name);
+        if (!row || s.type === "start") continue;
+        if (s.hands_on_hours !== undefined) expect(Number(row.work_hours), `${file.name}: ${s.name}`).toBe(s.hands_on_hours);
+      }
     }
   });
 

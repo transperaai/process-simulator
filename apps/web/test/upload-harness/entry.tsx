@@ -4,7 +4,7 @@
 
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
-import { checkProcessFileText } from "@transpera-flow/db/process-file";
+import { checkProcessFileText, processTextFrom } from "@transpera-flow/db/process-file";
 import { UploadProcessDialog, type UploadProcess } from "@/components/processes/upload-process-dialog";
 import { sourceLabel, uploadSizeProblem, type CreateUploadInput, type UploadPreview } from "@/lib/processes/upload";
 
@@ -14,6 +14,10 @@ export interface HarnessCompany {
   processes: string[];
   /** What the next create answers with (an error message), or nothing for success. */
   createError?: string;
+  /** What the next create throws: a plain failure, or the redirect a successful create ends in. */
+  createThrows?: "failure" | "redirect";
+  /** The pages the fake server can fetch by link: address to the page's text (an HTML page or JSON). Any other link can't be opened. */
+  links?: Record<string, string>;
 }
 
 declare global {
@@ -29,9 +33,21 @@ const norm = (s: string) => s.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "
 
 function makeUpload(company: HarnessCompany): UploadProcess {
   return {
-    async preview({ text, fileName }) {
+    async preview(input) {
       window.previews++;
-      const source = sourceLabel(fileName);
+      let text: string;
+      let source: string;
+      if (input.kind === "link") {
+        source = sourceLabel(input.url);
+        const page = company.links?.[input.url];
+        if (page === undefined) return { error: "Couldn't find that web address. Check the link and try again." };
+        const found = processTextFrom(page);
+        if (found.error !== undefined) return { error: found.error };
+        text = found.text;
+      } else {
+        text = input.text;
+        source = sourceLabel(input.fileName);
+      }
       const tooBig = uploadSizeProblem(new Blob([text]).size);
       const check = tooBig ? { file: null, errors: [tooBig], warnings: [] } : checkProcessFileText(text);
       if (!check.file) {
@@ -47,6 +63,7 @@ function makeUpload(company: HarnessCompany): UploadProcess {
         else unknown.push(s.role);
       }
       return {
+        ...(input.kind === "link" ? { text } : {}),
         preview: {
           source,
           name: check.file.name,
@@ -66,6 +83,8 @@ function makeUpload(company: HarnessCompany): UploadProcess {
     },
     async create(input) {
       window.uploads.push(input);
+      if (company.createThrows === "failure") throw new Error("network down");
+      if (company.createThrows === "redirect") throw Object.assign(new Error("NEXT_REDIRECT"), { digest: "NEXT_REDIRECT;push;/w/x/p/y/edit;307;" });
       return company.createError ? { error: company.createError } : {};
     },
   };

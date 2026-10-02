@@ -4,7 +4,8 @@
 // creates it through the Acknowledge path (`save_issue`), rejecting one drops it, and a solution idea can only be
 // dismissed for now (building it in the Editor is slice 2).
 
-import type { ProposalApplied, ProposalRow, SolutionIdeaPayload, IssueProposalPayload } from "@transpera-flow/db";
+import type { ProposalApplied, ProposalRow, IssueProposalPayload } from "@transpera-flow/db";
+import { readIdea } from "@/lib/suggestions/idea";
 import { RATING_LABELS, ratingOfStored } from "@transpera-flow/engine";
 import type { IssueStore } from "@/lib/issues/store";
 import type { HelpProps } from "@/components/help";
@@ -55,7 +56,7 @@ export function describeProposal(p: ProposalRow, lookups: ProposalLookups): Prop
   if (p.kind === "issue") {
     const payload = p.payload as IssueProposalPayload;
     const rating = RATING_LABELS[ratingOfStored(STORED.includes(payload.severity as never) ? payload.severity! : "warning")];
-    const links = payload.links ?? [];
+    const links = (Array.isArray(payload.links) ? payload.links : []).filter((l) => typeof l === "object" && l !== null);
     const steps = links.flatMap((l) => (l.step_id ? [lookups.steps[l.step_id] ?? "a step that has gone"] : []));
     const processes = [...new Set(links.flatMap((l) => (!l.step_id && l.process_id ? [lookups.processes[l.process_id] ?? "a process that has gone"] : [])))];
     const touches = steps.length ? `Touches ${list(steps)}.` : processes.length ? `Touches the whole of ${list(processes)}.` : "Touches nothing in particular yet.";
@@ -66,13 +67,13 @@ export function describeProposal(p: ProposalRow, lookups: ProposalLookups): Prop
     if (p.detail) lines.push(p.detail);
     return { kind: "Issue", from, title: p.title, lines, issue: null };
   }
-  const payload = p.payload as SolutionIdeaPayload;
+  const idea = readIdea(p.payload);
   const target = p.issue_id ? lookups.issues[p.issue_id] : undefined;
   const lines: string[] = [];
   if (p.detail) lines.push(p.detail);
-  const replaced = (payload.replaces_step_ids ?? []).map((id) => lookups.steps[id] ?? "a step that has gone");
-  lines.push(`Proposed steps: ${payload.steps.map((s) => s.name).join(" → ")}${replaced.length ? `. Would replace ${list(replaced)}` : ""}.`);
-  if (payload.expect) lines.push(`${payload.expect} Not simulated yet.`);
+  const replaced = idea.replaces.map((id) => lookups.steps[id] ?? "a step that has gone");
+  lines.push(`Proposed steps: ${idea.steps.length ? idea.steps.map((s) => s.name).join(" → ") : "none that can be shown"}${replaced.length ? `. Would replace ${list(replaced)}` : ""}.`);
+  if (idea.expect) lines.push(`${idea.expect} Not simulated yet.`);
   return {
     kind: "Solution idea",
     from,

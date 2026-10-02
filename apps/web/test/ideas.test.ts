@@ -3,12 +3,15 @@ import { describe, expect, it } from "vitest";
 import { blockProblem } from "@/lib/blocks/blocks";
 import { applyEdit } from "@/lib/editor/ops";
 import { diffBundles } from "@/lib/drafts/diff";
-import { buildIdeaHref, ideaSeed, ideaToBlock, placeIdea } from "@/lib/suggestions/idea";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { BlockMap } from "@/components/blocks/block-map";
+import { buildIdeaHref, ideaSeed, ideaToBlock, MAX_IDEA_STEPS, placeIdea, readIdea } from "@/lib/suggestions/idea";
 import { demoProposals } from "@/lib/suggestions/demo";
 import { demoBundle } from "@/lib/sources/demo";
 import { solutionEditorHref } from "@/lib/solutions/links";
 import { northbeamIssues, northbeamStepIds, type ProposalRow, type SolutionIdeaPayload } from "@transpera-flow/db";
-import { SUGGESTIONS_HELP } from "@/lib/suggestions/proposals";
+import { describeProposal, SUGGESTIONS_HELP } from "@/lib/suggestions/proposals";
 
 // Solution ideas as maps and as steps in the Editor (issue #117, A52 slice 2): the idea becomes a block the card draws and the
 // Editor places, in place of the step it would replace; Build it opens the Editor on the issue's process with the idea named.
@@ -51,9 +54,9 @@ describe("an idea as a block", () => {
 
 describe("placing an idea in the solution's copy of the map", () => {
   it("replaces the step it names with the AI's steps, joined to what led in and out of it", () => {
-    const placed = placeIdea(bundle, ideaSeed(idea, bundle.roles))!;
+    const placed = placeIdea(bundle, ideaSeed(idea, bundle.roles));
     expect(placed.note).toContain("The AI's steps are placed. Adjust them, simulate, then save.");
-    const after = applyEdit(bundle, placed.edit);
+    const after = applyEdit(bundle, placed.edit!);
     expect(after.steps.some((s) => s.id === northbeamStepIds.qualify)).toBe(false);
     const group = after.steps.find((s) => s.id === placed.id)!;
     expect(group).toMatchObject({ kind: "group", name: idea.title });
@@ -71,22 +74,93 @@ describe("placing an idea in the solution's copy of the map", () => {
 
   it("puts the steps at the end, and says so, when the idea names nothing it can replace", () => {
     const none = { ...ideaSeed(idea, bundle.roles), replaces: [] };
-    const placed = placeIdea(bundle, none)!;
+    const placed = placeIdea(bundle, none);
     expect(placed.note).toContain("sit at the end");
-    const after = applyEdit(bundle, placed.edit);
+    const after = applyEdit(bundle, placed.edit!);
     expect(after.steps.some((s) => s.id === northbeamStepIds.qualify)).toBe(true);
     expect(after.steps.some((s) => s.id === placed.id)).toBe(true);
     // A start step can't be replaced either: the same.
-    expect(placeIdea(bundle, { ...none, replaces: [northbeamStepIds.start] })!.note).toContain("sit at the end");
+    expect(placeIdea(bundle, { ...none, replaces: [northbeamStepIds.start] }).note).toContain("sit at the end");
   });
 
   it("says when it names more than one step to replace", () => {
-    const placed = placeIdea(bundle, { ...ideaSeed(idea, bundle.roles), replaces: [northbeamStepIds.qualify, northbeamStepIds.discovery] })!;
+    const placed = placeIdea(bundle, { ...ideaSeed(idea, bundle.roles), replaces: [northbeamStepIds.qualify, northbeamStepIds.discovery] });
     expect(placed.note).toContain("The first is replaced; the others are still there.");
   });
 
-  it("places nothing for an idea with no steps", () => {
-    expect(placeIdea(bundle, { id: "x", title: "Empty", block: { steps: [], edges: [], entry_step_id: null }, replaces: [] })).toBeNull();
+  it("says so, and places nothing, when the idea has no usable steps", () => {
+    const placed = placeIdea(bundle, { id: "x", title: "Empty", block: { steps: [], edges: [], entry_step_id: null }, replaces: [] });
+    expect(placed).toMatchObject({ edit: null, id: null });
+    expect(placed.note).toBe("The AI's steps weren't placed: it has no usable steps. The map is a plain copy of the live one, so you can build the solution yourself.");
+  });
+
+  it("says so when the steps can't be placed", () => {
+    const bad = ideaToBlock({ steps: [{ key: "a", name: "A" }] });
+    bad.steps[0]!.parent_step_id = "nowhere";
+    expect(placeIdea(bundle, { id: "x", title: "Bad", block: bad, replaces: [] })).toMatchObject({ edit: null, note: expect.stringContaining("can't be placed") });
+  });
+});
+
+// A stored payload can be anything (the database only checks that steps is an array), and it must never break a page.
+describe("a malformed idea", () => {
+  const malformed: [string, unknown][] = [
+    ["steps: [null]", { steps: [null] }],
+    ["steps: [1]", { steps: [1] }],
+    ["steps: [[]]", { steps: [[]] }],
+    ["steps: 'abc'", { steps: "abc" }],
+    ["edges: {}", { steps: [{ key: "a", name: "A" }], edges: {} }],
+    ["edges: [null]", { steps: [{ key: "a", name: "A" }], edges: [null] }],
+    ["name: null", { steps: [{ key: "a", name: null }] }],
+    ["key: 5", { steps: [{ key: 5, name: "A" }] }],
+    ["role: 7", { steps: [{ key: "a", name: "A", role: 7 }] }],
+    ["replaces_step_ids: 'abc'", { steps: [{ key: "a", name: "A" }], replaces_step_ids: "abc" }],
+    ["no payload at all", null],
+  ];
+
+  it("reads without throwing, and ideaToBlock, ideaSeed and placeIdea carry on", () => {
+    for (const [label, payload] of malformed) {
+      expect(() => readIdea(payload), label).not.toThrow();
+      expect(() => ideaToBlock(payload, bundle.roles), label).not.toThrow();
+      const seed = ideaSeed({ id: "i", title: "T", payload } as ProposalRow, bundle.roles);
+      expect(() => placeIdea(bundle, seed), label).not.toThrow();
+      expect(placeIdea(bundle, seed).note.length, label).toBeGreaterThan(0);
+      // The card's text and the map read it too.
+      expect(() => describeProposal({ ...idea, payload } as ProposalRow, { processes: {}, steps: {}, issues: {} }), label).not.toThrow();
+      expect(() => renderToStaticMarkup(createElement(BlockMap, { block: ideaToBlock(payload), label: "x" })), label).not.toThrow();
+    }
+  });
+
+  it("keeps what is usable: object steps only, a name that is a string, a unique key, string ids", () => {
+    const r = readIdea({
+      steps: [null, { key: "a", name: "First", role: "Sales" }, { key: "a", name: null }, 3, { key: 9, name: 12, role: {} }],
+      edges: [null, { from: "a", to: "a" }, { from: "a", to: "zzz" }, { from: "a", to: "s3" }, { from: 1, to: 2 }],
+      replaces_step_ids: ["x", 4, null, "y"],
+    });
+    expect(r.steps.map((s) => s.name)).toEqual(["First", "Step 2", "12"]);
+    expect(r.steps.map((s) => s.key)).toEqual(["a", "s2", "s3"]);
+    expect(r.steps[0]).toMatchObject({ key: "a", role: "Sales" });
+    expect(r.steps[2]!.role).toBeUndefined();
+    // Self-loops, edges to steps that aren't there and edges that aren't pairs of ids are dropped.
+    expect(r.edges).toEqual([{ from: "a", to: "s3" }]);
+    expect(r.replaces).toEqual(["x", "y"]);
+  });
+
+  it("chains the steps when edges aren't a list, and uses none when it is an empty list", () => {
+    const two = [{ key: "a", name: "A" }, { key: "b", name: "B" }];
+    expect(ideaToBlock({ steps: two, edges: {} }).edges).toHaveLength(1);
+    expect(ideaToBlock({ steps: two, edges: [] }).edges).toHaveLength(0);
+  });
+
+  it("caps an idea at 30 steps", () => {
+    const many = { steps: Array.from({ length: 45 }, (_, i) => ({ key: `k${i}`, name: `S${i}` })) };
+    expect(readIdea(many).steps).toHaveLength(MAX_IDEA_STEPS);
+    expect(ideaToBlock(many).steps).toHaveLength(30);
+  });
+
+  it("the map draws what it can of a bad block instead of failing", () => {
+    const bad = { steps: [null, { id: "a", name: null, x: "nope", y: 0 }, { id: "b", name: 5, x: 0, y: 0 }], edges: [null, { from_step_id: "b", to_step_id: "zz" }], entry_step_id: null } as never;
+    expect(() => renderToStaticMarkup(createElement(BlockMap, { block: bad, label: "x" }))).not.toThrow();
+    expect(() => renderToStaticMarkup(createElement(BlockMap, { block: {} as never, label: "x" }))).not.toThrow();
   });
 });
 

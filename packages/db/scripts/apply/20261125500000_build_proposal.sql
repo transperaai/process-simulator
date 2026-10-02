@@ -1,19 +1,29 @@
--- Production apply file for 20261125500000_build_proposal (A52 slice 2, issue #117). Run after 20261124000000 (suggestions_v2) and A49's 20261122000000.
+-- Production apply file for 20261125500000_build_proposal (A52 slice 2, issue #117). Run after 20261124000000 (suggestions_v2), 20261124500000 (source_links)
+-- and 20261125000000.
 --
--- Preflight (run first; each should be as described):
+-- Preflight (run with `bash packages/db/scripts/prod-sql.sh -c "..."`; each should be as described):
 --
---   -- 1. The function does not exist yet: expect 0.
---   select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname = 'build_proposal';
+--   1. The function does not exist yet. Expect 0:
+--        select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname = 'build_proposal';
+--   2. Nothing of ours is applied past this one. Expect 0 rows:
+--        select version from supabase_migrations.schema_migrations where version >= '20261125500000';
+--   3. The migrations it builds on are applied (solutions, suggestions_v2, source_links, and the one at 20261125000000). Expect 4 rows:
+--        select version from supabase_migrations.schema_migrations where version in ('20261122000000', '20261124000000', '20261124500000', '20261125000000') order by 1;
+--   4. save_solution and suggestion_proposals exist. Expect 2 rows:
+--        select proname from pg_proc where pronamespace = 'public'::regnamespace and proname = 'save_solution'
+--        union all select table_name from information_schema.tables where table_schema = 'public' and table_name = 'suggestion_proposals';
+--   5. The table's columns, in order. Expect id,workspace_id,kind,title,detail,payload,evidence,note,issue_id,status,created_via,proposer_name,proposer_email,applied,review_note,reviewed_by,reviewed_at,created_at,updated_at,created_by:
+--        select string_agg(column_name, ',' order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'suggestion_proposals';
+--   6. The two functions this one relies on are as reviewed. Expect 73793c55eefd0e3dd9d4ca7a3ff027e4, then 2ca045826e8dbfdb797d2147d8a84b8e:
+--        select md5(pg_get_functiondef('public.save_solution(uuid, uuid, uuid, text, jsonb, jsonb, jsonb, jsonb)'::regprocedure));
+--        select md5(pg_get_functiondef('private.suggestion_proposals_before_write()'::regprocedure));
 --
---   -- 2. Nothing applied past this one: expect no rows.
---   select version from supabase_migrations.schema_migrations where version >= '20261125500000';
+-- Post-apply grant check (authenticated may execute it; anon and PUBLIC may not):
+--        select grantee, privilege_type from information_schema.routine_privileges where routine_schema = 'public' and routine_name = 'build_proposal' and grantee in ('anon', 'authenticated', 'PUBLIC') order by 1;
+--        select proacl from pg_proc where pronamespace = 'public'::regnamespace and proname = 'build_proposal';
+--   Expect: one row, authenticated EXECUTE; and an ACL with an `authenticated=X/...` entry and no `anon=` and no `=X/...` (an entry with
+--   an empty grantee is PUBLIC).
 --
---   -- 3. save_solution and the proposals table exist: expect 2 rows.
---   select proname from pg_proc where pronamespace = 'public'::regnamespace and proname = 'save_solution' union all select table_name from information_schema.tables where table_schema = 'public' and table_name = 'suggestion_proposals';
---
--- Post-apply check (authenticated EXECUTE only; no anon or public row):
---   select grantee, privilege_type from information_schema.routine_privileges where routine_schema = 'public' and routine_name = 'build_proposal' and grantee in ('anon', 'authenticated', 'public') order by 1;
---   Also: the schema_migrations row exists.
 
 begin;
 set local lock_timeout = '5s';
@@ -29,7 +39,9 @@ set local lock_timeout = '5s';
 --     pending solution idea of that workspace), calls `save_solution` with the rest, then sets the proposal to `built` with
 --     `applied = {solution_id}` and who and when. The decision columns change only here and in `review_proposals`: the guard
 --     trigger (`private.suggestion_proposals_before_write`) is unchanged. An API-token request (the MCP server) can't build: a
---     person decides, as with `review_proposals`.
+--     person decides, as with `review_proposals`. The solution must be linked to the idea's own issue (`p_links` must name it), so
+--     an idea can't be marked built by a solution that has nothing to do with it; `save_solution` then checks that issue is about
+--     the solution's process.
 --
 -- The solution's origin is recorded on the idea (`applied.solution_id`), not on `solutions`, so the solutions table is not
 -- touched. A solution made from an AI idea is one whose id is in `suggestion_proposals.applied ->> 'solution_id'` with status
@@ -44,13 +56,22 @@ set local lock_timeout = '5s';
 --        select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname = 'build_proposal';
 --   2. Nothing of ours is applied past this one. Expect 0 rows:
 --        select version from supabase_migrations.schema_migrations where version >= '20261125500000';
---   3. save_solution and the proposals table exist. Expect 2 rows:
+--   3. The migrations it builds on are applied (solutions, suggestions_v2, source_links, and the one at 20261125000000). Expect 4 rows:
+--        select version from supabase_migrations.schema_migrations where version in ('20261122000000', '20261124000000', '20261124500000', '20261125000000') order by 1;
+--   4. save_solution and suggestion_proposals exist. Expect 2 rows:
 --        select proname from pg_proc where pronamespace = 'public'::regnamespace and proname = 'save_solution'
 --        union all select table_name from information_schema.tables where table_schema = 'public' and table_name = 'suggestion_proposals';
+--   5. The table's columns, in order. Expect id,workspace_id,kind,title,detail,payload,evidence,note,issue_id,status,created_via,proposer_name,proposer_email,applied,review_note,reviewed_by,reviewed_at,created_at,updated_at,created_by:
+--        select string_agg(column_name, ',' order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'suggestion_proposals';
+--   6. The two functions this one relies on are as reviewed. Expect 73793c55eefd0e3dd9d4ca7a3ff027e4, then 2ca045826e8dbfdb797d2147d8a84b8e:
+--        select md5(pg_get_functiondef('public.save_solution(uuid, uuid, uuid, text, jsonb, jsonb, jsonb, jsonb)'::regprocedure));
+--        select md5(pg_get_functiondef('private.suggestion_proposals_before_write()'::regprocedure));
 --
--- Post-apply grant check (authenticated may execute it, anon may not):
---        select grantee, privilege_type from information_schema.routine_privileges where routine_schema = 'public' and routine_name = 'build_proposal' and grantee in ('anon', 'authenticated', 'public') order by 1;
---   Expect: one row, authenticated EXECUTE.
+-- Post-apply grant check (authenticated may execute it; anon and PUBLIC may not):
+--        select grantee, privilege_type from information_schema.routine_privileges where routine_schema = 'public' and routine_name = 'build_proposal' and grantee in ('anon', 'authenticated', 'PUBLIC') order by 1;
+--        select proacl from pg_proc where pronamespace = 'public'::regnamespace and proname = 'build_proposal';
+--   Expect: one row, authenticated EXECUTE; and an ACL with an `authenticated=X/...` entry and no `anon=` and no `=X/...` (an entry with
+--   an empty grantee is PUBLIC).
 --
 -- Rollback (run as one transaction; nothing existing was changed):
 --
@@ -72,24 +93,29 @@ security invoker
 set search_path = ''
 as $$
 declare
-  p public.suggestion_proposals;
+  v_kind text;
+  v_status text;
+  v_issue uuid;
   result jsonb;
 begin
   if coalesce(auth.jwt(), '{}') ? 'api_token_id' then
     raise exception 'Ideas are built by a person in the app, not over the API' using errcode = '42501';
   end if;
-  -- Every column but the visitor's email, which this role can't read (position matters: it is the table's order).
-  select x.id, x.workspace_id, x.kind, x.title, x.detail, x.payload, x.evidence, x.note, x.issue_id, x.status, x.created_via,
-    x.proposer_name, null::text, x.applied, x.review_note, x.reviewed_by, x.reviewed_at, x.created_at, x.updated_at, x.created_by
-    into p from public.suggestion_proposals x where x.id = p_proposal and x.workspace_id = p_workspace for update;
-  if p.id is null then
+  select x.kind, x.status, x.issue_id into v_kind, v_status, v_issue
+    from public.suggestion_proposals x where x.id = p_proposal and x.workspace_id = p_workspace for update;
+  if not found then
     raise exception 'build_proposal: no such idea' using errcode = '42501';
   end if;
-  if p.kind <> 'solution_idea' then
+  if v_kind <> 'solution_idea' then
     raise exception 'build_proposal: only a solution idea can be built' using errcode = '22023';
   end if;
-  if p.status <> 'pending' then
+  if v_status <> 'pending' then
     raise exception 'build_proposal: that idea has already been dealt with' using errcode = '22023';
+  end if;
+  -- The solution must be for the idea's own issue: otherwise any solution could be passed off as built from it.
+  if jsonb_typeof(p_links) is distinct from 'array' or not exists (
+    select 1 from jsonb_array_elements(p_links) l where l ->> 'issue_id' = v_issue::text) then
+    raise exception 'build_proposal: the solution must be linked to the idea''s issue' using errcode = '22023';
   end if;
 
   -- The solution, as A49 saves it (its own checks and row-level security apply).
@@ -118,7 +144,9 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --     pending solution idea of that workspace), calls `save_solution` with the rest, then sets the proposal to `built` with
 --     `applied = {solution_id}` and who and when. The decision columns change only here and in `review_proposals`: the guard
 --     trigger (`private.suggestion_proposals_before_write`) is unchanged. An API-token request (the MCP server) can't build: a
---     person decides, as with `review_proposals`.
+--     person decides, as with `review_proposals`. The solution must be linked to the idea's own issue (`p_links` must name it), so
+--     an idea can't be marked built by a solution that has nothing to do with it; `save_solution` then checks that issue is about
+--     the solution's process.
 --
 -- The solution's origin is recorded on the idea (`applied.solution_id`), not on `solutions`, so the solutions table is not
 -- touched. A solution made from an AI idea is one whose id is in `suggestion_proposals.applied ->> 'solution_id'` with status
@@ -133,13 +161,22 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --        select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname = 'build_proposal';
 --   2. Nothing of ours is applied past this one. Expect 0 rows:
 --        select version from supabase_migrations.schema_migrations where version >= '20261125500000';
---   3. save_solution and the proposals table exist. Expect 2 rows:
+--   3. The migrations it builds on are applied (solutions, suggestions_v2, source_links, and the one at 20261125000000). Expect 4 rows:
+--        select version from supabase_migrations.schema_migrations where version in ('20261122000000', '20261124000000', '20261124500000', '20261125000000') order by 1;
+--   4. save_solution and suggestion_proposals exist. Expect 2 rows:
 --        select proname from pg_proc where pronamespace = 'public'::regnamespace and proname = 'save_solution'
 --        union all select table_name from information_schema.tables where table_schema = 'public' and table_name = 'suggestion_proposals';
+--   5. The table's columns, in order. Expect id,workspace_id,kind,title,detail,payload,evidence,note,issue_id,status,created_via,proposer_name,proposer_email,applied,review_note,reviewed_by,reviewed_at,created_at,updated_at,created_by:
+--        select string_agg(column_name, ',' order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'suggestion_proposals';
+--   6. The two functions this one relies on are as reviewed. Expect 73793c55eefd0e3dd9d4ca7a3ff027e4, then 2ca045826e8dbfdb797d2147d8a84b8e:
+--        select md5(pg_get_functiondef('public.save_solution(uuid, uuid, uuid, text, jsonb, jsonb, jsonb, jsonb)'::regprocedure));
+--        select md5(pg_get_functiondef('private.suggestion_proposals_before_write()'::regprocedure));
 --
--- Post-apply grant check (authenticated may execute it, anon may not):
---        select grantee, privilege_type from information_schema.routine_privileges where routine_schema = 'public' and routine_name = 'build_proposal' and grantee in ('anon', 'authenticated', 'public') order by 1;
---   Expect: one row, authenticated EXECUTE.
+-- Post-apply grant check (authenticated may execute it; anon and PUBLIC may not):
+--        select grantee, privilege_type from information_schema.routine_privileges where routine_schema = 'public' and routine_name = 'build_proposal' and grantee in ('anon', 'authenticated', 'PUBLIC') order by 1;
+--        select proacl from pg_proc where pronamespace = 'public'::regnamespace and proname = 'build_proposal';
+--   Expect: one row, authenticated EXECUTE; and an ACL with an `authenticated=X/...` entry and no `anon=` and no `=X/...` (an entry with
+--   an empty grantee is PUBLIC).
 --
 -- Rollback (run as one transaction; nothing existing was changed):
 --
@@ -161,24 +198,29 @@ security invoker
 set search_path = ''
 as $$
 declare
-  p public.suggestion_proposals;
+  v_kind text;
+  v_status text;
+  v_issue uuid;
   result jsonb;
 begin
   if coalesce(auth.jwt(), '{}') ? 'api_token_id' then
     raise exception 'Ideas are built by a person in the app, not over the API' using errcode = '42501';
   end if;
-  -- Every column but the visitor's email, which this role can't read (position matters: it is the table's order).
-  select x.id, x.workspace_id, x.kind, x.title, x.detail, x.payload, x.evidence, x.note, x.issue_id, x.status, x.created_via,
-    x.proposer_name, null::text, x.applied, x.review_note, x.reviewed_by, x.reviewed_at, x.created_at, x.updated_at, x.created_by
-    into p from public.suggestion_proposals x where x.id = p_proposal and x.workspace_id = p_workspace for update;
-  if p.id is null then
+  select x.kind, x.status, x.issue_id into v_kind, v_status, v_issue
+    from public.suggestion_proposals x where x.id = p_proposal and x.workspace_id = p_workspace for update;
+  if not found then
     raise exception 'build_proposal: no such idea' using errcode = '42501';
   end if;
-  if p.kind <> 'solution_idea' then
+  if v_kind <> 'solution_idea' then
     raise exception 'build_proposal: only a solution idea can be built' using errcode = '22023';
   end if;
-  if p.status <> 'pending' then
+  if v_status <> 'pending' then
     raise exception 'build_proposal: that idea has already been dealt with' using errcode = '22023';
+  end if;
+  -- The solution must be for the idea's own issue: otherwise any solution could be passed off as built from it.
+  if jsonb_typeof(p_links) is distinct from 'array' or not exists (
+    select 1 from jsonb_array_elements(p_links) l where l ->> 'issue_id' = v_issue::text) then
+    raise exception 'build_proposal: the solution must be linked to the idea''s issue' using errcode = '22023';
   end if;
 
   -- The solution, as A49 saves it (its own checks and row-level security apply).

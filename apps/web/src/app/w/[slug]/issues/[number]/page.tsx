@@ -53,6 +53,7 @@ export default async function WorkspaceIssuePage(props: PageProps<"/w/[slug]/iss
         liveRevisions={liveRevisions}
         ideas={
           <IssueIdeas
+            key="ideas"
             issueId={issue.id}
             base={base}
             from={`${base}/issues/${issue.number}`}

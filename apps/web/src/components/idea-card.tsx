@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { useState, useTransition } from "react";
-import type { ProposalRow, SolutionIdeaPayload } from "@transpera-flow/db";
+import type { ProposalRow } from "@transpera-flow/db";
 import { reviewProposals } from "@/app/w/[slug]/suggestion-actions";
 import { BlockMap } from "@/components/blocks/block-map";
 import { Help } from "@/components/help";
 import { Button } from "@/components/ui/button";
 import { demoProposalBackend, useDemoCompany } from "@/lib/demo/company-store";
-import { buildIdeaHref, ideaToBlock } from "@/lib/suggestions/idea";
+import { buildIdeaHref, ideaToBlock, readIdea } from "@/lib/suggestions/idea";
 import { describeProposal, proposalSummary, SUGGESTIONS_HELP, type ProposalLookups, type ProposalOutcome } from "@/lib/suggestions/proposals";
 
 // A solution idea (A52, docs/PRD.md §7.1c; prototype: Suggestions, and AI ideas on the Issue page): the issue it is for, the
@@ -40,12 +40,12 @@ export function IdeaCard({
   linkableUpTo?: number;
 }) {
   const view = describeProposal(p, lookups);
-  const payload = p.payload as SolutionIdeaPayload;
-  const block = ideaToBlock(payload);
+  const idea = readIdea(p.payload);
+  const block = ideaToBlock(p.payload);
   const issue = p.issue_id ? lookups.issues[p.issue_id] : undefined;
   const buildHref = buildIdeaHref(base, p, issue, from);
   const issueHref = view.issue?.number && view.issue.number <= linkableUpTo ? `${base}/issues/${view.issue.number}` : null;
-  const replaced = (payload.replaces_step_ids ?? []).map((id) => lookups.steps[id] ?? "a step that has gone");
+  const replaced = idea.replaces.map((id) => lookups.steps[id] ?? "a step that has gone");
   const headingId = `idea-${p.id}`;
   return (
     <article aria-labelledby={headingId} data-proposal={p.id} data-kind="solution_idea" className="flex flex-col gap-2 rounded-lg border border-dashed border-edit/50 bg-panel p-3 shadow-xs">
@@ -93,9 +93,9 @@ export function IdeaCard({
           Proposed steps{replaced.length ? ` · would replace ${replaced.join(", ")}` : ""}
           <Help {...SUGGESTIONS_HELP.ideaMap} />
         </span>
-        <BlockMap block={block} label={`Map of the proposed steps: ${payload.steps.map((s) => s.name).join(", then ")}`} />
+        <BlockMap block={block} label={`Map of the proposed steps: ${idea.steps.map((s) => s.name).join(", then ")}`} />
       </div>
-      {payload.expect && <p className="text-xs text-fg-2">{payload.expect} Not simulated yet.</p>}
+      {idea.expect && <p className="text-xs text-fg-2">{idea.expect} Not simulated yet.</p>}
       {p.note && (
         <p className="text-sm text-fg-2">
           <span className="font-medium">Reasoning:</span> {p.note}

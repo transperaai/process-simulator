@@ -135,7 +135,9 @@ describe("sources", () => {
   it("keeps sources in memory on the demo, with compare-and-set edits", async () => {
     const [first] = northbeamSources();
     const store = new MemorySourceStore(first!.workspace_id, [first!], () => at);
-    const added = await store.create({ kind: "notes", title: "Ops call", speakers: ["Rosa Diaz"], recorded_at: null, body: null, file_url: null });
+    const added = await store.create({ kind: "notes", title: "Ops call", speakers: ["Rosa Diaz"], recorded_at: null, body: null, file_url: null }, [
+      { kind: "insight", insightKey: "spof:step:abc" },
+    ]);
     expect(added.status).toBe("ok");
     expect(await store.saveField(first!.id, "speakers", "Maya Collins, Rosa Diaz", "Maya Collins")).toEqual({ status: "saved", value: "Maya Collins" });
     expect(await store.saveField(first!.id, "title", "Old", "New")).toEqual({ status: "conflict", theirs: "Strategy walkthrough" });

@@ -33,7 +33,7 @@ export default async function DemoIssuePage(props: PageProps<"/demo/issues/[numb
         events={[]}
         mode="demo"
         base="/demo"
-        ideas={<DemoIssueIdeas issueId={issue.id} base="/demo" from={`/demo/issues/${issue.number}`} lookups={lookups} linkableUpTo={issues.length} />}
+        ideas={<DemoIssueIdeas key="ideas" issueId={issue.id} base="/demo" from={`/demo/issues/${issue.number}`} lookups={lookups} linkableUpTo={issues.length} />}
         buildHref={buildSolutionHref("/demo", issue, `${"/demo"}/issues/${issue.number}`) ?? solutionEditorHref("/demo", bundle.process.id, { issueId: issue.id })}
       />
     </Page>

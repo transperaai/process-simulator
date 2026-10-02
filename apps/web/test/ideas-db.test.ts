@@ -31,7 +31,7 @@ describe("building an idea", () => {
   it("saves the placed steps as a solution of the issue and marks the idea built, leaving live alone", async () => {
     const live = demoBundle();
     const placed = placeIdea(live, ideaSeed(sample, live.roles))!;
-    const edited = applyEdit(live, placed.edit);
+    const edited = applyEdit(live, placed.edit!);
     const changes = diffBundles(live, edited);
     const liveSteps = async () => (await db.client.query("select md5(string_agg(to_jsonb(s)::text, '' order by id)) as m from steps s where process_id = $1", [NORTHBEAM_PROCESS_ID])).rows[0].m;
     const before = await liveSteps();

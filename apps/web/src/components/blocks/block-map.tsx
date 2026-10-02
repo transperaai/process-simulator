@@ -15,7 +15,8 @@ interface Box {
 }
 
 /** Where each step and group is drawn: steps at their place on the canvas, groups around whatever is inside them. */
-export function blockBoxes(block: BlockBundle): Map<string, Box> {
+export function blockBoxes(raw: BlockBundle): Map<string, Box> {
+  const block = tidy(raw);
   const abs = absolutePositions(block.steps);
   const boxes = new Map<string, Box>();
   for (const s of block.steps) if (!isGroup(s)) boxes.set(s.id, { ...abs.get(s.id)!, w: STEP.w, h: STEP.h });
@@ -40,9 +41,26 @@ export function blockBoxes(block: BlockBundle): Map<string, Box> {
   return boxes;
 }
 
-const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+const clip = (text: unknown, max: number) => {
+  const t = typeof text === "string" ? text : "";
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+};
 
-export function BlockMap({ block, label }: { block: BlockBundle; label: string }) {
+/**
+ * What can be drawn of a block: steps that are objects with an id and a position, and edges between those. A stored block is checked
+ * when it is saved, but a solution idea's steps (A52) come from outside, so a bad one draws less rather than breaking the page.
+ */
+function tidy(block: BlockBundle): BlockBundle {
+  const steps = (Array.isArray(block?.steps) ? block.steps : []).filter(
+    (s) => typeof s === "object" && s !== null && typeof s.id === "string" && Number.isFinite(Number(s.x)) && Number.isFinite(Number(s.y)),
+  );
+  const ids = new Set(steps.map((s) => s.id));
+  const edges = (Array.isArray(block?.edges) ? block.edges : []).filter((e) => typeof e === "object" && e !== null && ids.has(e.from_step_id) && ids.has(e.to_step_id));
+  return { steps, edges, entry_step_id: block?.entry_step_id ?? null };
+}
+
+export function BlockMap({ block: raw, label }: { block: BlockBundle; label: string }) {
+  const block = tidy(raw);
   const boxes = blockBoxes(block);
   const all = [...boxes.values()];
   if (!all.length) return <p className="rounded-token border border-dashed border-line p-3 text-xs text-muted-foreground">No steps in this block yet.</p>;

@@ -118,7 +118,7 @@ export function EditorView({
   const working = state.bundle;
   // Worked out up front, on the live map the copy starts as, so the steps are selected as soon as they arrive.
   const [placement] = useState(() => (solutionMode && idea ? placeIdea(initialLive, idea) : null));
-  const [selection, setSelection] = useState<Selection>(placement ? { steps: [placement.id], edges: [] } : NO_SELECTION);
+  const [selection, setSelection] = useState<Selection>(placement?.id ? { steps: [placement.id], edges: [] } : NO_SELECTION);
   const me = viewer ?? (mode === "demo" ? DEMO_VIEWER : null);
   const [sync, realtime] = useRealtime(session, connection.transport, me, "draft");
 
@@ -175,9 +175,10 @@ export function EditorView({
   // Build it: the AI's steps go into the copy once, in place of the step the idea would replace (or, with none, at the end of the map).
   const seeded = useRef(false);
   useEffect(() => {
-    if (!placement || seeded.current) return;
+    if (!placement?.edit || seeded.current) return;
     seeded.current = true;
-    editor.run(() => placement.edit);
+    const edit = placement.edit;
+    editor.run(() => edit);
   }, [placement, editor]);
   const [solutionSaving, setSolutionSaving] = useState(false);
   const [solutionError, setSolutionError] = useState<string | null>(null);

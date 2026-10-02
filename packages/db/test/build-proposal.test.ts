@@ -9,7 +9,7 @@ import { createTestDb, createUser, type TestDb } from "./harness";
 // pending solution idea can be built, once, by someone who can edit, never over the API.
 
 const ws = NORTHBEAM_WORKSPACE_ID;
-const [openIssue] = northbeamIssues().map((i) => i.id) as [string];
+const [openIssue, otherIssue] = northbeamIssues().map((i) => i.id) as [string, string];
 let db: TestDb;
 const users: Record<string, { id: string; claims: Record<string, unknown> }> = {};
 const mcp = () => ({ ...users.editor!.claims, api_token_id: randomUUID() });
@@ -39,13 +39,13 @@ const makeIdea = async (kind: "solution_idea" | "issue" = "solution_idea", issue
     ])
   ).rows[0].id as string;
 
-const build = async (c: pg.Client, proposal: string, links: unknown[] = [{ issue_id: openIssue, auto_verdict: null, holds_pct: null, auto_note: "" }], name = "From an idea") =>
+const build = async (c: pg.Client, proposal: string, links: unknown[] = [{ issue_id: openIssue, auto_verdict: null, holds_pct: null, auto_note: "" }], name = "From an idea", process = NORTHBEAM_PROCESS_ID, revision = NORTHBEAM_REVISION_ID) =>
   (
     await c.query("select public.build_proposal($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb) as r", [
       proposal,
       ws,
-      NORTHBEAM_PROCESS_ID,
-      NORTHBEAM_REVISION_ID,
+      process,
+      revision,
       name,
       bundle,
       "[]",
@@ -112,6 +112,38 @@ describe("build_proposal", () => {
       await fails(c, () => build(c, id, [{ issue_id: randomUUID(), auto_verdict: null, holds_pct: null, auto_note: "" }]), /.+/);
       expect((await c.query("select status, applied from suggestion_proposals where id = $1", [id])).rows[0]).toEqual({ status: "pending", applied: null });
       expect((await c.query("select count(*)::int as n from solutions where name = 'From an idea'")).rows[0].n).toBe(0);
+    });
+  });
+
+  it("only builds a solution that is linked to the idea's own issue", async () => {
+    const id = await makeIdea();
+    const link = (issue: string) => ({ issue_id: issue, auto_verdict: null, holds_pct: null, auto_note: "" });
+    await db.as(users.editor!.claims, async (c) => {
+      const solutions = (await c.query("select count(*)::int as n from solutions")).rows[0].n;
+      // Another issue, no links, and links that aren't a list: none of them is the idea's issue.
+      await fails(c, () => build(c, id, [link(otherIssue)]), /linked to the idea's issue/);
+      await fails(c, () => build(c, id, []), /linked to the idea's issue/);
+      await fails(c, () => c.query("select public.build_proposal($1, $2, $3, $4, 'X', $5::jsonb, '[]', '[]', '{}')", [id, ws, NORTHBEAM_PROCESS_ID, NORTHBEAM_REVISION_ID, bundle]), /linked to the idea's issue/);
+      expect((await c.query("select count(*)::int as n from solutions")).rows[0].n).toBe(solutions);
+      expect((await c.query("select status from suggestion_proposals where id = $1", [id])).rows[0].status).toBe("pending");
+      // Linked to the idea's issue as well as another one, it is the idea's solution.
+      const s = await build(c, id, [link(otherIssue), link(openIssue)]);
+      expect((await c.query("select applied from suggestion_proposals where id = $1", [id])).rows[0].applied).toEqual({ solution_id: s.id });
+    });
+  });
+
+  it("can't build on a different process than the idea's issue is about: the solution isn't saved and the idea stays pending", async () => {
+    const id = await makeIdea();
+    const proc = randomUUID();
+    const rev = randomUUID();
+    await db.client.query("insert into processes (id, workspace_id, name) values ($1, $2, 'Another process')", [proc, ws]);
+    await db.client.query("insert into process_revisions (id, workspace_id, process_id, number, status) values ($1, $2, $3, 1, 'draft')", [rev, ws, proc]);
+    await db.client.query("update process_revisions set status = 'published' where id = $1", [rev]);
+    await db.client.query("update processes set live_revision_id = $1 where id = $2", [rev, proc]);
+    await db.as(users.editor!.claims, async (c) => {
+      await fails(c, () => build(c, id, undefined, "Elsewhere", proc, rev), /another process/);
+      expect((await c.query("select count(*)::int as n from solutions where name = 'Elsewhere'")).rows[0].n).toBe(0);
+      expect((await c.query("select status, applied from suggestion_proposals where id = $1", [id])).rows[0]).toEqual({ status: "pending", applied: null });
     });
   });
 

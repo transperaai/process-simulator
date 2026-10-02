@@ -73,8 +73,10 @@ run stays removed (History replaces it; "Explain this run" has no entry point un
   13-week target (A58 tests against the target scaled by horizon).
 
 **Follow-ups noted:** an exact per-month MRR series from the engine (A35's range covers new-client revenue only);
-an MCP client-groups tool; rule 9 in settings; the horizon picker on more pages; block delete/rename; the flaky
-`map-browser.test.ts` "does not move the view when a highlight changes" (fixed 700 ms wait).
+an MCP client-groups tool; rule 9 in settings; the horizon picker on more pages; block delete/rename; ~~the flaky
+`map-browser.test.ts` "does not move the view when a highlight changes"~~ (fixed: the harness mounted a read-only map in a
+bare flex row, so it shrink-wrapped to its toolbar and refit when the "drag the map" hint resized it; it now sits in a block,
+as in the app).
 
 ## How we work
 

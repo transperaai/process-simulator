@@ -851,11 +851,11 @@ export function registerBuildingTools(server: McpServer, ctx: ToolContext): void
     {
       title: "Add source",
       description:
-        "Store a transcript, notes or a screenshot link from the audit as a source of the workspace, with its speakers and date. Returns the " +
+        "Store a transcript, notes, a data export or a screenshot link from the audit as a source of the workspace, with its speakers and date. Returns the " +
         "source id that step tools cite in `evidence` (with speaker, verbatim quote, timestamp and the value stated).",
       inputSchema: {
         title: z.string().trim().min(1).max(200),
-        kind: z.enum(["transcript", "notes", "screenshot"]).optional().describe("Default transcript."),
+        kind: z.enum(["transcript", "notes", "data", "screenshot"]).optional().describe("Default transcript."),
         speakers: z.union([z.array(z.string().trim().min(1).max(200)).max(50), z.string().max(10_000)]).optional().describe("Names, as a list or 'a, b'."),
         recorded_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("ISO date the conversation or notes are from."),
         body: z.string().max(500_000).optional().describe("The transcript or notes text."),

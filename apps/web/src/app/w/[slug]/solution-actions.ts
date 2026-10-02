@@ -25,6 +25,7 @@ function failure(error: { code?: string; message?: string }) {
   if (/only a detection/.test(m)) return { status: "error", message: "That issue is only a detection. Acknowledge it as an issue first." } as const;
   if (/another process/.test(m)) return { status: "error", message: "That issue is about another process, so this solution can't be linked to it." } as const;
   if (/already been dealt with/.test(m)) return { status: "error", message: "That idea has already been built or dismissed." } as const;
+  if (/linked to the idea's issue/.test(m)) return { status: "error", message: "A solution built from an idea has to be linked to the idea's issue." } as const;
   if (/no such idea/.test(m)) return { status: "error", message: "That idea isn't there any more, or isn't yours to build." } as const;
   if (/published version/.test(m)) return { status: "error", message: "A solution has to start from a published version of the process." } as const;
   if (error.code === "42501") return forbidden;

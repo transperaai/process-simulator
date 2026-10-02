@@ -9,6 +9,7 @@ import { MemoryIssueStore } from "@/lib/issues/store";
 import { reviewProposalsInMemory, type ProposalBackend } from "@/lib/suggestions/proposals";
 import { reviewInMemory, type SuggestionBackend } from "@/lib/suggestions/review";
 import { demoCompany, demoProposals, demoSuggestions } from "@/lib/suggestions/demo";
+import { markDemoSolutionAi } from "@/lib/solutions/demo";
 
 export interface DemoCompanyState {
   model: CompanyModel;
@@ -75,6 +76,8 @@ export const demoProposalBackend: ProposalBackend = {
 
 /** "Build it" saved the idea as a solution (A52): the idea is marked built, with the solution it made, as `build_proposal` does. */
 export function markDemoIdeaBuilt(ideaId: string, solutionId: string): void {
+  // The solution it made reads "AI block" on the Solutions pages (A50).
+  markDemoSolutionAi(solutionId);
   const now = get();
   const at = new Date().toISOString();
   set({

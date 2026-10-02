@@ -413,6 +413,60 @@ export interface FirstPrinciplesRow {
   updated_at: string;
 }
 
+/** The five switches on Settings -> AI analysis (issue #111, A46). No row means the defaults. */
+export interface AiSettingsRow {
+  workspace_id: string;
+  review_on_publish: boolean;
+  review_on_market: boolean;
+  suggest_issues: boolean;
+  suggest_solutions: boolean;
+  read_sources: boolean;
+  /** A market change whose review hasn't started (debounces the market trigger); not a switch. */
+  market_pending_at: string | null;
+  updated_at: string;
+}
+
+/** A model run that was started (A46): the log the daily cap and the cooldown count. Written only by `reserve_ai_run`. */
+export interface AiRunRow {
+  id: string;
+  workspace_id: string;
+  process_id: string;
+  trigger: "publish" | "market" | "manual";
+  user_id: string | null;
+  user_name: string | null;
+  started_at: string;
+}
+
+export type AiAnalysisStatus = "ok" | "unavailable" | "failed";
+export type AiAnalysisTrigger = "publish" | "market" | "manual";
+
+/**
+ * What AI wrote about one process version (issue #111, A46): the read, the insights and the first-principles review,
+ * each as jsonb whose app-side shape lives in apps/web/src/lib/ai/types.ts.
+ */
+export interface AiAnalysisRow {
+  id: string;
+  workspace_id: string;
+  process_id: string;
+  revision_id: string;
+  status: AiAnalysisStatus;
+  reason: string | null;
+  trigger: AiAnalysisTrigger;
+  summary: Json;
+  insights: Json;
+  review: Json;
+  checked: number;
+  dropped: number;
+  input_hash: string;
+  model: string | null;
+  usage: Json;
+  /** The reserved run that wrote it, and so who ran it. */
+  run_id: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type SourceKind = "transcript" | "notes" | "screenshot";
 
 /**
@@ -748,6 +802,10 @@ export interface IssueLinkRef {
   step_id: string | null;
 }
 
+/** How a resolved issue was resolved: a solution fixed it, the process was changed directly, or it is no longer a problem. */
+export type ResolveHow = "solution" | "process_change" | "not_a_problem";
+export const RESOLVE_HOWS = ["solution", "process_change", "not_a_problem"] as const satisfies readonly ResolveHow[];
+
 export type IssueEventKind = "created" | "edited" | "solution_tested" | "resolved" | "reopened";
 /** Logged by hand, detected by a stored run (reserved), or promoted from a detection. */
 export type IssueSource = "manual" | "detected" | "promoted";
@@ -788,6 +846,10 @@ export interface IssueRow {
   number: number | null;
   /** For a dismissed insight: the live revision of its process it was dismissed against. See `isDismissalCurrent`. */
   dismissed_revision_id: string | null;
+  /** How it was resolved, while it is resolved (cleared on reopen; the history keeps it). Null for an issue resolved before this was recorded. */
+  resolved_how: ResolveHow | null;
+  /** The note written when it was resolved. */
+  resolution_note: string | null;
   /** What is measured ("Wait at Check fit"), its value now ("1.4 d") and the goal ("under 4 hours"). */
   target_measure: string | null;
   target_now: string | null;
@@ -920,6 +982,10 @@ export type _SchemaDriftChecks = [
   Assert<Matches<ClientAssignmentRow, "client_assignments">>,
   Assert<Matches<ClientGroupRow, "client_groups">>,
   Assert<Matches<FirstPrinciplesRow, "first_principles">>,
+  Assert<Matches<AiSettingsRow, "ai_settings">>,
+  Assert<Matches<AiAnalysisRow, "ai_analyses">>,
+  // trigger is check-constrained to the three triggers.
+  Assert<Matches<Omit<AiRunRow, "trigger">, "ai_runs">>,
   // recurrence and provenance are jsonb; RecurrenceJson and ProvenanceMap are their app-side shapes.
   Assert<Matches<Omit<ServiceServicingRow, "recurrence">, "service_servicing">>,
   Assert<Matches<LeadSourceRow, "lead_sources">>,
@@ -936,7 +1002,7 @@ export type _SchemaDriftChecks = [
   Assert<Matches<Omit<ScenarioRow, "patch">, "scenarios">>,
   // evidence_metrics is jsonb; Record<string, number> is its app-side shape.
   // The three relation arrays are embedded from the link tables.
-  Assert<Matches<Omit<IssueRow, "evidence_metrics" | "links" | "owner_ids" | "source_ids" | "status">, "issues">>,
+  Assert<Matches<Omit<IssueRow, "evidence_metrics" | "links" | "owner_ids" | "source_ids" | "status" | "resolved_how">, "issues">>,
   Assert<Matches<Omit<IssueEventRow, "kind" | "detail">, "issue_events">>,
   Assert<Matches<SourceRow, "sources">>,
   // steps is jsonb; BlockBundle is its checked shape, and the check constraint limits type to BlockType.

@@ -7,11 +7,11 @@ import { compareCostsDesc, compareRatingsDesc, noCost, ruleOfFinding, type Detec
 import { RULES_UI } from "@/lib/rules/catalogue";
 import { TYPE_LABELS, type RegisterEntry } from "@/lib/issues/register";
 
-/** What produced an insight: one of the analysis rules, or the AI writer (A46, not built yet). */
+/** What produced an insight: one of the analysis rules, or the AI writer (A46). */
 export type InsightSource = { kind: "rule"; name: string; ruleId: string | null } | { kind: "ai"; name: "AI" };
 
-/** A detection that may carry its origin. Today every one is a rule's; A46 will set `origin: "ai"` on the AI's. */
-export type Detection = DetectedIssue & { origin?: "rule" | "ai" };
+/** A detection that may carry its origin. A rule's has none; the AI's (A46) is `origin: "ai"`, with its own "why it matters". */
+export type Detection = DetectedIssue & { origin?: "rule" | "ai"; why?: string };
 
 export interface Insight {
   key: string;
@@ -86,7 +86,7 @@ export function buildInsights(entries: readonly RegisterEntry[]): Insight[] {
       cost: d.cost,
       number: headline(d.evidence),
       found: rest(d.evidence),
-      why: WHY_IT_MATTERS[d.type],
+      why: d.why ?? WHY_IT_MATTERS[d.type],
       stepIds: d.stepId ? [d.stepId] : [],
       source: sourceOf(d),
       detection: d,
@@ -108,3 +108,15 @@ export function ratingCountsOf(insights: readonly Insight[]): { rating: Rating; 
 }
 
 export const filterByRating = (insights: readonly Insight[], rating: Rating | ""): Insight[] => (rating ? insights.filter((i) => i.rating === rating) : [...insights]);
+
+/**
+ * The first `n` insights for a short list (the Overview shows five). AI insights have no cost, so they sort after the
+ * costed rule findings of their rating and could all fall below the cut; if any exists and none is in the first `n`, the
+ * top AI insight takes the last place, so the AI's view is never hidden behind "Show all".
+ */
+export function limitInsights(insights: readonly Insight[], n: number): Insight[] {
+  const head = insights.slice(0, n);
+  if (head.length < n || head.some((i) => i.source.kind === "ai")) return head;
+  const ai = insights.slice(n).find((i) => i.source.kind === "ai");
+  return ai ? [...head.slice(0, n - 1), ai] : head;
+}

@@ -1,4 +1,4 @@
-import { createIssue, deleteIssue, promoteIssue, saveIssueField, redismissIssue, saveIssueFromDialog } from "@/app/w/[slug]/issue-actions";
+import { createIssue, deleteIssue, issueEvents, promoteIssue, reopenIssue, resolveIssueAction, saveIssueField, redismissIssue, saveIssueFromDialog } from "@/app/w/[slug]/issue-actions";
 import type { IssueStore } from "./store";
 
 /** Saves issues to the database through Server Actions, as the signed-in user. */
@@ -10,5 +10,8 @@ export function liveIssueStore(workspaceId: string): IssueStore {
     save: (input) => saveIssueFromDialog(workspaceId, input),
     saveField: (id, field, base, value) => saveIssueField(id, field, base, value),
     remove: (id) => deleteIssue(id),
+    resolve: (id, how, note) => resolveIssueAction(workspaceId, id, how, note),
+    reopen: (id) => reopenIssue(workspaceId, id),
+    events: (id) => issueEvents(workspaceId, id),
   };
 }

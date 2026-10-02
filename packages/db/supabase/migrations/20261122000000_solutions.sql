@@ -56,6 +56,10 @@
 --   4. The helpers the policies and triggers use exist. Expect 3 rows:
 --        select proname from pg_proc where pronamespace = 'public'::regnamespace and proname in ('can_read_workspace', 'can_edit_workspace', 'set_updated_at');
 --
+-- Post-apply check (authenticated must show select, insert and delete only, with no table-level UPDATE; anon nothing):
+--        select grantee, privilege_type from information_schema.role_table_grants where table_schema = 'public' and table_name in ('solutions', 'solution_issues') order by 1, 2;
+--        select table_name, column_name, grantee from information_schema.column_privileges where table_schema = 'public' and table_name in ('solutions', 'solution_issues') and privilege_type = 'UPDATE' and grantee = 'authenticated';
+--
 -- Rollback (run as one transaction):
 --
 --   begin;
@@ -280,10 +284,12 @@ create policy "delete solution_issues" on public.solution_issues for delete to a
   using (public.can_edit_workspace(workspace_id));
 
 -- Updates only to what a person edits later; the copy, the base, the issue and the automatic verdict are fixed once saved.
+-- Supabase gives every new public table full privileges for anon, authenticated and service_role, so revoke first (as 20260930040000
+-- does for api_tokens); a column grant only restricts anything once the table-level UPDATE is gone.
+revoke all on public.solutions, public.solution_issues from anon, authenticated;
 grant select, insert, delete on public.solutions, public.solution_issues to authenticated;
 grant update (name, notes) on public.solutions to authenticated;
 grant update (user_verdict, user_notes) on public.solution_issues to authenticated;
-revoke all on public.solutions, public.solution_issues from anon;
 
 -- ---------------------------------------------------------------------------
 -- save_solution: a solution and the issues it solves, in one transaction

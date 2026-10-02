@@ -1,10 +1,10 @@
 "use server";
 
-import { ISSUE_STATUSES, loadIssue, saveIssue, storedStatus, uiStatus, type IssueLinkRef, type IssueStatus, type Json, type StoredIssueStatus } from "@transpera-flow/db";
+import { ISSUE_STATUSES, loadIssue, loadIssueEvents, resolveIssue, saveIssue, storedStatus, uiStatus, type IssueEventRow, type IssueLinkRef, type IssueStatus, type Json, type StoredIssueStatus } from "@transpera-flow/db";
 import type { SaveOutcome } from "@/lib/fields/field-controller";
 import { saveField, saveFields } from "@/lib/fields/server";
-import { ALREADY_TRACKED, type RemoveIssueResult, type SaveIssueResult } from "@/lib/issues/store";
-import { cleanFieldValue, isId, isIssueField, parseIssueInput, parsePromoteInput, parseSaveInput, type Scalar } from "@/lib/issues/validate";
+import { ALREADY_RESOLVED, ALREADY_TRACKED, type RemoveIssueResult, type SaveIssueResult } from "@/lib/issues/store";
+import { cleanFieldValue, isId, isIssueField, parseIssueInput, parsePromoteInput, parseResolveInput, parseSaveInput, type Scalar } from "@/lib/issues/validate";
 import { createClient } from "@/lib/supabase/server";
 
 // Logging, tracking, editing and deleting issues (issue #17, reworked in #112). Every write runs
@@ -34,6 +34,8 @@ const failure = (error: { code?: string; message?: string }) =>
       ? ({ status: "error", message: ALREADY_TRACKED } as const)
       : error.code === "23514"
         ? ({ status: "error", message: "Some of those values aren't allowed." } as const)
+        : error.code === "22023" && /already resolved/.test(error.message ?? "")
+          ? ({ status: "error", message: ALREADY_RESOLVED } as const)
         : error.code === "23503"
           ? ({ status: "error", message: "Something the issue links to no longer exists." } as const)
           : ({ status: "error", message: "Couldn't save. Try again." } as const);
@@ -153,4 +155,33 @@ export async function deleteIssue(id: unknown): Promise<RemoveIssueResult> {
   if (error) return failure(error);
   if (!data.length) return forbidden;
   return { status: "ok" };
+}
+
+/**
+ * Mark an issue resolved: how it was resolved (a solution fixed it, the process was changed directly, or it is no longer
+ * a problem) and a note, in one write, so the history gets one entry carrying both (public.resolve_issue).
+ */
+export async function resolveIssueAction(workspaceId: unknown, id: unknown, how: unknown, note: unknown): Promise<SaveIssueResult> {
+  if (!isId(workspaceId) || !isId(id)) return invalid;
+  const parsed = parseResolveInput({ how, note });
+  if (!parsed.ok) return { status: "error", message: parsed.error };
+  const supabase = await signedInClient();
+  if (!supabase) return signedOut;
+  const done = await resolveIssue(supabase, { workspaceId, id, how: parsed.value.how, note: parsed.value.note });
+  if ("error" in done) return failure(done.error);
+  const issue = await loadIssue(supabase, workspaceId, id);
+  return issue ? { status: "ok", issue } : forbidden;
+}
+
+/** Set a resolved issue back to Open. The database logs it as reopened and clears the issue's own how and note; the history keeps them. */
+export async function reopenIssue(workspaceId: unknown, id: unknown): Promise<SaveIssueResult> {
+  if (!isId(workspaceId) || !isId(id)) return invalid;
+  return write(workspaceId, { id, fields: { status: "open" } });
+}
+
+/** An issue's history, oldest first, for the Issue page to refresh after a change. */
+export async function issueEvents(workspaceId: unknown, id: unknown): Promise<IssueEventRow[]> {
+  if (!isId(workspaceId) || !isId(id)) return [];
+  const supabase = await signedInClient();
+  return supabase ? loadIssueEvents(supabase, workspaceId, id) : [];
 }

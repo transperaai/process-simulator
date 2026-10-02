@@ -6,7 +6,7 @@
 import type { NumberProblem } from "./numbers";
 import type { NarrationPurpose } from "./facts";
 
-const RULES = `Rules for numbers (a program checks every number you write against the facts and rejects the text if any one fails):
+export const RULES = `Rules for numbers (a program checks every number you write against the facts and rejects the text if any one fails):
 - Use only figures that appear in the facts, copied exactly as printed there: same rounding, same currency symbol, same unit. You may leave out a figure, but never compute a new one: no differences, sums, ratios, percentages of totals, "per week" conversions or rounding of your own.
 - Every headline figure is an average with its range, in the facts' own form: "avg 8.6 (range 6–12)", "avg £33.0k (range £22.4k–£45.5k)".
 - A percentage (%) is a share; a change between two percentages is in percentage points only where the facts say "points". Don't turn one into the other.

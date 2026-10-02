@@ -1,11 +1,9 @@
 "use client";
 
-// "What the analysis found" (issue #100, A35): a count per rating, the AI read, and the findings.
+// "What the analysis found" (issue #100, A35): a count per rating. The AI read is components/ai/ai-read.tsx (A46).
 
-import { Sparkles } from "lucide-react";
 import { RATING_LABELS, type DetectedIssue, type Rating } from "@transpera-flow/engine";
 import { Help } from "@/components/help";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ratingCounts } from "@/lib/overview/findings";
 
@@ -30,29 +28,5 @@ export function RatingCounts({ findings }: { findings: readonly Pick<DetectedIss
         example="“Too busy” on the strategist at 82% is Bad, not urgent; at 97% it is Operational risk."
       />
     </p>
-  );
-}
-
-/**
- * Where the AI's summary of the run will go. Nothing is written here: the summary needs the AI writer (A46), and
- * an invented one would look like a result.
- */
-export function AiReadPlaceholder() {
-  return (
-    <div data-placeholder="ai-read" className="flex flex-col gap-1.5 rounded-xl border border-dashed bg-card/50 p-4">
-      <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
-        <Sparkles aria-hidden className="size-4 text-accent" />
-        AI read of this run
-        <Badge variant="outline">Not switched on yet</Badge>
-        <Help
-          label="AI read"
-          description="A short plain-English summary of the run, written by AI after it reads the results, the company's first principles and your sources. Every number it uses comes from the simulation, never from the AI."
-          example="“The strategist is the bottleneck: audits wait about a day before anyone starts them.”"
-        />
-      </p>
-      <p className="text-sm text-muted-foreground">
-        The summary will appear here once the AI writer is switched on. Until then, the findings below come straight from the analysis rules.
-      </p>
-    </div>
   );
 }

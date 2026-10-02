@@ -7,7 +7,7 @@ import { canEditWorkspace } from "@/lib/access-data";
 import { loadWorkspaceAnalysisRules } from "@/lib/rules/data";
 import { loadLiveProcess, loadProcessNames, loadWorkspaceIssues, loadWorkspaceLiveRevisionIds, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
 
-/** The issues register (docs/PRD.md §8 screen 9): every tracked issue, and what the live process's latest run detects. */
+/** The Issues list (A48): the problems people have confirmed, filtered by Open / Resolved / All and rating (both in the URL). */
 export default async function WorkspaceIssuesPage(props: PageProps<"/w/[slug]/issues">) {
   const { slug } = await props.params;
   const bundle = await loadLiveProcess(slug);
@@ -29,7 +29,7 @@ export default async function WorkspaceIssuesPage(props: PageProps<"/w/[slug]/is
       eyebrow="Improve"
       description={
         <>
-          Audit findings and what the simulation detects on {bundle.process.name}, each linked to its fix. Changes save as you go. Ratings follow your{" "}
+          Problems you&apos;ve confirmed, linked to a whole process or to specific steps. Resolved issues stay here with their full history. Ratings follow your{" "}
           <Link href={`/w/${slug}/settings/rules`} className="underline">
             analysis rules
           </Link>
@@ -46,6 +46,7 @@ export default async function WorkspaceIssuesPage(props: PageProps<"/w/[slug]/is
         liveRevisions={liveRevisions}
         analysisRules={rules.settings}
         firstPrinciples={firstPrinciples}
+        base={`/w/${slug}`}
         mode={canEdit ? "live" : "readonly"}
       />
     </Page>

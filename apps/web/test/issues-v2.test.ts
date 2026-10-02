@@ -327,6 +327,8 @@ describe("a dismissal lasts until the process's next published version", () => {
       resolved_at: "2026-10-01T00:00:00Z",
       created_at: "2026-10-01T00:00:00Z",
       updated_at: "2026-10-01T00:00:00Z",
+      resolved_how: null,
+      resolution_note: null,
       number: null,
       dismissed_revision_id: R1,
       target_measure: null,

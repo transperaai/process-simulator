@@ -131,9 +131,14 @@ describe("demoNav", () => {
     expect(g.map((x) => x.items.map((i) => i.key))).toEqual([
       ["overview", "processes"],
       ["issues", "solutions", "library", "suggestions"],
-      ["sources", "people", "rules", "levers"],
+      ["sources", "people", "rules", "levers", "ai"],
     ]);
   });
+  it("marks AI analysis active on its page", () => {
+    expect(active(d("/demo/settings/ai"))).toEqual(["ai"]);
+    expect(item(d("/demo"), "ai")?.href).toBe("/demo/settings/ai");
+  });
+  it("marks Settings active on a workspace's AI analysis page", () => expect(active(nav("/w/s/settings/ai"))).toEqual(["settings"]));
   it("marks Analysis rules active on its page", () => {
     expect(active(d("/demo/settings/rules"))).toEqual(["rules"]);
     expect(item(d("/demo"), "rules")?.href).toBe("/demo/settings/rules");

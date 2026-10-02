@@ -145,6 +145,13 @@ Verified only against plain Postgres (the db test harness, `process-history.test
 - `revision_history` is `security definer` and reads `auth.users` and `audit_log` (both closed to ordinary members). It checks `can_read_workspace` itself and shows an email only to someone who manages the workspace. On Supabase, check that the function owner can read `auth.users`.
 - `restore_version` and `duplicate_version` are `security invoker` and copy rows with `jsonb_populate_record`, like `open_draft`. The deferred nesting trigger (`nesting_is_a_tree`) runs at commit, so a bad copy is refused when the RPC's transaction commits.
 
+Verified only against plain Postgres (the db test harness, `ai-analysis.test.ts`), not against Supabase:
+
+- `reserve_ai_run` (A46) is `security definer` with an empty `search_path`, and the only writer of `ai_runs` (authenticated users have `select` only). It calls `auth.uid()` and `public.can_edit_workspace`, and takes the "run by" name from `public.people` via `public.memberships.person_id` for that workspace (as `revision_history` does), else null; it never stores an email or `raw_user_meta_data`, which every member can read here and a user can edit. `ai_runs.process_id` is set null when the process is deleted, so deleting a process can't reset the daily cap. On plain Postgres the shim's `auth.uid()` stands in for Supabase's. `can_edit_workspace` returns null (not false) for a stranger, so the function coalesces it. The advisory-lock concurrency test runs two plain connections.
+- **Known forgery risk:** `ai_analyses` is written with the user's own credentials, so any editor can store arbitrary text against a run they reserved, through PostgREST with their own session (the trigger stamps `created_by`, and checks `run_id` is theirs, for this process, unique and under 15 minutes old, but can't check the text). The fix is a server-side writer with a service-role key, a production config change awaiting Austin; that writer needs its own branch in the stamp trigger, since `auth.uid()` is null under `service_role`. See ADR 0013.
+- `ai_settings` and `ai_analyses` (A46) are written by the server **as the signed-in user** (the publisher, the settings editor, the person who clicked "Run again", or an API token's user through MCP), under row-level security: every member reads, owners and editors write, `anon` has nothing. The tests run those policies as `authenticated` with JWT claims set, as the other tables' tests do; PostgREST's `upsert(..., { onConflict })` (a one-column upsert for a switch, a whole-row upsert for an analysis) is verified only through the app's own code against a type check, not against a running PostgREST. The only `SECURITY DEFINER` function is `reserve_ai_run` (above); authenticated users have no delete or truncate on `ai_analyses` or `ai_settings`.
+- The AI call itself (`claude-opus-5-5`, structured output, `fallbacks: "default"`) is the same request narration makes and is verified only against the SDK's types and a fake `fetch`; the first real call happens on a deploy with `ANTHROPIC_API_KEY`.
+
 ## Issues v2 (A47, migration 20261120000000)
 
 Checked on plain Postgres 16 with the auth shim (`packages/db/test/issues-v2.test.ts`); not confirmed on Supabase itself, and the PostgREST end-to-end tests run only in CI:
@@ -154,3 +161,23 @@ Checked on plain Postgres 16 with the auth shim (`packages/db/test/issues-v2.tes
 - The history log is written by `security definer` triggers that call `auth.uid()` for the actor. On plain Postgres the shim's `auth.uid()` reads `request.jwt.claims`; Supabase's reads the same setting, but the actor on a real session is unconfirmed.
 - Link-table events are skipped when the same transaction already logged the issue, using `txid_current()` stored on each event. Over PostgREST each request is one transaction, so `save_issue` (one RPC) logs one entry.
 - `public.save_issue` is `security invoker` with defaults on every argument after `p_fields`, so supabase-js can leave out `p_id`, `p_links`, `p_owners` and `p_sources` (PostgREST resolves the call by argument names). Only called with all of them present here.
+
+## Issue resolution (A48, migration 20261121500000)
+
+Checked on plain Postgres 16 with the auth shim (`packages/db/test/issue-resolution.test.ts`); not confirmed on Supabase itself:
+
+- `issue_events.detail` is written only by triggers, so how an issue was resolved and the note are two nullable columns on `issues` (`resolved_how`, `resolution_note`). `private.log_issue_change` copies them into the `resolved` entry's detail, so the history keeps them after a reopen clears the columns (the before-write trigger `issues_resolved_how` clears them whenever the status is not `done`).
+- `public.resolve_issue` is `security invoker` and takes the workspace, the issue id, the way, a note and a status (`resolved` or `wont_fix`). Reopening is the existing `save_issue` with status `open`. Over PostgREST a call with named arguments resolves by name; the tests call it with all five positionally.
+- The new trigger name (`issues_resolved_how`) sorts after `issues_number`; Postgres fires triggers in name order, as for A47's triggers.
+
+## Solutions (A49, migration 20261122000000)
+
+Verified only against plain Postgres, with Supabase's default table privileges emulated (`alter default privileges ... grant all on tables to anon, authenticated, service_role`, in `packages/db/test/solutions-privileges.test.ts`). On Supabase every new public table starts with full privileges for those roles, so the migration revokes all from `anon, authenticated` before granting back `select, insert, delete` and column-level `update` (`name, notes` on solutions; `user_verdict, user_notes` on solution_issues). A column grant restricts nothing while the table-level UPDATE remains.
+
+After applying, check on the real project:
+
+```sql
+select grantee, privilege_type from information_schema.role_table_grants where table_schema = 'public' and table_name in ('solutions', 'solution_issues') order by 1, 2;
+```
+
+`authenticated` must show DELETE, INSERT and SELECT only (no UPDATE), and `anon` nothing. The two before-insert triggers are security invoker and use `auth.uid()`; they skip the can-edit check only when it is null (a plain database connection), which was exercised here with the auth shim, not Supabase's `auth.uid()`.

@@ -126,6 +126,11 @@ export interface ProcessRow {
    * are the top-level processes (issue #102).
    */
   parent_process_id: string | null;
+  /**
+   * True for the workspace's company map: a stored process whose steps are holders of the top-level processes (B11,
+   * #163). It is never simulated and is left out of every list of processes. Absent (false) on fixtures.
+   */
+  is_company?: boolean;
 }
 
 export interface ProcessRevisionRow {
@@ -1047,7 +1052,7 @@ export type _SchemaDriftChecks = [
   Assert<Matches<PersonRoleRow, "person_roles">>,
   Assert<Matches<PersonSkillRow, "person_skills">>,
   Assert<Matches<PersonLeaveRow, "person_leave">>,
-  Assert<Matches<ProcessRow, "processes">>,
+  Assert<Matches<Omit<ProcessRow, "is_company">, "processes">>,
   Assert<Matches<ProcessRevisionRow, "process_revisions">>,
   // replaced_by defaults to '{}' in the table; the app leaves it out of new steps.
   Assert<Matches<Omit<StepRow, "replaced_by">, "steps">>,

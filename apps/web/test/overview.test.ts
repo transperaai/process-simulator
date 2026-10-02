@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { partOf, toEngineModel } from "@transpera-flow/db";
+import { defaultCompanyPart, partOf, toEngineModel } from "@transpera-flow/db";
 import { simulate, type DetectedIssue } from "@transpera-flow/engine";
 import { demoLandingRedirect } from "@/lib/demo/landing";
 import { litIds } from "@/lib/map/highlight";
@@ -70,6 +70,50 @@ describe("company map", () => {
     const x = (list: typeof closed, id: string) => Number(list.find((s) => s.id === id)!.x);
     const others = parts.slice(1).map((p) => p.process.id);
     expect(others.some((id) => x(open, id) > x(closed, id))).toBe(true);
+  });
+});
+
+describe("company map from the stored process (B11)", () => {
+  const live = demoBundle();
+  const parts = [partOf(live), ...(live.otherProcesses ?? [])];
+  const stored = defaultCompanyPart(live.workspace.id, parts);
+  const handoffs = (map: ReturnType<typeof companyMap>) => map.bundle.edges.filter((e) => parts.some((p) => p.process.id === e.from_step_id) && parts.some((p) => p.process.id === e.to_step_id));
+  const position = (map: ReturnType<typeof companyMap>, id: string) => {
+    const s = map.bundle.steps.find((x) => x.id === id)!;
+    return [Number(s.x), Number(s.y)];
+  };
+
+  it("draws the stored positions and the stored handoff lines, the same as with none stored", () => {
+    const withStored = companyMap(live, parts, new Set(), stored);
+    const without = companyMap(live, parts);
+    expect(withStored.bundle.steps).toEqual(without.bundle.steps);
+    expect(withStored.bundle.edges).toEqual(without.bundle.edges);
+    // One handoff from the pipeline to each servicing process.
+    expect(handoffs(withStored)).toHaveLength(parts.filter((p) => p.process.kind === "servicing").length);
+  });
+
+  it("takes positions, labels and lines from the stored map, not from a layout", () => {
+    const moved = {
+      ...stored,
+      steps: stored.steps.map((s, i) => (i === 0 ? { ...s, x: 500, y: 700 } : s)),
+      edges: stored.edges.slice(0, 1).map((e) => ({ ...e, label: "Won deals" })),
+    };
+    const map = companyMap(live, parts, new Set(), moved);
+    expect(position(map, parts.find((p) => p.process.id === moved.steps[0]!.child_process_id)!.process.id)).toEqual([500, 700]);
+    expect(handoffs(map)).toHaveLength(1);
+    expect(handoffs(map)[0]!.label).toBe("Won deals");
+  });
+
+  it("puts a process the map has no holder for below the others, and keeps open cards from covering their neighbours", () => {
+    const missing = parts[0]!.process.id;
+    const partial = { ...stored, steps: stored.steps.filter((s) => s.child_process_id !== missing), edges: [] };
+    const map = companyMap(live, parts, new Set(), partial);
+    const lowest = Math.max(...partial.steps.map((s) => Number(s.y)));
+    expect(position(map, missing)[1]).toBeGreaterThan(lowest);
+    const closed = companyMap(live, parts, new Set(), stored);
+    const open = companyMap(live, parts, new Set([parts[0]!.process.id]), stored);
+    const others = parts.slice(1).map((p) => p.process.id);
+    expect(others.some((id) => position(open, id)[0] > position(closed, id)[0])).toBe(true);
   });
 });
 

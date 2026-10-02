@@ -258,17 +258,50 @@ export async function loadProcessBundle(
   };
 }
 
-const PROCESS_COLUMNS = "id, workspace_id, name, kind, entity_name, description, live_revision_id, parent_process_id" as const;
+const PROCESS_COLUMNS = "id, workspace_id, name, kind, entity_name, description, live_revision_id, parent_process_id, is_company" as const;
 
-/** A workspace's processes, oldest first. */
-export async function listProcesses(db: Db, workspaceId: string): Promise<(ProcessRow & { draft_revision_id: string | null })[]> {
-  const r = await db
-    .from("processes")
-    .select(`${PROCESS_COLUMNS}, draft_revision_id`)
-    .eq("workspace_id", workspaceId)
-    .order("created_at")
-    .order("id");
+/**
+ * A workspace's processes, oldest first. The company map (a stored process whose steps hold the top-level processes,
+ * B11) is not one of them unless `includeCompany` is set: it is never simulated, listed as an ordinary process or
+ * counted.
+ */
+export async function listProcesses(
+  db: Db,
+  workspaceId: string,
+  { includeCompany = false }: { includeCompany?: boolean } = {},
+): Promise<(ProcessRow & { draft_revision_id: string | null })[]> {
+  let q = db.from("processes").select(`${PROCESS_COLUMNS}, draft_revision_id`).eq("workspace_id", workspaceId);
+  if (!includeCompany) q = q.eq("is_company", false);
+  const r = await q.order("created_at").order("id");
   return rows(r) as (ProcessRow & { draft_revision_id: string | null })[];
+}
+
+/**
+ * The workspace's company map at its live revision: the process, and its steps (one holder per process on the map, at
+ * its stored position) and edges (the handoff lines). Null if the workspace has none or it isn't visible. Layout only:
+ * nothing here is simulated.
+ */
+export async function loadLiveCompanyPart(db: Db, workspaceId: string): Promise<ProcessPart | null> {
+  const found = await db.from("processes").select(`${PROCESS_COLUMNS}, draft_revision_id`).eq("workspace_id", workspaceId).eq("is_company", true).maybeSingle();
+  if (found.error) throw found.error;
+  const company = found.data as unknown as (ProcessRow & { draft_revision_id: string | null }) | null;
+  if (!company?.live_revision_id) return null;
+  const [revision, steps, edges] = await Promise.all([
+    db.from("process_revisions").select("id, workspace_id, process_id, number, status").eq("id", company.live_revision_id).maybeSingle(),
+    db.from("steps").select("*").eq("revision_id", company.live_revision_id).order("y").order("x").order("id"),
+    db.from("edges").select("*").eq("revision_id", company.live_revision_id).order("id"),
+  ]);
+  if (revision.error) throw revision.error;
+  if (steps.error) throw steps.error;
+  if (edges.error) throw edges.error;
+  if (!revision.data) return null;
+  const { draft_revision_id: _draft, ...process } = company;
+  return {
+    process,
+    revision: revision.data as ProcessRevisionRow,
+    steps: steps.data as unknown as StepRow[],
+    edges: edges.data as unknown as EdgeRow[],
+  };
 }
 
 /**
@@ -508,7 +541,7 @@ export async function saveIssue(db: Db, args: SaveIssueArgs): Promise<{ id: stri
  * its process's live revision changes, so the screens that list insights compare against this (`isDismissalCurrent`).
  */
 export async function loadLiveRevisionIds(db: Db, workspaceId: string): Promise<Record<string, string>> {
-  const r = await db.from("processes").select("id, live_revision_id").eq("workspace_id", workspaceId);
+  const r = await db.from("processes").select("id, live_revision_id").eq("workspace_id", workspaceId).eq("is_company", false);
   return Object.fromEntries(rows(r).flatMap((p) => (p.live_revision_id ? [[p.id, p.live_revision_id]] : [])));
 }
 

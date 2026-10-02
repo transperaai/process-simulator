@@ -175,7 +175,7 @@ describe.skipIf(!POSTGREST_URL)("company-model suggestion tools over PostgREST",
     expect(before.ok, JSON.stringify(before)).toBe(false);
     expect(before.error).toMatchObject({ code: "not_found", message: expect.stringMatching(/No role .* matches .Copywriter./) });
     // It checks before it writes: no process (or draft) is left behind.
-    expect((await admin.query("select count(*)::int as n from processes where workspace_id = $1", [ids.ws])).rows[0].n).toBe(0);
+    expect((await admin.query("select count(*)::int as n from processes where workspace_id = $1 and not is_company", [ids.ws])).rows[0].n).toBe(0);
 
     const rows = (await admin.query("select id from suggestions where workspace_id = $1 and target_table = 'roles' and status = 'pending'", [ids.ws])).rows;
     expect(rows).toHaveLength(1);

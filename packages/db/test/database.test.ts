@@ -37,7 +37,7 @@ async function loadSeeded(claims: Record<string, unknown>, wsId: string): Promis
     const one = async (sql: string, params: unknown[]) => (await c.query(sql, params)).rows[0];
     const many = async (sql: string, params: unknown[]) => (await c.query(sql, params)).rows;
     const workspace = await one("select id, name, slug, settings from workspaces where id = $1", [wsId]);
-    const process = await one("select * from processes where workspace_id = $1 and kind = 'pipeline'", [wsId]);
+    const process = await one("select * from processes where workspace_id = $1 and kind = 'pipeline' and not is_company", [wsId]);
     // Its servicing processes at their live revisions (issue #19).
     const servicing = await many("select * from processes where workspace_id = $1 and kind = 'servicing' order by id", [wsId]);
     const otherProcesses = [];
@@ -132,8 +132,8 @@ describe("row-level security", () => {
   it("lets an agency admin see every workspace", async () => {
     const admin = await createUser(db, "agency@example.com", { agency_admin: true });
     const visible = await db.as(admin.claims, countVisible);
-    // Northbeam and Larkspur (issue #22), each a pipeline and two servicing processes (issue #19).
-    expect(visible).toMatchObject({ workspaces: 2, roles: 13, processes: 6, steps: 46, edges: 47, people: 21, person_roles: 22 });
+    // Northbeam and Larkspur (issue #22), each a pipeline and two servicing processes (issue #19) and a company map holding the three (B11): a holder each, and a handoff line from the pipeline to each servicing process.
+    expect(visible).toMatchObject({ workspaces: 2, roles: 13, processes: 8, steps: 52, edges: 51, people: 21, person_roles: 22 });
   });
 
   it("lets a member with an agency_admin membership see the workspace", async () => {
@@ -142,7 +142,7 @@ describe("row-level security", () => {
       NORTHBEAM_WORKSPACE_ID,
       user.id,
     ]);
-    expect(await db.as(user.claims, countVisible)).toMatchObject({ workspaces: 1, steps: 22 });
+    expect(await db.as(user.claims, countVisible)).toMatchObject({ workspaces: 1, steps: 25 });
   });
 
   it("hides everything from a signed-in user with no membership", async () => {

@@ -205,3 +205,16 @@ select proacl from pg_proc where pronamespace = 'public'::regnamespace and prona
 ```
 
 Expect one row, `authenticated` EXECUTE, and an ACL with an `authenticated=X/...` entry, no `anon=` and no `=X/...` (an entry with an empty grantee is PUBLIC).
+
+## The company map (B11 slice 1, migration 20261126000000)
+
+Verified only against plain Postgres, with Supabase's default table privileges emulated (`packages/db/test/company-map.test.ts`, including the header's rollback and the migration re-applied over existing workspaces). The migration adds no table, so there is nothing for `anon` or `authenticated` to inherit; its functions live in the `private` schema and start with `revoke all ... from public, anon, authenticated`. The one exception is `private.holder_allows`, which the (invoker) nesting trigger calls as the signed-in user, so `authenticated` may execute it; it only reads `processes`. The sync functions are `security definer` with an empty `search_path` and write only the company map's own steps and edges.
+
+After applying, check on the real project (the migration's header has the same queries):
+
+```sql
+select w.id from public.workspaces w where (select count(*) from public.processes p where p.workspace_id = w.id and p.is_company) <> 1;
+select routine_name, grantee from information_schema.routine_privileges where routine_schema = 'private' and grantee in ('anon', 'PUBLIC') and routine_name in ('ensure_company_map', 'company_layout_insert', 'sync_company_map', 'relayout_company_map', 'company_map_before_delete', 'company_map_membership', 'company_map_new_workspace', 'holder_allows', 'company_process_guard');
+```
+
+Both must return no rows. The guard trigger tells a signed-in caller from the system by `current_user` (`authenticated`, `anon`), as `edit_drafts_only` does.

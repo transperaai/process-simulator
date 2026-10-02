@@ -82,8 +82,26 @@ export async function resolveProcess(
   workspace: WorkspaceRef,
   ref: string | undefined,
   assumptions: string[],
+  { allowCompany = false }: { allowCompany?: boolean } = {},
 ): Promise<ProcessWithDraft> {
-  const processes = await listProcesses(ctx.db, workspace.id);
+  const everything = await listProcesses(ctx.db, workspace.id, { includeCompany: true });
+  // The company map (B11) is a stored picture of the business, never a process to simulate, analyse or edit: only
+  // `get_process` reads it, and only when it is named. Everywhere else it is refused with a clear error.
+  const processes = everything.filter((p) => !p.is_company);
+  const company = everything.find((p) => p.is_company);
+  if (ref && company) {
+    const asked = ref.trim().toLowerCase();
+    // By id always; by name only when no ordinary process has that name (a process may be called "Company map" too).
+    const ordinaryByName = processes.some((p) => p.name.trim().toLowerCase() === asked);
+    if (company.id === asked || (company.name.toLowerCase() === asked && !ordinaryByName)) {
+      if (allowCompany) return company;
+      throw new ToolError(
+        "company_map",
+        `'${company.name}' is the company map: a picture of how the business's processes fit together, not a process. It can't be simulated, analysed or edited here (get_process and get_workspace_summary show it). Name one of its processes instead.`,
+        processes.map((p) => ({ id: p.id, name: p.name })),
+      );
+    }
+  }
   const list = () => processes.map((p) => ({ id: p.id, name: p.name }));
   if (!processes.length) throw new ToolError("not_found", `Workspace '${workspace.name}' has no processes`);
   if (!ref) {

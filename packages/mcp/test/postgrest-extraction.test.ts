@@ -63,7 +63,7 @@ async function companyRows() {
 }
 
 async function processes() {
-  return (await admin.query("select * from processes where workspace_id = $1", [workspaceId])).rows as (Row & { id: string; live_revision_id: string | null; draft_revision_id: string | null })[];
+  return (await admin.query("select * from processes where workspace_id = $1 and not is_company", [workspaceId])).rows as (Row & { id: string; live_revision_id: string | null; draft_revision_id: string | null })[];
 }
 
 async function stepsOf(revisionId: string) {

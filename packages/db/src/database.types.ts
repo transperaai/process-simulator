@@ -1671,6 +1671,7 @@ export type Database = {
           draft_revision_id: string | null
           entity_name: string
           id: string
+          is_company: boolean
           kind: string
           live_revision_id: string | null
           name: string
@@ -1686,6 +1687,7 @@ export type Database = {
           draft_revision_id?: string | null
           entity_name?: string
           id?: string
+          is_company?: boolean
           kind?: string
           live_revision_id?: string | null
           name: string
@@ -1701,6 +1703,7 @@ export type Database = {
           draft_revision_id?: string | null
           entity_name?: string
           id?: string
+          is_company?: boolean
           kind?: string
           live_revision_id?: string | null
           name?: string

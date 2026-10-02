@@ -309,6 +309,8 @@ update public.processes set live_revision_id = 'd0000000-0000-4000-8000-00000000
 
 update public.processes set live_revision_id = 'd0000000-0000-4000-8000-000000000003' where id = 'c0000000-0000-4000-8000-000000000003';
 
+select private.relayout_company_map('a0000000-0000-4000-8000-000000000001');
+
 -- Larkspur Creative
 
 insert into public.workspaces (id, name, slug, settings) values
@@ -577,6 +579,8 @@ update public.processes set live_revision_id = 'd0000000-0000-4000-8001-00000000
 update public.processes set live_revision_id = 'd0000000-0000-4000-8001-000000000002' where id = 'c0000000-0000-4000-8001-000000000002';
 
 update public.processes set live_revision_id = 'd0000000-0000-4000-8001-000000000003' where id = 'c0000000-0000-4000-8001-000000000003';
+
+select private.relayout_company_map('a0000000-0000-4000-8001-000000000001');
 
 -- Access: allowed domains and pre-assigned emails
 

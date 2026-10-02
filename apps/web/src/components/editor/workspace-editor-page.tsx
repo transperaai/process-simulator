@@ -1,6 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 import { EditorView } from "@/components/editor/editor-view";
 import { canEditWorkspace, currentViewer } from "@/lib/access-data";
+import { loadIdeaProposal } from "@/lib/company-data";
+import { ideaSeed } from "@/lib/suggestions/idea";
 import { loadProcessForEditing, loadWorkspaceBlocks, loadWorkspaceIssues, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
 import { firstPrinciplesDraftChanged } from "@/lib/first-principles/data";
 import { exitHref, parseEditorMode, parseHorizon, parseIssueParam } from "@/lib/editor/modes";
@@ -17,7 +19,7 @@ export async function WorkspaceEditorPage({
 }: {
   slug: string;
   processId: string;
-  searchParams: { mode?: string | string[]; from?: string | string[]; horizon?: string | string[]; issue?: string | string[] };
+  searchParams: { mode?: string | string[]; from?: string | string[]; horizon?: string | string[]; issue?: string | string[]; idea?: string | string[] };
 }) {
   const process = await loadProcessForEditing(slug, processId);
   if (!process) notFound();
@@ -36,6 +38,10 @@ export async function WorkspaceEditorPage({
   const editorMode = parseEditorMode(searchParams.mode);
   const issueId = editorMode === "solution" ? parseIssueParam(searchParams.issue) : null;
   const issueRow = issueId ? (await loadWorkspaceIssues(live.workspace.id)).find((i) => i.id === issueId) : undefined;
+  // "Build it" on a solution idea (A52): `?idea=` names a waiting idea for this issue, whose steps the Editor places.
+  const ideaId = issueRow ? parseIssueParam(searchParams.idea) : null;
+  const ideaRow = ideaId ? await loadIdeaProposal(live.workspace.id, ideaId) : null;
+  const idea = ideaRow && ideaRow.issue_id === issueRow?.id ? ideaSeed(ideaRow, live.roles) : null;
   return (
     <EditorView
       key={live.process.id}
@@ -44,6 +50,7 @@ export async function WorkspaceEditorPage({
       mode="live"
       extraChanges={fpChanged ? 1 : 0}
       editorMode={editorMode}
+      idea={idea}
       issue={issueRow && issueAboutProcess(issueRow, live.process.id) ? solutionIssueOf(issueRow, live.process.id, live.steps) : null}
       scenarios={scenarios}
       blocks={blocks}

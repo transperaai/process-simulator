@@ -194,3 +194,14 @@ select column_name, privilege_type from information_schema.column_privileges whe
 ```
 
 `authenticated` must show DELETE and SELECT at table level, INSERT only on the eight target columns and no UPDATE; `anon` nothing. `public.add_source` and `public.unlinked_source_count` are `security invoker` (RLS applies to every write and read); the app calls them through PostgREST (`supabase.rpc`), which was not exercised here, only the SQL under the auth shim. The before-insert step check and the `audit_mcp` trigger run as the caller, as on the other tables.
+
+## Build a solution idea (A52 slice 2, migration 20261125500000)
+
+Verified only against plain Postgres (`packages/db/test/build-proposal.test.ts`, and `apps/web/test/ideas-db.test.ts` through the app's own helpers). `public.build_proposal` is security invoker and calls `public.save_solution`, then sets the idea `built` through the guard window of `private.suggestion_proposals_before_write` (`transpera.reviewing_proposals`). What to confirm on the real project: the function is executable by `authenticated` only (Supabase's default privileges for functions grant EXECUTE to PUBLIC, so the migration revokes it from `public` and `anon`), `authenticated` can read the idea's columns it selects (the table is granted column by column and leaves out `proposer_email`), and a call through PostgREST (`/rpc/build_proposal`) with a token user is refused.
+
+```sql
+select grantee, privilege_type from information_schema.routine_privileges where routine_schema = 'public' and routine_name = 'build_proposal' and grantee in ('anon', 'authenticated', 'PUBLIC') order by 1;
+select proacl from pg_proc where pronamespace = 'public'::regnamespace and proname = 'build_proposal';
+```
+
+Expect one row, `authenticated` EXECUTE, and an ACL with an `authenticated=X/...` entry, no `anon=` and no `=X/...` (an entry with an empty grantee is PUBLIC).

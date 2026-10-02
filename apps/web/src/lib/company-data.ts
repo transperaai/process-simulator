@@ -7,15 +7,16 @@ import {
   loadSources,
   loadProposals,
   loadSuggestions,
+  PROPOSAL_ROW_COLUMNS,
   countPendingProposals,
   snapshotModel,
   type CompanyModel,
   type IssueProposalPayload,
   type ProposalRow,
-  type SolutionIdeaPayload,
   type SuggestionRow,
 } from "@transpera-flow/db";
 import { COMPANY_AUDIT_TABLES, type AuditEntry } from "./suggestions/audit";
+import { readIdea } from "./suggestions/idea";
 import type { ProposalLookups } from "./suggestions/proposals";
 import { createClient } from "./supabase/server";
 
@@ -61,21 +62,24 @@ export interface SuggestionsPageData {
 
 /** The names the proposals' cards show: processes, steps and the issues ideas are for. */
 export async function proposalLookups(supabase: Awaited<ReturnType<typeof createClient>>, ws: string, proposals: readonly ProposalRow[]): Promise<ProposalLookups> {
-  const links = proposals.flatMap((p) => (p.kind === "issue" ? ((p.payload as IssueProposalPayload).links ?? []) : []));
+  const links = proposals.flatMap((p) => {
+    const l = p.kind === "issue" ? (p.payload as IssueProposalPayload).links : undefined;
+    return Array.isArray(l) ? l.filter((x) => typeof x === "object" && x !== null) : [];
+  });
   const stepIds = [
-    ...new Set([...links.flatMap((l) => (l.step_id ? [l.step_id] : [])), ...proposals.flatMap((p) => (p.kind === "solution_idea" ? ((p.payload as SolutionIdeaPayload).replaces_step_ids ?? []) : []))]),
+    ...new Set([...links.flatMap((l) => (typeof l.step_id === "string" ? [l.step_id] : [])), ...proposals.flatMap((p) => (p.kind === "solution_idea" ? readIdea(p.payload).replaces : []))]),
   ];
   const issueIds = [...new Set(proposals.flatMap((p) => (p.issue_id ? [p.issue_id] : [])))];
   const [processes, steps, issues] = await Promise.all([
     links.some((l) => l.process_id) ? supabase.from("processes").select("id, name").eq("workspace_id", ws) : null,
     stepIds.length ? supabase.from("steps").select("id, name").eq("workspace_id", ws).in("id", stepIds) : null,
-    issueIds.length ? supabase.from("issues").select("id, number, title").eq("workspace_id", ws).in("id", issueIds) : null,
+    issueIds.length ? supabase.from("issues").select("id, number, title, process_id").eq("workspace_id", ws).in("id", issueIds) : null,
   ]);
   for (const r of [processes, steps, issues]) if (r?.error) throw r.error;
   return {
     processes: Object.fromEntries((processes?.data ?? []).map((r) => [r.id, r.name])),
     steps: Object.fromEntries((steps?.data ?? []).map((r) => [r.id, r.name])),
-    issues: Object.fromEntries((issues?.data ?? []).map((r) => [r.id, { number: r.number, title: r.title }])),
+    issues: Object.fromEntries((issues?.data ?? []).map((r) => [r.id, { number: r.number, title: r.title, processId: r.process_id }])),
   };
 }
 
@@ -152,3 +156,35 @@ export const pendingSuggestionCount = cache(async (workspaceId: string): Promise
   if (changes.error) throw changes.error;
   return (changes.count ?? 0) + proposals;
 });
+
+/** One waiting solution idea (A52), for "Build it" in the Editor. Null when it isn't there, isn't an idea, or has been dealt with. */
+export async function loadIdeaProposal(workspaceId: string, ideaId: string): Promise<ProposalRow | null> {
+  const supabase = await createClient();
+  const r = await supabase
+    .from("suggestion_proposals")
+    .select(PROPOSAL_ROW_COLUMNS)
+    .eq("workspace_id", workspaceId)
+    .eq("id", ideaId)
+    .eq("kind", "solution_idea")
+    .eq("status", "pending")
+    .maybeSingle();
+  if (r.error) throw r.error;
+  return (r.data as unknown as ProposalRow | null) ?? null;
+}
+
+/** The solution ideas waiting for one issue (A52), with the names their cards show: the Issue page's "AI ideas". */
+export async function loadIssueIdeas(workspaceId: string, issueId: string): Promise<{ ideas: ProposalRow[]; lookups: ProposalLookups }> {
+  const supabase = await createClient();
+  const r = await supabase
+    .from("suggestion_proposals")
+    .select(PROPOSAL_ROW_COLUMNS)
+    .eq("workspace_id", workspaceId)
+    .eq("issue_id", issueId)
+    .eq("kind", "solution_idea")
+    .eq("status", "pending")
+    .order("created_at", { ascending: false })
+    .order("id");
+  if (r.error) throw r.error;
+  const ideas = (r.data ?? []) as unknown as ProposalRow[];
+  return { ideas, lookups: await proposalLookups(supabase, workspaceId, ideas) };
+}

@@ -66,7 +66,7 @@ describe("reviewing in memory", () => {
     const next = northbeamIssues().length + 1;
     expect(r.results).toEqual([{ id: issueProposal.id, status: "accepted", applied: { issue_id: expect.any(String), number: next } }]);
     expect(r.proposals.find((p) => p.id === issueProposal.id)).toMatchObject({ status: "accepted", reviewed_by: "you", reviewed_at: at, applied: { number: next } });
-    const created = (await o.issues.events(r.results[0]!.applied!.issue_id)).map((e) => e.kind);
+    const created = (await o.issues.events(r.results[0]!.applied!.issue_id!)).map((e) => e.kind);
     expect(created).toEqual(["created"]);
     expect(proposalSummary(r.results, "accept")).toBe(`Accepted. Now issue #${next}.`);
   });
@@ -112,10 +112,10 @@ describe("the demo's samples", () => {
 
 describe("the (i) help on the Suggestions screen (issue #117)", () => {
   const read = (f: string) => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8");
-  const screen = read("components/proposals-review.tsx") + read("components/suggestions-review.tsx");
+  const screen = read("components/proposals-review.tsx") + read("components/suggestions-review.tsx") + read("components/idea-card.tsx");
 
   it("has a label, a description and an example for each part", () => {
-    expect(Object.keys(SUGGESTIONS_HELP).sort()).toEqual(["accept", "bulk", "dismiss", "ideas", "issues", "model", "other", "reject", "show"]);
+    expect(Object.keys(SUGGESTIONS_HELP).sort()).toEqual(["accept", "buildIt", "bulk", "dismiss", "ideaMap", "ideas", "issues", "model", "other", "reject", "show"]);
     for (const [key, h] of Object.entries(SUGGESTIONS_HELP)) {
       expect(h.label.length, key).toBeGreaterThan(2);
       expect(h.description.length, `${key} description`).toBeGreaterThan(30);

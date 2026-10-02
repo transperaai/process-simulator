@@ -2905,6 +2905,20 @@ export type Database = {
         Args: { p_links: Json; p_source: Json; p_workspace: string }
         Returns: string
       }
+      build_proposal: {
+        Args: {
+          p_base_revision: string
+          p_changed: Json
+          p_levers: Json
+          p_links: Json
+          p_name: string
+          p_process: string
+          p_proposal: string
+          p_steps: Json
+          p_workspace: string
+        }
+        Returns: Json
+      }
       can_edit_workspace: { Args: { ws: string }; Returns: boolean }
       can_manage_workspace: { Args: { ws: string }; Returns: boolean }
       can_read_workspace: { Args: { ws: string }; Returns: boolean }

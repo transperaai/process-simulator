@@ -72,3 +72,15 @@ export const demoProposalBackend: ProposalBackend = {
     return { status: "ok", results: next.results, proposals: next.proposals };
   },
 };
+
+/** "Build it" saved the idea as a solution (A52): the idea is marked built, with the solution it made, as `build_proposal` does. */
+export function markDemoIdeaBuilt(ideaId: string, solutionId: string): void {
+  const now = get();
+  const at = new Date().toISOString();
+  set({
+    ...now,
+    proposals: now.proposals.map((p) =>
+      p.id === ideaId && p.status === "pending" ? { ...p, status: "built" as const, applied: { solution_id: solutionId }, reviewed_by: null, reviewed_at: at } : p,
+    ),
+  });
+}

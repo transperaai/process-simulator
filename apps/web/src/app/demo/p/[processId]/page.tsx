@@ -4,6 +4,7 @@ import { Info } from "lucide-react";
 import { ProcessNav } from "@/components/process-nav";
 import { ProcessPage } from "@/components/process-page";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { demoAiView } from "@/lib/ai/demo";
 import { processRatings } from "@/lib/processes/rows";
 import { DEMO_LIVE_VERSION, demoBundleAtVersion } from "@/lib/history/demo";
 import { parseVersion } from "@/lib/process-version";
@@ -42,6 +43,8 @@ export default async function DemoProcessPage(props: PageProps<"/demo/p/[process
       editHref={`/demo/edit?process=${bundle.process.id}${nested === "1" ? "&nested=1" : ""}`}
       historyHref={`/demo/p/${bundle.process.id}/history`}
       firstPrinciples={{ doc: null, href: `/demo/p/${bundle.process.id}/first-principles` }}
+      // Written in advance: the demo never calls an AI. Only the pipeline has text.
+      ai={{ view: earlier ? null : demoAiView(bundle.process.id), configured: true, hasFirstPrinciples: true, versionNumber: earlier ? earlier.revision.number : DEMO_LIVE_VERSION }}
       inside={processes.filter((p) => p.parentId === bundle.process.id).map((p) => ({ id: p.id, name: p.name, href: hrefs[p.id]! }))}
       processPicker={<ProcessNav processes={processes} current={bundle.process.id} hrefs={hrefs} ratings={ratings} processesHref="/demo/processes" companyMapHref="/demo" />}
       notice={

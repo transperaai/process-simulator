@@ -19,7 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { entriesInProcess, formatIssueCost, issueLabel, registerEntries } from "@/lib/issues/register";
 import { acknowledgeDraft, acknowledgeInsight, dismissInsight, type InsightContext } from "@/lib/insights/actions";
 import type { IssueDraft, IssueFormOptions } from "@/lib/issues/draft";
-import { buildInsights, filterByRating, ratingCountsOf, type Insight } from "@/lib/insights/insights";
+import { buildInsights, filterByRating, limitInsights, ratingCountsOf, type Insight } from "@/lib/insights/insights";
 import type { IssuesState } from "@/lib/issues/use-issues";
 
 /** The (i) texts: what each control does, in plain words, with an example. */
@@ -136,7 +136,7 @@ export function Insights(props: InsightsProps) {
   }
 
   const filtered = filterByRating(insights, rating);
-  const shown = initialLimit && !all ? filtered.slice(0, initialLimit) : filtered;
+  const shown = initialLimit && !all ? limitInsights(filtered, initialLimit) : filtered;
   const opened = insights.find((i) => i.key === open) ?? null;
   const ackFor = insights.find((i) => i.key === acking) ?? null;
 

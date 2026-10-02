@@ -1,6 +1,6 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createClient } from "@supabase/supabase-js";
-import type { Database } from "@transpera-flow/db";
+import type { Database, Db } from "@transpera-flow/db";
 import { assertPublishableKey } from "./key-guard";
 import { hashApiToken, looksLikeApiToken } from "./tokens";
 import { createMcpServer } from "./tools";
@@ -19,6 +19,8 @@ export interface McpHandlerOptions {
   fetch?: typeof fetch;
   /** For tests: the current date. */
   now?: () => Date;
+  /** Called with the token's client and the process id after `publish_process` made a version live (A46: AI analysis). */
+  onPublished?: (db: Db, processId: string) => void;
 }
 
 /** The request header the pre-request hook reads (private.api_token_pre_request). */
@@ -77,6 +79,7 @@ export async function handleMcpRequest(request: Request, options: McpHandlerOpti
     tokenHash: hashApiToken(token),
     activeWorkspaceId: use.active_workspace_id,
     today: (options.now?.() ?? new Date()).toISOString().slice(0, 10),
+    ...(options.onPublished ? { onPublished: (processId: string) => options.onPublished!(db, processId) } : {}),
   });
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   try {

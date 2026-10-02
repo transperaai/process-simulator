@@ -1415,6 +1415,11 @@ export function registerBuildingTools(server: McpServer, ctx: ToolContext): void
             items.length ? items : steps,
           );
         }
+        try {
+          ctx.onPublished?.(proc.id);
+        } catch {
+          // A hook that starts background work never fails a publish.
+        }
         const names = new Map(draftSteps.map((s) => [s.id, s.name]));
         const named = (ids: string[] = []) => ids.map((id) => ({ id, name: names.get(id) ?? null }));
         const changes = r.changes;

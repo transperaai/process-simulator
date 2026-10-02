@@ -14,6 +14,186 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_analyses: {
+        Row: {
+          checked: number
+          created_at: string
+          created_by: string
+          dropped: number
+          id: string
+          input_hash: string
+          insights: Json
+          model: string | null
+          process_id: string
+          reason: string | null
+          review: Json
+          revision_id: string
+          run_id: string
+          status: string
+          summary: Json
+          trigger: string
+          updated_at: string
+          usage: Json
+          workspace_id: string
+        }
+        Insert: {
+          checked?: number
+          created_at?: string
+          created_by?: string
+          dropped?: number
+          id?: string
+          input_hash: string
+          insights?: Json
+          model?: string | null
+          process_id: string
+          reason?: string | null
+          review?: Json
+          revision_id: string
+          run_id: string
+          status: string
+          summary?: Json
+          trigger: string
+          updated_at?: string
+          usage?: Json
+          workspace_id: string
+        }
+        Update: {
+          checked?: number
+          created_at?: string
+          created_by?: string
+          dropped?: number
+          id?: string
+          input_hash?: string
+          insights?: Json
+          model?: string | null
+          process_id?: string
+          reason?: string | null
+          review?: Json
+          revision_id?: string
+          run_id?: string
+          status?: string
+          summary?: Json
+          trigger?: string
+          updated_at?: string
+          usage?: Json
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_analyses_revision_id_process_id_workspace_id_fkey"
+            columns: ["revision_id", "process_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "process_revisions"
+            referencedColumns: ["id", "process_id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "ai_analyses_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "ai_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_analyses_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_runs: {
+        Row: {
+          id: string
+          process_id: string
+          started_at: string
+          trigger: string
+          user_id: string | null
+          user_name: string | null
+          workspace_id: string
+        }
+        Insert: {
+          id?: string
+          process_id: string
+          started_at?: string
+          trigger: string
+          user_id?: string | null
+          user_name?: string | null
+          workspace_id: string
+        }
+        Update: {
+          id?: string
+          process_id?: string
+          started_at?: string
+          trigger?: string
+          user_id?: string | null
+          user_name?: string | null
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_runs_process_id_fkey"
+            columns: ["process_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_runs_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_settings: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          market_pending_at: string | null
+          read_sources: boolean
+          review_on_market: boolean
+          review_on_publish: boolean
+          suggest_issues: boolean
+          suggest_solutions: boolean
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          market_pending_at?: string | null
+          read_sources?: boolean
+          review_on_market?: boolean
+          review_on_publish?: boolean
+          suggest_issues?: boolean
+          suggest_solutions?: boolean
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          market_pending_at?: string | null
+          read_sources?: boolean
+          review_on_market?: boolean
+          review_on_publish?: boolean
+          suggest_issues?: boolean
+          suggest_solutions?: boolean
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_settings_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: true
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       analysis_rules: {
         Row: {
           created_at: string
@@ -2488,6 +2668,10 @@ export type Database = {
           source: string
           workspace_id: string
         }[]
+      }
+      reserve_ai_run: {
+        Args: { p_process: string; p_trigger: string; p_workspace: string }
+        Returns: Json
       }
       restore_version: {
         Args: {

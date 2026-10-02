@@ -24,6 +24,8 @@ let editorToken: string;
 let viewerToken: string;
 let strangerToken: string;
 let consultantRoleId: string;
+/** The processes `onPublished` (the web app starts AI analysis there, A46) was told about. */
+const publishedIds: string[] = [];
 
 const toPostgrest: typeof fetch = (input, init) => {
   if (input instanceof Request) throw new Error("expected supabase-js to pass a URL string");
@@ -88,7 +90,7 @@ describe.skipIf(!POSTGREST_URL)("MCP process building over PostgREST (drafts onl
     viewerToken = await issueToken(viewerId);
     strangerToken = await issueToken(strangerId);
 
-    options = { supabaseUrl: SUPABASE_URL, supabaseKey: signJwt({ role: "anon", iss: "test" }, JWT_SECRET), fetch: toPostgrest };
+    options = { supabaseUrl: SUPABASE_URL, supabaseKey: signJwt({ role: "anon", iss: "test" }, JWT_SECRET), fetch: toPostgrest, onPublished: (_db, processId) => void publishedIds.push(processId) };
 
     const deadline = Date.now() + 60_000;
     for (;;) {
@@ -215,6 +217,7 @@ describe.skipIf(!POSTGREST_URL)("MCP process building over PostgREST (drafts onl
       accept_estimates: true,
     });
     expect(published).toMatchObject({ ok: true, data: { revision: { number: 1 }, accepted_estimates: true } });
+    expect(publishedIds, "the publish that went live told the hook").toContain(proc.id);
     expect(published.data.text).toMatch(/^Published 'Sales pipeline' as revision 1 \(6 steps added, 0 removed, 0 changed\), accepting \d+ steps with estimates\./);
     const audit = await admin.query("select actor_id, actor_kind, diff from audit_log where action = 'publish' and target_id = $1", [proc.id]);
     expect(audit.rows).toEqual([expect.objectContaining({ actor_id: editorId, actor_kind: "mcp", diff: expect.objectContaining({ accept_estimates: true }) })]);

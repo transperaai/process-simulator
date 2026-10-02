@@ -312,15 +312,26 @@ create trigger audit_mcp after insert or update or delete on public.source_links
 -- live version) adds the step link in the same transaction, so a cited source is never flagged "Not linked". They only add:
 -- taking a citation away does not take the link away, because a link is the person's own statement that the source is
 -- evidence for that thing. Both run as the caller, so row-level security decides (an editor can write steps and links alike).
+--
+-- It runs on every save of a step's provenance, so it must be cheap when nothing new is cited: the ids are read into an array
+-- once (a set-returning function with a SET clause can't be inlined, so joining it would make the planner guess a thousand
+-- rows and scan every source), it returns at once when there are none or when every one was already cited before this update,
+-- and otherwise looks the sources up by primary key.
 create function private.link_cited_sources() returns trigger
 language plpgsql
 set search_path = ''
 as $$
+declare
+  ids uuid[] := array(select c from private.cited_source_ids(new.provenance) as c where c is not null);
 begin
+  if cardinality(ids) = 0
+    or (tg_op = 'UPDATE' and ids <@ array(select c from private.cited_source_ids(old.provenance) as c where c is not null)) then
+    return null;
+  end if;
   insert into public.source_links (workspace_id, source_id, kind, process_id, step_id)
   select new.workspace_id, src.id, 'step', new.process_id, new.id
-  from private.cited_source_ids(new.provenance) as cited(id)
-  join public.sources src on src.workspace_id = new.workspace_id and src.id = cited.id
+  from public.sources src
+  where src.id = any (ids) and src.workspace_id = new.workspace_id
   on conflict do nothing;
   return null;
 end;
@@ -698,15 +709,26 @@ create trigger audit_mcp after insert or update or delete on public.source_links
 -- live version) adds the step link in the same transaction, so a cited source is never flagged "Not linked". They only add:
 -- taking a citation away does not take the link away, because a link is the person's own statement that the source is
 -- evidence for that thing. Both run as the caller, so row-level security decides (an editor can write steps and links alike).
+--
+-- It runs on every save of a step's provenance, so it must be cheap when nothing new is cited: the ids are read into an array
+-- once (a set-returning function with a SET clause can't be inlined, so joining it would make the planner guess a thousand
+-- rows and scan every source), it returns at once when there are none or when every one was already cited before this update,
+-- and otherwise looks the sources up by primary key.
 create function private.link_cited_sources() returns trigger
 language plpgsql
 set search_path = ''
 as $$
+declare
+  ids uuid[] := array(select c from private.cited_source_ids(new.provenance) as c where c is not null);
 begin
+  if cardinality(ids) = 0
+    or (tg_op = 'UPDATE' and ids <@ array(select c from private.cited_source_ids(old.provenance) as c where c is not null)) then
+    return null;
+  end if;
   insert into public.source_links (workspace_id, source_id, kind, process_id, step_id)
   select new.workspace_id, src.id, 'step', new.process_id, new.id
-  from private.cited_source_ids(new.provenance) as cited(id)
-  join public.sources src on src.workspace_id = new.workspace_id and src.id = cited.id
+  from public.sources src
+  where src.id = any (ids) and src.workspace_id = new.workspace_id
   on conflict do nothing;
   return null;
 end;

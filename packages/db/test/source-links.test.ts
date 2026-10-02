@@ -459,6 +459,31 @@ describe("source links", () => {
       });
     });
 
+    it("does nothing when a save leaves the citations as they were, and links again only when something new is cited", async () => {
+      await db.as(users.editor!.claims, async (c) => {
+        const source = await newSource(c, "Cited once");
+        const rev = await draftOf(c);
+        const cite = (note: string, ids: string[]) =>
+          c.query("update steps set provenance = jsonb_build_object('wait_hours', jsonb_build_object('source', 'estimated', 'at', $3::text, 'note', $5::text, 'evidence', $4::jsonb)) where revision_id = $1 and id = $2", [
+            rev,
+            audit,
+            at,
+            JSON.stringify(ids.map((i) => ({ source_id: i }))),
+            note,
+          ]);
+        await cite("first", [source]);
+        expect((await linksOf(c, source)).length).toBe(1);
+        // The person unlinks it; saving the step again with the same citation must not quietly put it back.
+        await c.query("delete from source_links where source_id = $1", [source]);
+        await cite("edited note", [source]);
+        expect(await linksOf(c, source), "same citations: nothing inserted").toEqual([]);
+        // A citation that was already there plus a new one: the new source is linked.
+        const another = await newSource(c, "Cited second");
+        await cite("third", [source, another]);
+        expect((await linksOf(c, another)).length).toBe(1);
+      });
+    });
+
     it("ignores a citation of a source that is not there or is another workspace's", async () => {
       await db.as(users.editor!.claims, async (c) => {
         const rev = await draftOf(c);

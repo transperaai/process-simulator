@@ -519,10 +519,14 @@ export async function loadSourceLinks(db: Db, workspaceId: string): Promise<Sour
 
 /** The names of steps by their stable ids, from whichever version holds them (the latest written wins). For links to steps that are in no current version. */
 export async function loadStepNames(db: Db, ids: readonly string[]): Promise<{ id: string; name: string }[]> {
-  if (!ids.length) return [];
-  const r = await db.from("steps").select("id, name, updated_at").in("id", [...ids]).order("updated_at", { ascending: false });
   const seen = new Set<string>();
-  return rows(r).flatMap((s) => (seen.has(s.id) ? [] : (seen.add(s.id), [{ id: s.id, name: s.name }])));
+  const out: { id: string; name: string }[] = [];
+  // In batches: every id goes into the request's URL, which PostgREST limits.
+  for (let i = 0; i < ids.length; i += 100) {
+    const r = await db.from("steps").select("id, name, updated_at").in("id", ids.slice(i, i + 100)).order("updated_at", { ascending: false });
+    for (const s of rows(r)) if (!seen.has(s.id)) out.push({ id: s.id, name: (seen.add(s.id), s.name) });
+  }
+  return out;
 }
 
 /**

@@ -30,8 +30,8 @@ export interface ProposalBackend {
 export interface ProposalLookups {
   processes: Record<string, string>;
   steps: Record<string, string>;
-  /** Issue id to its number and title (a solution idea is for one). */
-  issues: Record<string, { number: number | null; title: string }>;
+  /** Issue id to its number, title and process (a solution idea is for one; Build it opens the Editor on the process). */
+  issues: Record<string, { number: number | null; title: string; processId?: string | null }>;
 }
 
 export interface ProposalView {

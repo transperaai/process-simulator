@@ -956,8 +956,8 @@ export type SolutionIdeaPayload = {
   expect?: string;
 };
 
-/** What accepting a proposed issue did. */
-export type ProposalApplied = { issue_id: string; number: number | null };
+/** What a decision did: accepting a proposed issue made `issue_id` (and its number); building a solution idea made `solution_id`. */
+export type ProposalApplied = { issue_id?: string; number?: number | null; solution_id?: string };
 
 /** A proposed issue or solution idea waiting for a person (docs/PRD.md §5 `suggestion_proposals`). */
 export interface ProposalRow {

@@ -12,6 +12,7 @@ import type { IssueRow, ScenarioRow } from "@transpera-flow/db";
 import { RATING_LABELS, type Rating } from "@transpera-flow/engine";
 import { AcknowledgeDialog } from "@/components/acknowledge-dialog";
 import { Help } from "@/components/help";
+import { LinkedSources, useSourceLinking } from "@/components/sources/linking";
 import { RatingPill } from "@/components/overview/rating-pill";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -298,6 +299,7 @@ function InsightDialog({
     }
   };
   const sources = insight ? (linkedSources?.(insight) ?? []) : [];
+  const linking = useSourceLinking();
   const link = insight?.issue ? issueHref(registerHref, insight.issue) : null;
   const ai = insight?.source.kind === "ai";
   return (
@@ -375,29 +377,34 @@ function InsightDialog({
               </dd>
             </dl>
 
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="flex items-center text-xs font-medium text-muted-foreground uppercase">
-                  Sources
-                  <Help {...INSIGHT_HELP.sources} />
-                </span>
-                <span className="flex items-center">
-                  <Button variant="ghost" size="sm" disabled={insight.issue !== null || !canAct} onClick={() => onStartAcknowledge(insight)}>
-                    + Link a source
-                  </Button>
-                  <Help {...INSIGHT_HELP.linkSource} />
-                </span>
+            {linking ? (
+              // Where the page loads source links: the links themselves, with the Add / Link source dialog. An insight is linked by its detection key.
+              <LinkedSources target={{ kind: "insight", insightKey: insight.key }} label={`Insight: ${insight.title}`} empty="None linked yet." className="flex flex-col gap-1.5" />
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center text-xs font-medium text-muted-foreground uppercase">
+                    Sources
+                    <Help {...INSIGHT_HELP.sources} />
+                  </span>
+                  <span className="flex items-center">
+                    <Button variant="ghost" size="sm" disabled={insight.issue !== null || !canAct} onClick={() => onStartAcknowledge(insight)}>
+                      + Link a source
+                    </Button>
+                    <Help {...INSIGHT_HELP.linkSource} />
+                  </span>
+                </div>
+                {sources.length ? (
+                  sources.map((s) => (
+                    <p key={s.id} className="text-sm font-medium">
+                      {s.title}
+                    </p>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">None linked</p>
+                )}
               </div>
-              {sources.length ? (
-                sources.map((s) => (
-                  <p key={s.id} className="text-sm font-medium">
-                    {s.title}
-                  </p>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">None linked</p>
-              )}
-            </div>
+            )}
 
             {error && (
               <p role="alert" className="rounded-lg border border-crit bg-crit-soft p-2 text-xs">

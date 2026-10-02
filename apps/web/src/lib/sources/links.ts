@@ -131,6 +131,7 @@ export function targetValue(target: SourceLinkTarget): string {
 /** The plain message under the "Link it to (required)" picker when nothing is chosen (the prototype's words). */
 export const NEEDS_A_LINK = "Pick what this source is evidence for.";
 export const NEEDS_A_TITLE = "Give the source a title.";
+export const NEEDS_A_SOURCE = "Pick a source.";
 
 /** What the dialog holds while it is open. */
 export interface SourceDraft {

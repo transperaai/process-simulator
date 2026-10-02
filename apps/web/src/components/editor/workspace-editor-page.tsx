@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { EditorView } from "@/components/editor/editor-view";
+import { SourceLinkingScope } from "@/components/sources/linking-scope";
 import { canEditWorkspace, currentViewer } from "@/lib/access-data";
 import { loadProcessForEditing, loadWorkspaceBlocks, loadWorkspaceIssues, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
 import { firstPrinciplesDraftChanged } from "@/lib/first-principles/data";
@@ -37,6 +38,7 @@ export async function WorkspaceEditorPage({
   const issueId = editorMode === "solution" ? parseIssueParam(searchParams.issue) : null;
   const issueRow = issueId ? (await loadWorkspaceIssues(live.workspace.id)).find((i) => i.id === issueId) : undefined;
   return (
+    <SourceLinkingScope workspaceId={live.workspace.id} sources={sources} canEdit>
     <EditorView
       key={live.process.id}
       live={live}
@@ -54,5 +56,6 @@ export async function WorkspaceEditorPage({
       exitHref={exitHref(searchParams.from, base)}
       horizonMonths={parseHorizon(searchParams.horizon)}
     />
+    </SourceLinkingScope>
   );
 }

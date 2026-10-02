@@ -19,6 +19,7 @@ import {
   SOURCE_LINK_KINDS,
   draftToSubmission,
   emptyDraft,
+  NEEDS_A_SOURCE,
   hasErrors,
   targetOptions,
   validateDraft,
@@ -55,6 +56,11 @@ export const SOURCE_DIALOG_HELP = {
     description: "What this source is evidence for. A source that isn't linked to anything doesn't count as evidence, so pick at least one thing. You can link it to more things afterwards.",
     example: "A step, when the quote is about how long that step takes.",
   },
+  existing: {
+    label: "Source",
+    description: "A source you have already added. Linking it here doesn't change what else it is linked to.",
+    example: "Interview: Maya Collins.",
+  },
   target: {
     label: "Which one",
     description: "The exact process, step, insight, issue or solution. The list shows what your workspace has.",
@@ -73,6 +79,10 @@ export interface SourceDialogProps {
   source?: SourceRow | null;
   /** A thing to have picked already, when a screen's "+ Link" opens the dialog for it. */
   preset?: SourceLinkTarget | null;
+  /** What `preset` is called ("Step: Check fit"), for the line saying what an existing source will be linked to. */
+  presetLabel?: string;
+  /** Sources that could be linked to `preset` instead of adding a new one (the ones not linked to it yet). */
+  existingSources?: readonly SourceRow[];
   /** Saves it. Resolve to an error message, or null when it saved (the dialog then closes). */
   onSubmit: (submission: SourceSubmission) => Promise<string | null>;
   onClose: () => void;
@@ -107,8 +117,13 @@ export function SourceDialog(props: SourceDialogProps) {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-function Form({ targets, source, preset, onSubmit, onClose }: SourceDialogProps) {
+function Form({ targets, source, preset, presetLabel, existingSources, onSubmit, onClose }: SourceDialogProps) {
   const [draft, setDraft] = useState<SourceDraft>(() => emptyDraft(preset, today()));
+  // From a screen's "+ Link", a source you already have can be linked to that screen's thing instead of adding a new one.
+  const canPickExisting = !source && !!preset && (existingSources?.length ?? 0) > 0;
+  const [use, setUse] = useState<"new" | "existing">("new");
+  const [picked, setPicked] = useState("");
+  const existing = canPickExisting && use === "existing";
   const [errors, setErrors] = useState<SourceDraftErrors>({});
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
@@ -116,6 +131,21 @@ function Form({ targets, source, preset, onSubmit, onClose }: SourceDialogProps)
   const options = targetOptions(draft.linkKind, targets);
 
   const submit = async () => {
+    if (existing) {
+      const chosen = existingSources!.find((s) => s.id === picked);
+      if (!chosen) return setErrors({ link: NEEDS_A_SOURCE });
+      setErrors({});
+      setError(null);
+      setWorking(true);
+      try {
+        const problem = await onSubmit({ kind: "link", source: chosen, link: preset! });
+        if (problem) setError(problem);
+        else onClose();
+      } finally {
+        setWorking(false);
+      }
+      return;
+    }
     const found = validateDraft(draft, targets, !!source);
     setErrors(found);
     setError(null);
@@ -141,7 +171,35 @@ function Form({ targets, source, preset, onSubmit, onClose }: SourceDialogProps)
         void submit();
       }}
     >
-      {source ? (
+      {canPickExisting && (
+        <div role="group" aria-label="New or existing" className="flex flex-wrap gap-1.5">
+          <ChoiceChip on={use === "new"} onPick={() => setUse("new")}>
+            Add a new source
+          </ChoiceChip>
+          <ChoiceChip on={use === "existing"} onPick={() => setUse("existing")}>
+            Use a source you already have
+          </ChoiceChip>
+        </div>
+      )}
+      {existing ? (
+        <>
+          <Field label="Source" help={SOURCE_DIALOG_HELP.existing} htmlFor="src-existing" error={errors.link} errorId="src-link-error">
+            <NativeSelect id="src-existing" value={picked} aria-invalid={!!errors.link} aria-describedby={errors.link ? "src-link-error" : undefined} onChange={(e) => setPicked(e.target.value)}>
+              <option value="">Choose…</option>
+              {existingSources!.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.title} ({SOURCE_KIND_LABELS[s.kind]})
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+          {presetLabel && (
+            <p className="text-sm">
+              Links it to <b>{presetLabel}</b>.
+            </p>
+          )}
+        </>
+      ) : source ? (
         <p className="text-sm">
           <b>{source.title}</b> <span className="text-muted-foreground">· {SOURCE_KIND_LABELS[source.kind]}</span>
         </p>
@@ -186,6 +244,7 @@ function Form({ targets, source, preset, onSubmit, onClose }: SourceDialogProps)
         </>
       )}
 
+      {!existing && (
       <fieldset className="flex flex-col gap-2" aria-describedby={errors.link ? "src-link-error" : undefined}>
         <legend className="flex items-center text-xs font-medium text-muted-foreground uppercase">
           {SOURCE_DIALOG_HELP.kind.label}
@@ -214,6 +273,7 @@ function Form({ targets, source, preset, onSubmit, onClose }: SourceDialogProps)
           </NativeSelect>
         </Field>
       </fieldset>
+      )}
 
       {error && (
         <p role="alert" className="rounded-lg border border-crit bg-crit-soft p-2 text-xs">
@@ -225,7 +285,7 @@ function Form({ targets, source, preset, onSubmit, onClose }: SourceDialogProps)
           Cancel
         </Button>
         <Button type="submit" disabled={working}>
-          {source ? "Link" : "Add source"}
+          {source || existing ? "Link" : "Add source"}
         </Button>
       </DialogFooter>
     </form>
@@ -246,6 +306,22 @@ function Field({ label, help, htmlFor, error, errorId, children }: { label: stri
         </p>
       )}
     </div>
+  );
+}
+
+function ChoiceChip({ on, onPick, children }: { on: boolean; onPick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onPick}
+      className={cn(
+        "inline-flex h-7 items-center rounded-full border px-2.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        on ? "border-accent bg-accent-soft font-semibold" : "bg-card hover:bg-muted",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 

@@ -10,6 +10,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { IssueRow, ProcessBundle, ScenarioRow, SourceRow } from "@transpera-flow/db";
 import { RATING_LABELS, type AnalysisSettings, type EngineModel, type FirstPrinciples, type Rating } from "@transpera-flow/engine";
 import { Help } from "@/components/help";
+import { LinkedSources, useSourceLinking } from "@/components/sources/linking";
 import { AiRead } from "@/components/ai/ai-read";
 import type { AiPanelData } from "@/lib/ai/types";
 import { FirstPrinciplesCard } from "@/components/first-principles/first-principles-card";
@@ -381,6 +382,8 @@ export function ProcessPage({
           )}
         </Section>
 
+        <ProcessSources processId={bundle.process.id} name={bundle.process.name} />
+
         <Section
           id="solutions"
           title="Solutions"
@@ -414,6 +417,26 @@ export function ProcessPage({
       </div>
       {issuesUi.badges}
     </div>
+  );
+}
+
+/** The sources that are evidence for the whole process, with "+ Link". Only where the page loads source links (the others have nothing to show). */
+function ProcessSources({ processId, name }: { processId: string; name: string }) {
+  const linking = useSourceLinking();
+  if (!linking) return null;
+  return (
+    <Section
+      id="sources"
+      title="Sources"
+      hint="The interviews, notes and data that are evidence for this process as a whole."
+      help={{
+        label: "Sources",
+        description: "Sources linked to this process show here. A source linked to a step of it shows on that step's detail instead. A source linked to nothing doesn't count as evidence.",
+        example: "The strategy walkthrough, linked to Lead to live: it describes how the whole pipeline works.",
+      }}
+    >
+      <LinkedSources target={{ kind: "process", processId }} label={`Process: ${name}`} empty="No source linked to this process yet." hideTitle className="flex flex-col gap-2" />
+    </Section>
   );
 }
 

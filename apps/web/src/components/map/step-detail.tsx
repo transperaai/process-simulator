@@ -8,6 +8,7 @@ import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { RATING_LABELS, type Rating } from "@transpera-flow/engine";
 import { EVIDENCE_COLUMNS, evidenceOf, type StepRow } from "@transpera-flow/db";
+import { LinkedSources, useSourceLinking } from "@/components/sources/linking";
 import { formatHours } from "@/lib/format";
 import { RATING_STYLE } from "@/lib/map/rating";
 
@@ -66,6 +67,8 @@ export function StepDetail({
   onClose: () => void;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
+  // Where the page loads source links, the Sources block is the links (cited sources are linked automatically) with "+ Link".
+  const linking = useSourceLinking();
   // Move focus in when it opens, so a keyboard user lands on it; Escape hands it back to the caller.
   useEffect(() => heading.current?.focus(), [step.id]);
   return (
@@ -111,7 +114,16 @@ export function StepDetail({
       </dl>
       <List title="Insights" items={extras.insights} empty="Nothing found on this step yet." />
       <List title="Confirmed issues" items={extras.issues} empty="No confirmed issues." />
-      <List title="Sources" items={sources} empty="No source cited for this step's numbers." />
+      {linking ? (
+        <LinkedSources
+          className="mt-3 flex flex-col gap-1.5"
+          target={{ kind: "step", processId: step.process_id, stepId: step.id }}
+          label={`Step: ${step.name}`}
+          empty="No source linked to this step yet."
+        />
+      ) : (
+        <List title="Sources" items={sources} empty="No source cited for this step's numbers." />
+      )}
     </aside>
   );
 }

@@ -17,6 +17,7 @@ import { ISSUE_PAGE_HELP } from "@/lib/issues/help";
 import { ResolveDialog } from "@/components/issues/resolve-dialog";
 import { StatusChip } from "@/components/issues-page";
 import { RatingPill } from "@/components/overview/rating-pill";
+import { LinkedSources, useSourceLinking } from "@/components/sources/linking";
 import { StepIssueBadges } from "@/components/step-issue-badges";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -84,6 +85,8 @@ export function IssuePage(props: IssuePageProps) {
   const [edit, setEdit] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [linking, setLinking] = useState(false);
+  // Where the page loads source links, Sources are the links (the Add / Link source dialog); otherwise the issue's own list and its small dialog.
+  const sourceLinking = useSourceLinking();
 
   const allSteps = useMemo(() => [...bundle.steps, ...(bundle.otherProcesses ?? []).flatMap((p) => p.steps)], [bundle]);
   const options = useMemo(
@@ -328,28 +331,39 @@ export function IssuePage(props: IssuePageProps) {
           </Card>
 
           <Card className="gap-2 px-4 py-3" data-section="sources">
-            <div className="flex items-center justify-between gap-2">
-              <span className={EYEBROW}>
-                Sources
-                <Help {...ISSUE_PAGE_HELP.sources} />
-              </span>
-              {canEdit && (
-                <span className="flex items-center">
-                  <Button type="button" size="sm" variant="ghost" onClick={() => setLinking(true)}>
-                    + Link
-                  </Button>
-                  <Help {...ISSUE_PAGE_HELP.link} />
-                </span>
-              )}
-            </div>
-            {issue.source_ids.length ? (
-              issue.source_ids.map((id) => (
-                <div key={id} className="text-sm font-medium">
-                  {sourceTitle.get(id) ?? "A source"}
-                </div>
-              ))
+            {sourceLinking ? (
+              <LinkedSources
+                target={{ kind: "issue", issueId: issue.id }}
+                label={issue.number ? `Issue #${issue.number}` : `Issue: ${issue.title}`}
+                empty="None yet"
+                className="flex flex-col gap-2"
+              />
             ) : (
-              <span className="text-sm text-muted-foreground">None yet</span>
+              <>
+                <div className="flex items-center justify-between gap-2">
+                  <span className={EYEBROW}>
+                    Sources
+                    <Help {...ISSUE_PAGE_HELP.sources} />
+                  </span>
+                  {canEdit && (
+                    <span className="flex items-center">
+                      <Button type="button" size="sm" variant="ghost" onClick={() => setLinking(true)}>
+                        + Link
+                      </Button>
+                      <Help {...ISSUE_PAGE_HELP.link} />
+                    </span>
+                  )}
+                </div>
+                {issue.source_ids.length ? (
+                  issue.source_ids.map((id) => (
+                    <div key={id} className="text-sm font-medium">
+                      {sourceTitle.get(id) ?? "A source"}
+                    </div>
+                  ))
+                ) : (
+                  <span className="text-sm text-muted-foreground">None yet</span>
+                )}
+              </>
             )}
           </Card>
         </aside>

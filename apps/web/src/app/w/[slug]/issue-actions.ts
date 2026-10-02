@@ -52,6 +52,13 @@ async function write(
   if (!supabase) return signedOut;
   const saved = await saveIssue(supabase, { workspaceId, ...args });
   if ("error" in saved) return failure(saved.error);
+  // The issue's sources were replaced by `sources`: a source taken off the list is taken off the issue's source links too (A53),
+  // or the issue would still show it. (Adding needs nothing: a trigger links what the list gains.)
+  if (args.sources && args.id) {
+    const kept = args.sources.filter((s) => /^[0-9a-f-]{36}$/i.test(s));
+    const gone = supabase.from("source_links").delete().eq("kind", "issue").eq("issue_id", saved.id);
+    await (kept.length ? gone.not("source_id", "in", `(${kept.join(",")})`) : gone);
+  }
   const issue = await loadIssue(supabase, workspaceId, saved.id);
   return issue ? { status: "ok", issue } : forbidden;
 }

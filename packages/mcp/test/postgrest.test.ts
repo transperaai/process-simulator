@@ -172,6 +172,29 @@ describe.skipIf(!POSTGREST_URL)("MCP over PostgREST (acts as the user under RLS)
     await again.close();
   });
 
+  it("shows the company map in the summary and get_process, and refuses to simulate it (B11)", async () => {
+    const client = await connect(memberToken, options);
+    const summary = await call<{
+      processes: { id: string }[];
+      company_map: { id: string; name: string; processes: { process_id: string; x: number; y: number }[]; handoffs: { from_process_id: string; to_process_id: string }[] };
+    }>(client, "get_workspace_summary");
+    expect(summary.ok).toBe(true);
+    // The map is not listed as an ordinary process; it holds each of them, and a handoff from the pipeline to each servicing process.
+    expect(summary.data.company_map.name).toBe("Company map");
+    expect(summary.data.processes.map((p) => p.id)).not.toContain(summary.data.company_map.id);
+    expect(summary.data.company_map.processes.map((p) => p.process_id).sort()).toEqual([NORTHBEAM_PROCESS_ID, ...Object.values(northbeamServicingProcessIds)].sort());
+    expect(summary.data.company_map.handoffs).toHaveLength(Object.values(northbeamServicingProcessIds).length);
+
+    const map = await call<{ steps: { child_process_id: string | null }[] }>(client, "get_process", { process: summary.data.company_map.id });
+    expect(map.ok).toBe(true);
+    expect(map.data.steps.map((s) => s.child_process_id).sort()).toEqual([NORTHBEAM_PROCESS_ID, ...Object.values(northbeamServicingProcessIds)].sort());
+
+    const run = await call(client, "run_scenario", { process: summary.data.company_map.id });
+    expect(run).toMatchObject({ ok: false, error: { code: "company_map" } });
+    expect(run.error!.message).toMatch(/company map/);
+    await client.close();
+  });
+
   it("run_scenario returns the browser's numbers for the same model and seed", async () => {
     const startDate = "2026-10-05";
     const client = await connect(memberToken, options);

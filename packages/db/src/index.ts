@@ -70,6 +70,7 @@ export {
   type ProcessNode,
   type RollUp,
 } from "./nesting";
+export { COMPANY_CARD, COMPANY_GAP, DEMO_COMPANY_PROCESS_ID, defaultCompanyPart, holderStepId } from "./company-map";
 export {
   MAX_POISSON_PER_MONTH,
   MAX_RECURRENCE_TIMES,
@@ -194,6 +195,7 @@ export {
   loadStepNames,
   loadCitingRows,
   loadCompanyModel,
+  loadLiveCompanyPart,
   loadLiveRevisions,
   loadRun,
   loadRuns,

@@ -17,8 +17,9 @@ export async function saveRun(input: unknown): Promise<SaveRunResult> {
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims?.claims?.sub) return { status: "error", message: "Your session has ended. Sign in again." };
 
-  const { data: process, error: pError } = await supabase.from("processes").select("id, workspace_id").eq("id", run.processId).maybeSingle();
+  const { data: process, error: pError } = await supabase.from("processes").select("id, workspace_id, is_company").eq("id", run.processId).maybeSingle();
   if (pError || !process) return { status: "error", message: "That process isn't available." };
+  if (process.is_company) return { status: "error", message: "The company map can't be simulated: it is a picture of the business, not a process." };
   const { data: workspace, error: wsError } = await supabase
     .from("workspaces")
     .select("id, name, slug, settings, provenance")

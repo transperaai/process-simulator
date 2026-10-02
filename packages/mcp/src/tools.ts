@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { listProcesses, loadProcessBundle, ModelError, toEngineModel } from "@transpera-flow/db";
+import { listProcesses, loadLiveCompanyPart, loadProcessBundle, ModelError, toEngineModel } from "@transpera-flow/db";
 import { applyPatches, isBlocking, MAX_PATCHES, PATCH_OPS, simulate, type EngineModel, type ScenarioPatch, type SimulationResult } from "@transpera-flow/engine";
 import { resolveProcess, resolveWorkspace, revisionIdFor, visibleWorkspaces, matchWorkspace, type ToolContext } from "./context";
 import { runTool, ToolError } from "./result";
@@ -143,8 +143,9 @@ export function createMcpServer(ctx: ToolContext): McpServer {
     ({ workspace }) =>
       runTool(async (assumptions) => {
         const ws = await resolveWorkspace(ctx, workspace, assumptions);
-        const [processes, roles, people] = await Promise.all([
+        const [processes, company, roles, people] = await Promise.all([
           listProcesses(ctx.db, ws.id),
+          loadLiveCompanyPart(ctx.db, ws.id),
           ctx.db.from("roles").select("id, name, headcount, default_cost_rate, active").eq("workspace_id", ws.id).order("name"),
           ctx.db.from("people").select("id, name, fte, capacity_hours_week, active").eq("workspace_id", ws.id).order("name"),
         ]);
@@ -165,6 +166,24 @@ export function createMcpServer(ctx: ToolContext): McpServer {
             live_revision: number(p.live_revision_id),
             draft_revision: number(p.draft_revision_id),
           })),
+          // The company map (B11): a stored picture of how the processes fit together, never simulated. Each process on it
+          // is a card at a position; a handoff is a line between two cards (visual only for now).
+          company_map: company
+            ? {
+                id: company.process.id,
+                name: company.process.name,
+                live_revision: company.revision.number,
+                processes: company.steps.flatMap((s) => {
+                  const p = processes.find((x) => x.id === s.child_process_id);
+                  return p ? [{ process_id: p.id, name: p.name, x: Number(s.x), y: Number(s.y) }] : [];
+                }),
+                handoffs: company.edges.flatMap((e) => {
+                  const from = company.steps.find((s) => s.id === e.from_step_id)?.child_process_id;
+                  const to = company.steps.find((s) => s.id === e.to_step_id)?.child_process_id;
+                  return from && to ? [{ from_process_id: from, to_process_id: to, label: e.label }] : [];
+                }),
+              }
+            : null,
           roles: check(roles),
           people: check(people),
           last_baseline_run: null,
@@ -183,11 +202,14 @@ export function createMcpServer(ctx: ToolContext): McpServer {
     ({ process, revision, workspace }) =>
       runTool(async (assumptions) => {
         const ws = await resolveWorkspace(ctx, workspace, assumptions);
-        const proc = await resolveProcess(ctx, ws, process, assumptions);
+        const proc = await resolveProcess(ctx, ws, process, assumptions, { allowCompany: true });
         // A process built over MCP has only a draft until it is first published.
         const which = revision ?? (!proc.live_revision_id && proc.draft_revision_id ? "draft" : "live");
         if (!revision) assumptions.push(which === "live" ? "revision defaulted to live." : "revision defaulted to draft: the process hasn't been published yet.");
         const bundle = await loadProcessBundle(ctx.db, ws, proc, revisionIdFor(proc, which));
+        if (proc.is_company) {
+          assumptions.push("This is the company map: each step holds a process (its child_process_id) at the position the map draws it; each edge is a handoff line between two of them. It is layout only: nothing here is simulated.");
+        }
         return {
           process: { ...bundle.process, draft_revision_id: proc.draft_revision_id },
           revision: bundle.revision,

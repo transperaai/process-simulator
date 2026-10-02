@@ -69,6 +69,9 @@ export function seedSql(
     for (const { process: p } of others) {
       if (p.live_revision_id) out.push(`update public.processes set live_revision_id = ${literal(p.live_revision_id)} where id = ${literal(p.id)};\n`);
     }
+    // The workspace's company map (made by a trigger when the workspace went in, with a holder for each process as it
+    // went in) is laid out afresh now every process is published, as the Overview used to compute it.
+    out.push(`select private.relayout_company_map(${literal(b.workspace.id)});\n`);
   }
   for (const a of access) {
     out.push("-- Access: allowed domains and pre-assigned emails\n");

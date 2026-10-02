@@ -1,4 +1,4 @@
-import { northbeamIssues, partOf, processesOf } from "@transpera-flow/db";
+import { defaultCompanyPart, northbeamIssues, partOf, processesOf } from "@transpera-flow/db";
 import { Overview } from "@/components/overview/overview";
 import { demoAiView } from "@/lib/ai/demo";
 import { DEMO_LIVE_VERSION } from "@/lib/history/demo";
@@ -14,6 +14,7 @@ export function DemoOverview() {
       workspaceName={live.workspace.name}
       live={live}
       parts={parts}
+      company={defaultCompanyPart(live.workspace.id, parts)}
       issues={northbeamIssues()}
       sources={demoSources()}
       mode="demo"

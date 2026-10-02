@@ -95,7 +95,7 @@ afterAll(async () => {
 describe("existing processes are untouched", () => {
   it("has no parent on any seeded process or step", async () => {
     const p = await db.client.query("select count(*)::int n from processes where parent_process_id is not null");
-    const s = await db.client.query("select count(*)::int n from steps where parent_step_id is not null or entry_step_id is not null or child_process_id is not null");
+    const s = await db.client.query("select count(*)::int n from steps where (parent_step_id is not null or entry_step_id is not null or child_process_id is not null) and process_id not in (select id from processes where is_company)");
     expect(p.rows[0].n).toBe(0);
     expect(s.rows[0].n).toBe(0);
   });

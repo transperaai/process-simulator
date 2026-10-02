@@ -614,6 +614,32 @@ export function rolesInFile(file: ProcessFile): { name: string; steps: number }[
 }
 
 // ---------------------------------------------------------------------------
+// Finding the object in an HTML page
+// ---------------------------------------------------------------------------
+
+export const NO_BLOCK_MESSAGE = `This page has no Transpera process in it. The importer only reads a <script type="${PROCESS_FILE_BLOCK_TYPE}"> block and never guesses from the drawing. Ask Claude to add that block, using 'Copy prompt for Claude'.`;
+
+/**
+ * The text of the process block in an HTML page, or why there isn't one. Only a script block of type
+ * `application/vnd.transpera-process+json` counts; the first one wins. Text that is already a JSON object (a .json file)
+ * is returned as it is.
+ */
+export function processTextFrom(content: string): { text: string; error?: undefined } | { text?: undefined; error: string } {
+  const trimmed = content.replace(/^﻿/, "").trim();
+  if (trimmed.startsWith("{")) return { text: trimmed };
+  const blocks = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
+  for (let m = blocks.exec(content); m; m = blocks.exec(content)) {
+    const type = /\btype\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(m[1]!);
+    const value = (type?.[1] ?? type?.[2] ?? type?.[3] ?? "").trim().toLowerCase();
+    if (value !== PROCESS_FILE_BLOCK_TYPE) continue;
+    const body = m[2]!.trim();
+    if (!body) return { error: "The process block in this page is empty. Ask Claude to fill it in, using 'Copy prompt for Claude'." };
+    return { text: body };
+  }
+  return { error: NO_BLOCK_MESSAGE };
+}
+
+// ---------------------------------------------------------------------------
 // The prompt
 // ---------------------------------------------------------------------------
 
@@ -625,6 +651,7 @@ export function claudePrompt(): string {
     "",
     "Rules:",
     "- Reply with the JSON only, in a single code block, nothing else.",
+    `- If you are making a Claude Design page instead, put the same JSON in the page inside one <script type="${PROCESS_FILE_BLOCK_TYPE}"> block. Transpera reads only that block, never the drawing.`,
     '- "format" must be "transpera-process/1". Every step needs a short unique "id" and a "name"; links use those ids.',
     "- Include a start step and at least one end step. Branches out of a step (usually a decision) have probabilities that add up to 1.",
     "- Only give numbers (hands_on_hours, wait_hours, rework_rate, probability) that I told you or the source says. Leave the rest out: they are marked to confirm in Transpera. Don't invent numbers.",

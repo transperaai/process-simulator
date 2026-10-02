@@ -20,7 +20,7 @@ import { checkpointMonths, checkpointWeeks, mrrSeries } from "@/lib/overview/pro
 import { useProjection } from "@/lib/overview/use-projection";
 import { formatCurrency } from "@/lib/format";
 import { useSimulation } from "@/lib/sim/use-simulation";
-import { compareMaps, overallResult, stressConditions, stressTargets, toneWord } from "@/lib/solutions/compare";
+import { SCHEDULE_KEY, compareMaps, overallResult, pinProblems, stressConditions, stressTargets, toneWord } from "@/lib/solutions/compare";
 import { SOLUTION_PAGE_HELP } from "@/lib/solutions/help";
 import { useStress } from "@/lib/solutions/use-stress";
 import { cn } from "@/lib/utils";
@@ -49,27 +49,30 @@ export function SolutionCompare({ base, solution, links, issues, movedOn, market
   const comparison = useMemo(() => compareMaps(base, solution), [base, solution]);
   const [months, setMonths] = useState<number | null>(null);
   const weeks = months === null ? null : horizonWeeks(months);
-  const live = useEngineModel(comparison.base, weeks);
-  const solved = useEngineModel(comparison.solved, weeks);
+  const liveBuilt = useEngineModel(comparison.base, weeks);
+  const solvedBuilt = useEngineModel(comparison.solved, weeks);
+  const error = liveBuilt.error ?? solvedBuilt.error;
+  // A solution the engine can't read has nothing to compare: no run starts for either side.
+  const live = { model: error ? null : liveBuilt.model, error: liveBuilt.error };
+  const solved = { model: error ? null : solvedBuilt.model, error: solvedBuilt.error };
   const liveSim = useSimulation(live.model);
   const solvedSim = useSimulation(solved.model);
   const currency = base.workspace.settings.currency;
-  const error = live.error ?? solved.error;
+  const notes = useMemo(() => [...(movedOn ? [movedOn] : []), ...pinProblems(comparison.base)], [movedOn, comparison.base]);
 
   return (
     <div className="flex flex-col gap-6" data-solution-compare>
-      <MapsSection comparison={comparison} versionNote={movedOn} />
+      <MapsSection comparison={comparison} notes={notes} />
 
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2" data-section="horizon">
         <p className="text-sm text-muted-foreground">The measures, the revenue chart and the stress test look this far ahead.</p>
         <span className="flex items-center">
-          <HorizonPicker weeks={live.model?.horizonWeeks ?? solved.model?.horizonWeeks ?? 13} onChange={setMonths} />
-          <Help {...SOLUTION_PAGE_HELP.horizon} />
+          <HorizonPicker weeks={liveBuilt.model?.horizonWeeks ?? solvedBuilt.model?.horizonWeeks ?? 13} onChange={setMonths} />
         </span>
       </div>
       {error && (
         <p role="alert" className="text-sm text-destructive" data-cant-simulate>
-          The solution can&apos;t be simulated, so there are no numbers to compare yet: {error}. Open it in the Editor and fix that step.
+          The solution can&apos;t be simulated, so there are no numbers to compare: {error}. The maps above still show what it changed.
         </p>
       )}
 
@@ -111,7 +114,7 @@ export function SolutionCompare({ base, solution, links, issues, movedOn, market
   );
 }
 
-function MapsSection({ comparison, versionNote }: { comparison: ReturnType<typeof compareMaps>; versionNote?: string | null }) {
+function MapsSection({ comparison, notes }: { comparison: ReturnType<typeof compareMaps>; notes: string[] }) {
   // One set of open groups for both maps: open or close a group on either and it follows on the other.
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(comparison.open);
   return (
@@ -125,11 +128,15 @@ function MapsSection({ comparison, versionNote }: { comparison: ReturnType<typeo
           The two maps open and close together. New or changed steps are marked on the solution&apos;s map.
           <Help {...SOLUTION_PAGE_HELP.compareSide} />
         </p>
-        {versionNote && (
-          <p className="mt-1 text-xs text-muted-foreground" data-moved-on>
-            {versionNote}
+        <p className="mt-1 text-xs text-muted-foreground" data-diff-key>
+          <span aria-hidden className="mr-1 inline-block h-2.5 w-4 border border-dashed border-edit align-middle" />
+          new or changed · <s>removed</s>. The maps open on what changed; Fit shows the whole process.
+        </p>
+        {notes.map((n) => (
+          <p key={n} className="mt-1 text-xs text-muted-foreground" data-compare-note>
+            {n}
           </p>
-        )}
+        ))}
       </div>
       <div className="grid min-w-0 gap-3 lg:grid-cols-2" data-maps>
         {(
@@ -149,6 +156,8 @@ function MapsSection({ comparison, versionNote }: { comparison: ReturnType<typeo
                 showPlayback={false}
                 showLanes={false}
                 legend={false}
+                diffLegend={false}
+                focus={comparison.changed}
                 height="auto"
                 stepDetail={false}
               />
@@ -275,7 +284,8 @@ function StressTable({
   marketConditions?: MarketConditionRow[];
   currency: string;
 }) {
-  const conditions = useMemo(() => stressConditions(marketConditions ?? comparison.base.marketConditions), [marketConditions, comparison.base.marketConditions]);
+  const hasSchedule = Boolean(liveModel?.market || solvedModel?.market);
+  const conditions = useMemo(() => stressConditions(marketConditions ?? comparison.base.marketConditions, hasSchedule), [marketConditions, comparison.base.marketConditions, hasSchedule]);
   const mine = useMemo(() => links.filter((l) => l.solution_id === solution.id), [links, solution.id]);
   const targets = useMemo(() => stressTargets(comparison, mine, issues, solution.process_id), [comparison, mine, issues, solution.process_id]);
   const stress = useStress({ base: liveModel, solved: solvedModel, conditions, targets });
@@ -312,7 +322,7 @@ function StressTable({
               <tr key={c.key} className="border-b border-border align-top last:border-0" data-stress-row={c.key} data-stress-name={c.name}>
                 <th scope="row" className="px-4 py-2 font-normal">
                   {c.name}
-                  {!c.preset && <span className="ml-1.5 text-xs text-muted-foreground">yours</span>}
+                  {c.key === SCHEDULE_KEY ? <span className="ml-1.5 text-xs text-muted-foreground">from Settings</span> : !c.preset && <span className="ml-1.5 text-xs text-muted-foreground">yours</span>}
                 </th>
                 <td className="px-3 py-2">
                   {row ? <VerdictWord verdict={result === "pass" || result === "fail" ? result : null} /> : blocked || stress.status === "error" ? <span className="text-muted-foreground">—</span> : <Skeleton className="h-4 w-14" aria-busy="true" />}

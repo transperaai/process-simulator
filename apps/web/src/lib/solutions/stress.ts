@@ -14,7 +14,8 @@ export interface StressCondition {
   name: string;
   /** boom, stable, soft or downturn for a preset; null for your own. */
   preset: string | null;
-  factors: MarketFactors;
+  /** The condition in force for the whole run. Null: the workspace's own market schedule, as the models carry it. */
+  factors: MarketFactors | null;
 }
 
 /** An issue the solution solves: what its verdict reads. */
@@ -59,11 +60,14 @@ export interface StressRequest {
 
 export type StressMessage = { id: number; kind: "row"; row: StressRow } | { id: number; kind: "done" } | { id: number; kind: "error"; error: string };
 
+/** What identifies a stress request by content: the same targets and conditions give the same key, whatever arrays they came in. */
+export const stressKey = (targets: readonly StressTarget[], conditions: readonly StressCondition[]): string => JSON.stringify([targets, conditions]);
+
 /** Run every condition in turn, handing each row to `emit` as soon as it is worked out. */
 export function runStress(req: Pick<StressRequest, "base" | "solved" | "conditions" | "targets" | "reps" | "seed">, emit: (row: StressRow) => void): void {
   for (const c of req.conditions) {
-    const base = withMarketCondition(req.base, c.factors);
-    const solved = withMarketCondition(req.solved, c.factors);
+    const base = c.factors ? withMarketCondition(req.base, c.factors) : req.base;
+    const solved = c.factors ? withMarketCondition(req.solved, c.factors) : req.solved;
     const baseResult = simulate(base, req.reps, req.seed);
     const solvedResult = simulate(solved, req.reps, req.seed);
     const verdicts = req.targets.map((t): StressVerdict => {

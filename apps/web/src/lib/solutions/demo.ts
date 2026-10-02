@@ -112,6 +112,9 @@ export function addDemoLink(solutionId: string, issueId: string, verdict: { auto
   return link;
 }
 
+/** The demo's solutions as they are now (outside a component; the tests read this). */
+export const demoSolutionsNow = (): DemoState => state;
+
 /** The demo's solutions, kept up to date as the Editor saves more. Server rendering and hydration see none. */
 export function useDemoSolutions(): DemoState {
   return useSyncExternalStore(

@@ -51,6 +51,15 @@ export interface SolutionPageProps {
   movedOn?: string | null;
 }
 
+/** The demo's process a solution was copied from, built once (not on every render). */
+function useDemoBase(demo: boolean, processId: string | undefined): ProcessBundle | null {
+  return useMemo(() => (demo && processId ? bundleForProcess(demoBundle(), processId) : null), [demo, processId]);
+}
+
+function useDemoConditions(demo: boolean) {
+  return useMemo(() => (demo ? demoMarket().marketConditions : undefined), [demo]);
+}
+
 export function SolutionPage(props: SolutionPageProps) {
   const { workspaceId, solutionId, issues, processes, base, mode, viewerId } = props;
   const router = useRouter();
@@ -65,6 +74,11 @@ export function SolutionPage(props: SolutionPageProps) {
   const data = mode === "demo" ? inTab : local;
   const solution = data.solutions.find((s) => s.id === solutionId);
   const canEdit = mode !== "readonly";
+  // The version the solution was copied from, for the comparison. Held by identity, so a re-render (a verdict pressed) leaves the
+  // comparison alone. The demo has no server: it is the demo's own process.
+  const demoBase = useDemoBase(mode === "demo", solution?.process_id);
+  const compareBase = mode === "demo" ? demoBase : (props.compareBase ?? null);
+  const demoConditions = useDemoConditions(mode === "demo");
   const [error, setError] = useState<string | null>(null);
   const [linking, setLinking] = useState(false);
 
@@ -86,8 +100,6 @@ export function SolutionPage(props: SolutionPageProps) {
   const issueById = new Map(issues.map((i) => [i.id, i]));
   const processName = processes.find((p) => p.id === solution.process_id)?.name ?? "a process";
   const type = solutionType(solution, data.aiIds);
-  // The demo has no server: the version the solution was copied from is the demo's own process.
-  const compareBase = mode === "demo" ? bundleForProcess(demoBundle(), solution.process_id) : (props.compareBase ?? null);
   const toLink = linkableIssues(issues, solution.process_id, new Set(links.map((l) => l.issue_id)));
 
   const putLink = (link: SolutionIssueRow) =>
@@ -188,7 +200,7 @@ export function SolutionPage(props: SolutionPageProps) {
       </section>
 
       {compareBase ? (
-        <SolutionCompare key={solution.id} base={compareBase} solution={solution} links={links} issues={issues} movedOn={props.movedOn} marketConditions={mode === "demo" ? demoMarket().marketConditions : undefined} />
+        <SolutionCompare key={solution.id} base={compareBase} solution={solution} links={links} issues={issues} movedOn={props.movedOn} marketConditions={demoConditions} />
       ) : (
         <p className="text-sm text-muted-foreground" data-compare-unavailable>
           The comparison with live isn&apos;t available: the process this solution was copied from can&apos;t be loaded.

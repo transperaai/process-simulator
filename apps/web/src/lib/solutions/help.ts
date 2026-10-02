@@ -102,11 +102,6 @@ export const SOLUTION_PAGE_HELP = {
     description: "Left is the process as it was when this solution was copied from it. Right is the same process with the solution's changes. Click a group's arrow on either map to open or close it on both.",
     example: "Close Sales on the left and it closes on the right too.",
   },
-  horizon: {
-    label: "Projection",
-    description: "How far ahead the measures, the revenue chart and the stress test look. Longer shows slower effects such as clients leaving, but takes a little longer to run.",
-    example: "12m shows the next year; the stress test then checks each market over the same year.",
-  },
   measures: {
     label: "Measures",
     description: "The same simulation run for live and for the solution, 30 times each, side by side. The last column says whether the solution is better or worse; a result inside the normal run-to-run spread is “About the same”.",
@@ -124,7 +119,7 @@ export const SOLUTION_PAGE_HELP = {
   },
   stress: {
     label: "Market stress test",
-    description: "Does the solution still work if the market changes? It is run again under each market condition on its own (Stable, Soft, Downturn, Boom and any of your own from Settings), and each linked issue's goal is checked the same way as the automatic verdict. Pass means every issue it could check still meets its goal.",
+    description: "Does the solution still work if the market changes? It is run again under each market condition on its own (Stable, Soft, Downturn, Boom and any of your own from Settings), and each linked issue's goal is checked the same way as the automatic verdict. Pass means every issue it could check still meets its goal. Each named market replaces your market schedule for the whole run, so Stable is a flat market, not your schedule; the “Your schedule” row, when you have one, is the schedule month by month, which is what the automatic verdict under Solves was checked against.",
     example: "Passes in Stable and Boom, fails in Downturn because first contact slips to 5 hours.",
   },
   stressResult: {

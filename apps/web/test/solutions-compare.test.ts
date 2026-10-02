@@ -6,9 +6,13 @@ import { STABLE_MARKET, withMarketCondition } from "@transpera-flow/engine";
 import { MrrChart } from "@/components/overview/charts";
 import { demoMarket } from "@/lib/market-demo";
 import { solutionCopy } from "@/lib/solutions/bundle";
-import { compareMaps, overallResult, stressConditions, stressTargets, toneWord } from "@/lib/solutions/compare";
+import { SCHEDULE_KEY, compareMaps, overallResult, pinProblems, stressConditions, stressTargets, toneWord } from "@/lib/solutions/compare";
 import { solutionType } from "@/lib/solutions/cards";
-import { runStress, type StressRow } from "@/lib/solutions/stress";
+import { runStress, stressKey, type StressRow } from "@/lib/solutions/stress";
+import { demoSolutionsNow, markDemoSolutionAi } from "@/lib/solutions/demo";
+import { markDemoIdeaBuilt } from "@/lib/demo/company-store";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { checkTarget } from "@/lib/solutions/verdict";
 import { simulate } from "@transpera-flow/engine";
 import { demoBundle } from "@/lib/sources/demo";
@@ -80,6 +84,27 @@ describe("the markets", () => {
   });
 });
 
+describe("your schedule", () => {
+  it("is a row of its own, first, only when the workspace has a schedule", () => {
+    const rows = demoMarket().marketConditions;
+    expect(stressConditions(rows, false).some((c) => c.key === SCHEDULE_KEY)).toBe(false);
+    const withIt = stressConditions(rows, true);
+    expect(withIt[0]).toMatchObject({ key: SCHEDULE_KEY, name: "Your schedule", factors: null });
+    expect(withIt).toHaveLength(6);
+  });
+});
+
+describe("steps nobody can do", () => {
+  it("says so when a step is given to someone no longer active, or to a role that isn't there", () => {
+    expect(pinProblems(base)).toEqual([]);
+    const gone = { ...base, people: base.people.map((p) => ({ ...p, active: false })), steps: base.steps.map((s) => (s.id === ids.audit ? { ...s, person_id: base.people[0]!.id } : s)) };
+    const [note] = pinProblems(gone);
+    expect(note).toMatch(/no longer active \(Audit & proposal\)/);
+    const noRole = { ...base, roles: [], steps: base.steps.map((s) => (s.id === ids.audit ? { ...s, role_id: "nope" } : s)) };
+    expect(pinProblems(noRole).join(" ")).toMatch(/use a role that isn't in the workspace any more \(.*Audit & proposal.*\)/);
+  });
+});
+
 describe("the targets and the result", () => {
   it("checks each issue the solution solves, over the steps the solution's map has in its area", () => {
     const c = compareMaps(base, solution);
@@ -136,6 +161,38 @@ describe("the stress runner", () => {
 
   it("gives the same answer every time", () => {
     expect(run()).toEqual(run());
+  });
+
+  it("runs the models as they are for the schedule row, not a flat market", () => {
+    const rows: StressRow[] = [];
+    runStress({ base: baseModel, solved, conditions: [{ key: SCHEDULE_KEY, name: "Your schedule", preset: null, factors: null }], targets, reps: 6, seed: 1 }, (r) => rows.push(r));
+    const direct = simulate(solved, 6, 1);
+    const v = checkTarget({ target: targets[0]!.target, model: solved, result: direct, area: targets[0]!.area });
+    expect(rows[0]!.verdicts[0]).toMatchObject({ status: v.status, holdsPct: v.holdsPct, note: v.note });
+  });
+
+  it("is keyed by content: the same targets and conditions in new arrays are the same request, so a re-render doesn't restart it", () => {
+    expect(stressKey(targets, conditions)).toBe(stressKey(structuredClone(targets), structuredClone(conditions)));
+    expect(stressKey(targets, conditions)).not.toBe(stressKey(targets, conditions.slice(1)));
+    const hook = readFileSync(join(__dirname, "..", "src", "lib", "solutions", "use-stress.ts"), "utf8");
+    // The run starts on the key, not on the arrays; the old rows are cleared when a new request starts; the worker is stopped on an error.
+    expect(hook).toContain("stressKey(targets, conditions)");
+    expect(hook).toMatch(/\[base, solved, key, reps, seed\]/);
+    expect(hook).toMatch(/onerror[\s\S]*stop\(\)/);
+    expect(hook).toMatch(/\? held\.value : WAITING/);
+  });
+});
+
+describe("the demo marks a solution built from an idea as an AI block", () => {
+  it("records the solution when Build it marks the idea built", () => {
+    expect(demoSolutionsNow().aiIds).not.toContain("sol-direct");
+    markDemoSolutionAi("sol-direct");
+    expect(demoSolutionsNow().aiIds).toContain("sol-direct");
+    markDemoSolutionAi("sol-direct");
+    expect(demoSolutionsNow().aiIds.filter((i) => i === "sol-direct")).toHaveLength(1);
+    markDemoIdeaBuilt("any-idea", "sol-from-idea");
+    expect(demoSolutionsNow().aiIds).toContain("sol-from-idea");
+    expect(solutionType({ id: "sol-from-idea" }, demoSolutionsNow().aiIds)).toBe("AI block");
   });
 });
 

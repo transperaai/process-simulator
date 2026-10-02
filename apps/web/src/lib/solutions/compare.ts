@@ -37,10 +37,16 @@ export function compareMaps(base: ProcessBundle, solution: Pick<SolutionRow, "st
  * The market conditions to run: the workspace's, presets first and then its own by name (A57), or the four presets when the workspace
  * has none (the database seeds them, so this is the demo and old rows).
  */
-export function stressConditions(rows: readonly MarketConditionRow[] | undefined): StressCondition[] {
-  if (rows?.length) return orderConditions(rows).map((c) => ({ key: c.id, name: c.name, preset: c.preset, factors: factorsFromPercents(c) }));
-  return (Object.keys(MARKET_PRESETS) as MarketPresetKey[]).map((k) => ({ key: k, name: MARKET_PRESETS[k].name, preset: k, factors: MARKET_PRESETS[k].factors as MarketFactors }));
+export function stressConditions(rows: readonly MarketConditionRow[] | undefined, hasSchedule = false): StressCondition[] {
+  const named: StressCondition[] = rows?.length
+    ? orderConditions(rows).map((c) => ({ key: c.id, name: c.name, preset: c.preset, factors: factorsFromPercents(c) }))
+    : (Object.keys(MARKET_PRESETS) as MarketPresetKey[]).map((k) => ({ key: k, name: MARKET_PRESETS[k].name, preset: k, factors: MARKET_PRESETS[k].factors as MarketFactors }));
+  // The workspace's own schedule, month by month: what the automatic verdict under Solves was checked against. Each named market above
+  // replaces it for the whole run, so "Stable" is a flat market, not the schedule.
+  return hasSchedule ? [{ key: SCHEDULE_KEY, name: "Your schedule", preset: null, factors: null }, ...named] : named;
 }
+
+export const SCHEDULE_KEY = "schedule";
 
 /**
  * The targets to check under each market: every issue the solution solves that is still there, with the steps its verdict reads in
@@ -56,6 +62,24 @@ export function stressTargets(c: Pick<Comparison, "base" | "solved">, links: rea
     const asIssue = solutionIssueOf(issue, processId, c.solved.steps);
     return [{ issueId: issue.id, number: issue.number, title: issue.title, target: asIssue.target, area: verdictArea(c.solved.steps, asIssue, added) }];
   });
+}
+
+/**
+ * Steps of the version being compared that the engine has nobody to do: given to a person who is no longer active (or isn't in the
+ * workspace), or to a role that isn't there. The engine then has no one to do the work, so those steps count as nothing in the numbers.
+ * Returns plain sentences, none when everything resolves.
+ */
+export function pinProblems(bundle: Pick<ProcessBundle, "steps" | "people" | "roles">): string[] {
+  const active = new Set(bundle.people.filter((p) => p.active).map((p) => p.id));
+  const roles = new Set(bundle.roles.map((r) => r.id));
+  const working = bundle.steps.filter((s) => s.kind !== "start" && s.kind !== "end" && s.kind !== "group");
+  const names = (list: { name: string }[]) => list.map((s) => s.name).join(", ");
+  const noPerson = working.filter((s) => s.person_id && !active.has(s.person_id));
+  const noRole = working.filter((s) => s.role_id && !roles.has(s.role_id));
+  const out: string[] = [];
+  if (noPerson.length) out.push(`${noPerson.length === 1 ? "A step is" : `${noPerson.length} steps are`} given to someone who is no longer active (${names(noPerson)}), so the numbers count ${noPerson.length === 1 ? "its" : "their"} work as nothing. Give ${noPerson.length === 1 ? "it" : "them"} to a role in the Editor to see real numbers.`);
+  if (noRole.length) out.push(`${noRole.length === 1 ? "A step uses" : `${noRole.length} steps use`} a role that isn't in the workspace any more (${names(noRole)}), so the numbers count ${noRole.length === 1 ? "its" : "their"} work as nothing.`);
+  return out;
 }
 
 export const RESULT_WORDS: Record<StressResult, string> = { pass: "Pass", fail: "Fail", unchecked: "Not checked" };

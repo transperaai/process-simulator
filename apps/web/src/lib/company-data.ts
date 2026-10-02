@@ -94,16 +94,19 @@ export async function loadSuggestionsPage(slug: string): Promise<SuggestionsPage
   };
 }
 
-/** The numbers beside the sidebar's Processes and Issues items: how many processes, and tracked issues still open. */
-export const shellCounts = cache(async (workspaceId: string): Promise<{ processes: number; openIssues: number }> => {
+/** The numbers beside the sidebar's Processes, Issues and Sources items: how many processes, tracked issues still open and sources linked to nothing. */
+export const shellCounts = cache(async (workspaceId: string): Promise<{ processes: number; openIssues: number; unlinkedSources: number }> => {
   const supabase = await createClient();
-  const [processes, issues] = await Promise.all([
+  const [processes, issues, unlinked] = await Promise.all([
     supabase.from("processes").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId),
     supabase.from("issues").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId).in("status", ACTIVE_STORED_STATUSES),
+    supabase.rpc("unlinked_source_count", { p_workspace: workspaceId }),
   ]);
   if (processes.error) throw processes.error;
   if (issues.error) throw issues.error;
-  return { processes: processes.count ?? 0, openIssues: issues.count ?? 0 };
+  // The count is a warning, not a page: if it can't be read (say the function isn't there yet), show none rather than break the shell.
+  if (unlinked.error) console.error("Couldn't count the unlinked sources; showing none.", unlinked.error.message);
+  return { processes: processes.count ?? 0, openIssues: issues.count ?? 0, unlinkedSources: unlinked.error ? 0 : (unlinked.data ?? 0) };
 });
 
 /** How many suggestions wait for review (for the workspace nav). */

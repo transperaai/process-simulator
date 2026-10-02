@@ -107,3 +107,17 @@ export function derivedSourceLinks(
   for (const i of issues) for (const source_id of i.source_ids) add({ workspace_id: i.workspace_id, source_id, ...linkColumns({ kind: "issue", issueId: i.id }) });
   return [...out.values()];
 }
+
+/**
+ * What a source can be linked to, for the pickers: the workspace's processes, the steps in their current versions (a
+ * stable id, once), the insights it has acted on (a detection's key and title), its issues and its solutions.
+ */
+export interface LinkTargets {
+  processes: { id: string; name: string }[];
+  steps: { id: string; processId: string; name: string }[];
+  insights: { key: string; title: string }[];
+  issues: { id: string; number: number | null; title: string }[];
+  solutions: { id: string; name: string }[];
+}
+
+export const NO_LINK_TARGETS: LinkTargets = { processes: [], steps: [], insights: [], issues: [], solutions: [] };

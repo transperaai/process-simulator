@@ -1,25 +1,35 @@
 "use client";
 
-// The Sources screen (docs/PRD.md §8 screen 7, issue #21): transcripts, notes
-// and screenshots from the audit, each with every value that cites it, so
-// any inferred number can be traced to what someone said.
+// The Sources screen (docs/PRD.md §8 screen 7, issue #21; A53, issue #118): transcripts, notes
+// and screenshots from the audit, each with its quote, what it is linked to (chips, "+ Link") and
+// every value that cites it, so any inferred number can be traced to what someone said. A source
+// linked to nothing is flagged: it doesn't count as evidence.
 
 import { useState } from "react";
-import { EVIDENCE_LABELS, formatParameter, isEvidenceColumn, type SourceCitation, type SourceKind, type SourceRow } from "@transpera-flow/db";
+import { useRouter } from "next/navigation";
+import {
+  EVIDENCE_LABELS,
+  formatParameter,
+  isEvidenceColumn,
+  unlinkedSources,
+  type LinkTargets,
+  type SourceCitation,
+  type SourceLinkRow,
+  type SourceRow,
+} from "@transpera-flow/db";
 import { DateField, SelectField, TextField } from "@/components/fields";
-import { HelpLabel } from "@/components/help";
+import { LinkChips, LinkedToLabel, UnlinkedWarning } from "@/components/sources/link-chips";
+import { SourceDialog, type SourceSubmission } from "@/components/sources/source-dialog";
 import { buttonVariants } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/native-select";
-import { Textarea } from "@/components/ui/textarea";
 import type { Saver } from "@/lib/fields/field-controller";
+import { useDemoSolutions } from "@/lib/solutions/demo";
 import { liveSourceStore } from "@/lib/sources/live-store";
 import { MemorySourceStore, sourceFieldValue, type SourceStore } from "@/lib/sources/store";
 import { SOURCE_KIND_LABELS, SOURCE_KINDS, parseSpeakers, type SourceField } from "@/lib/sources/validate";
 
 /** Plain-English (i) text for a source's fields, with an example (issue #123). */
 const SOURCE_HELP = {
-  kind: { description: "What sort of material this is: an interview transcript, a document, a screenshot, a data export and so on.", example: "Transcript, for the notes from a discovery interview." },
+  kind: { description: "What sort of material this is: a transcript of a conversation, notes someone wrote up, or a screenshot.", example: "Transcript, for the typed-up discovery interview." },
   title: { description: "A name that tells people what this is.", example: "Discovery interview with Maya." },
   speakers: { description: "Who is talking or wrote it, separated by commas. Quotes show who said them.", example: "Maya Collins, Rosa Diaz." },
   date: { description: "When it was recorded or written.", example: "3 October." },
@@ -30,6 +40,14 @@ const SOURCE_HELP = {
 
 const button = buttonVariants({ variant: "outline", size: "sm" });
 const primary = buttonVariants({ size: "sm" });
+const EXCERPT = 280;
+/** The start of a source's text, as the card's quote: whole words, and an ellipsis when there is more. */
+const excerpt = (body: string | null) => {
+  const text = (body ?? "").trim().replace(/\s+/g, " ");
+  if (text.length <= EXCERPT) return text;
+  const cut = text.slice(0, EXCERPT);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), EXCERPT - 40))}…`;
+};
 const kindOptions = SOURCE_KINDS.map((k) => ({ value: k, label: SOURCE_KIND_LABELS[k] }));
 
 const FIELD_NAMES: Record<string, string> = {
@@ -49,6 +67,8 @@ export function SourcesPage({
   workspaceId,
   sources: initial,
   citations,
+  links: initialLinks,
+  targets: initialTargets,
   mode,
   processBase,
 }: {
@@ -56,16 +76,35 @@ export function SourcesPage({
   sources: SourceRow[];
   /** What cites each source, by source id. */
   citations: Record<string, SourceCitation[]>;
+  /** What each source is linked to. */
+  links: SourceLinkRow[];
+  /** What a source can be linked to, for the dialog and the chips. */
+  targets: LinkTargets;
   mode: "live" | "demo" | "readonly";
   /** Link to the process page, so a citing step can be opened. */
   processBase?: string;
 }) {
   const canEdit = mode !== "readonly";
-  const [store] = useState<SourceStore>(() => (mode === "live" ? liveSourceStore(workspaceId) : new MemorySourceStore(workspaceId, initial)));
+  const router = useRouter();
+  const demoSolutions = useDemoSolutions().solutions;
+  const [store] = useState<SourceStore>(() => (mode === "live" ? liveSourceStore(workspaceId) : new MemorySourceStore(workspaceId, initial, undefined, initialLinks)));
   const [sources, setSources] = useState(initial);
+  const [links, setLinks] = useState(initialLinks);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<{ source: SourceRow | null } | null>(null);
+  const [busy, setBusy] = useState(false);
   const cited = new Set(Object.keys(citations));
   const orphans = Object.entries(citations).filter(([id]) => !sources.some((s) => s.id === id));
+  const unlinked = unlinkedSources(sources, links);
+  // The demo's solutions live in the tab; a workspace's come with the page.
+  const targets = mode === "demo" ? { ...initialTargets, solutions: demoSolutions.map((s) => ({ id: s.id, name: s.name })) } : initialTargets;
+  // The sidebar's count comes from the server: ask for it again after a change.
+  const changed = (message: string) => {
+    setStatus(message);
+    setError(null);
+    if (mode === "live") router.refresh();
+  };
 
   const saver =
     (id: string, field: SourceField): Saver<string | null> =>
@@ -78,20 +117,54 @@ export function SourcesPage({
       return outcome as Awaited<ReturnType<Saver<string | null>>>;
     };
 
+  const submit = async (s: SourceSubmission): Promise<string | null> => {
+    if (s.kind === "add") {
+      const r = await store.create(s.input, [s.link]);
+      if (r.status === "error") return r.message;
+      setSources((list) => [r.source, ...list]);
+      setLinks((list) => [...list, ...r.links]);
+      changed("Source added and linked.");
+      return null;
+    }
+    const r = await store.link(s.source.id, s.link);
+    if (r.status === "error") return r.message;
+    setLinks((list) => [...list, r.link]);
+    changed("Source linked.");
+    return null;
+  };
+
+  const unlink = async (link: SourceLinkRow) => {
+    setBusy(true);
+    try {
+      const r = await store.unlink(link.id);
+      if (r.status === "error") return setError(r.message);
+      setLinks((list) => list.filter((l) => l.id !== link.id));
+      changed("Link removed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
-      {canEdit ? (
-        <AddSource
-          onAdd={async (input) => {
-            const r = await store.create(input);
-            if (r.status === "error") return r.message;
-            setSources((list) => [r.source, ...list]);
-            return null;
-          }}
-        />
-      ) : (
-        <p className="text-fg-2">You can read the sources here; owners and editors can add and change them.</p>
-      )}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-fg-2">
+          {canEdit ? "Owners and editors add sources and link them." : "You can read the sources here; owners and editors can add and change them."}
+          {unlinked.length > 0 && (
+            <span className="ml-1 font-semibold text-fg" data-unlinked-count={unlinked.length}>
+              {unlinked.length === 1 ? "1 source isn't linked to anything yet." : `${unlinked.length} sources aren't linked to anything yet.`}
+            </span>
+          )}
+        </p>
+        {canEdit && (
+          <button type="button" className={primary} onClick={() => setDialog({ source: null })}>
+            + Add source
+          </button>
+        )}
+      </div>
+      <p role="status" aria-live="polite" className={status ? "text-xs text-fg-2" : "sr-only"}>
+        {status}
+      </p>
       {error && (
         <p role="alert" className="rounded-lg border border-crit bg-crit-soft p-2">
           {error}{" "}
@@ -102,8 +175,8 @@ export function SourcesPage({
       )}
       {sources.length === 0 ? (
         <p className="rounded-lg border border-dashed border-line p-4 text-fg-2">
-          No sources yet. Add the audit&apos;s transcripts and notes, then cite them from a step&apos;s inspector (or let
-          Claude cite them through the MCP server) so every number can be traced to what someone said.
+          No sources yet. Add the audit&apos;s transcripts and notes and link each one to what it is evidence for (a process, a step, an
+          insight, an issue or a solution), or let Claude add them through the MCP server, so every number can be traced to what someone said.
         </p>
       ) : (
         <ul aria-label="Sources" className="flex flex-col gap-3">
@@ -112,13 +185,22 @@ export function SourcesPage({
               <SourceItem
                 source={s}
                 citations={citations[s.id] ?? []}
+                links={links.filter((l) => l.source_id === s.id)}
+                targets={targets}
                 canEdit={canEdit}
+                busy={busy}
                 saver={saver}
                 processBase={processBase}
+                onLink={() => setDialog({ source: s })}
+                onUnlink={(l) => void unlink(l)}
                 onRemove={async () => {
                   const r = await store.remove(s.id);
                   if (r.status === "error") setError(r.message);
-                  else setSources((list) => list.filter((x) => x.id !== s.id));
+                  else {
+                    setSources((list) => list.filter((x) => x.id !== s.id));
+                    setLinks((list) => list.filter((l) => l.source_id !== s.id));
+                    changed("Source deleted.");
+                  }
                 }}
                 cited={cited.has(s.id)}
               />
@@ -132,6 +214,7 @@ export function SourcesPage({
           <Citations citations={orphans.flatMap(([, list]) => list)} processBase={processBase} />
         </section>
       )}
+      <SourceDialog open={dialog !== null} source={dialog?.source ?? null} targets={targets} onSubmit={submit} onClose={() => setDialog(null)} />
     </div>
   );
 }
@@ -139,33 +222,58 @@ export function SourcesPage({
 function SourceItem({
   source: s,
   citations,
+  links,
+  targets,
   canEdit,
+  busy,
   saver,
+  onLink,
+  onUnlink,
   onRemove,
   processBase,
   cited,
 }: {
   source: SourceRow;
   citations: SourceCitation[];
+  links: SourceLinkRow[];
+  targets: LinkTargets;
   canEdit: boolean;
+  busy: boolean;
   saver: (id: string, field: SourceField) => Saver<string | null>;
+  onLink: () => void;
+  onUnlink: (link: SourceLinkRow) => void;
   onRemove: () => Promise<void>;
   processBase?: string;
   cited: boolean;
 }) {
   const [confirming, setConfirming] = useState(false);
   const value = (f: SourceField) => sourceFieldValue(s, f) as string | null;
+  const quote = excerpt(s.body);
   return (
-    <article aria-label={s.title} className="rounded-lg border border-line bg-panel p-3 shadow-xs">
+    <article aria-label={s.title} data-linked={links.length > 0} className="flex flex-col gap-2 rounded-lg border border-line bg-panel p-3 shadow-xs">
       <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="rounded-full border border-line px-1.5 text-[11px] font-semibold text-fg-2">{SOURCE_KIND_LABELS[s.kind]}</span>
         <h2 className="text-base font-bold">{s.title}</h2>
+        <span className="rounded-full border border-line px-1.5 text-[11px] font-semibold text-fg-2">{SOURCE_KIND_LABELS[s.kind]}</span>
         {s.recorded_at && <span className="text-fg-3 tabular-nums">{s.recorded_at}</span>}
         {s.speakers.length > 0 && <span className="text-fg-2">{s.speakers.join(", ")}</span>}
-        <span className="ml-auto text-fg-3">
-          {citations.length ? `Cited by ${citations.length} value${citations.length === 1 ? "" : "s"}` : "Not cited yet"}
+        <span className="ml-auto flex items-baseline gap-3">
+          <span className="text-fg-3">{citations.length ? `Cited by ${citations.length} value${citations.length === 1 ? "" : "s"}` : "Not cited yet"}</span>
+          {canEdit && (
+            <button type="button" className={button} onClick={onLink} aria-label={`Link ${s.title} to something`}>
+              + Link
+            </button>
+          )}
         </span>
       </header>
+      {quote && <blockquote className="text-fg-2">“{quote}”</blockquote>}
+      {links.length > 0 ? (
+        <div className="flex flex-col gap-1">
+          <LinkedToLabel />
+          <LinkChips links={links} targets={targets} onUnlink={canEdit ? onUnlink : undefined} disabled={busy} />
+        </div>
+      ) : (
+        <UnlinkedWarning />
+      )}
       <Citations citations={citations} processBase={processBase} />
       <details className="mt-2">
         <summary className="cursor-pointer text-fg-2 hover:underline">{canEdit ? "Details and edit" : "Details"}</summary>
@@ -255,78 +363,3 @@ function Citations({ citations, processBase }: { citations: SourceCitation[]; pr
     </ul>
   );
 }
-
-function AddSource({ onAdd }: { onAdd: (input: { kind: SourceKind; title: string; speakers: string[]; recorded_at: string | null; body: string | null; file_url: string | null }) => Promise<string | null> }) {
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  return (
-    <form
-      aria-label="Add a source"
-      className="grid gap-2 rounded-lg border border-line bg-panel p-3 shadow-xs sm:grid-cols-[8rem_1fr_1fr_10rem]"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        const form = e.currentTarget;
-        const data = new FormData(form);
-        const text = (k: string) => {
-          const v = String(data.get(k) ?? "").trim();
-          return v || null;
-        };
-        setPending(true);
-        const problem = await onAdd({
-          kind: (text("kind") ?? "transcript") as SourceKind,
-          title: text("title") ?? "",
-          speakers: parseSpeakers(text("speakers")),
-          recorded_at: text("recorded_at"),
-          body: text("body"),
-          file_url: text("file_url"),
-        });
-        setPending(false);
-        setError(problem);
-        if (!problem) form.reset();
-      }}
-    >
-      <h2 className="text-sm font-bold sm:col-span-4">Add a source</h2>
-      <label className="flex flex-col gap-1">
-        <HelpLabel label="Kind" {...SOURCE_HELP.kind} />
-        <NativeSelect name="kind" defaultValue="transcript">
-          {kindOptions.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </NativeSelect>
-      </label>
-      <label className="flex flex-col gap-1">
-        <HelpLabel label="Title" {...SOURCE_HELP.title} />
-        <Input name="title" required maxLength={200} placeholder="Discovery interview" />
-      </label>
-      <label className="flex flex-col gap-1">
-        <HelpLabel label="Speakers" {...SOURCE_HELP.speakers} />
-        <Input name="speakers" placeholder="Maya Collins, Rosa Diaz" />
-      </label>
-      <label className="flex flex-col gap-1">
-        <HelpLabel label="Date" {...SOURCE_HELP.date} />
-        <Input name="recorded_at" type="date" />
-      </label>
-      <label className="flex flex-col gap-1 sm:col-span-4">
-        <HelpLabel label="Transcript or notes" {...SOURCE_HELP.body} />
-        <Textarea name="body" rows={3} />
-      </label>
-      <label className="flex flex-col gap-1 sm:col-span-3">
-        <HelpLabel label="Link to a file or screenshot (optional)" {...SOURCE_HELP.link} />
-        <Input name="file_url" type="url" placeholder="https://" />
-      </label>
-      <div className="flex items-end">
-        <button type="submit" disabled={pending} className={primary}>
-          {pending ? "Adding…" : "Add source"}
-        </button>
-      </div>
-      {error && (
-        <p role="alert" className="text-crit sm:col-span-4">
-          {error}
-        </p>
-      )}
-    </form>
-  );
-}
-

@@ -188,6 +188,7 @@ export {
   loadScenarios,
   loadSources,
   loadSourceLinks,
+  loadLinkTargets,
   loadCitingRows,
   loadCompanyModel,
   loadLiveRevisions,

@@ -1,3 +1,4 @@
+import type { LinkTargets } from "./source-links";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "./database.types";
 import type { CompanyModel, SnapshotProcess } from "./company";
@@ -514,6 +515,33 @@ export async function loadSourceLinks(db: Db, workspaceId: string): Promise<Sour
   const r = await db.from("source_links").select(SOURCE_LINK_COLUMNS).eq("workspace_id", workspaceId).order("created_at").order("id");
   // The check constraint limits kind to SourceLinkRow's union.
   return rows(r) as unknown as SourceLinkRow[];
+}
+
+/**
+ * What a source can be linked to (issue #118): the processes, the steps of each one's live version (its draft if it was
+ * never published), and the issues, insights and solutions, as the pickers list them. An insight here is a detection the
+ * team has acted on (an issue with a detection key); a dismissed one is left out. RLS decides what is visible.
+ */
+export async function loadLinkTargets(db: Db, workspaceId: string): Promise<LinkTargets> {
+  const processes = await listProcesses(db, workspaceId);
+  const revisions = processes.flatMap((p) => {
+    const id = p.live_revision_id ?? p.draft_revision_id;
+    return id ? [id] : [];
+  });
+  const [steps, issues, solutions] = await Promise.all([
+    revisions.length ? db.from("steps").select("id, name, process_id, replaced_by").in("revision_id", revisions).order("created_at").order("id") : Promise.resolve({ data: [], error: null }),
+    db.from("issues").select("id, number, title, status, detected_key").eq("workspace_id", workspaceId).order("created_at", { ascending: false }).order("id"),
+    db.from("solutions").select("id, name").eq("workspace_id", workspaceId).order("created_at", { ascending: false }).order("id"),
+  ]);
+  const seen = new Set<string>();
+  const live = rows(issues).filter((i) => i.status !== "dismissed");
+  return {
+    processes: processes.map((p) => ({ id: p.id, name: p.name })),
+    steps: rows(steps).flatMap((s) => (s.replaced_by.length === 0 && !seen.has(s.id) && seen.add(s.id) ? [{ id: s.id, processId: s.process_id, name: s.name }] : [])),
+    insights: live.flatMap((i) => (i.detected_key ? [{ key: i.detected_key, title: i.title }] : [])),
+    issues: live.map((i) => ({ id: i.id, number: i.number, title: i.title })),
+    solutions: rows(solutions).map((s) => ({ id: s.id, name: s.name })),
+  };
 }
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];

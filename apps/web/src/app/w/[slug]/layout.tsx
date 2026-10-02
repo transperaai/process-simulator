@@ -26,7 +26,7 @@ export default async function WorkspaceLayout(props: LayoutProps<"/w/[slug]">) {
       workspaceName={workspace.name}
       workspaces={workspaces.map((w) => ({ name: w.name, href: `/w/${w.slug}` }))}
       canManage={canManage}
-      counts={{ processes: shell.processes, openIssues: shell.openIssues, pendingSuggestions }}
+      counts={{ processes: shell.processes, openIssues: shell.openIssues, pendingSuggestions, unlinkedSources: shell.unlinkedSources }}
       viewer={viewer ? { name: viewer.name, email: viewer.email } : null}
     >
       {props.children}

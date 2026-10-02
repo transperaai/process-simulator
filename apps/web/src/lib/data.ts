@@ -20,9 +20,13 @@ import {
   loadProcessBySlug,
   loadScenarios,
   loadSources,
+  loadSourceLinks,
+  loadLinkTargets,
   loadCitingRows,
   citationsBySource,
+  type LinkTargets,
   type SourceCitation,
+  type SourceLinkRow,
   type SourceRow,
   SEASONALITY_COLUMNS,
   SERVICE_COLUMNS,
@@ -78,13 +82,24 @@ export async function loadWorkspaceSources(workspaceId: string): Promise<SourceR
 /** The Sources page: the workspace, its sources, and every value citing each one (issue #21). */
 export async function loadSourcesPage(
   slug: string,
-): Promise<{ workspace: Pick<WorkspaceRow, "id" | "name" | "slug">; sources: SourceRow[]; citations: Record<string, SourceCitation[]> } | null> {
+): Promise<{
+  workspace: Pick<WorkspaceRow, "id" | "name" | "slug">;
+  sources: SourceRow[];
+  citations: Record<string, SourceCitation[]>;
+  links: SourceLinkRow[];
+  targets: LinkTargets;
+} | null> {
   const supabase = await createClient();
   const { data: workspace, error } = await supabase.from("workspaces").select("id, name, slug").eq("slug", slug).maybeSingle();
   if (error) throw error;
   if (!workspace) return null;
-  const [sources, rows] = await Promise.all([loadSources(supabase, workspace.id), loadCitingRows(supabase, workspace.id)]);
-  return { workspace, sources, citations: Object.fromEntries(citationsBySource(rows)) };
+  const [sources, rows, links, targets] = await Promise.all([
+    loadSources(supabase, workspace.id),
+    loadCitingRows(supabase, workspace.id),
+    loadSourceLinks(supabase, workspace.id),
+    loadLinkTargets(supabase, workspace.id),
+  ]);
+  return { workspace, sources, citations: Object.fromEntries(citationsBySource(rows)), links, targets };
 }
 
 /** The workspace's first process at its live revision, or null if not visible. */

@@ -69,8 +69,8 @@ export const ISSUE_PAGE_HELP = {
   },
   ideas: {
     label: "AI ideas",
-    description: "Fixes the AI suggests for this issue, made from your block library. They are not built or simulated until you press Build it.",
-    example: "“Score leads before the discovery call”, from the Lead scoring block.",
+    description: "Fixes the AI suggests for this issue, as the steps it would place. They are not built or simulated until you press Build it, which opens the Editor with the steps placed. Dismiss throws one away.",
+    example: "“Score leads before the discovery call”: a map of three new steps, ready to build.",
   },
   history: {
     label: "History",

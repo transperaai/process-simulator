@@ -126,7 +126,7 @@ export function demoProposals(): ProposalRow[] {
       detail: "Partner leads convert twice as well as website leads. Let them skip the fit check and go straight to booking a call.",
       payload: {
         steps: [
-          { key: "s1", name: "Partner lead arrives", kind: "start" },
+          { key: "s1", name: "Partner lead arrives", kind: "task" },
           { key: "s2", name: "Book discovery call", role: "Sales" },
           { key: "s3", name: "Quick check by AI", ai: true },
         ],

@@ -59,6 +59,8 @@ export interface IssuePageProps {
   /** The signed-in person's id, so their entries in the history say "You". */
   viewerId?: string | null;
   liveRevisions?: Record<string, string>;
+  /** The "AI ideas" section's content (A52): the ideas waiting for this issue, each with Build it and Dismiss. Without it the section says there are none. */
+  ideas?: ReactNode;
   /** The workspace's solutions and which issues they solve (the demo keeps its own in this tab). */
   solutions?: SolutionsData;
   /** Member names by user id (the person linked to each membership), so the history says who by name. */
@@ -261,9 +263,11 @@ export function IssuePage(props: IssuePageProps) {
               </h2>
               <p className="text-sm text-muted-foreground">Proposed by AI, not built or simulated yet.</p>
             </div>
-            <Card className="px-4 py-6 text-sm text-muted-foreground" data-empty="ideas">
-              No AI ideas yet. They will appear here once suggestions can propose fixes for an issue.
-            </Card>
+            {props.ideas ?? (
+              <Card className="px-4 py-6 text-sm text-muted-foreground" data-empty="ideas">
+                No AI ideas for this issue yet.
+              </Card>
+            )}
           </section>
 
           <section className="flex flex-col gap-2" data-section="history">

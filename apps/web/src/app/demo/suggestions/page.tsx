@@ -12,7 +12,7 @@ export default function DemoSuggestionsPage() {
   const lookups: ProposalLookups = {
     processes: { [bundle.process.id]: bundle.process.name },
     steps: Object.fromEntries(bundle.steps.map((s) => [s.id, s.name])),
-    issues: Object.fromEntries(northbeamIssues().map((i) => [i.id, { number: i.number, title: i.title }])),
+    issues: Object.fromEntries(northbeamIssues().map((i) => [i.id, { number: i.number, title: i.title, processId: i.process_id }])),
   };
   const sample = northbeamIssues().length;
   return (
@@ -21,7 +21,7 @@ export default function DemoSuggestionsPage() {
       eyebrow="Improve"
       description="Demo mode: everything AI proposes waits here, and nothing reaches the map, issues, solutions or settings until you act on it. Accept or reject proposals one by one, or review the changes to the company model in bulk. Everything stays in this tab and is gone when you reload."
     >
-      <DemoProposals lookups={lookups} issueBase="/demo/issues" linkableUpTo={sample}>
+      <DemoProposals lookups={lookups} base="/demo" linkableUpTo={sample}>
         <DemoSuggestions sources={sources} sourcesHref="/demo/sources" />
       </DemoProposals>
     </Page>

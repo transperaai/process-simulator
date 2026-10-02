@@ -5,6 +5,7 @@ import { useMemo, useState, useTransition, type ReactNode } from "react";
 import type { ProposalRow } from "@transpera-flow/db";
 import { reviewProposals } from "@/app/w/[slug]/suggestion-actions";
 import { Help } from "@/components/help";
+import { IdeaCard, IdeaLegend } from "@/components/idea-card";
 import { Button } from "@/components/ui/button";
 import { demoProposalBackend, useDemoCompany } from "@/lib/demo/company-store";
 import {
@@ -16,8 +17,8 @@ import {
   type ProposalOutcome,
 } from "@/lib/suggestions/proposals";
 
-// The proposals half of the Suggestions page (A52, docs/PRD.md §7.1c, §8 screen 8): solution ideas (read, and dismiss
-// for now; Build it is slice 2) and proposed issues (accept adds the issue through the Acknowledge path, reject drops
+// The proposals half of the Suggestions page (A52, docs/PRD.md §7.1c, §8 screen 8): solution ideas (a map of the proposed
+// steps, Build it and Dismiss) and proposed issues (accept adds the issue through the Acknowledge path, reject drops
 // it). The company-model changes are the existing list, passed in as `children` so both halves sit in one layout.
 
 interface ViewProps {
@@ -25,8 +26,8 @@ interface ViewProps {
   lookups: ProposalLookups;
   canEdit: boolean;
   review: (ids: string[], decision: ProposalDecision, note: string | null) => Promise<ProposalOutcome>;
-  /** Where issues live ("/w/acme/issues"); an issue's page is `<issueBase>/<number>`. */
-  issueBase: string;
+  /** Where the workspace's pages live: `/w/<slug>` or `/demo`. An issue's page is `<base>/issues/<number>`; Build it opens `<base>`'s Editor. */
+  base: string;
   /** The highest issue number that has a page. The demo's new issues stay in the tab, so past the sample ones there is none. */
   linkableUpTo?: number;
   children?: ReactNode;
@@ -63,8 +64,8 @@ function SectionHead({ id, title, help, children }: { id: string; title: string;
   );
 }
 
-export function ProposalsView({ proposals, lookups, canEdit, review, issueBase, linkableUpTo = Infinity, children }: ViewProps) {
-  const issueHref = (n: number) => (n <= linkableUpTo ? `${issueBase}/${n}` : null);
+export function ProposalsView({ proposals, lookups, canEdit, review, base, linkableUpTo = Infinity, children }: ViewProps) {
+  const issueHref = (n: number) => (n <= linkableUpTo ? `${base}/issues/${n}` : null);
   const [message, setMessage] = useState<{ text: string; tone: "ok" | "error"; href?: string } | null>(null);
   const [pending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -109,32 +110,20 @@ export function ProposalsView({ proposals, lookups, canEdit, review, issueBase, 
 
       <section aria-labelledby="ideas-heading" data-section="ideas">
         <SectionHead id="ideas-heading" title="Solution ideas" help={SUGGESTIONS_HELP.ideas}>
-          Not built and not simulated. For now you can read each idea and dismiss the ones you don&apos;t want; building one in the Editor comes next.
+          Not built and not simulated. Build one to open the Editor with the AI&apos;s steps already placed; saving it turns it into a real solution.
         </SectionHead>
         {ideas.length ? (
           <ul className="flex flex-col gap-3">
             {ideas.map((p) => (
               <li key={p.id}>
-                <ProposalCard p={p} lookups={lookups} issueHref={issueHref}>
-                  {canEdit && (
-                    <Button variant="outline" size="sm" type="button" disabled={pending} onClick={() => run(p.id, "reject")} aria-busy={busyId === p.id}>
-                      Dismiss
-                    </Button>
-                  )}
-                </ProposalCard>
+                <IdeaCard p={p} lookups={lookups} base={base} from={`${base}/suggestions`} canEdit={canEdit} busy={pending} onDismiss={() => run(p.id, "reject")} linkableUpTo={linkableUpTo} />
               </li>
             ))}
           </ul>
         ) : (
           <p className="rounded-lg border border-dashed border-line p-4 text-fg-2">No ideas waiting.</p>
         )}
-        {ideas.length > 0 && canEdit && (
-          <p className="mt-2 flex items-center text-xs text-fg-2">
-            <b className="font-medium text-fg">Dismiss</b>
-            <Help {...SUGGESTIONS_HELP.dismiss} />
-            <span className="ml-1">throws an idea away.</span>
-          </p>
-        )}
+        {ideas.length > 0 && canEdit && <IdeaLegend />}
       </section>
 
       <section aria-labelledby="other-heading" data-section="other">

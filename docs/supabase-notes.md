@@ -169,3 +169,15 @@ Checked on plain Postgres 16 with the auth shim (`packages/db/test/issue-resolut
 - `issue_events.detail` is written only by triggers, so how an issue was resolved and the note are two nullable columns on `issues` (`resolved_how`, `resolution_note`). `private.log_issue_change` copies them into the `resolved` entry's detail, so the history keeps them after a reopen clears the columns (the before-write trigger `issues_resolved_how` clears them whenever the status is not `done`).
 - `public.resolve_issue` is `security invoker` and takes the workspace, the issue id, the way, a note and a status (`resolved` or `wont_fix`). Reopening is the existing `save_issue` with status `open`. Over PostgREST a call with named arguments resolves by name; the tests call it with all five positionally.
 - The new trigger name (`issues_resolved_how`) sorts after `issues_number`; Postgres fires triggers in name order, as for A47's triggers.
+
+## Solutions (A49, migration 20261122000000)
+
+Verified only against plain Postgres, with Supabase's default table privileges emulated (`alter default privileges ... grant all on tables to anon, authenticated, service_role`, in `packages/db/test/solutions-privileges.test.ts`). On Supabase every new public table starts with full privileges for those roles, so the migration revokes all from `anon, authenticated` before granting back `select, insert, delete` and column-level `update` (`name, notes` on solutions; `user_verdict, user_notes` on solution_issues). A column grant restricts nothing while the table-level UPDATE remains.
+
+After applying, check on the real project:
+
+```sql
+select grantee, privilege_type from information_schema.role_table_grants where table_schema = 'public' and table_name in ('solutions', 'solution_issues') order by 1, 2;
+```
+
+`authenticated` must show DELETE, INSERT and SELECT only (no UPDATE), and `anon` nothing. The two before-insert triggers are security invoker and use `auth.uid()`; they skip the can-edit check only when it is null (a plain database connection), which was exercised here with the auth shim, not Supabase's `auth.uid()`.

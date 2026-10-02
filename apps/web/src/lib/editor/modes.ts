@@ -1,8 +1,8 @@
 // The Editor's three modes (issue #104): one screen, with the hint under the title and the save buttons depending on
-// what is being edited. `draft` and `block` (A51) are built; `solution` (A49) plugs into the same screen: it
-// fills in `available` and its save handler when it lands.
+// what is being edited. `draft`, `block` (A51) and `solution` (A49) are all built: the draft is the process's single draft,
+// and a block or a solution edits a copy in memory that is saved on its own, never into the draft (D18).
 
-import { isHorizonMonths } from "@/lib/horizon";
+import { horizonWeeks, isHorizonMonths } from "@/lib/horizon";
 
 export const EDITOR_MODES = ["draft", "solution", "block"] as const;
 export type EditorMode = (typeof EDITOR_MODES)[number];
@@ -31,11 +31,10 @@ export const MODE_INFO: Record<EditorMode, ModeInfo> = {
     available: true,
   },
   solution: {
-    title: (subject) => `Solution for ${subject}`,
-    hint: "Change the steps, simulate, then save. Solutions are saved on their own and never change the live map.",
+    title: (subject) => `New solution · ${subject}`,
+    hint: "Change the steps, simulate, then save. You can link the solution to issues afterwards. Solutions never change the live map.",
     save: [{ id: "save-solution", label: "Save solution", primary: true }],
-    available: false,
-    arrivesWith: "Solutions",
+    available: true,
   },
   block: {
     title: () => "New block",
@@ -44,6 +43,18 @@ export const MODE_INFO: Record<EditorMode, ModeInfo> = {
     available: true,
   },
 };
+
+/** Solution mode built for an issue (A49): the title names the issue, and the hint says what the red outline is. */
+export const SOLUTION_FOR_ISSUE = {
+  title: (issue: { number: number | null; title: string }) => `Solution for ${issue.number == null ? "issue" : `#${issue.number}`} · ${issue.title}`,
+  hint: "The red outline is the area this issue touches. Select a step or group, then replace it with a block or edit it. Solutions are saved on their own and never change the live map.",
+};
+
+/** The issue a `?issue=` names, if it looks like an id. */
+export function parseIssueParam(value: string | string[] | undefined): string | null {
+  const v = Array.isArray(value) ? value[0] : value;
+  return v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v : null;
+}
 
 /** The months a `?horizon=` names (the map's picker, carried into the Editor), or null for the model's own horizon. */
 export function parseHorizon(value: string | string[] | undefined): number | null {
@@ -82,3 +93,9 @@ export function exitHref(from: string | string[] | undefined, fallback: string):
 
 /** `/demo/edit` and `/w/<workspace>/p/<process>/edit`: the pages that are the Editor, which show no sidebar. */
 export const isEditorPath = (path: string | null): boolean => !!path && /^\/(demo|w\/[^/]+\/p\/[^/]+)\/edit\/?$/.test(path);
+
+/**
+ * The horizon the Editor simulates at, in weeks, or null for the model's own. A solution is always simulated at the model's own, as the
+ * server checks it when it is saved, so the footer's verdict matches the stored one; the map's picked horizon applies to drafts and blocks.
+ */
+export const editorHorizonWeeks = (mode: EditorMode, months: number | null): number | null => (mode === "solution" || months === null ? null : horizonWeeks(months));

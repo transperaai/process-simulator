@@ -12,7 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { BreaksWarning } from "@/components/draft-panels";
 import type { DraftSession, DraftState } from "@/lib/drafts/session";
-import { MODE_INFO, type EditorMode } from "@/lib/editor/modes";
+import { MODE_INFO, SOLUTION_FOR_ISSUE, type EditorMode } from "@/lib/editor/modes";
+import type { SolutionIssue } from "@/lib/solutions/area";
 import type { BreakingScenario } from "@/lib/scenarios/broken";
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -27,6 +28,16 @@ export interface BlockForm {
   description: string;
   onName: (value: string) => void;
   onDescription: (value: string) => void;
+  onSave: () => void;
+  saving: boolean;
+  /** What went wrong with the last save, in plain English. */
+  error: string | null;
+}
+
+/** Solution mode's form: the name the solution is saved with, and the save itself. */
+export interface SolutionForm {
+  name: string;
+  onName: (value: string) => void;
   onSave: () => void;
   saving: boolean;
   /** What went wrong with the last save, in plain English. */
@@ -50,6 +61,8 @@ export function EditorBar({
   onPublished,
   canSave,
   blockForm,
+  solutionForm,
+  issue = null,
 }: {
   mode: EditorMode;
   /** What is being edited: the process's name. */
@@ -77,6 +90,10 @@ export function EditorBar({
   canSave: boolean;
   /** Block mode only: the form the block is saved from. */
   blockForm?: BlockForm;
+  /** Solution mode only: the form the solution is saved from. */
+  solutionForm?: SolutionForm;
+  /** Solution mode only: the issue the solution is built for, if any. */
+  issue?: SolutionIssue | null;
 }) {
   const info = MODE_INFO[mode];
   const router = useRouter();
@@ -96,7 +113,7 @@ export function EditorBar({
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 bg-edit px-4 py-2.5 text-edit-fg">
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
           <span className="rounded border-[1.5px] border-current px-1.5 py-px font-mono text-[11px] font-semibold tracking-widest uppercase">✎ Editor</span>
-          <h1 className="min-w-0 truncate text-[17px] font-bold">{info.title(subject)}</h1>
+          <h1 className="min-w-0 truncate text-[17px] font-bold">{mode === "solution" && issue ? SOLUTION_FOR_ISSUE.title(issue) : info.title(subject)}</h1>
           {mode === "draft" && (
             <span className="rounded-full bg-edit-fg/15 px-2 py-0.5 text-xs font-semibold" aria-live="polite">
               {unpublished ? "Not published yet" : hasDraft ? `Draft version ${draftNumber} · live is version ${liveNumber}` : `New draft (version ${draftNumber}) · live is version ${liveNumber}`}
@@ -104,7 +121,7 @@ export function EditorBar({
             </span>
           )}
           <span className="text-xs opacity-90" aria-live="polite">
-            {mode === "block" ? "Nothing is saved until you press Save to library" : saving ? "Saving…" : hasDraft ? "All changes saved to the draft" : "Nothing changed yet"}
+            {mode === "block" ? "Nothing is saved until you press Save to library" : mode === "solution" ? "Nothing is saved until you press Save solution" : saving ? "Saving…" : hasDraft ? "All changes saved to the draft" : "Nothing changed yet"}
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -158,6 +175,13 @@ export function EditorBar({
                 </Button>
               );
             }
+            if (s.id === "save-solution" && solutionForm) {
+              return (
+                <Button key={s.id} type="button" variant="outline" size="sm" className={cls} disabled={!canSave || solutionForm.saving} onClick={solutionForm.onSave}>
+                  {solutionForm.saving ? "Saving…" : s.label}
+                </Button>
+              );
+            }
             if (s.id === "save-block" && blockForm) {
               return (
                 <Button key={s.id} type="button" variant="outline" size="sm" className={cls} disabled={!canSave || blockForm.saving} onClick={blockForm.onSave}>
@@ -176,6 +200,14 @@ export function EditorBar({
               label="Save to library"
               description="Saves everything on this map as a block in the library, under the name and description below. You can then insert it into any process, and the map here is left as it is."
               example="Name it “Client sign-off”, press Save to library, and it shows up on the Block library page."
+              className="border-edit-fg bg-transparent text-edit-fg hover:bg-edit-fg hover:text-edit focus-visible:bg-edit-fg focus-visible:text-edit"
+            />
+          )}
+          {mode === "solution" && (
+            <Help
+              label="Save solution"
+              description="Saves your changes as a solution of its own, under the name below, and works out its automatic verdict. Live and the draft are left exactly as they are."
+              example="Name it “AI lead qualifier”, press Save solution, and it shows under Solutions on the process page."
               className="border-edit-fg bg-transparent text-edit-fg hover:bg-edit-fg hover:text-edit focus-visible:bg-edit-fg focus-visible:text-edit"
             />
           )}
@@ -200,7 +232,7 @@ export function EditorBar({
         </div>
       </div>
       <p className="border-b border-line bg-edit-soft px-4 py-1.5 text-[12.5px]" role="note">
-        {info.hint}
+        {mode === "solution" && issue ? SOLUTION_FOR_ISSUE.hint : info.hint}
         {drafts.notice && (
           <span role="status" className="ml-2 font-semibold">
             {drafts.notice}{" "}
@@ -245,6 +277,27 @@ export function EditorBar({
           {blockForm.error && (
             <p role="alert" className="text-xs font-semibold text-crit">
               {blockForm.error}
+            </p>
+          )}
+        </div>
+      )}
+
+      {mode === "solution" && solutionForm && (
+        <div className="flex flex-wrap items-end gap-x-4 gap-y-2 border-b border-line bg-panel px-4 py-2" data-solution-form>
+          <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs font-semibold sm:max-w-md">
+            <span className="flex items-center">
+              Solution name
+              <Help
+                label="Solution name"
+                description="What this solution is called on the Solutions list and on the issue it solves. Pick something that says what changes."
+                example="“AI lead qualifier” or “Invoice on go-live”."
+              />
+            </span>
+            <Input value={solutionForm.name} maxLength={200} placeholder="Solution name" onChange={(e) => solutionForm.onName(e.target.value)} />
+          </label>
+          {solutionForm.error && (
+            <p role="alert" className="text-xs font-semibold text-crit">
+              {solutionForm.error}
             </p>
           )}
         </div>

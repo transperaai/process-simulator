@@ -2224,6 +2224,130 @@ export type Database = {
           },
         ]
       }
+      solution_issues: {
+        Row: {
+          auto_note: string
+          auto_verdict: string | null
+          created_at: string
+          created_by: string | null
+          holds_pct: number | null
+          issue_id: string
+          solution_id: string
+          updated_at: string
+          user_notes: string
+          user_verdict: string | null
+          workspace_id: string
+        }
+        Insert: {
+          auto_note?: string
+          auto_verdict?: string | null
+          created_at?: string
+          created_by?: string | null
+          holds_pct?: number | null
+          issue_id: string
+          solution_id: string
+          updated_at?: string
+          user_notes?: string
+          user_verdict?: string | null
+          workspace_id: string
+        }
+        Update: {
+          auto_note?: string
+          auto_verdict?: string | null
+          created_at?: string
+          created_by?: string | null
+          holds_pct?: number | null
+          issue_id?: string
+          solution_id?: string
+          updated_at?: string
+          user_notes?: string
+          user_verdict?: string | null
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "solution_issues_issue_id_workspace_id_fkey"
+            columns: ["issue_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "issues"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "solution_issues_solution_id_workspace_id_fkey"
+            columns: ["solution_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "solutions"
+            referencedColumns: ["id", "workspace_id"]
+          },
+        ]
+      }
+      solutions: {
+        Row: {
+          base_revision_id: string
+          changed_step_ids: Json
+          created_at: string
+          created_by: string | null
+          id: string
+          lever_changes: Json
+          name: string
+          notes: string
+          process_id: string
+          steps: Json
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          base_revision_id: string
+          changed_step_ids?: Json
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          lever_changes?: Json
+          name: string
+          notes?: string
+          process_id: string
+          steps: Json
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          base_revision_id?: string
+          changed_step_ids?: Json
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          lever_changes?: Json
+          name?: string
+          notes?: string
+          process_id?: string
+          steps?: Json
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "solutions_base_revision_id_process_id_workspace_id_fkey"
+            columns: ["base_revision_id", "process_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "process_revisions"
+            referencedColumns: ["id", "process_id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "solutions_process_id_workspace_id_fkey"
+            columns: ["process_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "solutions_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sources: {
         Row: {
           body: string | null
@@ -2729,6 +2853,19 @@ export type Database = {
           next: Json
           owner: Json
           target: string
+        }
+        Returns: Json
+      }
+      save_solution: {
+        Args: {
+          p_base_revision: string
+          p_changed?: Json
+          p_levers?: Json
+          p_links?: Json
+          p_name: string
+          p_process: string
+          p_steps: Json
+          p_workspace: string
         }
         Returns: Json
       }

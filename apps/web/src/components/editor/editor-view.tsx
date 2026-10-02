@@ -5,12 +5,14 @@
 // after Simulate. Edits go to the process's single draft (D18); Publish makes it the next live version.
 //
 // The mode is a parameter (`draft`, `solution`, `block`): the hint and the save buttons change with it. Draft mode is
-// built here, and block mode (issue #116: an empty map saved to the block library, nothing of the process touched);
-// solutions (A49) plug into the same screen.
+// built here, block mode (issue #116: an empty map saved to the block library, nothing of the process touched) and solution
+// mode (issue #114: a copy of live, edited in memory and saved as a solution of its own; the process's live version and its
+// single draft are never touched, D18).
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { BlockRow, ProcessBundle, ScenarioRow, SourceRow } from "@transpera-flow/db";
+import { isUnpublished, type BlockRow, type ProcessBundle, type ScenarioRow, type SourceRow } from "@transpera-flow/db";
+import { createSolution } from "@/app/w/[slug]/solution-actions";
 import { blockFromSteps } from "@/lib/blocks/blocks";
 import { parseBlockInput } from "@/lib/blocks/save";
 import { newStepRow } from "@/lib/editor/commands";
@@ -19,19 +21,25 @@ import { EMPTY_DIFF, diffBundles, publishableChanges, unresolvedSteps } from "@/
 import { useDraftSession } from "@/lib/drafts/use-draft-session";
 import { namesOf } from "@/lib/editor/describe";
 import type { Table } from "@/lib/editor/ops";
-import { horizonWeeks } from "@/lib/horizon";
-import { MODE_INFO, type EditorMode } from "@/lib/editor/modes";
+import { MODE_INFO, editorHorizonWeeks, type EditorMode } from "@/lib/editor/modes";
 import { connect, connectScratch } from "@/lib/realtime/connect";
 import type { Viewer } from "@/lib/realtime/transport";
 import { useRealtime } from "@/lib/realtime/use-realtime";
 import { newlyBroken, retiredSteps } from "@/lib/scenarios/broken";
 import { useSimulation } from "@/lib/sim/use-simulation";
 import type { EngineModel } from "@transpera-flow/engine";
+import { currentArea, verdictArea, type SolutionIssue } from "@/lib/solutions/area";
+import { changedStepIds, solutionCopy } from "@/lib/solutions/bundle";
+import { addDemoSolution } from "@/lib/solutions/demo";
+import { parseSolutionInput, type SaveSolutionResult } from "@/lib/solutions/save";
+import type { TargetVerdict } from "@/lib/solutions/verdict";
+import { verdictInWorker } from "@/lib/solutions/verdict-client";
 import { Button } from "@/components/ui/button";
 import { NO_SELECTION, ProcessCanvas, type Selection } from "@/components/process-canvas";
 import { PresenceBar } from "@/components/presence-bar";
 import { SaveProblems, useEngineModel, type EditMode } from "@/components/process-view";
-import { EditorBar, type BlockForm } from "./editor-bar";
+import { EditorBar, type BlockForm, type SolutionForm } from "./editor-bar";
+import { IssueArea } from "./issue-area";
 import { Inspector } from "./inspector";
 import { Palette } from "./palette";
 import { SimulateFooter, type SimulatedPair } from "./simulate-footer";
@@ -60,6 +68,7 @@ export function EditorView({
   exitHref,
   horizonMonths = null,
   extraChanges = 0,
+  issue = null,
 }: {
   live: ProcessBundle;
   draft: ProcessBundle | null;
@@ -82,26 +91,33 @@ export function EditorView({
   horizonMonths?: number | null;
   /** Changes the draft has that aren't steps or edges (its first principles differ from live's), which Publish counts too. */
   extraChanges?: number;
+  /** Solution mode: the issue the solution is built for, whose steps are outlined and whose target the verdict is checked against. */
+  issue?: SolutionIssue | null;
 }) {
   const router = useRouter();
   const stamp = useCallback(() => ({ at: new Date().toISOString(), by: userId }), [userId]);
   const blockMode = editorMode === "block";
-  // Block mode edits a map of its own, in memory: never the process's live version or its draft.
+  const solutionMode = editorMode === "solution";
+  // Block and solution modes edit a map of their own, in memory: never the process's live version or its draft. A block
+  // starts empty; a solution starts as a copy of live.
+  const scratch = blockMode || solutionMode;
   const [seed] = useState(() => (blockMode ? blockScratch(initialLive) : initialLive));
-  const [connection] = useState(() => (blockMode ? connectScratch(seed) : connect(mode, seed)));
-  const [session, drafts, state] = useDraftSession(seed, blockMode ? null : initialDraft, () => connection.backend, () => ({ at: new Date().toISOString(), by: userId }));
+  const [connection] = useState(() => (scratch ? connectScratch(seed) : connect(mode, seed)));
+  const [session, drafts, state] = useDraftSession(seed, scratch ? null : initialDraft, () => connection.backend, () => ({ at: new Date().toISOString(), by: userId }));
   const editor = session.editor;
   const info = MODE_INFO[editorMode];
-  const hasDraft = !blockMode && (drafts.draft !== null || drafts.opening);
+  const hasDraft = !scratch && (drafts.draft !== null || drafts.opening);
+  // What the map marks as new or changed: against the draft's live version, or the solution's copy of it.
+  const marksChanges = hasDraft || solutionMode;
   const live = drafts.live;
   const working = state.bundle;
   const [selection, setSelection] = useState<Selection>(NO_SELECTION);
   const me = viewer ?? (mode === "demo" ? DEMO_VIEWER : null);
   const [sync, realtime] = useRealtime(session, connection.transport, me, "draft");
 
-  const diff = useMemo(() => (hasDraft ? diffBundles(live, working) : EMPTY_DIFF), [hasDraft, live, working]);
+  const diff = useMemo(() => (marksChanges ? diffBundles(live, working) : EMPTY_DIFF), [marksChanges, live, working]);
   const names = useMemo(() => namesOf(working, live), [working, live]);
-  const weeks = horizonMonths === null ? null : horizonWeeks(horizonMonths);
+  const weeks = editorHorizonWeeks(editorMode, horizonMonths);
   const workingModel = useEngineModel(working, weeks);
   const liveModel = useEngineModel(live, weeks);
   const unresolved = useMemo(() => unresolvedSteps(working), [working]);
@@ -145,6 +161,56 @@ export function EditorView({
   const blockForm: BlockForm | undefined = blockMode
     ? { name: blockName, description: blockDescription, onName: setBlockName, onDescription: setBlockDescription, onSave: saveToLibrary, saving: blockSaving, error: blockError }
     : undefined;
+
+  // Solution mode: what the solution is called, the automatic verdict against the issue's target, and saving. Nothing is
+  // written until then, and then only the solution's own rows: not live, not the draft.
+  const [solutionName, setSolutionName] = useState("");
+  const [solutionSaving, setSolutionSaving] = useState(false);
+  const [solutionError, setSolutionError] = useState<string | null>(null);
+  const added = useMemo(() => [...diff.steps.values()].filter((c) => c.kind === "added").map((c) => c.id), [diff]);
+  const outlined = useMemo(() => (solutionMode && issue ? currentArea(issue, working.steps, added) : null), [solutionMode, issue, working.steps, added]);
+  const area = useMemo(() => (issue ? verdictArea(working.steps, issue, added) : []), [issue, working.steps, added]);
+  const saveSolution = async () => {
+    setSolutionError(null);
+    if (!solutionName.trim()) return setSolutionError("Name the solution first.");
+    if (isUnpublished(live)) return setSolutionError("Publish the process first: a solution is a copy of its live version.");
+    await editor.settled();
+    const now = session.editor.getState().bundle;
+    const changes = diffBundles(live, now);
+    if (!changes.list.length) return setSolutionError("Change at least one step first. A solution with no changes has nothing to test.");
+    setSolutionSaving(true);
+    // The automatic verdict. In a workspace the server works it out again from the stored copy and ignores what is sent; the demo has no
+    // server, so it keeps the one worked out here, in a worker.
+    let auto: TargetVerdict | null = null;
+    if (issue && mode === "demo" && workingModel.model) {
+      const addedIds = changedStepIds(changes).filter((id) => changes.steps.get(id)?.kind === "added");
+      try {
+        auto = await verdictInWorker({ target: issue.target, model: workingModel.model, area: verdictArea(now.steps, issue, addedIds) }).promise;
+      } catch {
+        auto = null;
+      }
+    }
+    const input = {
+      name: solutionName,
+      processId: live.process.id,
+      baseRevisionId: live.revision.id,
+      copy: solutionCopy(now),
+      changedStepIds: changedStepIds(changes),
+      levers: [],
+      links: issue ? [{ issueId: issue.id, autoVerdict: auto && auto.status !== "unchecked" ? auto.status : null, holdsPct: auto?.holdsPct ?? null, autoNote: auto?.note ?? "" }] : [],
+    };
+    const checked = parseSolutionInput(input);
+    let result: SaveSolutionResult;
+    if (!checked.ok) result = { status: "error", message: checked.error };
+    else if (mode === "demo") result = { status: "ok", ...addDemoSolution(checked.value) };
+    else result = await createSolution(live.workspace.id, input);
+    setSolutionSaving(false);
+    if (result.status === "error") return setSolutionError(result.message);
+    router.push(exitHref);
+  };
+  const solutionForm: SolutionForm | undefined = solutionMode
+    ? { name: solutionName, onName: setSolutionName, onSave: saveSolution, saving: solutionSaving, error: solutionError }
+    : undefined;
   const restore = useCallback(
     (table: Table, id: string) => {
       editor.run((b) => discardChange(session.getState().live, b, table, id));
@@ -178,6 +244,21 @@ export function EditorView({
   // Stale: the draft, or the live model, is no longer what was simulated.
   const stale = !!asked && (asked.draftKey !== workingKey || asked.liveKey !== liveKey);
 
+  // Solution mode: the automatic verdict for the run on screen, against the issue's target.
+  const draftResult = draftSim.status === "done" ? draftSim.run.result : null;
+  const liveResult = liveSim.status === "done" ? liveSim.run.result : null;
+  const [verdictState, setVerdictState] = useState<{ key: string; result: TargetVerdict } | null>(null);
+  const verdictKey = solutionMode && issue && !stale && asked && draftResult && asked.live && liveResult ? `${asked.draftKey}|${area.join(",")}` : null;
+  useEffect(() => {
+    if (!verdictKey || !issue || !asked) return;
+    const job = verdictInWorker({ target: issue.target, model: asked.draft, area });
+    job.promise.then((result) => setVerdictState({ key: verdictKey, result })).catch(() => undefined);
+    return () => job.cancel();
+    // `asked` and `area` are what verdictKey is made of.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [verdictKey]);
+  const verdict = issue && verdictKey && verdictState?.key === verdictKey ? { issue, result: verdictState.result } : null;
+
   const breaks = useMemo(
     () =>
       hasDraft && liveModel.model && workingModel.model
@@ -200,7 +281,7 @@ export function EditorView({
   };
   const select = (id: string) => setSelection({ steps: [id], edges: [] });
 
-  // Solutions (A49) and blocks (A51) aren't built: until they are, nothing on this screen may touch the draft.
+  // A mode that isn't built: nothing on this screen may touch the draft.
   if (!info.available) {
     return (
       <div data-editor={editorMode} className="flex min-h-svh flex-col bg-bg text-fg">
@@ -244,19 +325,24 @@ export function EditorView({
         onPublished={() => mode !== "demo" && router.push(exitHref)}
         canSave={info.available}
         blockForm={blockForm}
+        solutionForm={solutionForm}
+        issue={solutionMode ? issue : null}
       />
       <div className="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-[264px_minmax(0,1fr)_320px] lg:grid-rows-[minmax(0,1fr)]">
         <aside aria-label="Palette" className="flex flex-col gap-4 border-b border-line bg-panel p-3.5 lg:overflow-y-auto lg:border-r lg:border-b-0">
           <Palette bundle={working} editor={editor} selected={selected} setSelection={setSelection} blocks={blockTools} />
+          {solutionMode && <IssueArea issue={issue} steps={[...live.steps, ...working.steps]} present={new Set(working.steps.map((s) => s.id))} onSelect={select} />}
           {mode === "demo" && (
             <p role="note" className="text-xs text-muted-foreground">
               {blockMode
                 ? "Demo: the block library lives in this tab only. Reloading starts the sample again."
-                : "Demo: your edits live in this tab only. Leaving the Editor or reloading starts the sample again."}
+                : solutionMode
+                  ? "Demo: solutions live in this tab only. Reloading starts the sample again."
+                  : "Demo: your edits live in this tab only. Leaving the Editor or reloading starts the sample again."}
             </p>
           )}
           <div className="mt-auto flex flex-col gap-2 empty:hidden">
-            {!blockMode && (
+            {!scratch && (
             <PresenceBar
               variant="compact"
               sync={sync}
@@ -273,10 +359,10 @@ export function EditorView({
           {(state.conflicts.length > 0 || state.error) && <SaveProblems editor={editor} bundle={working} conflicts={state.conflicts} error={state.error} sync={sync} />}
           {workingModel.error && !blockMode && (
             <p role="status" className="rounded-token border border-warn bg-warn-soft px-2 py-1.5 text-xs">
-              This draft can&apos;t be simulated yet: {workingModel.error}.
+              This {solutionMode ? "solution" : "draft"} can&apos;t be simulated yet: {workingModel.error}.
             </p>
           )}
-          <div className="flex min-h-0 flex-1">
+          <div className="flex min-h-0 flex-1" data-highlight-tone={solutionMode ? "issue" : undefined}>
             <ProcessCanvas
               bundle={working}
               result={!stale && pair?.draft.result ? pair.draft.result : null}
@@ -285,9 +371,10 @@ export function EditorView({
               selection={selected}
               onSelectionChange={setSelection}
               commands={commands}
-              diff={hasDraft ? diff : null}
+              diff={marksChanges ? diff : null}
+              highlight={outlined}
               onRestore={restore}
-              savedLabel={blockMode ? "Edited" : hasDraft ? "Saved to draft" : "Saved"}
+              savedLabel={scratch ? "Edited" : hasDraft ? "Saved to draft" : "Saved"}
               hideAdd
               // Nothing to play until Simulate has run.
               showPlayback={!stale && !!pair?.draft.result}
@@ -308,7 +395,7 @@ export function EditorView({
             mode={editorMode}
             blocks={blockTools}
             draft={
-              hasDraft
+              marksChanges
                 ? (step) => ({
                     change: diff.steps.get(step.id),
                     names,
@@ -328,6 +415,8 @@ export function EditorView({
         stale={stale}
         currency={working.workspace.settings.currency}
         liveNumber={live.revision.number}
+        solution={solutionMode}
+        verdict={verdict}
       />
       )}
     </div>

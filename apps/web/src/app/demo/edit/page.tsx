@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
-import { bundleForProcess } from "@transpera-flow/db";
+import { bundleForProcess, northbeamIssues } from "@transpera-flow/db";
 import { EditorView } from "@/components/editor/editor-view";
 import { withDemoGroups } from "@/lib/demo/nested";
-import { exitHref, parseEditorMode, parseHorizon } from "@/lib/editor/modes";
+import { exitHref, parseEditorMode, parseHorizon, parseIssueParam } from "@/lib/editor/modes";
+import { issueAboutProcess, solutionIssueOf } from "@/lib/solutions/area";
 import { demoBundle, demoSources } from "@/lib/sources/demo";
 
 /**
@@ -15,6 +16,9 @@ export default async function DemoEditPage(props: PageProps<"/demo/edit">) {
   const pipeline = nested === "1" ? withDemoGroups(demoBundle()) : demoBundle();
   const bundle = typeof process === "string" ? bundleForProcess(pipeline, process) : pipeline;
   if (!bundle) notFound();
+  const editorMode = parseEditorMode(search.mode);
+  const issueId = editorMode === "solution" ? parseIssueParam(search.issue) : null;
+  const issueRow = issueId ? northbeamIssues().find((i) => i.id === issueId) : undefined;
   const back = `/demo/p/${bundle.process.id}${nested === "1" ? "?nested=1" : ""}`;
   return (
     <EditorView
@@ -22,7 +26,8 @@ export default async function DemoEditPage(props: PageProps<"/demo/edit">) {
       live={bundle}
       draft={null}
       mode="demo"
-      editorMode={parseEditorMode(search.mode)}
+      editorMode={editorMode}
+      issue={issueRow && issueAboutProcess(issueRow, bundle.process.id) ? solutionIssueOf(issueRow, bundle.process.id, bundle.steps) : null}
       sources={demoSources()}
       sourcesHref="/demo/sources"
       exitHref={exitHref(search.from, back)}

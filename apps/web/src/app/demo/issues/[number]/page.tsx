@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { buildSolutionHref, solutionEditorHref } from "@/lib/solutions/links";
 import { bundleForProcess, northbeamIssues, processesOf } from "@transpera-flow/db";
 import { IssuePage } from "@/components/issues/issue-page";
 import { Page } from "@/components/shell/page";
@@ -25,7 +26,7 @@ export default async function DemoIssuePage(props: PageProps<"/demo/issues/[numb
         events={[]}
         mode="demo"
         base="/demo"
-        buildHref={`/demo/edit?mode=solution&issue=${issue.id}`}
+        buildHref={buildSolutionHref("/demo", issue, `${"/demo"}/issues/${issue.number}`) ?? solutionEditorHref("/demo", bundle.process.id, { issueId: issue.id })}
       />
     </Page>
   );

@@ -20,6 +20,8 @@ export interface TestDb {
 export interface TestDbOptions {
   /** Also load a stand-in for Supabase Realtime's publication and realtime.messages (./sql/realtime-shim.sql). */
   realtime?: boolean;
+  /** Give anon, authenticated and service_role full privileges on every table made from now on, as a Supabase project does. */
+  supabaseDefaultPrivileges?: boolean;
 }
 
 export async function createTestDb(options: TestDbOptions = {}): Promise<TestDb> {
@@ -35,6 +37,9 @@ export async function createTestDb(options: TestDbOptions = {}): Promise<TestDb>
   await client.connect();
 
   await client.query(readFileSync(dir("./sql/auth-shim.sql"), "utf8"));
+  if (options.supabaseDefaultPrivileges) {
+    await client.query("alter default privileges in schema public grant all on tables to anon, authenticated, service_role");
+  }
   if (options.realtime) await client.query(readFileSync(dir("./sql/realtime-shim.sql"), "utf8"));
   const migrations = readdirSync(dir("../supabase/migrations")).filter((f) => f.endsWith(".sql")).sort();
   for (const file of migrations) {

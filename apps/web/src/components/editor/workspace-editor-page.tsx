@@ -1,9 +1,10 @@
 import { notFound, redirect } from "next/navigation";
 import { EditorView } from "@/components/editor/editor-view";
 import { canEditWorkspace, currentViewer } from "@/lib/access-data";
-import { loadProcessForEditing, loadWorkspaceBlocks, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
+import { loadProcessForEditing, loadWorkspaceBlocks, loadWorkspaceIssues, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
 import { firstPrinciplesDraftChanged } from "@/lib/first-principles/data";
-import { exitHref, parseEditorMode, parseHorizon } from "@/lib/editor/modes";
+import { exitHref, parseEditorMode, parseHorizon, parseIssueParam } from "@/lib/editor/modes";
+import { issueAboutProcess, solutionIssueOf } from "@/lib/solutions/area";
 
 /**
  * The Editor for a process of the workspace (issue #104): `/w/[slug]/p/[processId]/edit`. Full screen, outside the
@@ -16,7 +17,7 @@ export async function WorkspaceEditorPage({
 }: {
   slug: string;
   processId: string;
-  searchParams: { mode?: string | string[]; from?: string | string[]; horizon?: string | string[] };
+  searchParams: { mode?: string | string[]; from?: string | string[]; horizon?: string | string[]; issue?: string | string[] };
 }) {
   const process = await loadProcessForEditing(slug, processId);
   if (!process) notFound();
@@ -31,6 +32,10 @@ export async function WorkspaceEditorPage({
     currentViewer(),
     firstPrinciplesDraftChanged(live.process.id, live.revision.id, draft?.revision.id ?? null),
   ]);
+  // Solution mode built for an issue (`?issue=`, A49): the issue's steps are outlined and its target is what the verdict checks.
+  const editorMode = parseEditorMode(searchParams.mode);
+  const issueId = editorMode === "solution" ? parseIssueParam(searchParams.issue) : null;
+  const issueRow = issueId ? (await loadWorkspaceIssues(live.workspace.id)).find((i) => i.id === issueId) : undefined;
   return (
     <EditorView
       key={live.process.id}
@@ -38,7 +43,8 @@ export async function WorkspaceEditorPage({
       draft={draft}
       mode="live"
       extraChanges={fpChanged ? 1 : 0}
-      editorMode={parseEditorMode(searchParams.mode)}
+      editorMode={editorMode}
+      issue={issueRow && issueAboutProcess(issueRow, live.process.id) ? solutionIssueOf(issueRow, live.process.id, live.steps) : null}
       scenarios={scenarios}
       blocks={blocks}
       sources={sources}

@@ -724,6 +724,48 @@ export interface BlockRow {
   updated_at: string;
 }
 
+/** How a solution did against an issue's target, or what the user decided. */
+export type SolutionVerdict = "pass" | "fail";
+
+/** A separate copy of a process with changed steps, plus optional lever changes (A49, D25). Never a draft: drafts stay single (D18). */
+export interface SolutionRow {
+  id: string;
+  workspace_id: string;
+  /** The process it changes. */
+  process_id: string;
+  /** The revision of that process the copy was made from. */
+  base_revision_id: string;
+  name: string;
+  notes: string;
+  /** The whole map as the solution has it (the same shape as a block's bundle). */
+  steps: BlockBundle;
+  /** Stable ids of the steps it added or changed against the base revision. */
+  changed_step_ids: string[];
+  /** Lever changes, as scenario patches. */
+  lever_changes: ScenarioPatch[];
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+}
+
+/** One issue a solution solves: the automatic verdict against the issue's target, and the user's own. */
+export interface SolutionIssueRow {
+  solution_id: string;
+  issue_id: string;
+  workspace_id: string;
+  /** Pass or fail from the simulation; null when the target couldn't be checked by it. */
+  auto_verdict: SolutionVerdict | null;
+  /** The share of simulated runs that meet the target, 0 to 100. */
+  holds_pct: number | null;
+  /** What it was checked against, in words. */
+  auto_note: string;
+  user_verdict: SolutionVerdict | null;
+  user_notes: string;
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+}
+
 /**
  * Open, Testing solutions, Resolved, Won't fix, as the app shows them; the database holds them as the older
  * `open`, `in_progress`, `done` plus a `resolution` (see issue-status.ts). And `dismissed`, which is not an issue a person sees: it is what an
@@ -965,6 +1007,9 @@ export type _SchemaDriftChecks = [
   Assert<Matches<SourceRow, "sources">>,
   // steps is jsonb; BlockBundle is its checked shape, and the check constraint limits type to BlockType.
   Assert<Matches<Omit<BlockRow, "steps" | "type">, "blocks">>,
+  // steps, changed_step_ids and lever_changes are jsonb; SolutionRow has their checked shapes. The verdicts are check-constrained.
+  Assert<Matches<Omit<SolutionRow, "steps" | "changed_step_ids" | "lever_changes">, "solutions">>,
+  Assert<Matches<Omit<SolutionIssueRow, "auto_verdict" | "user_verdict">, "solution_issues">>,
   // patch, evidence and applied are jsonb; the check constraints limit the text columns.
   Assert<Matches<Omit<SuggestionRow, "patch" | "evidence" | "applied">, "suggestions">>,
 ];

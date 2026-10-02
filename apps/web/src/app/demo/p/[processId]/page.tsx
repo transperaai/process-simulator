@@ -42,6 +42,7 @@ export default async function DemoProcessPage(props: PageProps<"/demo/p/[process
       rating={ratings[bundle.process.id] ?? null}
       editHref={`/demo/edit?process=${bundle.process.id}${nested === "1" ? "&nested=1" : ""}`}
       historyHref={`/demo/p/${bundle.process.id}/history`}
+      solutions={{ data: { solutions: [], links: [] }, base: "/demo" }}
       firstPrinciples={{ doc: null, href: `/demo/p/${bundle.process.id}/first-principles` }}
       // Written in advance: the demo never calls an AI. Only the pipeline has text.
       ai={{ view: earlier ? null : demoAiView(bundle.process.id), configured: true, hasFirstPrinciples: true, versionNumber: earlier ? earlier.revision.number : DEMO_LIVE_VERSION }}

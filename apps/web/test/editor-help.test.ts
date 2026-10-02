@@ -69,6 +69,8 @@ describe("every (i) on the Editor screen", () => {
     "components/editor/inspector.tsx",
     "components/editor/simulate-footer.tsx",
     "components/editor/editor-bar.tsx",
+    "components/editor/issue-area.tsx",
+    "components/solutions/process-solutions.tsx",
     "components/evidence.tsx",
     "components/blocks/block-library.tsx",
   ];
@@ -90,8 +92,10 @@ describe("every (i) on the Editor screen", () => {
     const expected: Record<string, string[]> = {
       "components/editor/inspector.tsx": ["Loose ends", "First principles", "First step", "Save this group as a block"],
       "components/editor/palette.tsx": ["Add", "Groups", "Blocks", "Insert", "Replace selected"],
-      "components/editor/editor-bar.tsx": ["Simulate", "Save to library", "Block name", "Description"],
-      "components/editor/simulate-footer.tsx": ["Compared with live"],
+      "components/editor/editor-bar.tsx": ["Simulate", "Save to library", "Save solution", "Block name", "Description", "Solution name"],
+      "components/editor/simulate-footer.tsx": ["Compared with live", "Automatic verdict"],
+      "components/editor/issue-area.tsx": ["Issue area"],
+      "components/solutions/process-solutions.tsx": ["New solution", "Build solution"],
     };
     for (const [file, labels] of Object.entries(expected)) {
       const tags = helpTags(read(file));
@@ -126,6 +130,29 @@ describe("every control of the block library (issue #116)", () => {
 
   it("uses plain words, not jargon, in the block (i)s", () => {
     for (const file of ["components/blocks/block-library.tsx", "components/editor/palette.tsx", "components/editor/inspector.tsx", "components/editor/editor-bar.tsx"]) {
+      for (const tag of helpTags(read(file))) expect(words(tag), words(tag)).not.toMatch(JARGON);
+    }
+  });
+});
+
+describe("every control of solution mode (issue #114)", () => {
+  it("has an (i) beside the name, the save, the issue area, the verdict and the ways in", () => {
+    const labels = (file: string) => helpTags(read(file)).map((t) => /label="([^"]+)"/.exec(t)?.[1]);
+    expect(labels("components/editor/editor-bar.tsx")).toEqual(expect.arrayContaining(["Solution name", "Save solution"]));
+    expect(labels("components/editor/issue-area.tsx")).toEqual(["Issue area"]);
+    expect(labels("components/editor/simulate-footer.tsx")).toContain("Automatic verdict");
+    expect(labels("components/solutions/process-solutions.tsx")).toEqual(["New solution", "Build solution"]);
+    expect(read("components/process-page.tsx")).toMatch(/label: "Solutions",\s+description: "[^"]{15,}",\s+example: "[^"]{8,}"/);
+  });
+
+  it("has a button for each thing those (i)s describe", () => {
+    expect(read("components/editor/editor-bar.tsx")).toContain("Save solution");
+    expect(read("components/solutions/process-solutions.tsx")).toContain("✎ New solution");
+    expect(read("components/solutions/process-solutions.tsx")).toContain("✎ Build solution");
+  });
+
+  it("uses plain words, not jargon, in the solution (i)s", () => {
+    for (const file of ["components/editor/issue-area.tsx", "components/solutions/process-solutions.tsx", "components/editor/simulate-footer.tsx", "components/editor/editor-bar.tsx"]) {
       for (const tag of helpTags(read(file))) expect(words(tag), words(tag)).not.toMatch(JARGON);
     }
   });

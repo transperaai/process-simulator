@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { buildSolutionHref, solutionEditorHref } from "@/lib/solutions/links";
 import { isUnpublished } from "@transpera-flow/db";
 import { IssuePage } from "@/components/issues/issue-page";
 import { Page } from "@/components/shell/page";
@@ -44,7 +45,7 @@ export default async function WorkspaceIssuePage(props: PageProps<"/w/[slug]/iss
         events={events}
         mode={canEdit ? "live" : "readonly"}
         base={base}
-        buildHref={`${base}/p/${bundle.process.id}/edit?mode=solution&issue=${issue.id}`}
+        buildHref={buildSolutionHref(base, issue, `${base}/issues/${issue.number}`) ?? solutionEditorHref(base, bundle.process.id, { issueId: issue.id })}
         viewerId={viewerId}
         liveRevisions={liveRevisions}
       />

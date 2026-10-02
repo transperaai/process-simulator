@@ -402,7 +402,8 @@ list_workspaces()
 set_active_workspace({workspace})
 get_workspace_summary()                        -> company model overview, processes, people, clients, KPIs of last baseline run
 
-add_source({kind, title, speakers?, recorded_at?, body?, file?})   -> source id for citing                    (new)
+add_source({kind, title, speakers?, recorded_at?, body?, file?, links})   -> source id for citing; links (process, step, insight, issue or solution) required, or link_later: true when the next call cites it   (new)
+link_source({source, links})                                                                     -> more links for an existing source                                                              (new)
 
 create_process({name, kind?: pipeline|servicing, entity_name, description?})
 add_step({process, name, after?, before?, role?, person?, work_hours?, work_dist?, work_params?, wait_hours?,

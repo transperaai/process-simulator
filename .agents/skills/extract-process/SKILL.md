@@ -21,6 +21,7 @@ Leading words, used throughout: **cited**, **assumed**, **ledger** (one line per
    - Done when you know the workspace, the hours per day, the roles you may use, new versus target, and the pending suggestions.
 2. **Add sources.**
    - One `add_source` per transcript: `{title: "<Company> interview: <Name>, <role> (<date>)", kind: "transcript", speakers: [every speaker label exactly as written, interviewer included], recorded_at: "YYYY-MM-DD", body: <the full unedited text>}`.
+   - Pass `link_later: true`: a source must be linked to something it is evidence for, and the `import_process` call links each transcript to the steps that cite it. (If the transcript is evidence for a process, issue or solution that already exists, pass `links` instead, for example `links: [{process: "Lead to live"}]`, and `link_source` adds more later.)
    - Keep `data.source.id`. Add each transcript once per conversation and reuse ids you already hold.
    - Done when every transcript has an id.
 3. **Build the ledger.** No tool calls in this step.

@@ -70,7 +70,7 @@ Tools: `list_workspaces`, `set_active_workspace`, `get_workspace_summary`,
 `partial`), `get_bottlenecks` (with the shadow price: extra completions per
 quarter from one more FTE in the top bottleneck role; see
 `packages/engine/src/shadow-price.ts`), `log_issue` and `list_issues`, and the
-process-building tools `add_source`, `create_process`, `add_step`,
+process-building tools `add_source` (it needs `links`, or `link_later: true` when the next call cites it), `link_source`, `create_process`, `add_step`,
 `update_step`, `remove_step`, `connect_steps`, `set_routing`, `import_process`,
 `publish_process`, `discard_draft`, `list_templates` and `create_from_template`, and the first-principles tools `get_first_principles`
 and `update_first_principles` (Claude fills them in from transcripts, into the draft).

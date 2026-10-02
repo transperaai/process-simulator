@@ -33,7 +33,8 @@
           "Owen Hart"
         ],
         "recorded_at": "2026-10-07",
-        "body": "$file:interview-2.txt"
+        "body": "$file:interview-2.txt",
+        "link_later": true
       },
       "save": "source2"
     },

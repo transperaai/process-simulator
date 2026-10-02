@@ -21,6 +21,7 @@ import { z } from "zod";
 import {
   checklistItems,
   EVIDENCE_COLUMNS,
+  linkColumns,
   listProcesses,
   loadProcessBundle,
   SOURCE_COLUMNS,
@@ -64,10 +65,12 @@ import {
 } from "./building";
 import { resolveProcess, resolveWorkspace, type ProcessWithDraft, type ToolContext, type WorkspaceRef } from "./context";
 import { runTool, ToolError } from "./result";
+import { NEEDS_LINKS, linkJson, linksArg, resolveLinks } from "./source-links";
 import { PROCESS_TEMPLATES, type ProcessTemplate } from "./templates";
 
 export const BUILDING_TOOL_NAMES = [
   "add_source",
+  "link_source",
   "create_process",
   "add_step",
   "update_step",
@@ -851,8 +854,11 @@ export function registerBuildingTools(server: McpServer, ctx: ToolContext): void
     {
       title: "Add source",
       description:
-        "Store a transcript, notes, a data export or a screenshot link from the audit as a source of the workspace, with its speakers and date. Returns the " +
-        "source id that step tools cite in `evidence` (with speaker, verbatim quote, timestamp and the value stated).",
+        "Store a transcript, notes, a data export or a screenshot link from the audit as a source of the workspace, with its speakers and date, and " +
+        "link it to what it is evidence for: `links` is required (a process, step, insight, issue or solution; each by id or name). A source linked to " +
+        "nothing doesn't count as evidence. Returns the source id that step tools cite in `evidence` (with speaker, verbatim quote, timestamp and the value stated). " +
+        "When you are adding a source only to cite it in the next call (import_process, add_step or update_step evidence), pass `link_later: true` instead of `links`: " +
+        "citing it links it to those steps.",
       inputSchema: {
         title: z.string().trim().min(1).max(200),
         kind: z.enum(["transcript", "notes", "data", "screenshot"]).optional().describe("Default transcript."),
@@ -860,35 +866,88 @@ export function registerBuildingTools(server: McpServer, ctx: ToolContext): void
         recorded_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("ISO date the conversation or notes are from."),
         body: z.string().max(500_000).optional().describe("The transcript or notes text."),
         file_url: z.string().regex(/^https?:\/\/\S+$/).max(2000).optional().describe("Link to the recording or screenshot."),
+        links: linksArg.optional().describe("What the source is evidence for: at least one of { process }, { step } (with `process` if the name is not unique), { insight } (a detection key), { issue } (number, id or title), { solution }."),
+        link_later: z.boolean().optional().describe("Only when `links` is left out: you will cite this source in the next call, which links it. Until then it shows as 'Not linked to anything yet'."),
         workspace: workspaceArg,
       },
     },
     (args) =>
       runTool(async (assumptions) => {
         const ws = await resolveWorkspace(ctx, args.workspace, assumptions);
+        // Fail before anything is written: a source with nothing to say what it is evidence for is not added silently.
+        if (!args.links?.length && !args.link_later) throw new ToolError("links_required", NEEDS_LINKS);
+        if (args.links?.length && args.link_later) throw new ToolError("invalid_input", "Pass `links` or `link_later: true`, not both.");
+        const resolved = args.links?.length ? await resolveLinks(ctx, ws, args.links) : null;
         const raw = typeof args.speakers === "string" ? args.speakers.split(/[,;\n]/) : (args.speakers ?? []);
         const speakers = [...new Set(raw.map((s) => s.trim().slice(0, 200)).filter(Boolean))];
         if (speakers.length > 50) throw new ToolError("invalid_input", "List up to 50 speakers.");
         if (!args.kind) assumptions.push("kind defaulted to transcript.");
-        const { data, error } = await ctx.db
-          .from("sources")
-          .insert({
-            workspace_id: ws.id,
-            kind: args.kind ?? "transcript",
-            title: args.title.trim(),
-            speakers,
-            recorded_at: args.recorded_at ?? null,
-            body: args.body?.trim() ? args.body : null,
-            file_url: args.file_url?.trim() || null,
-          })
-          .select(SOURCE_COLUMNS)
-          .single();
+        const fields = {
+          kind: args.kind ?? "transcript",
+          title: args.title.trim(),
+          speakers,
+          recorded_at: args.recorded_at ?? null,
+          body: args.body?.trim() ? args.body : null,
+          file_url: args.file_url?.trim() || null,
+        };
+        // With links, the source and its links are saved together by the database function, so there is never a half-added source.
+        let sourceId: string;
+        if (resolved) {
+          const { data: id, error } = await ctx.db.rpc("add_source", { p_workspace: ws.id, p_source: fields, p_links: resolved.targets.map(linkJson) });
+          if (error || !id) throw writeError(error ?? {}, "add sources");
+          sourceId = id;
+        } else {
+          const { data, error } = await ctx.db.from("sources").insert({ workspace_id: ws.id, ...fields }).select("id").single();
+          if (error) throw writeError(error, "add sources");
+          sourceId = data.id;
+          assumptions.push("link_later: the source is not linked to anything yet; citing it in a step's evidence links it to that step.");
+        }
+        const { data, error } = await ctx.db.from("sources").select(SOURCE_COLUMNS).eq("id", sourceId).single();
         if (error) throw writeError(error, "add sources");
         const source = data as unknown as SourceRow;
         return {
           workspace: { id: ws.id, name: ws.name },
           source: { id: source.id, kind: source.kind, title: source.title, speakers: source.speakers, recorded_at: source.recorded_at, file_url: source.file_url, body_length: source.body?.length ?? 0 },
-          text: `Added ${source.kind} '${source.title}'${speakers.length ? ` (${speakers.join(", ")})` : ""}. Cite it in a step's evidence as source ${source.id}.`,
+          links: resolved?.text ?? [],
+          text: `Added ${source.kind} '${source.title}'${speakers.length ? ` (${speakers.join(", ")})` : ""}${resolved ? `, linked to ${resolved.text.join("; ")}` : ", not linked to anything yet"}. Cite it in a step's evidence as source ${source.id}.`,
+        };
+      }),
+  );
+
+  server.registerTool(
+    "link_source",
+    {
+      title: "Link source",
+      description:
+        "Link an existing source to more things it is evidence for: a process, step, insight, issue or solution (each by id or name). A source " +
+        "can have several links; one that is already linked to a thing is left as it is. Use it for a source added with link_later, or " +
+        "when a source turns out to support something else.",
+      inputSchema: {
+        source: z.string().min(1).describe("Source id or title."),
+        links: linksArg.min(1).describe("At least one of { process }, { step } (with `process` if the name is not unique), { insight }, { issue }, { solution }."),
+        workspace: workspaceArg,
+      },
+    },
+    (args) =>
+      runTool(async (assumptions) => {
+        const ws = await resolveWorkspace(ctx, args.workspace, assumptions);
+        const sources = await loadSources(ctx, ws);
+        const source = resolveName(sources, args.source, "source", ` in '${ws.name}'`);
+        const resolved = await resolveLinks(ctx, ws, args.links);
+        const added: string[] = [];
+        const already: string[] = [];
+        for (const [i, t] of resolved.targets.entries()) {
+          const { error } = await ctx.db.from("source_links").insert({ workspace_id: ws.id, source_id: source.id, ...linkColumns(t) });
+          if (!error) added.push(resolved.text[i]!);
+          else if (error.code === "23505") already.push(resolved.text[i]!);
+          else throw writeError(error, "link sources");
+        }
+        return {
+          workspace: { id: ws.id, name: ws.name },
+          source: { id: source.id, title: source.name },
+          added,
+          already_linked: already,
+          text: `${added.length ? `Linked '${source.name}' to ${added.join("; ")}.` : `'${source.name}' was already linked to all of those.`}${already.length && added.length ? ` Already linked: ${already.join("; ")}.` : ""}`,
         };
       }),
   );

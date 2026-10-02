@@ -12,6 +12,7 @@ export function Page({
   description,
   actions,
   width = "max-w-5xl",
+  hideHeader = false,
   children,
 }: {
   title: string;
@@ -19,13 +20,15 @@ export function Page({
   description?: ReactNode;
   actions?: ReactNode;
   width?: "max-w-3xl" | "max-w-5xl" | "max-w-6xl";
+  /** The content draws its own header (the Issue page's has breadcrumbs, a rating and the buttons). */
+  hideHeader?: boolean;
   children: ReactNode;
 }) {
   return (
     <div>
       <ShellHeader title={title} />
       <div className={`mx-auto flex w-full min-w-0 flex-col gap-6 px-4 pb-12 pt-6 sm:px-6 ${width}`}>
-        <PageHeader title={title} eyebrow={eyebrow} description={description} actions={actions} />
+        {!hideHeader && <PageHeader title={title} eyebrow={eyebrow} description={description} actions={actions} />}
         {children}
       </div>
     </div>

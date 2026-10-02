@@ -2,7 +2,7 @@
 // and the in-memory demo store. They only reject malformed input early: the
 // database checks every enumerated column again, and RLS decides who may write.
 
-import { ISSUE_STATUSES, type IssueLinkRef, type IssueStatus } from "@transpera-flow/db";
+import { ISSUE_STATUSES, RESOLVE_HOWS, type IssueLinkRef, type IssueStatus, type ResolveHow } from "@transpera-flow/db";
 import { ISSUE_TYPES, STORED_SEVERITIES, type IssueType, type StoredSeverity } from "@transpera-flow/engine";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -256,4 +256,22 @@ export function cleanFieldValue(field: IssueField, value: unknown): { value: Sca
   const v = typeof value === "string" ? (field === "title" ? value.trim() : value.trim() || null) : value;
   if (v !== null && typeof v !== "string") return null;
   return (ISSUE_FIELDS[field] as (x: unknown) => boolean)(v) ? { value: v } : null;
+}
+
+export const MAX_NOTE = 2000;
+
+/** What the Resolve dialog sends: how it was resolved, and a note (optional). */
+export interface ResolveInput {
+  how: ResolveHow;
+  note: string | null;
+}
+
+export function parseResolveInput(input: unknown): Parsed<ResolveInput> {
+  const o = object(input);
+  if (!o) return { ok: false, error: "That isn't valid." };
+  if (!(RESOLVE_HOWS as readonly unknown[]).includes(o.how)) return { ok: false, error: "Say how it was resolved." };
+  if (o.note !== undefined && o.note !== null && typeof o.note !== "string") return { ok: false, error: "The note isn't valid." };
+  const note = typeof o.note === "string" ? o.note.trim() : "";
+  if (note.length > MAX_NOTE) return { ok: false, error: `Keep the note to ${MAX_NOTE} characters.` };
+  return { ok: true, value: { how: o.how as ResolveHow, note: note || null } };
 }

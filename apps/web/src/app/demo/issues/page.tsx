@@ -4,7 +4,7 @@ import { IssuesPage } from "@/components/issues-page";
 import { Page } from "@/components/shell/page";
 import { demoBundle, demoSources } from "@/lib/sources/demo";
 
-/** The Issues screen on the demo: Northbeam's sample issues plus what a fresh run detects, in memory. */
+/** The Issues list on the demo: Northbeam's sample issues, in memory. */
 export default function DemoIssuesPage() {
   const bundle = demoBundle();
   return (
@@ -13,7 +13,7 @@ export default function DemoIssuesPage() {
       eyebrow="Improve"
       description={
         <>
-          Audit findings and what the simulation detects on {bundle.process.name}. Ratings follow the{" "}
+          Problems you&apos;ve confirmed, linked to a whole process or to specific steps. Ratings follow the{" "}
           <Link href="/demo/settings/rules" className="underline">
             analysis rules
           </Link>
@@ -27,6 +27,7 @@ export default function DemoIssuesPage() {
         scenarios={northbeamScenarios()}
         processes={processesOf(bundle).map((p) => ({ id: p.id, name: p.name }))}
         sources={demoSources()}
+        base="/demo"
         mode="demo"
       />
     </Page>

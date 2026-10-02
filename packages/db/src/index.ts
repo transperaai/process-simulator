@@ -157,6 +157,7 @@ export {
   loadIssue,
   loadLiveRevisionIds,
   loadIssueEvents,
+  resolveIssue,
   saveIssue,
   type SaveIssueArgs,
   LEAD_SOURCE_COLUMNS,

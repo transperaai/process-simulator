@@ -161,3 +161,11 @@ Checked on plain Postgres 16 with the auth shim (`packages/db/test/issues-v2.tes
 - The history log is written by `security definer` triggers that call `auth.uid()` for the actor. On plain Postgres the shim's `auth.uid()` reads `request.jwt.claims`; Supabase's reads the same setting, but the actor on a real session is unconfirmed.
 - Link-table events are skipped when the same transaction already logged the issue, using `txid_current()` stored on each event. Over PostgREST each request is one transaction, so `save_issue` (one RPC) logs one entry.
 - `public.save_issue` is `security invoker` with defaults on every argument after `p_fields`, so supabase-js can leave out `p_id`, `p_links`, `p_owners` and `p_sources` (PostgREST resolves the call by argument names). Only called with all of them present here.
+
+## Issue resolution (A48, migration 20261121500000)
+
+Checked on plain Postgres 16 with the auth shim (`packages/db/test/issue-resolution.test.ts`); not confirmed on Supabase itself:
+
+- `issue_events.detail` is written only by triggers, so how an issue was resolved and the note are two nullable columns on `issues` (`resolved_how`, `resolution_note`). `private.log_issue_change` copies them into the `resolved` entry's detail, so the history keeps them after a reopen clears the columns (the before-write trigger `issues_resolved_how` clears them whenever the status is not `done`).
+- `public.resolve_issue` is `security invoker` and takes the workspace, the issue id, the way, a note and a status (`resolved` or `wont_fix`). Reopening is the existing `save_issue` with status `open`. Over PostgREST a call with named arguments resolves by name; the tests call it with all five positionally.
+- The new trigger name (`issues_resolved_how`) sorts after `issues_number`; Postgres fires triggers in name order, as for A47's triggers.

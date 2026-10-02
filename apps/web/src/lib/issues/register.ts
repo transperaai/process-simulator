@@ -126,8 +126,9 @@ export function entryView(e: RegisterEntry) {
     personId: i.person_id,
     processId: i.process_id,
     processIds,
-    // Marked resolved but detected again: back on the list.
-    open: isOpen(i.status) || (i.status === "resolved" && e.detection !== null),
+    // A resolved issue (or won't fix) stays off the map and out of the open list, however it was resolved and even if the
+    // analysis detects the problem again (D38): the detection shows as an insight linking to it, and a person reopens it.
+    open: isOpen(i.status),
   };
 }
 

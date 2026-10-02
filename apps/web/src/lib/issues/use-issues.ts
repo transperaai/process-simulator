@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import type { IssueRow } from "@transpera-flow/db";
+import type { IssueEventRow, IssueRow, ResolveHow } from "@transpera-flow/db";
 import type { SaveOutcome, Saver } from "@/lib/fields/field-controller";
 import { liveIssueStore } from "./live-store";
 import { MemoryIssueStore, type IssueStore, type SaveIssueResult } from "./store";
@@ -24,6 +24,12 @@ export interface IssuesState {
   /** A saver for one field of one issue that also updates the list once saved. */
   saver(id: string, field: IssueField): Saver<Scalar>;
   remove(id: string): Promise<boolean>;
+  /** Mark an issue resolved, with how and a note. Null when it failed; `error` says why. */
+  resolve(id: string, how: ResolveHow, note: string | null): Promise<IssueRow | null>;
+  /** Set a resolved issue back to Open. */
+  reopen(id: string): Promise<IssueRow | null>;
+  /** An issue's history, oldest first. */
+  events(id: string): Promise<IssueEventRow[]>;
   dismissError(): void;
 }
 
@@ -102,6 +108,9 @@ export function useIssues(
         setBusy(false);
       }
     },
+    resolve: (id, how, note) => add(() => store.resolve(id, how, note)),
+    reopen: (id) => add(() => store.reopen(id)),
+    events: (id) => store.events(id).catch(() => []),
     dismissError: () => setError(null),
   };
 }

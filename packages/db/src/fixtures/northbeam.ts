@@ -670,6 +670,8 @@ export function northbeamIssues(): IssueRow[] {
     scenario_id: null,
     detected_key: null,
     resolved_at: null,
+    resolved_how: null,
+    resolution_note: null,
     dismissed_revision_id: null,
     created_at: at,
     updated_at: at,

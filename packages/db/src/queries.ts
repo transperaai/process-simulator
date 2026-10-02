@@ -16,6 +16,7 @@ import type {
   IssueEventRow,
   IssueLinkRef,
   IssueRow,
+  ResolveHow,
   LeadSourceRow,
   MarketConditionRow,
   MarketScheduleRow,
@@ -362,7 +363,7 @@ export async function loadBlocks(db: Db, workspaceId: string): Promise<BlockRow[
 }
 
 export const ISSUE_COLUMNS =
-  "id, workspace_id, process_id, step_id, role_id, person_id, client_id, type, severity, title, evidence, evidence_metrics, owner_person_id, status, scenario_id, source, detected_key, resolved_at, created_at, updated_at, number, dismissed_revision_id, resolution, target_measure, target_now, target_goal" as const;
+  "id, workspace_id, process_id, step_id, role_id, person_id, client_id, type, severity, title, evidence, evidence_metrics, owner_person_id, status, scenario_id, source, detected_key, resolved_at, created_at, updated_at, number, dismissed_revision_id, resolution, target_measure, target_now, target_goal, resolved_how, resolution_note" as const;
 
 /** The history log's columns. */
 export const ISSUE_EVENT_COLUMNS = "id, issue_id, workspace_id, seq, kind, at, actor, detail, tx" as const;
@@ -430,6 +431,25 @@ export async function loadIssue(db: Db, workspaceId: string, issueId: string): P
 export async function loadIssueEvents(db: Db, workspaceId: string, issueId: string): Promise<IssueEventRow[]> {
   const r = await db.from("issue_events").select(ISSUE_EVENT_COLUMNS).eq("workspace_id", workspaceId).eq("issue_id", issueId).order("seq");
   return rows(r) as unknown as IssueEventRow[];
+}
+
+/**
+ * Mark an issue resolved (A48), saying how and leaving a note, in one write: one `resolved` history entry that carries
+ * both. Reopening is `save_issue` with status `open`, which clears them (the history keeps them).
+ */
+export async function resolveIssue(
+  db: Db,
+  args: { workspaceId: string; id: string; how: ResolveHow; note?: string | null; status?: "resolved" | "wont_fix" },
+): Promise<{ id: string } | { error: { code?: string; message?: string } }> {
+  const { data, error } = await db.rpc("resolve_issue", {
+    p_workspace: args.workspaceId,
+    p_id: args.id,
+    p_how: args.how,
+    p_note: args.note ?? undefined,
+    p_status: args.status ?? "resolved",
+  });
+  if (error) return { error };
+  return { id: (data as { id: string }).id };
 }
 
 /** What `save_issue` takes: the columns to set, and the links, owners and sources to replace (omit to leave as they are). */

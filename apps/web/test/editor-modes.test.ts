@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { EDITOR_MODES, MODE_INFO, SOLUTION_FOR_ISSUE, exitHref, isEditorPath, parseEditorMode, parseHorizon, parseIssueParam, withHorizon } from "@/lib/editor/modes";
+import { horizonWeeks } from "@/lib/horizon";
+import { EDITOR_MODES, editorHorizonWeeks, MODE_INFO, SOLUTION_FOR_ISSUE, exitHref, isEditorPath, parseEditorMode, parseHorizon, parseIssueParam, withHorizon } from "@/lib/editor/modes";
 
 // The Editor's modes and where it lives (issue #104).
 
@@ -64,5 +65,15 @@ describe("editor modes", () => {
     expect(isEditorPath("/demo")).toBe(false);
     expect(isEditorPath("/w/acme/edit")).toBe(false);
     expect(isEditorPath(null)).toBe(false);
+  });
+});
+
+describe("the horizon in the Editor", () => {
+  it("ignores the map's picked horizon in solution mode, so the footer matches the server", () => {
+    expect(editorHorizonWeeks("solution", 12)).toBeNull();
+    expect(editorHorizonWeeks("solution", null)).toBeNull();
+    expect(editorHorizonWeeks("draft", null)).toBeNull();
+    expect(editorHorizonWeeks("draft", 12)).toBe(horizonWeeks(12));
+    expect(editorHorizonWeeks("block", 6)).toBe(horizonWeeks(6));
   });
 });

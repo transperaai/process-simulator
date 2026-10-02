@@ -52,6 +52,32 @@ describe("reading a goal", () => {
     expect(g("under 4 hours per proposal")?.period).toBeNull();
   });
 
+  it("reads compact units, decimals, compound times and a trailing max or minimum", () => {
+    const g = (text: string) => parseGoal(text);
+    const t = (direction: "atMost" | "atLeast", value: number, unit: string) => ({ direction, value, unit, period: null });
+    expect(g("<4h")).toEqual(t("atMost", 4, "hours"));
+    expect(g("under 4h")).toEqual(t("atMost", 4, "hours"));
+    expect(g("within 2d")).toEqual(t("atMost", 2, "days"));
+    expect(g("under 30min")).toEqual(t("atMost", 30, "minutes"));
+    expect(g("under 4.5h")).toEqual(t("atMost", 4.5, "hours"));
+    expect(g("at least 1.5x")).toEqual(t("atLeast", 1.5, "none"));
+    expect(g("under 1 hr 30 min")).toEqual(t("atMost", 90, "minutes"));
+    expect(g("under 1h 30m")).toEqual(t("atMost", 90, "minutes"));
+    expect(g("under 2 min 30 s")).toEqual(t("atMost", 150, "seconds"));
+    expect(g("4 hours max")).toEqual(t("atMost", 4, "hours"));
+    expect(g("4 hours maximum")).toEqual(t("atMost", 4, "hours"));
+    expect(g("10 wins minimum")).toEqual(t("atLeast", 10, "none"));
+    expect(g("maximum 4 hours")).toEqual(t("atMost", 4, "hours"));
+    // No direction, or a sign or mix it can't read: no verdict.
+    expect(g("more or less 3 days")).toBeNull();
+    expect(g("less or more 3 days")).toBeNull();
+    expect(g("≤ -5")).toBeNull();
+    expect(g("under -5 hours")).toBeNull();
+    expect(g("under 1 hr 30")).toBeNull();
+    expect(g("under 1 day 2 hours")).toBeNull();
+    expect(g("≤ 5")).toEqual(t("atMost", 5, "none"));
+  });
+
   it("gives up on what it can't read", () => {
     for (const text of ["faster", "", null, undefined, "about 4 hours", "under"]) expect(parseGoal(text), String(text)).toBeNull();
   });

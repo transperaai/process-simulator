@@ -2,7 +2,7 @@
 
 import { SOLUTION_ISSUE_COLUMNS, type BlockBundle, type Json, type ProcessBundle, type SolutionIssueRow, type SolutionRow } from "@transpera-flow/db";
 import { parseSolutionInput, type SaveSolutionResult } from "@/lib/solutions/save";
-import { serverVerdict } from "@/lib/solutions/server-verdict";
+import { serverVerdict, type CopyRun } from "@/lib/solutions/server-verdict";
 import { isId } from "@/lib/sources/validate";
 import { createClient } from "@/lib/supabase/server";
 
@@ -40,11 +40,14 @@ export async function createSolution(workspaceId: unknown, input: unknown): Prom
   if (!claims?.claims?.sub) return signedOut;
   const v = parsed.value;
   const links: { issue_id: string; auto_verdict: string | null; holds_pct: number | null; auto_note: string }[] = [];
+  // The copy is simulated once, for all the issues it is linked to.
   let base: ProcessBundle | undefined;
+  let run: CopyRun | undefined;
   for (const l of v.links) {
-    const r = await serverVerdict({ db: supabase, workspaceId, processId: v.processId, baseRevisionId: v.baseRevisionId, copy: v.copy, issueId: l.issueId, base });
+    const r = await serverVerdict({ db: supabase, workspaceId, processId: v.processId, baseRevisionId: v.baseRevisionId, copy: v.copy, issueId: l.issueId, base, run });
     if (!r.ok) return { status: "error", message: r.message };
     base = r.base;
+    run = r.run;
     const checked = r.verdict.status !== "unchecked";
     links.push({ issue_id: l.issueId, auto_verdict: checked ? r.verdict.status : null, holds_pct: checked ? r.verdict.holdsPct : null, auto_note: r.verdict.note });
   }

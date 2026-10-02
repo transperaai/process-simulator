@@ -2,7 +2,7 @@
 // what is being edited. `draft`, `block` (A51) and `solution` (A49) are all built: the draft is the process's single draft,
 // and a block or a solution edits a copy in memory that is saved on its own, never into the draft (D18).
 
-import { isHorizonMonths } from "@/lib/horizon";
+import { horizonWeeks, isHorizonMonths } from "@/lib/horizon";
 
 export const EDITOR_MODES = ["draft", "solution", "block"] as const;
 export type EditorMode = (typeof EDITOR_MODES)[number];
@@ -93,3 +93,9 @@ export function exitHref(from: string | string[] | undefined, fallback: string):
 
 /** `/demo/edit` and `/w/<workspace>/p/<process>/edit`: the pages that are the Editor, which show no sidebar. */
 export const isEditorPath = (path: string | null): boolean => !!path && /^\/(demo|w\/[^/]+\/p\/[^/]+)\/edit\/?$/.test(path);
+
+/**
+ * The horizon the Editor simulates at, in weeks, or null for the model's own. A solution is always simulated at the model's own, as the
+ * server checks it when it is saved, so the footer's verdict matches the stored one; the map's picked horizon applies to drafts and blocks.
+ */
+export const editorHorizonWeeks = (mode: EditorMode, months: number | null): number | null => (mode === "solution" || months === null ? null : horizonWeeks(months));

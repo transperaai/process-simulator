@@ -3,7 +3,7 @@
 // issue's target as it is in the database. The client's numbers are ignored. Same seeds as the Editor's compare (30 runs, seed 1).
 
 import { isActiveStatus, listProcesses, loadIssue, loadProcessBundle, ModelError, toEngineModel, type BlockBundle, type Db, type IssueRow, type ProcessBundle } from "@transpera-flow/db";
-import { simulate } from "@transpera-flow/engine";
+import { simulate, type EngineModel, type SimulationResult } from "@transpera-flow/engine";
 import { currentArea, issueAboutProcess, leafIds, solutionIssueOf } from "./area";
 import { bundleFromSolution } from "./bundle";
 import { checkTarget, type TargetVerdict } from "./verdict";
@@ -30,11 +30,20 @@ async function baseBundle(db: Db, workspaceId: string, processId: string, revisi
 
 export type ServerVerdict = { ok: true; verdict: TargetVerdict } | { ok: false; message: string };
 
-/** The pure part: simulate the copy on top of `base` and check it against the issue's target. */
-export function verdictForCopy(args: { base: ProcessBundle; copy: BlockBundle; issue: IssueRow; processId: string }): ServerVerdict {
-  const { base, issue } = args;
-  const solved = bundleFromSolution(base, { steps: args.copy });
-  let model;
+/** A solution's copy simulated once on top of its base: what every linked issue is then checked against. */
+export interface CopyRun {
+  base: ProcessBundle;
+  solved: ProcessBundle;
+  model: EngineModel;
+  result: SimulationResult;
+  /** Steps the copy has that the base doesn't. */
+  added: string[];
+}
+
+/** Simulate the copy on top of `base` (30 runs, seed 1, as the Editor's compare does). */
+export function simulateCopy(base: ProcessBundle, copy: BlockBundle): { ok: true; run: CopyRun } | { ok: false; message: string } {
+  const solved = bundleFromSolution(base, { steps: copy });
+  let model: EngineModel;
   try {
     model = toEngineModel(solved);
   } catch (err) {
@@ -43,10 +52,21 @@ export function verdictForCopy(args: { base: ProcessBundle; copy: BlockBundle; i
   }
   const result = simulate(model, 30, 1);
   const was = new Set(base.steps.map((s) => s.id));
-  const added = solved.steps.filter((s) => !was.has(s.id)).map((s) => s.id);
-  const asIssue = solutionIssueOf(issue, args.processId, solved.steps);
+  return { ok: true, run: { base, solved, model, result, added: solved.steps.filter((s) => !was.has(s.id)).map((s) => s.id) } };
+}
+
+/** Check a simulated copy against one issue's target. */
+export function verdictFromRun(run: CopyRun, issue: IssueRow, processId: string): TargetVerdict {
+  const { solved, model, result, added } = run;
+  const asIssue = solutionIssueOf(issue, processId, solved.steps);
   const area = leafIds(solved.steps, asIssue.whole ? solved.steps.filter((s) => s.parent_step_id === null).map((s) => s.id) : currentArea(asIssue, solved.steps, added));
-  return { ok: true, verdict: checkTarget({ target: asIssue.target, model, result, area }) };
+  return checkTarget({ target: asIssue.target, model, result, area });
+}
+
+/** The pure part: simulate the copy on top of `base` and check it against the issue's target. */
+export function verdictForCopy(args: { base: ProcessBundle; copy: BlockBundle; issue: IssueRow; processId: string }): ServerVerdict {
+  const r = simulateCopy(args.base, args.copy);
+  return r.ok ? { ok: true, verdict: verdictFromRun(r.run, args.issue, args.processId) } : r;
 }
 
 /**
@@ -60,14 +80,20 @@ export async function serverVerdict(args: {
   baseRevisionId: string;
   copy: BlockBundle;
   issueId: string;
-  /** The base bundle, if the caller has already loaded it for another link. */
+  /** The base bundle and the simulated copy, if the caller has already loaded and run them for another link: they are reused, not run again. */
   base?: ProcessBundle;
-}): Promise<ServerVerdict & { base?: ProcessBundle }> {
+  run?: CopyRun;
+}): Promise<ServerVerdict & { base?: ProcessBundle; run?: CopyRun }> {
   const issue = await loadIssue(args.db, args.workspaceId, args.issueId);
   const problem = linkProblem(issue, args.processId);
   if (problem) return { ok: false, message: problem };
   const base = args.base ?? (await baseBundle(args.db, args.workspaceId, args.processId, args.baseRevisionId));
   if (!base) return { ok: false, message: "The process or its live version is no longer there. Reload and try again." };
-  const r = verdictForCopy({ base, copy: args.copy, issue: issue!, processId: args.processId });
-  return r.ok ? { ...r, base } : r;
+  let run = args.run;
+  if (!run) {
+    const sim = simulateCopy(base, args.copy);
+    if (!sim.ok) return sim;
+    run = sim.run;
+  }
+  return { ok: true, verdict: verdictFromRun(run, issue!, args.processId), base, run };
 }

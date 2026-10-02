@@ -20,7 +20,7 @@ const db = vi.hoisted(() => ({
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/solutions/server-verdict", async (orig) => ({
   ...(await orig<typeof import("@/lib/solutions/server-verdict")>()),
-  serverVerdict: async (args: unknown) => (db.verdictCalls.push(args), db.verdict),
+  serverVerdict: async (args: unknown) => (db.verdictCalls.push({ ...(args as object) }), { ...(db.verdict as object), base: { b: 1 }, run: { r: 1 } }),
 }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => {
@@ -79,6 +79,15 @@ describe("createSolution", () => {
     // Nothing of the process: not its revisions, steps, edges or draft; only the link table is read back.
     expect(tables()).toEqual(["solution_issues"]);
     expect(db.calls.some((c) => c.op === "insert")).toBe(false);
+  });
+
+  it("simulates the copy once for all the issues it is linked to", async () => {
+    const other = "3f1c2b4a-0000-4000-8000-000000000002";
+    await createSolution(WS, { ...input(), links: [{ issueId: ISSUE }, { issueId: other }] });
+    expect(db.verdictCalls).toHaveLength(2);
+    expect(db.verdictCalls[0]).toMatchObject({ base: undefined, run: undefined });
+    expect(db.verdictCalls[1]).toMatchObject({ base: { b: 1 }, run: { r: 1 } });
+    expect(rpcArgs().p_links).toHaveLength(2);
   });
 
   it("stores no verdict, with the reason, when the target can't be checked", async () => {

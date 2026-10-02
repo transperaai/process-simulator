@@ -56,8 +56,11 @@ set local lock_timeout = '5s';
 -- is fixed when it is saved, so a link cannot be rewritten without the history logging it.
 --
 -- Checks in the database (before-insert triggers, so they hold for every writer, with plain messages):
---   * a solution's base revision must be a published revision of its process. A draft can be discarded, and a solution
---     pointing at one would block that (D18: drafts stay single and are never a solution's base);
+--   * a solution's base revision must be a published or superseded revision of its process, never a draft. A draft can be
+--     discarded, and a solution pointing at one would block that (D18: drafts stay single and are never a solution's base).
+--     A superseded one is allowed so that publishing a new version while someone is mid-edit doesn't make their save fail;
+--   * the checks run as the caller (security invoker), after a plain "you cannot edit this workspace" refusal, so someone outside
+--     the workspace learns nothing about another workspace's issues or revisions from the error text;
 --   * an issue can be linked only if it is about the solution's process (its own process, or one of its links), is not a
 --     detection, and is still open or being tested (not resolved, won't fix or dismissed).
 --
@@ -138,17 +141,22 @@ create index on public.solutions (base_revision_id);
 create trigger set_updated_at before update on public.solutions
   for each row execute function public.set_updated_at();
 
--- A solution's base is a published revision of its process, never a draft (D18): discarding a draft deletes its revision,
--- which a solution pointing at it would block.
+-- A solution's base is a published (or since superseded) revision of its process, never a draft (D18): discarding a draft
+-- deletes its revision, which a solution pointing at it would block. Security invoker: it reads only what the caller can read, and
+-- a caller who can't edit the workspace gets a plain permission error first (a session always has a user; a plain database
+-- connection, as in migrations and tests, has none and is not asked).
 create function private.solutions_before_write() returns trigger
 language plpgsql
-security definer
+security invoker
 set search_path = ''
 as $$
 begin
+  if auth.uid() is not null and not coalesce(public.can_edit_workspace(new.workspace_id), false) then
+    raise exception 'solutions: you cannot edit this workspace' using errcode = '42501';
+  end if;
   if not exists (
     select 1 from public.process_revisions r
-    where r.id = new.base_revision_id and r.process_id = new.process_id and r.workspace_id = new.workspace_id and r.status = 'published'
+    where r.id = new.base_revision_id and r.process_id = new.process_id and r.workspace_id = new.workspace_id and r.status in ('published', 'superseded')
   ) then
     raise exception 'solutions: the base revision must be a published version of the process' using errcode = '23514';
   end if;
@@ -187,16 +195,19 @@ create trigger set_updated_at before update on public.solution_issues
   for each row execute function public.set_updated_at();
 
 -- What may be linked: an issue about the solution's process that is still being worked on. Runs before row-level security
--- looks at the row, so the refusal says what is wrong.
+-- looks at the row, so the refusal says what is wrong (to someone who can edit the workspace, and so may read the issue).
 create function private.solution_issues_before_insert() returns trigger
 language plpgsql
-security definer
+security invoker
 set search_path = ''
 as $$
 declare
   iss record;
   sol_process uuid;
 begin
+  if auth.uid() is not null and not coalesce(public.can_edit_workspace(new.workspace_id), false) then
+    raise exception 'solutions: you cannot edit this workspace' using errcode = '42501';
+  end if;
   select i.status, i.source, i.process_id into iss from public.issues i where i.id = new.issue_id and i.workspace_id = new.workspace_id;
   select s.process_id into sol_process from public.solutions s where s.id = new.solution_id and s.workspace_id = new.workspace_id;
   if iss is null or sol_process is null then
@@ -327,7 +338,7 @@ begin
   end if;
   if not exists (
     select 1 from public.process_revisions r
-    where r.id = p_base_revision and r.process_id = p_process and r.workspace_id = p_workspace and r.status = 'published'
+    where r.id = p_base_revision and r.process_id = p_process and r.workspace_id = p_workspace and r.status in ('published', 'superseded')
   ) then
     raise exception 'solutions: the base revision must be a published version of the process' using errcode = '23514';
   end if;
@@ -380,8 +391,11 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 -- is fixed when it is saved, so a link cannot be rewritten without the history logging it.
 --
 -- Checks in the database (before-insert triggers, so they hold for every writer, with plain messages):
---   * a solution's base revision must be a published revision of its process. A draft can be discarded, and a solution
---     pointing at one would block that (D18: drafts stay single and are never a solution's base);
+--   * a solution's base revision must be a published or superseded revision of its process, never a draft. A draft can be
+--     discarded, and a solution pointing at one would block that (D18: drafts stay single and are never a solution's base).
+--     A superseded one is allowed so that publishing a new version while someone is mid-edit doesn't make their save fail;
+--   * the checks run as the caller (security invoker), after a plain "you cannot edit this workspace" refusal, so someone outside
+--     the workspace learns nothing about another workspace's issues or revisions from the error text;
 --   * an issue can be linked only if it is about the solution's process (its own process, or one of its links), is not a
 --     detection, and is still open or being tested (not resolved, won't fix or dismissed).
 --
@@ -462,17 +476,22 @@ create index on public.solutions (base_revision_id);
 create trigger set_updated_at before update on public.solutions
   for each row execute function public.set_updated_at();
 
--- A solution's base is a published revision of its process, never a draft (D18): discarding a draft deletes its revision,
--- which a solution pointing at it would block.
+-- A solution's base is a published (or since superseded) revision of its process, never a draft (D18): discarding a draft
+-- deletes its revision, which a solution pointing at it would block. Security invoker: it reads only what the caller can read, and
+-- a caller who can't edit the workspace gets a plain permission error first (a session always has a user; a plain database
+-- connection, as in migrations and tests, has none and is not asked).
 create function private.solutions_before_write() returns trigger
 language plpgsql
-security definer
+security invoker
 set search_path = ''
 as $$
 begin
+  if auth.uid() is not null and not coalesce(public.can_edit_workspace(new.workspace_id), false) then
+    raise exception 'solutions: you cannot edit this workspace' using errcode = '42501';
+  end if;
   if not exists (
     select 1 from public.process_revisions r
-    where r.id = new.base_revision_id and r.process_id = new.process_id and r.workspace_id = new.workspace_id and r.status = 'published'
+    where r.id = new.base_revision_id and r.process_id = new.process_id and r.workspace_id = new.workspace_id and r.status in ('published', 'superseded')
   ) then
     raise exception 'solutions: the base revision must be a published version of the process' using errcode = '23514';
   end if;
@@ -511,16 +530,19 @@ create trigger set_updated_at before update on public.solution_issues
   for each row execute function public.set_updated_at();
 
 -- What may be linked: an issue about the solution's process that is still being worked on. Runs before row-level security
--- looks at the row, so the refusal says what is wrong.
+-- looks at the row, so the refusal says what is wrong (to someone who can edit the workspace, and so may read the issue).
 create function private.solution_issues_before_insert() returns trigger
 language plpgsql
-security definer
+security invoker
 set search_path = ''
 as $$
 declare
   iss record;
   sol_process uuid;
 begin
+  if auth.uid() is not null and not coalesce(public.can_edit_workspace(new.workspace_id), false) then
+    raise exception 'solutions: you cannot edit this workspace' using errcode = '42501';
+  end if;
   select i.status, i.source, i.process_id into iss from public.issues i where i.id = new.issue_id and i.workspace_id = new.workspace_id;
   select s.process_id into sol_process from public.solutions s where s.id = new.solution_id and s.workspace_id = new.workspace_id;
   if iss is null or sol_process is null then
@@ -651,7 +673,7 @@ begin
   end if;
   if not exists (
     select 1 from public.process_revisions r
-    where r.id = p_base_revision and r.process_id = p_process and r.workspace_id = p_workspace and r.status = 'published'
+    where r.id = p_base_revision and r.process_id = p_process and r.workspace_id = p_workspace and r.status in ('published', 'superseded')
   ) then
     raise exception 'solutions: the base revision must be a published version of the process' using errcode = '23514';
   end if;

@@ -38,6 +38,8 @@ const AT_LEAST = "(?:over|above|more than|at least|minimum|exceeding|exceeds|gre
 export function parseGoal(text: string | null | undefined): ParsedGoal | null {
   if (!text) return null;
   let t = text.toLowerCase().replace(/,/g, "").trim();
+  // "more or less 3 days" is "about", not a direction.
+  if (/\b(?:more or less|less or more)\b/.test(t)) return null;
   // "from 1.4 d to under 4 hours": the goal is what follows the last "to".
   if (/\bfrom\b/.test(t) && /\bto\b/.test(t)) t = t.slice(t.lastIndexOf(" to ") + 4);
 
@@ -64,6 +66,11 @@ export function parseGoal(text: string | null | undefined): ParsedGoal | null {
       trailing = true;
     }
   }
+  // A trailing "max" / "maximum" / "minimum" after the number ("4 hours max").
+  if (direction === null && /\d.*\s(?:max|maximum|minimum)\s*$/.test(t)) {
+    if (/\b(?:max|maximum)\s*$/.test(t)) [direction, trailing] = ["atMost", true];
+    else if (/\bminimum\s*$/.test(t)) [direction, trailing] = ["atLeast", true];
+  }
   if (direction === null) find(new RegExp(`(?:^|\\b)${AT_MOST}\\b|^(?:<=?|≤)`), "atMost");
   if (direction === null) find(new RegExp(`(?:^|\\b)${AT_LEAST}\\b|^(?:>=?|≥)`), "atLeast");
   if (direction === null) return null;
@@ -71,23 +78,56 @@ export function parseGoal(text: string | null | undefined): ParsedGoal | null {
   const dir: Direction = direction;
 
   const money = /[£$€]|\b(?:usd|gbp|eur|aud)\b/.test(t);
-  const n = /(\d+(?:\.\d+)?)(k|m|bn)?(?![a-z])/.exec(trailing ? t : t.slice(from));
+  const seg = trailing ? t : t.slice(from);
+  const n = /(?<![\w.])([-−]\s*)?(\d+(?:\.\d+)?)(?:(k|bn|m)(?![a-z]))?/.exec(seg);
   if (!n) return null;
+  // A negative number isn't something any measure here can be.
+  if (n[1]) return null;
   // k always means thousand; m and bn mean million and billion only beside a currency (otherwise "10m" could be minutes).
-  const mult = n[2] === "k" ? 1000 : n[2] === "m" && money ? 1e6 : n[2] === "bn" && money ? 1e9 : null;
-  const value = Number(n[1]) * (mult ?? 1);
-  const rest = (trailing ? t : t.slice(from)).slice(n.index + n[0].length - (n[2] && mult === null ? n[2].length : 0));
-  let unit: GoalUnit = "none";
-  if (/^\s*(%|percent|per cent)/.test(rest)) unit = "percent";
-  else if (/^\s*(seconds?|secs?|s)\b/.test(rest)) unit = "seconds";
-  else if (/^\s*(minutes?|mins?|m)\b/.test(rest)) unit = "minutes";
-  else if (/^\s*(hours?|hrs?|h)\b/.test(rest)) unit = "hours";
-  else if (/^\s*(?:(?:business|working)\s+)?(days?|d)\b/.test(rest)) unit = "days";
-  else if (/^\s*(?:(?:business|working)\s+)?(weeks?|wks?|w)\b/.test(rest)) unit = "weeks";
-  else if (/^\s*(months?|mos?)\b/.test(rest)) unit = "months";
-  else if (money) unit = "money";
+  const mult = n[3] === "k" ? 1000 : n[3] === "m" && money ? 1e6 : n[3] === "bn" && money ? 1e9 : null;
+  let value = Number(n[2]) * (mult ?? 1);
+  let rest = seg.slice(n.index + n[0].length - (n[3] && mult === null ? n[3].length : 0));
+  const unitOf = (r: string): { unit: GoalUnit; len: number } => {
+    const m = (re: RegExp, unit: GoalUnit) => {
+      const x = re.exec(r);
+      return x ? { unit, len: x[0].length } : null;
+    };
+    return (
+      m(/^\s*(?:%|percent|per cent)/, "percent") ??
+      m(/^\s*(?:seconds?|secs?|s)\b/, "seconds") ??
+      m(/^\s*(?:minutes?|mins?|m)\b/, "minutes") ??
+      m(/^\s*(?:hours?|hrs?|h)\b/, "hours") ??
+      m(/^\s*(?:(?:business|working)\s+)?(?:days?|d)\b/, "days") ??
+      m(/^\s*(?:(?:business|working)\s+)?(?:weeks?|wks?|w)\b/, "weeks") ??
+      m(/^\s*(?:months?|mos?)\b/, "months") ??
+      (money ? { unit: "money" as GoalUnit, len: 0 } : { unit: "none" as GoalUnit, len: 0 })
+    );
+  };
+  const first = unitOf(rest);
+  let unit = first.unit;
+  rest = rest.slice(first.len);
+  // "1 hr 30 min": hours, minutes and seconds add up, in the finest unit named. Other mixes can't be read.
+  const SMALL: Record<string, number> = { seconds: 1, minutes: 60, hours: 3600 };
+  while (unit in SMALL) {
+    const more = /^\s*(?:and\s+)?(\d+(?:\.\d+)?)/.exec(rest);
+    if (!more) break;
+    const next = unitOf(rest.slice(more[0].length));
+    // A second number with no unit, or in a unit that doesn't add up with these, can't be read.
+    if (!(next.unit in SMALL) || next.len === 0) return null;
+    const finer = SMALL[next.unit]! < SMALL[unit]! ? next.unit : unit;
+    value = value * (SMALL[unit]! / SMALL[finer]!) + Number(more[1]) * (SMALL[next.unit]! / SMALL[finer]!);
+    unit = finer;
+    rest = rest.slice(more[0].length + next.len);
+  }
+  // Another number left over (days and hours, say): not something it can add up.
+  if (/^\s*(?:and\s+)?\d/.test(rest)) return null;
+  return { direction: dir, value, unit, period: periodOf(t) };
+}
+
+/** "6 a quarter", "per month": the period a goal is per, or null. */
+function periodOf(t: string): GoalPeriod | null {
   const per = /(?:\bper\b|\ba\b|\beach\b|\bevery\b|\/)\s*(day|week|month|quarter|year)\b/.exec(t);
-  return { direction: dir, value, unit, period: (per?.[1] as GoalPeriod | undefined) ?? null };
+  return (per?.[1] as GoalPeriod | undefined) ?? null;
 }
 
 export type MeasureKind = "handsOn" | "wait" | "busy" | "cycle" | "areaTime" | "winRate" | "won" | "mrr" | "revenue" | "labour" | "wip";

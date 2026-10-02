@@ -21,8 +21,7 @@ import { EMPTY_DIFF, diffBundles, publishableChanges, unresolvedSteps } from "@/
 import { useDraftSession } from "@/lib/drafts/use-draft-session";
 import { namesOf } from "@/lib/editor/describe";
 import type { Table } from "@/lib/editor/ops";
-import { horizonWeeks } from "@/lib/horizon";
-import { MODE_INFO, type EditorMode } from "@/lib/editor/modes";
+import { MODE_INFO, editorHorizonWeeks, type EditorMode } from "@/lib/editor/modes";
 import { connect, connectScratch } from "@/lib/realtime/connect";
 import type { Viewer } from "@/lib/realtime/transport";
 import { useRealtime } from "@/lib/realtime/use-realtime";
@@ -118,7 +117,7 @@ export function EditorView({
 
   const diff = useMemo(() => (marksChanges ? diffBundles(live, working) : EMPTY_DIFF), [marksChanges, live, working]);
   const names = useMemo(() => namesOf(working, live), [working, live]);
-  const weeks = horizonMonths === null ? null : horizonWeeks(horizonMonths);
+  const weeks = editorHorizonWeeks(editorMode, horizonMonths);
   const workingModel = useEngineModel(working, weeks);
   const liveModel = useEngineModel(live, weeks);
   const unresolved = useMemo(() => unresolvedSteps(working), [working]);

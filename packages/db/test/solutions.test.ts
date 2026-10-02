@@ -92,10 +92,10 @@ describe("solutions: row-level security", () => {
       }
       for (const role of ["member", "viewer"]) {
         await db.as(users[role]!.claims, async (c) => {
-          await fails(c, () => solution(c), /row-level security/);
+          await fails(c, () => solution(c), /row-level security|cannot edit this workspace/);
           expect((await c.query("update solutions set name = 'x' where id = $1", [id])).rowCount, role).toBe(0);
           expect((await c.query("delete from solutions where id = $1", [id])).rowCount, role).toBe(0);
-          await fails(c, () => link(c, id, testingIssue), /row-level security/);
+          await fails(c, () => link(c, id, testingIssue), /row-level security|cannot edit this workspace/);
           expect((await c.query("update solution_issues set user_verdict = 'fail' where solution_id = $1", [id])).rowCount, role).toBe(0);
           expect((await c.query("delete from solution_issues where solution_id = $1", [id])).rowCount, role).toBe(0);
           await fails(c, () => save(c), /cannot edit this workspace/);
@@ -115,7 +115,7 @@ describe("solutions: row-level security", () => {
       await db.as(users.stranger!.claims, async (c) => {
         expect((await c.query("select 1 from solutions")).rowCount).toBe(0);
         expect((await c.query("select 1 from solution_issues")).rowCount).toBe(0);
-        await fails(c, () => solution(c), /row-level security/);
+        await fails(c, () => solution(c), /row-level security|cannot edit this workspace/);
         await fails(c, () => save(c), /cannot edit this workspace/);
       });
       await db.client.query("begin");
@@ -353,6 +353,42 @@ describe("what may be linked and what may be changed", () => {
       }
       expect((await c.query("update solution_issues set user_verdict = 'pass', user_notes = 'ok' where solution_id = $1", [s.id])).rowCount).toBe(1);
       expect((await c.query("update solutions set name = 'Renamed', notes = 'n' where id = $1", [s.id])).rowCount).toBe(1);
+    });
+  });
+});
+describe("the checks are for people who can edit, and a base may be a superseded version", () => {
+  it("gives someone outside the workspace, or a viewer, a plain permission error and nothing about the issue or revision", async () => {
+    const id = (await solution(db.client)).rows[0].id;
+    const closed = await newIssue();
+    await db.client.query("update issues set status = 'done' where id = $1", [closed]);
+    try {
+      for (const role of ["stranger", "viewer", "member"]) {
+        await db.as(users[role]!.claims, async (c) => {
+          await fails(c, () => solution(c), /cannot edit this workspace/);
+          await fails(c, () => link(c, id, closed), /cannot edit this workspace/);
+          await fails(c, () => save(c, [{ issue_id: closed, auto_verdict: "pass", holds_pct: 90 }]), /cannot edit this workspace/);
+          await fails(c, () => solution(c, ws, NORTHBEAM_PROCESS_ID, "00000000-0000-4000-8000-0000000000ff"), /cannot edit this workspace/);
+        });
+      }
+    } finally {
+      await db.client.query("delete from solutions where id = $1", [id]);
+      await db.client.query("delete from issues where id = $1", [closed]);
+    }
+  });
+
+  it("allows a base that has been superseded, so publishing mid-edit doesn't lose the save, but never a draft", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      // Someone publishes a new version while the solution is being built: the revision it started from is now superseded.
+      await c.query("select public.open_draft($1)", [NORTHBEAM_PROCESS_ID]);
+      await c.query("update steps set notes = 'changed' where process_id = $1 and revision_id <> $2 and name = 'Audit & proposal'", [NORTHBEAM_PROCESS_ID, NORTHBEAM_REVISION_ID]);
+      await c.query("select public.publish_process($1, true)", [NORTHBEAM_PROCESS_ID]);
+      expect((await c.query("select status from process_revisions where id = $1", [NORTHBEAM_REVISION_ID])).rows[0].status).toBe("superseded");
+      const s = await save(c, [{ issue_id: openIssue, auto_verdict: "pass", holds_pct: 90 }]);
+      expect((await c.query("select base_revision_id from solutions where id = $1", [s.id])).rows[0].base_revision_id).toBe(NORTHBEAM_REVISION_ID);
+      // A draft is still refused.
+      await c.query("select public.open_draft($1)", [NORTHBEAM_PROCESS_ID]);
+      const draft = (await c.query("select id from process_revisions where process_id = $1 and status = 'draft'", [NORTHBEAM_PROCESS_ID])).rows[0].id;
+      await fails(c, () => solution(c, ws, NORTHBEAM_PROCESS_ID, draft), /published version/);
     });
   });
 });

@@ -18701,9 +18701,8 @@ create trigger solution_verdict_logged after update of user_verdict, user_notes 
 --        union all select table_name from information_schema.tables where table_schema = 'public' and table_name = 'suggestion_proposals';
 --   5. The table's columns, in order. Expect id,workspace_id,kind,title,detail,payload,evidence,note,issue_id,status,created_via,proposer_name,proposer_email,applied,review_note,reviewed_by,reviewed_at,created_at,updated_at,created_by:
 --        select string_agg(column_name, ',' order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'suggestion_proposals';
---   6. The two functions this one relies on are as reviewed. Expect 73793c55eefd0e3dd9d4ca7a3ff027e4, then 2ca045826e8dbfdb797d2147d8a84b8e:
---        select md5(pg_get_functiondef('public.save_solution(uuid, uuid, uuid, text, jsonb, jsonb, jsonb, jsonb)'::regprocedure));
---        select md5(pg_get_functiondef('private.suggestion_proposals_before_write()'::regprocedure));
+--   6. The two functions this one relies on are as reviewed. Expect save_solution 73793c55eefd0e3dd9d4ca7a3ff027e4 and suggestion_proposals_before_write 2ca045826e8dbfdb797d2147d8a84b8e:
+--        select proname, md5(prosrc) from pg_proc where proname in ('save_solution', 'suggestion_proposals_before_write') order by 1;
 --
 -- Post-apply grant check (authenticated may execute it; anon and PUBLIC may not):
 --        select grantee, privilege_type from information_schema.routine_privileges where routine_schema = 'public' and routine_name = 'build_proposal' and grantee in ('anon', 'authenticated', 'PUBLIC') order by 1;
@@ -18806,9 +18805,8 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --        union all select table_name from information_schema.tables where table_schema = ''public'' and table_name = ''suggestion_proposals'';
 --   5. The table''s columns, in order. Expect id,workspace_id,kind,title,detail,payload,evidence,note,issue_id,status,created_via,proposer_name,proposer_email,applied,review_note,reviewed_by,reviewed_at,created_at,updated_at,created_by:
 --        select string_agg(column_name, '','' order by ordinal_position) from information_schema.columns where table_schema = ''public'' and table_name = ''suggestion_proposals'';
---   6. The two functions this one relies on are as reviewed. Expect 73793c55eefd0e3dd9d4ca7a3ff027e4, then 2ca045826e8dbfdb797d2147d8a84b8e:
---        select md5(pg_get_functiondef(''public.save_solution(uuid, uuid, uuid, text, jsonb, jsonb, jsonb, jsonb)''::regprocedure));
---        select md5(pg_get_functiondef(''private.suggestion_proposals_before_write()''::regprocedure));
+--   6. The two functions this one relies on are as reviewed. Expect save_solution 73793c55eefd0e3dd9d4ca7a3ff027e4 and suggestion_proposals_before_write 2ca045826e8dbfdb797d2147d8a84b8e:
+--        select proname, md5(prosrc) from pg_proc where proname in (''save_solution'', ''suggestion_proposals_before_write'') order by 1;
 --
 -- Post-apply grant check (authenticated may execute it; anon and PUBLIC may not):
 --        select grantee, privilege_type from information_schema.routine_privileges where routine_schema = ''public'' and routine_name = ''build_proposal'' and grantee in (''anon'', ''authenticated'', ''PUBLIC'') order by 1;

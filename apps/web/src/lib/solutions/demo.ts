@@ -9,9 +9,11 @@ import type { SolutionInput } from "./save";
 interface DemoState {
   solutions: SolutionRow[];
   links: SolutionIssueRow[];
+  /** Solutions built from an AI idea (the demo's Suggestions page records them when an idea is built). */
+  aiIds: string[];
 }
 
-const EMPTY: DemoState = { solutions: [], links: [] };
+const EMPTY: DemoState = { solutions: [], links: [], aiIds: [] };
 let state: DemoState = EMPTY;
 const listeners = new Set<() => void>();
 
@@ -45,9 +47,16 @@ export function addDemoSolution(input: SolutionInput): { solution: SolutionRow; 
     updated_at: now,
     created_by: null,
   }));
-  state = { solutions: [solution, ...state.solutions], links: [...state.links, ...links] };
+  state = { ...state, solutions: [solution, ...state.solutions], links: [...state.links, ...links] };
   for (const l of listeners) l();
   return { solution, links };
+}
+
+/** Record that a demo solution was built from an AI idea, so it reads "AI block". */
+export function markDemoSolutionAi(solutionId: string): void {
+  if (state.aiIds.includes(solutionId)) return;
+  state = { ...state, aiIds: [...state.aiIds, solutionId] };
+  emit();
 }
 
 const emit = () => {
@@ -102,6 +111,9 @@ export function addDemoLink(solutionId: string, issueId: string, verdict: { auto
   emit();
   return link;
 }
+
+/** The demo's solutions as they are now (outside a component; the tests read this). */
+export const demoSolutionsNow = (): DemoState => state;
 
 /** The demo's solutions, kept up to date as the Editor saves more. Server rendering and hydration see none. */
 export function useDemoSolutions(): DemoState {

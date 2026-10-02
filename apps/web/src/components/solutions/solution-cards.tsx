@@ -78,6 +78,7 @@ export function SolutionCards({
             canEdit={canEdit}
             viewerId={viewerId}
             memberNames={memberNames}
+            aiIds={data.aiIds}
             from={from}
           />
         </li>
@@ -96,6 +97,7 @@ function SolutionCard({
   canEdit,
   viewerId,
   memberNames,
+  aiIds,
   from,
 }: {
   solution: SolutionRow;
@@ -107,9 +109,10 @@ function SolutionCard({
   canEdit: boolean;
   viewerId?: string | null;
   memberNames?: Readonly<Record<string, string>>;
+  aiIds?: readonly string[];
   from: string;
 }) {
-  const type = solutionType(s);
+  const type = solutionType(s, aiIds);
   return (
     <Card className="h-full gap-2 p-3" data-testid="solution-card" data-solution={s.id}>
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">

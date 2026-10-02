@@ -1,3 +1,4 @@
+import type { SolutionsData } from "@/lib/solutions/cards";
 import "server-only";
 import { cache } from "react";
 import {
@@ -51,8 +52,6 @@ import {
   type ScenarioRow,
   type SeasonalityRow,
   type ServiceRow,
-  type SolutionIssueRow,
-  type SolutionRow,
   type StepRow,
   type WorkspaceRow,
   type WorkspaceSettings,
@@ -155,12 +154,12 @@ export async function loadWorkspaceBlocks(workspaceId: string): Promise<BlockRow
  * optionally only those that change one process. If they can't be read (say the tables aren't there yet), pages show none
  * rather than break.
  */
-export async function loadWorkspaceSolutions(workspaceId: string, processId?: string): Promise<{ solutions: SolutionRow[]; links: SolutionIssueRow[] }> {
+export async function loadWorkspaceSolutions(workspaceId: string, processId?: string): Promise<SolutionsData> {
   try {
     const db = await createClient();
     const [solutions, links] = await Promise.all([loadSolutions(db, workspaceId, processId), loadSolutionIssues(db, workspaceId)]);
     const ids = new Set(solutions.map((s) => s.id));
-    return { solutions, links: links.filter((l) => ids.has(l.solution_id)) };
+    return { solutions, links: links.filter((l) => ids.has(l.solution_id)), aiIds: await loadAiSolutionIds(db, workspaceId) };
   } catch (err) {
     console.error("Couldn't load the solutions; showing none.", err instanceof Error ? err.message : err);
     return { solutions: [], links: [] };
@@ -201,6 +200,24 @@ export async function loadMemberNames(workspaceId: string): Promise<Record<strin
   }
 }
 
+/**
+ * The ids of solutions built from an AI idea: a proposal of kind solution idea that was built records the solution it made in
+ * `applied.solution_id`. Empty if they can't be read (so every solution reads "By hand").
+ */
+async function loadAiSolutionIds(db: Awaited<ReturnType<typeof createClient>>, workspaceId: string): Promise<string[]> {
+  try {
+    // Only what is needed: a built solution idea's `applied`, which names the solution `build_proposal` made.
+    const { data, error } = await db.from("suggestion_proposals").select("applied").eq("workspace_id", workspaceId).eq("kind", "solution_idea").eq("status", "built");
+    if (error) throw error;
+    return (data ?? []).flatMap((p) => {
+      const id = (p.applied as { solution_id?: unknown } | null)?.solution_id;
+      return typeof id === "string" ? [id] : [];
+    });
+  } catch {
+    return [];
+  }
+}
+
 /** The workspace's saved scenarios, oldest first (RLS: everyone in the workspace can read them). */
 export async function loadWorkspaceScenarios(workspaceId: string): Promise<ScenarioRow[]> {
   return loadScenarios(await createClient(), workspaceId);
@@ -235,6 +252,31 @@ export async function loadProcessVersion(live: ProcessBundle, number: number): P
   if (error) throw error;
   if (!revision || revision.id === live.revision.id) return null;
   return loadProcessBundle(supabase, live.workspace, live.process, revision.id);
+}
+
+/**
+ * The version of a process a solution was copied from, for the Solution page's comparison: the live version when that is still it,
+ * else the earlier published one with live's roles, people and market (those are the workspace's, not a version's), and a sentence
+ * saying live has moved on. Null when the process or that version can't be read.
+ */
+export async function loadSolutionBase(
+  slug: string,
+  processId: string,
+  baseRevisionId: string,
+  /** The live bundle the page already loaded, when it is this process's: it is reused, not loaded again. */
+  loaded?: ProcessBundle | null,
+): Promise<{ base: ProcessBundle; movedOn: string | null } | null> {
+  // No draft is wanted (and none is loaded) for a comparison with a published version.
+  const live = loaded && loaded.process.id === processId ? loaded : (await loadProcessBySlug(await createClient(), slug, { draft: false, processId }))?.live;
+  if (!live) return null;
+  if (live.revision.id === baseRevisionId) return { base: live, movedOn: null };
+  const earlier = await loadProcessBundle(await createClient(), live.workspace, live.process, baseRevisionId);
+  if (!earlier) return null;
+  const base: ProcessBundle = { ...live, revision: earlier.revision, steps: earlier.steps, edges: earlier.edges, retired: earlier.retired };
+  return {
+    base,
+    movedOn: `Live has moved on since: this solution was copied from version ${earlier.revision.number}, and live is now version ${live.revision.number}. “Live” here is version ${earlier.revision.number}, so the maps and numbers show exactly what the solution changed.`,
+  };
 }
 
 /**

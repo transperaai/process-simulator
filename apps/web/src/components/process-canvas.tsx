@@ -783,6 +783,13 @@ interface CanvasProps {
   highlight?: readonly string[] | null;
   /** Show the colour legend in the bar above the map. Default true. */
   legend?: boolean;
+  /** Show the small "new · removed · was → now" key over the map when it carries a diff. Default true; a page that explains it itself turns it off. */
+  diffLegend?: boolean;
+  /**
+   * Frame these steps (with some room around them) instead of the whole map when it is fitted, so a big map opens on what matters.
+   * Steps that aren't drawn (inside a closed group) are ignored; with none drawn the whole map is framed.
+   */
+  focus?: readonly string[] | null;
   /** Show the -, Fit and + buttons in the bar above the map. Default true. */
   zoomControls?: boolean;
   /** Show the playback bar over the foot of the map. Default true; embedded maps turn it off. */
@@ -830,6 +837,8 @@ function Canvas({
   onExpandedChange,
   highlight = null,
   legend = true,
+  diffLegend = true,
+  focus = null,
   zoomControls = true,
   showPlayback = true,
   showLanes = true,
@@ -1374,7 +1383,10 @@ function Canvas({
       const all = flow.getNodes();
       const panel = sizeRef.current;
       if (!all.length || !panel.width) return;
-      const bounds = flow.getNodesBounds(all);
+      const wanted = focus?.length ? all.filter((n) => focus.includes(n.id)) : [];
+      let bounds = flow.getNodesBounds(wanted.length ? wanted : all);
+      // Room around what is framed, so a step or two is seen in its surroundings and not blown up to fill the panel.
+      if (wanted.length) bounds = { x: bounds.x - 260, y: bounds.y - 140, width: bounds.width + 520, height: bounds.height + 280 };
       const pad = fitPadding(lanes, editable, showPlayback);
       let panelHeight = panel.height;
       if (heightMode === "auto") {
@@ -1385,7 +1397,7 @@ function Canvas({
       void flow.setViewport(fitViewport(bounds, { width: panel.width, height: panelHeight }, pad), animate ? { duration: 200 } : undefined);
       setTimeout(measureOverflow, animate ? 260 : 20);
     },
-    [flow, lanes, editable, showPlayback, heightMode, measureOverflow],
+    [flow, lanes, editable, showPlayback, heightMode, measureOverflow, focus],
   );
   const fitRef = useRef(fit);
   useEffect(() => {
@@ -1503,7 +1515,7 @@ function Canvas({
               <Toolbar bundle={bundle} editor={editor} state={editorState} onAdd={addFromToolbar} hideAdd={hideAdd} savedLabel={savedLabel} />
             </div>
           )}
-          {diff && diff.list.length > 0 && (
+          {diffLegend && diff && diff.list.length > 0 && (
             <p
               aria-hidden
               className="absolute top-12 right-2.5 z-10 hidden rounded-token border border-line bg-panel/95 px-2 py-1 text-[11px] text-fg-2 shadow-token md:block"

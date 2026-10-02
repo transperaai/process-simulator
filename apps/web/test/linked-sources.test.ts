@@ -8,7 +8,9 @@ import { linkColumns } from "@transpera-flow/db";
 import { SourceLinkingProvider, withTarget } from "@/components/sources/linking";
 import { LINKED_SOURCES_HELP, LinkedSources } from "@/components/sources/linking-context";
 import { StepDetail } from "@/components/map/step-detail";
-import { NEEDS_A_SOURCE } from "@/lib/sources/links";
+import { SOURCE_DIALOG_HELP } from "@/components/sources/source-dialog";
+import { withIssueSources } from "@/lib/sources/issue-links";
+import { NEEDS_A_SOURCE, editSourceIds, sourcesRemovedBySave } from "@/lib/sources/links";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {}, push: () => {}, replace: () => {} }), usePathname: () => "/", useSearchParams: () => new URLSearchParams() }));
 vi.mock("@/app/w/[slug]/source-actions", () => ({ createSource: async () => ({}), saveSourceField: async () => ({}), deleteSource: async () => ({}), linkSource: async () => ({}), unlinkSource: async () => ({}) }));
@@ -157,5 +159,75 @@ describe("every screen has it", () => {
   it("shows <LinkedSources> on the solution page for its own kind, and loads the links there", () => {
     expect(read("components/solutions/solution-page.tsx")).toMatch(/<LinkedSources target=\{\{ kind: "solution"/);
     expect(read("app/w/[slug]/solutions/[id]/page.tsx")).toContain("<SourceLinkingScope");
+  });
+});
+
+describe("the issue page's Edit dialog after + Link and the x", () => {
+  it("starts from the sources the page shows now, not the list it loaded with", () => {
+    // Loaded with [a, b]; since then a was taken off (the x) and c was linked: the dialog must have b and c.
+    expect(editSourceIds(["a", "b"], ["b", "c"])).toEqual(["b", "c"]);
+    // Without source links on the page, the issue's own list.
+    expect(editSourceIds(["a", "b"], null)).toEqual(["a", "b"]);
+    // A page that shows none (all taken off) saves none.
+    expect(editSourceIds(["a"], [])).toEqual([]);
+  });
+
+  it("a save takes off only the sources it removed from the issue's list, so links made elsewhere survive", () => {
+    // The list before the save was [a, b]; the dialog saved [b, c]: only a goes. d, linked from another tab or by MCP, was on no list: kept.
+    expect(sourcesRemovedBySave(["a", "b"], ["b", "c"])).toEqual(["a"]);
+    expect(sourcesRemovedBySave(["a", "b"], ["a", "b"])).toEqual([]);
+    expect(sourcesRemovedBySave([], ["a"])).toEqual([]);
+    expect(sourcesRemovedBySave(["a"], [])).toEqual(["a"]);
+  });
+
+  it("is wired: the page's draft and the server's removal use those rules", () => {
+    const read = (f: string) => readFileSync(join(__dirname, "..", "src", f), "utf8");
+    expect(read("components/issues/issue-page.tsx")).toContain("editSourceIds(issue.source_ids");
+    expect(read("components/issues/issue-page.tsx")).toContain("sourceLinking?.syncIssue(issue.id, draft.sourceIds)");
+    const actions = read("app/w/[slug]/issue-actions.ts");
+    expect(actions).toContain("sourcesRemovedBySave(before, args.sources)");
+    // The links of sources taken off are deleted by id, not "everything not in the list".
+    expect(actions).not.toMatch(/\.not\("source_id", "in"/);
+  });
+});
+
+describe("the issue page shows the union of its links and its own list", () => {
+  const link = (source: string): SourceLinkRow => ({ id: `l-${source}`, workspace_id: WS, source_id: source, ...linkColumns({ kind: "issue", issueId: I1 }), created_at: at, created_by: null });
+
+  it("adds a link for a source on the issue's list that has none, and only that", () => {
+    const out = withIssueSources([link("a")], WS, { issueId: I1, sourceIds: ["a", "b"] });
+    expect(out.map((l) => l.source_id)).toEqual(["a", "b"]);
+    expect(out[1]!.id).toBe(`issue-source:${I1}:b`);
+    expect(out[1]).toMatchObject({ kind: "issue", issue_id: I1, workspace_id: WS });
+  });
+
+  it("changes nothing when every listed source is linked, and ignores other issues' links", () => {
+    const links = [link("a")];
+    expect(withIssueSources(links, WS, { issueId: I1, sourceIds: ["a"] })).toBe(links);
+    const other: SourceLinkRow = { ...link("a"), issue_id: "40000000-0000-4000-8000-000000000009" };
+    expect(withIssueSources([other], WS, { issueId: I1, sourceIds: ["a"] }).map((l) => l.id)).toEqual([other.id, `issue-source:${I1}:a`]);
+  });
+
+  it("is passed the issue's list by the issue page, and unlinking one takes it off the list", () => {
+    const read = (f: string) => readFileSync(join(__dirname, "..", "src", f), "utf8");
+    expect(read("app/w/[slug]/issues/[number]/page.tsx")).toContain("issueSources={{ issueId: issue.id, sourceIds: issue.source_ids }}");
+    expect(read("app/w/[slug]/source-actions.ts")).toContain("issue-source:");
+  });
+});
+
+describe("wording", () => {
+  it("uses the prototype's words in the insight pop-up and the step detail", () => {
+    const read = (f: string) => readFileSync(join(__dirname, "..", "src", f), "utf8");
+    expect(read("components/insights.tsx")).toContain('empty="None linked" linkText="+ Link a source"');
+    expect(read("components/map/step-detail.tsx")).toContain('empty="None linked"');
+    const html = inProvider(createElement(LinkedSources, { target: { kind: "insight", insightKey: KEY }, label: "Insight: x", empty: "None linked", linkText: "+ Link a source" }));
+    expect(html).toContain(">+ Link a source</button>");
+    expect(text(html)).toContain("None linked");
+  });
+
+  it("has an (i) on the choice between a new and an existing source", () => {
+    expect(SOURCE_DIALOG_HELP.choice.label).toBe("New or existing source");
+    expect(SOURCE_DIALOG_HELP.choice.description.length).toBeGreaterThan(30);
+    expect(readFileSync(join(__dirname, "..", "src/components/sources/source-dialog.tsx"), "utf8")).toContain("<Help {...SOURCE_DIALOG_HELP.choice} />");
   });
 });

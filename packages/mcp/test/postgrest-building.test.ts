@@ -430,7 +430,9 @@ describe.skipIf(!POSTGREST_URL)("MCP process building over PostgREST (drafts onl
     expect(more.ok, JSON.stringify(more)).toBe(true);
     expect(more.data.already_linked).toEqual(["Process: Sales pipeline"]);
     expect(more.data.added).toHaveLength(2);
-    expect(await call(editor, "link_source", { source: "Ops walkthrough", links: [] })).toMatchObject({ ok: false });
+    // An empty list is refused by the tool's input schema (at least one link), before the tool runs: the client gets a protocol error, not a result.
+    const empty = await editor.callTool({ name: "link_source", arguments: { source: "Ops walkthrough", links: [] } }).catch((e: Error) => e);
+    expect(empty instanceof Error ? empty.message : JSON.stringify(empty)).toMatch(/at least 1|too_small|Too small/i);
     expect(await call(editor, "link_source", { source: "No such source", links: [{ process: "Sales pipeline" }] })).toMatchObject({ ok: false, error: { code: "not_found" } });
 
     // link_later leaves it unlinked until something cites it.

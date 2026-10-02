@@ -233,7 +233,7 @@ function Preview({ upload, loaded, onBack, onCancel }: { upload: UploadProcess; 
             <Input id="upload-name" value={name} maxLength={120} onChange={(e) => setName(e.target.value)} aria-invalid={taken || undefined} />
             {taken && (
               <p role="alert" className="text-sm text-crit" data-upload-taken>
-                You already have a process called &lsquo;{p.nameTaken}&rsquo;. Give this one a different name.
+                {`You already have a process called '${p.nameTaken}'. Give this one a different name.`}
               </p>
             )}
           </div>

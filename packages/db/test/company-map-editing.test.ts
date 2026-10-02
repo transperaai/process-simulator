@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type pg from "pg";
+import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestDb, createUser, type TestDb } from "./harness";
 
@@ -413,5 +413,126 @@ describe("restoring a version of the company map re-links its processes", () => 
     const restored = await commitAs(editor.claims, (c) => rpc(c, "restore_version", w.sales, second.id));
     expect(restored).toMatchObject({ status: "restored", unlinked_children: 1, skipped_holders: 0, added_holders: 0 });
     expect((await q("select child_process_id, kind from steps where revision_id = $1", [restored.revision_id]))[0]).toEqual({ child_process_id: null, kind: "subprocess" });
+  });
+});
+
+describe("review fixes: nothing takes a card off the map, history is kept, drafts stay equal to live, bulk is one version", () => {
+  const untouched = { steps: { added: [], removed: [], changed: [] }, edges: { added: [], removed: [], changed: [] } };
+  const changesOf = async (w: World) => {
+    const p = await processRow(w.cid);
+    return (await q("select private.revision_changes($1, $2) as r", [p.live_revision_id, p.draft_revision_id]))[0].r;
+  };
+
+  it("refuses every road that takes a card off the map: delete, unlink, and deleting a group that holds one", async () => {
+    const w = await world();
+    const draft = await openDraft(w.cid);
+    const card = (await holderOf(draft, w.support))!;
+    await expect(commitAs(editor.claims, (c) => c.query("update steps set child_process_id = null where revision_id = $1 and id = $2", [draft, card.id]))).rejects.toThrow(/process library/);
+    await expect(commitAs(editor.claims, (c) => c.query("update steps set child_process_id = $3 where revision_id = $1 and id = $2", [draft, card.id, w.delivery]))).rejects.toThrow();
+    await expect(commitAs(editor.claims, (c) => save(c, "steps", draft, card.id, { child_process_id: w.support }, { child_process_id: null }))).rejects.toThrow(/process library/);
+    // A card in a group, and the group in another: deleting either group is deleting the card.
+    const [inner, outer] = [randomUUID(), randomUUID()];
+    await commitAs(editor.claims, async (c) => {
+      await c.query("insert into steps (id, revision_id, workspace_id, process_id, name, kind, x, y) values ($1, $3, $4, $5, 'Inner', 'group', 0, 0), ($2, $3, $4, $5, 'Outer', 'group', 0, 0)", [inner, outer, draft, w.ws, w.cid]);
+      await c.query("update steps set parent_step_id = $2 where revision_id = $1 and id = $3", [draft, outer, inner]);
+      await c.query("update steps set parent_step_id = $2 where revision_id = $1 and id = $3", [draft, inner, card.id]);
+    });
+    await expect(commitAs(editor.claims, (c) => c.query("delete from steps where revision_id = $1 and id = $2", [draft, inner]))).rejects.toThrow(/process library/);
+    await expect(commitAs(editor.claims, (c) => c.query("delete from steps where revision_id = $1 and id = $2", [draft, outer]))).rejects.toThrow(/process library/);
+    expect((await q("select count(*)::int n from steps where revision_id = $1 and child_process_id = $2", [draft, w.support]))[0].n).toBe(1);
+  });
+
+  it("keeps history: only drafts are made or deleted, status moves only as publishing moves it, pointers name the right versions", async () => {
+    const w = await world();
+    const live = (await processRow(w.cid)).live_revision_id;
+    const [old] = await q("select id from process_revisions where process_id = $1 and status = 'superseded' order by number limit 1", [w.cid]);
+    const [{ number }] = await q("select max(number)::int number from process_revisions where process_id = $1", [w.cid]);
+    const bad = (sql: string, params: unknown[]) => expect(commitAs(editor.claims, (c) => c.query(sql, params))).rejects.toThrow();
+    await bad("insert into process_revisions (workspace_id, process_id, number, status) values ($1, $2, $3, 'superseded')", [w.ws, w.cid, number + 1]);
+    await bad("insert into process_revisions (workspace_id, process_id, number, status, published_at) values ($1, $2, $3, 'published', now())", [w.ws, w.cid, number + 1]);
+    await bad("delete from process_revisions where id = $1", [old.id]);
+    await bad("delete from process_revisions where id = $1", [live]);
+    await bad("update process_revisions set status = 'draft' where id = $1", [old.id]);
+    await bad("update process_revisions set status = 'draft' where id = $1", [live]);
+    await bad("update process_revisions set status = 'published' where id = $1", [old.id]);
+    await bad("update processes set live_revision_id = $2 where id = $1", [w.cid, old.id]);
+    const draft = await openDraft(w.cid);
+    await bad("update processes set draft_revision_id = $2 where id = $1", [w.cid, live]);
+    // What publishing does still works, and so does discarding.
+    await expect(commitAs(editor.claims, (c) => rpc(c, "publish_process", w.cid))).resolves.toMatchObject({ status: "published" });
+    expect((await processRow(w.cid)).live_revision_id).toBe(draft);
+    await openDraft(w.cid);
+    await expect(commitAs(editor.claims, (c) => rpc(c, "discard_draft", w.cid))).resolves.toMatchObject({ status: "discarded" });
+  });
+
+  it("mirrors events into an untouched draft with live's own rows: no phantom changes, so restore and publish see only the person's work", async () => {
+    const w = await world();
+    await openDraft(w.cid);
+    expect(await changesOf(w)).toEqual(untouched);
+    const extra = randomUUID();
+    await q("insert into processes (id, workspace_id, name, kind) values ($1, $2, 'Partnerships', 'pipeline')", [extra, w.ws]);
+    expect(await changesOf(w)).toEqual(untouched);
+    await q("update processes set name = 'Partners' where id = $1", [extra]);
+    expect(await changesOf(w)).toEqual(untouched);
+    await q("update processes set kind = 'servicing' where id = $1", [extra]);
+    expect(await changesOf(w)).toEqual(untouched);
+    await q("delete from processes where id = $1", [extra]);
+    expect(await changesOf(w)).toEqual(untouched);
+    // An untouched draft is replaced by a restore without asking.
+    const [first] = await q("select id from process_revisions where process_id = $1 and status = 'superseded' order by number limit 1", [w.cid]);
+    await expect(commitAs(editor.claims, (c) => rpc(c, "restore_version", w.cid, first.id))).resolves.toMatchObject({ status: "restored" });
+  });
+
+  it("makes one system version for a bulk create, quickly", async () => {
+    const w = await world();
+    const count = async () => (await q("select count(*)::int n from process_revisions where process_id = $1", [w.cid]))[0].n as number;
+    const before = await count();
+    const started = Date.now();
+    await q("insert into processes (workspace_id, name, kind) select $1, 'Bulk ' || i, 'pipeline' from generate_series(1, 60) i", [w.ws]);
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(await count()).toBe(before + 1);
+    const live = (await processRow(w.cid)).live_revision_id;
+    expect((await q("select count(*)::int n from steps where revision_id = $1 and child_process_id is not null", [live]))[0].n).toBe(63);
+    expect((await history(w.cid))[0]!.note).toMatch(/^Added Bulk 1; Added Bulk 2/);
+    // Separate transactions stay separate versions.
+    await q("insert into processes (workspace_id, name, kind) values ($1, 'Later', 'pipeline')", [w.ws]);
+    expect(await count()).toBe(before + 2);
+  });
+
+  it("keeps a placeholder a person drew when restoring, and skips the card of a process that was deleted", async () => {
+    const w = await world();
+    const draft = await openDraft(w.cid);
+    await commitAs(editor.claims, (c) => c.query("insert into steps (revision_id, workspace_id, process_id, name, kind, x, y) values ($1, $2, $3, 'Placeholder', 'subprocess', 700, 0)", [draft, w.ws, w.cid]));
+    await commitAs(editor.claims, (c) => rpc(c, "publish_process", w.cid));
+    const withPlaceholder = (await processRow(w.cid)).live_revision_id;
+    await q("delete from processes where id = $1", [w.support]);
+    const restored = await commitAs(editor.claims, (c) => rpc(c, "restore_version", w.cid, withPlaceholder));
+    expect(restored).toMatchObject({ status: "restored", skipped_holders: 1 });
+    const names = (await stepsOf(restored.revision_id as string)).map((s) => s.name);
+    expect(names).toContain("Placeholder");
+    expect(names).not.toContain("Support");
+  });
+
+  it("checks a card added while another transaction nests its process after that transaction, so it is not on the map twice", async () => {
+    const w = await world();
+    const draft = await openDraft(w.cid);
+    const extra = randomUUID();
+    await q("insert into processes (id, workspace_id, name, kind) values ($1, $2, 'Racer', 'pipeline')", [extra, w.ws]);
+    await q("delete from steps where revision_id = $1 and child_process_id = $2", [draft, extra]);
+    const other = new pg.Client({ connectionString: db.url });
+    await other.connect();
+    try {
+      await db.client.query("begin");
+      await db.client.query("insert into steps (revision_id, workspace_id, process_id, name, kind, child_process_id, x, y) values ($1, $2, $3, 'Racer', 'subprocess', $4, 0, 900)", [draft, w.ws, w.cid, extra]);
+      await db.client.query("set constraints all immediate");
+      const nesting = other.query("update processes set parent_process_id = $1 where id = $2", [w.sales, extra]);
+      await new Promise((r) => setTimeout(r, 300));
+      await db.client.query("commit");
+      await nesting;
+      const p = await processRow(w.cid);
+      for (const rev of [p.live_revision_id, p.draft_revision_id!]) expect((await q("select count(*)::int n from steps where revision_id = $1 and child_process_id = $2", [rev, extra]))[0].n).toBe(0);
+    } finally {
+      await other.end();
+    }
   });
 });

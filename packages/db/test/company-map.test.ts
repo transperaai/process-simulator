@@ -291,7 +291,7 @@ describe("the backfill", () => {
         .map((l) => l.slice(5))
         .join("\n")
         .replace(`delete from supabase_migrations.schema_migrations where version = '${version}';`, "");
-    const defn = (sql: string, name: string) => sql.match(new RegExp(`create (?:or replace )?function ${name}\\([\\s\\S]*?\\n\\$\\$;`))![0].replace(/^create function/, "create or replace function");
+    const defn = (sql: string, name: string) => sql.match(new RegExp(`^create (?:or replace )?function ${name}\\([\\s\\S]*?\\n\\$\\$;`, "m"))![0].replace(/^create function/, "create or replace function");
     const nested = readFileSync(new URL("../supabase/migrations/20261108000000_nested_processes.sql", import.meta.url), "utf8");
     const restored = defn(nested, "private\\.check_step_nesting");
     const history = readFileSync(new URL("../supabase/migrations/20261118000000_process_history.sql", import.meta.url), "utf8");
@@ -299,7 +299,7 @@ describe("the backfill", () => {
     // Slice 2's rollback: what its header says to re-create, from the files it names.
     const rollBackEditing = [
       ...["revision_history", "restore_version"].map((n) => defn(history, `public\\.${n}`)),
-      ...["company_process_guard", "company_revision_guard", "company_map_before_delete", "company_map_membership", "relayout_company_map", "sync_company_map"].map((n) => defn(migration, `private\\.${n}`)),
+      ...["company_process_guard", "company_revision_guard", "company_map_before_delete", "company_map_membership", "relayout_company_map", "sync_company_map", "check_step_nesting"].map((n) => defn(migration, `private\\.${n}`)),
       "revoke all on function private.sync_company_map(uuid) from public, anon, authenticated;",
       "grant execute on function public.revision_history(uuid) to authenticated;",
     ].join("\n");

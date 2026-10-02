@@ -96,6 +96,26 @@ what they draw, put back what they took out, and rewrite published versions.
 - The sync is applied inside the statement that changes the process (a trigger, security definer, with a lock on the map so two processes
   made together each get their own place and version). A workspace being deleted is skipped.
 
+## Review fixes (same slice)
+
+- **Nothing takes a card off the map**, by any road: a trigger refuses, for anyone signed in, deleting a card, unlinking one (`child_process_id`
+  set to null or another process, including through `save_fields`) and deleting a group with a card anywhere inside it (a cascade
+  would not reach the guard on the card). The system, `restore_version` and the cascades of deleting a draft, process or workspace are not refused.
+- **History is kept.** An editor may only insert a draft, delete a draft, and move a status draft to published or published to superseded (what
+  `publish_process`, `restore_version` and `discard_draft` do); the live pointer may only name the published version and the draft pointer a draft.
+  Ordinary processes have the same hole from before this work; it is not widened or closed here.
+- **An untouched draft stays equal to live.** An event is mirrored into a draft by copying the very rows live got (same ids and places), so the
+  draft's diff against live is only what the person did, and restore does not ask "replace your draft?" over nothing.
+- **Bulk is one version.** Events of one transaction share one system version (it extends the one this transaction already made; nobody outside
+  it can see that version, so this is not editing history). 60 processes made together are one version, "Added A; Added B; …" (cut at 300
+  characters), not 60 copies of the map.
+- **A live rename or move overrides what a person did to that card in live.** Only a system version can; the draft keeps the person's. Accepted:
+  the card is named after its process and sits in its column until the person moves it again.
+- **Restore keeps placeholders.** Deleting a process records its cards (`map_cards_removed` in the audit log, by step id, the same in every
+  version); restore skips those and keeps a subprocess step nobody linked.
+- **Races.** `check_step_nesting` takes the map's row (`for no key update`, as does the sync) when it checks a card of the map, so a card added
+  while another transaction nests its process is checked after that transaction, not before.
+
 ## Alternatives not taken
 
 - *Edit live in place and keep the history honest some other way* (an `edited_at`, or a log of changes): published versions are meant to

@@ -195,6 +195,11 @@ simulation, waits for Austin's end-of-build review.
   register the skill as an MCP prompt so Claude desktop needs no install; add clients, services and lead sources to
   `get_workspace_summary`; a `list_sources` tool; range citations (`value_min`/`value_max`).
 - The extraction fixture lint doesn't check new steps inside a `target` import (the e2e test does).
+- The `suggestions` table (20261015000000) has the same bug A52 fixed for `suggestion_proposals`: deleting an auth user
+  who created or reviewed a suggestion fails, because the foreign key's `ON DELETE SET NULL` trips the
+  `suggestions_before_write` guard ("Suggestions are accepted or rejected with review_suggestions"). Fix it with a new
+  migration that lets a depth > 1 change of only `created_by` or `reviewed_by` to null through (see
+  `private.suggestion_proposals_before_write`).
 
 ## Other open items
 

@@ -7,8 +7,11 @@
 
 import {
   companyOf,
+  NORTHBEAM_PROCESS_ID,
   NORTHBEAM_WORKSPACE_ID,
   northbeamBundle,
+  northbeamIssues,
+  northbeamStepIds,
   northbeamLeadSourceIds,
   northbeamPersonIds,
   northbeamServiceIds,
@@ -17,6 +20,7 @@ import {
   type CompanyModel,
   type ModelSnapshot,
   type ProcessBundle,
+  type ProposalRow,
   type SnapshotProcess,
   type SuggestionPatch,
   type SuggestionRow,
@@ -92,6 +96,69 @@ export function demoSuggestions(): SuggestionRow[] {
       reviewed_at: "2026-09-30T10:05:00.000Z",
       created_at: "2026-09-30T09:05:00.000Z",
     }),
+  ];
+}
+
+/**
+ * Northbeam's sample proposals: an issue to accept or reject, and an idea for the open issue about lead scoring. Fictional,
+ * like the quotes above (A52).
+ */
+export function demoProposals(): ProposalRow[] {
+  const [, , scoring] = northbeamIssues();
+  const base = {
+    workspace_id: NORTHBEAM_WORKSPACE_ID,
+    note: null,
+    status: "pending" as const,
+    created_via: "mcp" as const,
+    proposer_name: null,
+    applied: null,
+    review_note: null,
+    reviewed_by: null,
+    reviewed_at: null,
+    created_by: null,
+  };
+  return [
+    {
+      ...base,
+      id: id(21),
+      kind: "solution_idea",
+      title: "Fast-track partner leads past the fit check",
+      detail: "Partner leads convert twice as well as website leads. Let them skip the fit check and go straight to booking a call.",
+      payload: {
+        steps: [
+          { key: "s1", name: "Partner lead arrives", kind: "start" },
+          { key: "s2", name: "Book discovery call", role: "Sales" },
+          { key: "s3", name: "Quick check by AI", ai: true },
+        ],
+        edges: [
+          { from: "s1", to: "s2" },
+          { from: "s2", to: "s3" },
+        ],
+        replaces_step_ids: [northbeamStepIds.qualify],
+        expect: "AI expects first contact for partner leads under 2 h.",
+      },
+      evidence: [],
+      issue_id: scoring!.id,
+      created_at: "2026-09-30T09:31:00.000Z",
+    },
+    {
+      ...base,
+      id: id(22),
+      kind: "issue",
+      title: "Leads wait a day for a discovery call",
+      detail: "Priya says most discovery calls are booked for the next day, and some leads go cold.",
+      payload: {
+        severity: "warning",
+        type: "delay",
+        links: [{ process_id: NORTHBEAM_PROCESS_ID, step_id: northbeamStepIds.discovery }],
+        target_measure: "Wait before Discovery call",
+        target_now: "24 h",
+        target_goal: "under 8 h",
+      },
+      evidence: [{ source_id: salesNotes, speaker: "Priya Shah", quote: "Most discovery calls are booked for the next day.", timestamp: null }],
+      issue_id: null,
+      created_at: "2026-09-30T09:32:00.000Z",
+    },
   ];
 }
 

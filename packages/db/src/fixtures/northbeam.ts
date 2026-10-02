@@ -1,5 +1,6 @@
 import { NORTHBEAM_CLIENT_GROUPS, NORTHBEAM_FALLBACK_LOAD, NORTHBEAM_ROSTER, NORTHBEAM_TEAM, northbeamClientKey } from "@transpera-flow/engine/northbeam-roster";
 import { NORTHBEAM_SERVICING } from "@transpera-flow/engine/northbeam-servicing";
+import { derivedSourceLinks, type NewSourceLink } from "@transpera-flow/db/source-links";
 import type {
   ClientAssignmentRow,
   ClientGroupRow,
@@ -343,6 +344,16 @@ export function northbeamSources(): SourceRow[] {
       updated_at: at,
     },
   ];
+}
+
+/**
+ * What the sample's sources are linked to: the steps whose figures cite them and the issue that lists one (A53). The same
+ * rows the migration copies from those citations, so a seeded database starts as a migrated one does.
+ */
+export function northbeamSourceLinks(): NewSourceLink[] {
+  const bundle = northbeamBundle();
+  const steps = [...bundle.steps, ...(bundle.otherProcesses ?? []).flatMap((p) => p.steps)];
+  return derivedSourceLinks(steps, northbeamIssues(), northbeamSources());
 }
 
 /**

@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { WorkspaceShell } from "@/components/shell/workspace-shell";
-import { northbeamIssues, processesOf } from "@transpera-flow/db";
-import { demoBundle } from "@/lib/sources/demo";
+import { northbeamIssues, processesOf, unlinkedSources } from "@transpera-flow/db";
+import { demoBundle, demoPageSources, demoSourceLinks } from "@/lib/sources/demo";
 import { demoProposals, demoSuggestions } from "@/lib/suggestions/demo";
 
 /**
@@ -14,6 +14,8 @@ export default async function DemoLayout({ children }: LayoutProps<"/demo">) {
     processes: processesOf(demoBundle()).length,
     openIssues: northbeamIssues().filter((i) => i.status === "open" || i.status === "testing").length,
     pendingSuggestions,
+    // The sample's, like the pending count: sources linked in this tab don't lower it.
+    unlinkedSources: unlinkedSources(demoPageSources(), demoSourceLinks()).length,
   };
   const defaultOpen = (await cookies()).get("sidebar_state")?.value !== "false";
   return (

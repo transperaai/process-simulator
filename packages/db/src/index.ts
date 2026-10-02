@@ -1,5 +1,6 @@
 export * from "./types";
 export * from "./issue-status";
+export * from "./source-links";
 export type { Database, Json } from "./database.types";
 export {
   ModelError,
@@ -131,6 +132,7 @@ export {
   northbeamStepIds,
   northbeamSourceIds,
   northbeamSources,
+  northbeamSourceLinks,
 } from "./fixtures/northbeam";
 export {
   LARKSPUR_PROCESS_ID,
@@ -186,6 +188,9 @@ export {
   loadBlocks,
   loadScenarios,
   loadSources,
+  loadSourceLinks,
+  loadLinkTargets,
+  loadStepNames,
   loadCitingRows,
   loadCompanyModel,
   loadLiveRevisions,
@@ -195,6 +200,7 @@ export {
   RUN_COLUMNS,
   SUGGESTION_ROW_COLUMNS,
   SOURCE_COLUMNS,
+  SOURCE_LINK_COLUMNS,
   SCENARIO_COLUMNS,
   SEASONALITY_COLUMNS,
   SERVICE_COLUMNS,

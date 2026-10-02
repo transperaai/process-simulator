@@ -39,7 +39,7 @@ export function HistoryPage({
 }) {
   return (
     <div>
-      <ShellHeader title="Process history" />
+      <ShellHeader title={company ? "Company map history" : "Process history"} />
       <div className="mx-auto flex w-full min-w-0 max-w-6xl flex-col gap-5 px-4 pt-6 pb-12 sm:px-6">
         <header className="flex flex-col gap-1">
           {nav}

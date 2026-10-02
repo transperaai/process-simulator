@@ -23,6 +23,7 @@ import { PageHeader } from "@/components/shell/page";
 import { ShellHeader } from "@/components/shell/shell-header";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { horizonLabel, horizonWeeks, isHorizonMonths, monthsForWeeks } from "@/lib/horizon";
 import { perceptionGapDetections } from "@/lib/issues/perception";
@@ -250,7 +251,7 @@ export function Overview({ workspaceName, live, parts, company, issues, sources 
           action={
             <div className="flex flex-wrap items-center gap-1.5">
               {companyEditHref && (
-                <Link href={companyEditHref} data-edit-company-map className={`${buttonVariants({ size: "sm" })} bg-edit text-edit-fg hover:bg-edit/90`}>
+                <Link href={companyEditHref} data-edit-company-map className={cn(buttonVariants({ size: "sm" }), "bg-edit text-edit-fg hover:bg-edit/90")}>
                   ✎ Edit company map
                 </Link>
               )}

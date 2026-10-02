@@ -416,7 +416,7 @@ function StepNode({ data, selected }: NodeProps<StepFlowNode>) {
 
 function GroupNode({ data, selected }: NodeProps<GroupFlowNode>) {
   const { step, open, expandable, roll, worstRating, warning, editable } = data;
-  const { toggleGroup } = useContext(CanvasContext);
+  const { toggleGroup, handoffs } = useContext(CanvasContext);
   const toggle = expandable && (
     <button
       type="button"
@@ -472,7 +472,7 @@ function GroupNode({ data, selected }: NodeProps<GroupFlowNode>) {
           {toggle}
         </div>
         <p className="mt-0.5 text-xs text-fg-2">
-          {expandable ? "Group" : "Child process"} · {roll.steps} {roll.steps === 1 ? "step" : "steps"}
+          {expandable ? "Group" : handoffs ? "Process" : "Child process"} · {roll.steps} {roll.steps === 1 ? "step" : "steps"}
         </p>
         <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-xs text-fg-2 tabular-nums">
           <span title="Hands-on time of every step inside, added up">{roll.handsOnHours ? `${formatHours(roll.handsOnHours)} work` : "no work entered"}</span>
@@ -1051,7 +1051,7 @@ function Canvas({
             type: "group",
             position: dragging.get(step.id) ?? { x: Number(step.x), y: Number(step.y) },
             selected: selected.has(step.id),
-            ariaLabel: `${step.name}, ${isGroup(step) ? "group" : "child process"} of ${roll.steps} ${roll.steps === 1 ? "step" : "steps"}${isGroup(step) ? (open ? ", open" : ", closed") : ""}`,
+            ariaLabel: `${step.name}, ${isGroup(step) ? "group" : handoffs ? "process" : "child process"} of ${roll.steps} ${roll.steps === 1 ? "step" : "steps"}${isGroup(step) ? (open ? ", open" : ", closed") : ""}`,
             ...(step.parent_step_id ? { parentId: step.parent_step_id } : {}),
             // An open group is as big as its steps need: React Flow takes the size from here, and so shows it at once.
             ...(box ? { width: box.width, height: box.height, style: { width: box.width, height: box.height } } : {}),
@@ -1148,7 +1148,7 @@ function Canvas({
         };
       });
     return [...ghosts, ...drafted];
-  }, [bundle, result, selection.steps, dragging, measured, warnings, editable, order, layout, editing, editingId, nodeCache, playback.pulsing, diff, drawn, lit, openIssues, rating]);
+  }, [bundle, result, selection.steps, dragging, measured, warnings, editable, order, layout, editing, editingId, nodeCache, playback.pulsing, diff, drawn, lit, openIssues, rating, handoffs]);
 
   const edges = useMemo(() => {
     const selected = new Set(selection.edges);

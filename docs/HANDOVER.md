@@ -1,6 +1,6 @@
 # Handover
 
-Updated 1 Oct 2026 (late evening), during the redesign build (Milestone A, A31–A58). Start a new session with:
+Updated 2 Oct 2026 (afternoon AEST). Milestone A's code is complete: 57 of 58 tickets closed; only A24 (#27) is open. Start a new session with:
 
 > Read `CLAUDE.md` and `docs/HANDOVER.md`, then carry on from "Next steps".
 
@@ -38,18 +38,20 @@ Merged to `main` (live on https://transpera-flow.vercel.app):
 | Engine performance | #148 | recovers the A56 churn-tick cost; outputs bit-identical, ENGINE 1.6.0 |
 | A54 first principles (#119) | #147 | migration 20261119000000 |
 | A47 issues data and Acknowledge dialog (#112) | #149 | migration 20261120000000 (strictly additive; see below) |
+| A46 AI analysis (#111) | #150 | migration 20261121000000 (row 33) |
+| A48 issues pages (#113) | #152 | migration 20261121500000 (row 34); D38 |
+| A49 solutions (#114) | #153 | migration 20261122000000 (row 35) |
+| A52 suggestions v2, slice 1 (#117) | #154 | migration 20261124000000 (row 36) |
+| A53 sources must link, slice 1 (#118) | #155 | migration 20261124500000 (row 37); adds the "data" source type |
+| A50 solution page, slice 1 (#115) | #156 | migration 20261125000000 (row 38) |
+| Flaky `map-browser` test | #157 | test harness only |
+| A52 suggestions v2, slice 2 (#117) | #158 | migration 20261125500000 (row 39) |
+| A50 solution page, slice 2 (#115) | #159 | comparison, measures, MRR, stress test |
+| A53 sources must link, slice 2 (#118) | #160 | "+ Link" everywhere; MCP `add_source` needs links |
 
-Open PRs (each gets an Opus review; findings go back to the builder; I apply the migration, then merge):
+No PRs are open. The last three tickets (A50, A52, A53) were each built as two vertical slices.
 
-| Ticket | PR | Migration | State |
-|---|---|---|---|
-| A46 AI analysis (#111) | #150 | 20261121000000 (row 33) | merged, applied |
-| A49 solutions (#114) | not yet open | 20261122000000 (row 35) | building |
-| A48 issues pages (#113) | #152 | 20261121500000 (row 34) | re-check passed; main (with A46) merged in; ready to apply and merge |
-
-Next: A50 solution page (after A49), A52 suggestions (after A49 and A46), A53 sources must link (last).
-
-**Production database:** applied up to `20261120000000`. Migrations go on strictly in version order, before the PR
+**Production database:** applied up to `20261125500000` (row 39). Migrations go on strictly in version order, before the PR
 merges (the app reads the new tables). A PR that slips is renumbered, not applied out of order. See
 `docs/production-migrations.md`.
 
@@ -69,6 +71,11 @@ run stays removed (History replaces it; "Explain this run" has no entry point un
   budgets relative to a baseline measured on the same runner. Tests have not been loosened.
 - **AI analysis sources (A46):** "read linked sources and quotes" defaults off (it would send interview quotes to
   Anthropic). Switch on per workspace in Settings → AI analysis if wanted.
+- **D38 sign-off:** a resolved issue stays off the map; a re-detection shows as an insight (recorded in the PRD; treated
+  as accepted).
+- **MCP `link_later`:** `add_source` may skip links only for transcripts that `import_process` / `add_step` /
+  `update_step` will cite; the extract-process skill then links each transcript to the process. Kept on the
+  reviewer's advice.
 - **24-month speed:** a slider move on full Northbeam at 24 months takes about 360–440 ms, against the 250 ms
   13-week target (A58 tests against the target scaled by horizon).
 
@@ -145,10 +152,9 @@ password to `postgres`.
 
 ## Next steps
 
-1. Drive the open PRs above to merged, in migration order.
-2. Start the next round as blockers merge (see the table's last line), up to four builders at once.
-3. After each merge: comment on the ticket, keep `docs/qa/milestone-a.md` current, update this file.
-4. Morning summary for Austin: what's live, anything parked, the 24-month performance note.
+1. A24 (#27): needs Austin's transcripts.
+2. Austin's decisions under "Waiting on Austin" (the CI timing tests above all: they flake on most PRs).
+3. Austin's QA of the redesign on production; plan Milestone B from the follow-ups below.
 
 The 30 Sep plan (QA list → triage → build) is done: the triage became the redesign plan.
 
@@ -186,6 +192,11 @@ byte-identical results. Further work, starting with profiling the servicing
 simulation, waits for Austin's end-of-build review.
 
 ## Follow-ups (not ticketed yet; raise with Austin when planning)
+
+- "Open in Editor" on a saved solution starts a new solution from live; loading the saved copy needs the Editor's
+  solution session to seed from a stored copy (A50).
+- The play-link Proposals queue (B4, #33): A52's schema supports it (`created_via='play_link'`, proposer fields).
+- A46's service-role writer for AI analyses (Austin adds the key in Vercel himself; never in chat).
 
 - MCP editing tools (`add_step`, `update_step`, …) open a draft (`beginEdit`) before validating names; a failed call
   leaves a harmless copy of live as a draft. `import_process` was fixed in #91 to write nothing on failure.

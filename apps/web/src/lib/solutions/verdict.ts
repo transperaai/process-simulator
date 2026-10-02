@@ -15,34 +15,79 @@ import { SEED_STRIDE, simulate, type EngineModel, type SimulationResult } from "
 import { formatNumber } from "@/lib/format";
 
 export type Direction = "atMost" | "atLeast";
-export type GoalUnit = "hours" | "minutes" | "days" | "weeks" | "percent" | "money" | "none";
+export type GoalUnit = "seconds" | "minutes" | "hours" | "days" | "weeks" | "months" | "percent" | "money" | "none";
+export type GoalPeriod = "day" | "week" | "month" | "quarter" | "year";
 
 export interface ParsedGoal {
   direction: Direction;
   value: number;
   unit: GoalUnit;
+  /** "6 a quarter": the goal is per period. A count or money amount per period can't be checked against a whole run. */
+  period: GoalPeriod | null;
 }
 
-/** "under 4 hours", "below 80%", "at least 6 a quarter" read as a direction, a number and a unit; null when they can't be. */
+const AT_MOST = "(?:under|below|less than|fewer than|within|at most|up to|max(?:imum)?|lower than|shorter than|no longer than)";
+const AT_LEAST = "(?:over|above|more than|at least|minimum|exceeding|exceeds|greater than|higher than|longer than)";
+
+/**
+ * "under 4 hours", "below 80%", "no less than 10 wins", "10 min or less", "from 1.4 d to under 4 hours" read as a direction, a number
+ * and a unit; null when they can't be. Negated phrases are read first ("no less than" is at least, not at most), the number is the one
+ * after the direction word (after "to" in a "from ... to ..." goal), and a trailing "or less" or "or more" gives the direction of the
+ * number before it.
+ */
 export function parseGoal(text: string | null | undefined): ParsedGoal | null {
   if (!text) return null;
-  const t = text.toLowerCase().replace(/,/g, "").trim();
-  let direction: Direction | null = null;
-  if (/^(<=?|≤)|\b(under|below|less than|fewer than|within|at most|no more than|max(?:imum)?|up to|no longer than|lower than)\b/.test(t)) direction = "atMost";
-  else if (/^(>=?|≥)|\b(over|above|more than|at least|min(?:imum)?|exceeding|exceeds|greater than|higher than)\b/.test(t)) direction = "atLeast";
-  if (!direction) return null;
-  const n = /(\d+(?:\.\d+)?)\s*(k\b)?/.exec(t);
+  let t = text.toLowerCase().replace(/,/g, "").trim();
+  // "from 1.4 d to under 4 hours": the goal is what follows the last "to".
+  if (/\bfrom\b/.test(t) && /\bto\b/.test(t)) t = t.slice(t.lastIndexOf(" to ") + 4);
+
+  let direction = null as Direction | null;
+  let from = 0;
+  let trailing = false;
+  const find = (re: RegExp, d: Direction) => {
+    const m = re.exec(t);
+    if (m && direction === null) {
+      direction = d;
+      from = m.index + m[0].length;
+    }
+  };
+  // Negated phrases first.
+  find(/\b(?:no|not)\s+(?:less|fewer|lower|shorter)\s+than\b/, "atLeast");
+  find(/\b(?:no|not)\s+(?:more|greater|higher|longer)\s+than\b/, "atMost");
+  find(/\bnot\s+(?:under|below)\b/, "atLeast");
+  find(/\bnot\s+(?:over|above)\b/, "atMost");
+  // A trailing "or less" / "or more" belongs to the number before it.
+  if (direction === null) {
+    const m = /\bor\s+(less|fewer|under|below|lower|shorter|more|over|above|greater|higher|longer)\b/.exec(t);
+    if (m) {
+      direction = /^(less|fewer|under|below|lower|shorter)$/.test(m[1]!) ? "atMost" : "atLeast";
+      trailing = true;
+    }
+  }
+  if (direction === null) find(new RegExp(`(?:^|\\b)${AT_MOST}\\b|^(?:<=?|≤)`), "atMost");
+  if (direction === null) find(new RegExp(`(?:^|\\b)${AT_LEAST}\\b|^(?:>=?|≥)`), "atLeast");
+  if (direction === null) return null;
+  // The leading symbol forms ("<4h") have no \b before them; skip over the symbol.
+  const dir: Direction = direction;
+
+  const money = /[£$€]|\b(?:usd|gbp|eur|aud)\b/.test(t);
+  const n = /(\d+(?:\.\d+)?)(k|m|bn)?(?![a-z])/.exec(trailing ? t : t.slice(from));
   if (!n) return null;
-  const value = Number(n[1]) * (n[2] ? 1000 : 1);
-  const after = t.slice(n.index + n[0].length);
+  // k always means thousand; m and bn mean million and billion only beside a currency (otherwise "10m" could be minutes).
+  const mult = n[2] === "k" ? 1000 : n[2] === "m" && money ? 1e6 : n[2] === "bn" && money ? 1e9 : null;
+  const value = Number(n[1]) * (mult ?? 1);
+  const rest = (trailing ? t : t.slice(from)).slice(n.index + n[0].length - (n[2] && mult === null ? n[2].length : 0));
   let unit: GoalUnit = "none";
-  if (/^\s*(%|percent|per cent)/.test(after)) unit = "percent";
-  else if (/^\s*(minutes?|mins?)\b/.test(after)) unit = "minutes";
-  else if (/^\s*(hours?|hrs?|h)\b/.test(after)) unit = "hours";
-  else if (/^\s*(working days?|days?|d)\b/.test(after)) unit = "days";
-  else if (/^\s*(weeks?|wks?|w)\b/.test(after)) unit = "weeks";
-  else if (/[£$€]/.test(t)) unit = "money";
-  return { direction, value, unit };
+  if (/^\s*(%|percent|per cent)/.test(rest)) unit = "percent";
+  else if (/^\s*(seconds?|secs?|s)\b/.test(rest)) unit = "seconds";
+  else if (/^\s*(minutes?|mins?|m)\b/.test(rest)) unit = "minutes";
+  else if (/^\s*(hours?|hrs?|h)\b/.test(rest)) unit = "hours";
+  else if (/^\s*(?:(?:business|working)\s+)?(days?|d)\b/.test(rest)) unit = "days";
+  else if (/^\s*(?:(?:business|working)\s+)?(weeks?|wks?|w)\b/.test(rest)) unit = "weeks";
+  else if (/^\s*(months?|mos?)\b/.test(rest)) unit = "months";
+  else if (money) unit = "money";
+  const per = /(?:\bper\b|\ba\b|\beach\b|\bevery\b|\/)\s*(day|week|month|quarter|year)\b/.exec(t);
+  return { direction: dir, value, unit, period: (per?.[1] as GoalPeriod | undefined) ?? null };
 }
 
 export type MeasureKind = "handsOn" | "wait" | "busy" | "cycle" | "areaTime" | "winRate" | "won" | "mrr" | "revenue" | "labour" | "wip";
@@ -65,6 +110,7 @@ export function measureKind(measure: string | null | undefined, hasArea: boolean
   return null;
 }
 
+const TIME_UNITS: readonly GoalUnit[] = ["seconds", "minutes", "hours", "days", "weeks", "months"];
 const TIME: readonly MeasureKind[] = ["handsOn", "wait", "cycle", "areaTime"];
 
 export interface TargetVerdict {
@@ -88,7 +134,9 @@ export function formatSpan(hours: number, hoursPerWeek: number): string {
 
 /** A time in the unit the goal was written in, so "under 3 hours" is answered in hours and "under 2 days" in days. */
 export function formatSpanLike(hours: number, hoursPerWeek: number, unit: GoalUnit): string {
+  if (unit === "seconds") return `${formatNumber(hours * 3600, 0)} s`;
   if (unit === "minutes") return `${formatNumber(hours * 60, 0)} min`;
+  if (unit === "months") return `${formatNumber(hours / ((hoursPerWeek * 52) / 12), 1)} mo`;
   if (unit === "days") return `${formatNumber(hours / (hoursPerWeek / 5), 1)} d`;
   if (unit === "weeks") return `${formatNumber(hours / hoursPerWeek, 1)} w`;
   if (unit === "hours") return `${formatNumber(hours, hours < 10 ? 1 : 0)} h`;
@@ -126,20 +174,25 @@ export function checkTarget(args: {
     return unchecked(`The simulation doesn't compute “${(target.measure ?? "").trim() || "this measure"}”, so it wasn't checked. Give your own verdict.`);
   }
 
+  // A goal per period ("6 a quarter") isn't a total for the run, and the run's length isn't the period: no verdict for counts and money.
+  if (goal.period && ["won", "wip", "mrr", "revenue", "labour"].includes(kind)) {
+    return unchecked(`The goal “${goalText(target.goal)}” is per ${goal.period}, and the simulation reports totals for the whole run, so it wasn't checked. Give your own verdict.`);
+  }
   // Put the goal in the measure's own unit.
   const hpw = model.hoursPerWeek;
   let goalValue: number;
   if (TIME.includes(kind)) {
-    const toHours = { hours: 1, minutes: 1 / 60, days: hpw / 5, weeks: hpw, none: 1, percent: NaN, money: NaN } as const;
+    // Working hours: a working day is a fifth of the week, a month a twelfth of the year's weeks. No unit, or a unit that isn't time: no verdict.
+    const toHours = { seconds: 1 / 3600, minutes: 1 / 60, hours: 1, days: hpw / 5, weeks: hpw, months: (hpw * 52) / 12, none: NaN, percent: NaN, money: NaN } as const;
     goalValue = goal.value * toHours[goal.unit];
   } else if (kind === "busy" || kind === "winRate") {
     if (goal.unit !== "percent" && goal.unit !== "none") return unchecked(`The goal “${goalText(target.goal)}” isn't a percentage, so it wasn't checked. Give your own verdict.`);
     goalValue = goal.value / 100;
   } else if (kind === "mrr" || kind === "revenue" || kind === "labour") {
-    if (goal.unit === "percent" || ["hours", "days", "weeks", "minutes"].includes(goal.unit)) return unchecked(`The goal “${goalText(target.goal)}” isn't an amount of money, so it wasn't checked. Give your own verdict.`);
+    if (goal.unit === "percent" || TIME_UNITS.includes(goal.unit)) return unchecked(`The goal “${goalText(target.goal)}” isn't an amount of money, so it wasn't checked. Give your own verdict.`);
     goalValue = goal.value;
   } else {
-    if (goal.unit === "percent" || goal.unit === "money" || ["hours", "days", "weeks", "minutes"].includes(goal.unit)) return unchecked(`The goal “${goalText(target.goal)}” isn't a count, so it wasn't checked. Give your own verdict.`);
+    if (goal.unit === "percent" || goal.unit === "money" || TIME_UNITS.includes(goal.unit)) return unchecked(`The goal “${goalText(target.goal)}” isn't a count, so it wasn't checked. Give your own verdict.`);
     goalValue = goal.value;
   }
   if (!Number.isFinite(goalValue)) return unchecked(`The goal “${goalText(target.goal)}” doesn't match what “${(target.measure ?? "").trim()}” measures, so it wasn't checked. Give your own verdict.`);

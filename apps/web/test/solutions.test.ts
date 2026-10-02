@@ -19,14 +19,37 @@ function faster(base: ProcessBundle, hours: number): ProcessBundle {
 
 describe("reading a goal", () => {
   it("reads a direction, a number and a unit", () => {
-    expect(parseGoal("under 4 hours")).toEqual({ direction: "atMost", value: 4, unit: "hours" });
-    expect(parseGoal("below 80%")).toEqual({ direction: "atMost", value: 80, unit: "percent" });
-    expect(parseGoal("at least 6 a quarter")).toEqual({ direction: "atLeast", value: 6, unit: "none" });
-    expect(parseGoal("Over 2 days")).toEqual({ direction: "atLeast", value: 2, unit: "days" });
-    expect(parseGoal("less than 30 minutes")).toEqual({ direction: "atMost", value: 30, unit: "minutes" });
-    expect(parseGoal("no more than 1.5 weeks")).toEqual({ direction: "atMost", value: 1.5, unit: "weeks" });
-    expect(parseGoal("under £2,500")).toEqual({ direction: "atMost", value: 2500, unit: "money" });
-    expect(parseGoal("at least 12k")).toEqual({ direction: "atLeast", value: 12000, unit: "none" });
+    expect(parseGoal("under 4 hours")).toEqual({ direction: "atMost", value: 4, unit: "hours", period: null });
+    expect(parseGoal("below 80%")).toEqual({ direction: "atMost", value: 80, unit: "percent", period: null });
+    expect(parseGoal("at least 6 a quarter")).toEqual({ direction: "atLeast", value: 6, unit: "none", period: "quarter" });
+    expect(parseGoal("Over 2 days")).toEqual({ direction: "atLeast", value: 2, unit: "days", period: null });
+    expect(parseGoal("less than 30 minutes")).toEqual({ direction: "atMost", value: 30, unit: "minutes", period: null });
+    expect(parseGoal("no more than 1.5 weeks")).toEqual({ direction: "atMost", value: 1.5, unit: "weeks", period: null });
+    expect(parseGoal("under £2,500")).toEqual({ direction: "atMost", value: 2500, unit: "money", period: null });
+    expect(parseGoal("at least 12k")).toEqual({ direction: "atLeast", value: 12000, unit: "none", period: null });
+  });
+
+  it("reads negated phrases, trailing or-less, and the number after the direction word", () => {
+    const g = (text: string) => parseGoal(text);
+    expect(g("10 min or less")).toEqual({ direction: "atMost", value: 10, unit: "minutes", period: null });
+    expect(g("5 days or more")).toEqual({ direction: "atLeast", value: 5, unit: "days", period: null });
+    expect(g("no less than 10 wins")).toEqual({ direction: "atLeast", value: 10, unit: "none", period: null });
+    expect(g("no fewer than 5")).toEqual({ direction: "atLeast", value: 5, unit: "none", period: null });
+    expect(g("not more than 3 days")).toEqual({ direction: "atMost", value: 3, unit: "days", period: null });
+    expect(g("from 1.4 d to under 4 hours")).toEqual({ direction: "atMost", value: 4, unit: "hours", period: null });
+    expect(g("within 1 month")).toEqual({ direction: "atMost", value: 1, unit: "months", period: null });
+    expect(g("under 90 seconds")).toEqual({ direction: "atMost", value: 90, unit: "seconds", period: null });
+    expect(g("under 2 business days")).toEqual({ direction: "atMost", value: 2, unit: "days", period: null });
+    expect(g("under £2m")).toEqual({ direction: "atMost", value: 2_000_000, unit: "money", period: null });
+    expect(g("at least 2k")).toEqual({ direction: "atLeast", value: 2000, unit: "none", period: null });
+    // Bare "min" is minutes, not a direction; a goal with no direction can't be read.
+    expect(g("30 min")).toBeNull();
+    expect(g("£2m")).toBeNull();
+    expect(g("min 10 wins")).toBeNull();
+    expect(g("minimum 10 wins")).toEqual({ direction: "atLeast", value: 10, unit: "none", period: null });
+    expect(g("under 10m")).toEqual({ direction: "atMost", value: 10, unit: "minutes", period: null });
+    expect(g("at least 6 per month")?.period).toBe("month");
+    expect(g("under 4 hours per proposal")?.period).toBeNull();
   });
 
   it("gives up on what it can't read", () => {
@@ -116,6 +139,24 @@ describe("the automatic verdict", () => {
     expect(busy.note).toMatch(/9\d%|100%/);
     expect(checkTarget({ target: { measure: "Time to complete", goal: "under 1000 days" }, model: liveModel, result: liveRun, area: [] })).toMatchObject({ status: "pass", holdsPct: 100 });
     expect(checkTarget({ target: { measure: "Clients won", goal: "at least 1" }, model: liveModel, result: liveRun, area: [] }).status).toBe("pass");
+  });
+
+  it("converts every time unit, and gives no verdict for a time with no unit or a period", () => {
+    const ver = (measure: string, goal: string, area: string[] = [ids.audit]) => checkTarget({ target: { measure, goal }, model: liveModel, result: liveRun, area });
+    // Audit & proposal waits about 50 working hours: 1.25 working weeks, 6.25 working days, under a month.
+    expect(ver("Wait at Audit & proposal", "under 300000 seconds").status).toBe("pass");
+    expect(ver("Wait at Audit & proposal", "under 3000 seconds").status).toBe("fail");
+    expect(ver("Wait at Audit & proposal", "under 60 minutes").status).toBe("fail");
+    expect(ver("Wait at Audit & proposal", "under 2 business days").status).toBe("fail");
+    expect(ver("Wait at Audit & proposal", "under 7 business days").status).toBe("pass");
+    expect(ver("Wait at Audit & proposal", "within 1 month").status).toBe("pass");
+    expect(ver("Wait at Audit & proposal", "under 1 week").status).toBe("fail");
+    expect(ver("Wait at Audit & proposal", "under 4").status).toBe("unchecked");
+    for (const [measure, goal] of [["Clients won", "at least 6 a quarter"], ["Clients won", "at least 2 per month"], ["New MRR", "at least 5k a month"], ["Revenue billed", "under 10k per week"]]) {
+      const v = ver(measure!, goal!, []);
+      expect(v.status, `${measure} ${goal}`).toBe("unchecked");
+      expect(v.note).toMatch(/is per (quarter|month|week)/);
+    }
   });
 
   it("gives no verdict, and says why, when the target can't be checked", () => {

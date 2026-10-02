@@ -69,13 +69,13 @@ export async function proposalLookups(supabase: Awaited<ReturnType<typeof create
   const [processes, steps, issues] = await Promise.all([
     links.some((l) => l.process_id) ? supabase.from("processes").select("id, name").eq("workspace_id", ws) : null,
     stepIds.length ? supabase.from("steps").select("id, name").eq("workspace_id", ws).in("id", stepIds) : null,
-    issueIds.length ? supabase.from("issues").select("id, number, title").eq("workspace_id", ws).in("id", issueIds) : null,
+    issueIds.length ? supabase.from("issues").select("id, number, title, process_id").eq("workspace_id", ws).in("id", issueIds) : null,
   ]);
   for (const r of [processes, steps, issues]) if (r?.error) throw r.error;
   return {
     processes: Object.fromEntries((processes?.data ?? []).map((r) => [r.id, r.name])),
     steps: Object.fromEntries((steps?.data ?? []).map((r) => [r.id, r.name])),
-    issues: Object.fromEntries((issues?.data ?? []).map((r) => [r.id, { number: r.number, title: r.title }])),
+    issues: Object.fromEntries((issues?.data ?? []).map((r) => [r.id, { number: r.number, title: r.title, processId: r.process_id }])),
   };
 }
 
@@ -149,3 +149,18 @@ export const pendingSuggestionCount = cache(async (workspaceId: string): Promise
   if (changes.error) throw changes.error;
   return (changes.count ?? 0) + proposals;
 });
+
+/** One waiting solution idea (A52), for "Build it" in the Editor. Null when it isn't there, isn't an idea, or has been dealt with. */
+export async function loadIdeaProposal(workspaceId: string, ideaId: string): Promise<ProposalRow | null> {
+  const supabase = await createClient();
+  const pending = await loadProposals(supabase, workspaceId, "pending");
+  return pending.find((p) => p.id === ideaId && p.kind === "solution_idea") ?? null;
+}
+
+/** The solution ideas waiting for one issue (A52), with the names their cards show: the Issue page's "AI ideas". */
+export async function loadIssueIdeas(workspaceId: string, issueId: string): Promise<{ ideas: ProposalRow[]; lookups: ProposalLookups }> {
+  const supabase = await createClient();
+  const pending = await loadProposals(supabase, workspaceId, "pending");
+  const ideas = pending.filter((p) => p.kind === "solution_idea" && p.issue_id === issueId);
+  return { ideas, lookups: await proposalLookups(supabase, workspaceId, ideas) };
+}

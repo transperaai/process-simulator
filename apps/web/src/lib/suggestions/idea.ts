@@ -2,7 +2,9 @@
 // block library's picture and the Editor can put them in with the same commands as a library block (insert, or replace the
 // step the idea would replace). Pure: no I/O.
 
-import type { BlockBundle, BlockEdge, BlockStep, ProposalRow, SolutionIdeaPayload } from "@transpera-flow/db";
+import type { BlockBundle, BlockEdge, BlockStep, ProcessBundle, ProposalRow, SolutionIdeaPayload } from "@transpera-flow/db";
+import { insertBlock, replaceProblem, replaceWithBlock } from "@/lib/blocks/blocks";
+import type { Edit } from "@/lib/editor/ops";
 import { solutionEditorHref } from "@/lib/solutions/links";
 
 /** The kinds a block can hold. Anything else an idea names (a start or end step, a made-up kind) becomes a task. */
@@ -78,7 +80,33 @@ export function ideaSeed(p: Pick<ProposalRow, "id" | "title" | "payload">, roles
  * "✎ Build it": the Editor in solution mode on the issue's process, for that issue, with the idea's steps placed. Null when
  * the issue names no process (there is no map to open).
  */
-export function buildIdeaHref(base: string, p: Pick<ProposalRow, "id" | "issue_id">, issue: { processId: string | null } | undefined, from: string): string | null {
+export function buildIdeaHref(base: string, p: Pick<ProposalRow, "id" | "issue_id">, issue: { processId?: string | null } | undefined, from: string): string | null {
   if (!p.issue_id || !issue?.processId) return null;
   return solutionEditorHref(base, issue.processId, { issueId: p.issue_id, idea: p.id, from });
+}
+
+/** Where an idea's steps go in the solution's copy of the map, and what to tell the person about it. */
+export interface IdeaPlacement {
+  edit: Edit;
+  /** The group the steps arrive in, to select. */
+  id: string;
+  note: string;
+}
+
+/**
+ * Put an idea's steps into `bundle` (the live map, which a solution starts as a copy of): in place of the first step the idea would
+ * replace that can be replaced, else at the end of the map. Pure, so the Editor can work it out before it draws anything. Null when
+ * the idea has no steps to place.
+ */
+export function placeIdea(bundle: ProcessBundle, idea: IdeaSeed): IdeaPlacement | null {
+  const target = idea.replaces.find((id) => bundle.steps.some((s) => s.id === id) && !replaceProblem(bundle, id)) ?? null;
+  const made = target ? replaceWithBlock(bundle, target, idea.block, idea.title) : insertBlock(bundle, null, idea.block, idea.title);
+  if (!made) return null;
+  const notes = [
+    "The AI's steps are placed. Adjust them, simulate, then save.",
+    target ? null : "Nothing in the map is marked as replaced, so the steps sit at the end: connect them where they belong.",
+    target && idea.replaces.length > 1 ? "The idea names more than one step to replace. The first is replaced; the others are still there." : null,
+    made.note ?? null,
+  ];
+  return { edit: made.edit, id: made.id, note: notes.filter(Boolean).join(" ") };
 }

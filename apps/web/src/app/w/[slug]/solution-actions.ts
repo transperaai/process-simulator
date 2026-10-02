@@ -1,5 +1,6 @@
 "use server";
 
+import { refresh } from "next/cache";
 import { SOLUTION_ISSUE_COLUMNS, type BlockBundle, type Json, type ProcessBundle, type SolutionIssueRow, type SolutionRow } from "@transpera-flow/db";
 import { parseSolutionInput, type SaveSolutionResult } from "@/lib/solutions/save";
 import { serverVerdict, type CopyRun } from "@/lib/solutions/server-verdict";
@@ -23,6 +24,8 @@ function failure(error: { code?: string; message?: string }) {
   if (/issue is closed/.test(m)) return { status: "error", message: "That issue is already resolved, marked won't fix or dismissed, so a solution can't be linked to it." } as const;
   if (/only a detection/.test(m)) return { status: "error", message: "That issue is only a detection. Acknowledge it as an issue first." } as const;
   if (/another process/.test(m)) return { status: "error", message: "That issue is about another process, so this solution can't be linked to it." } as const;
+  if (/already been dealt with/.test(m)) return { status: "error", message: "That idea has already been built or dismissed." } as const;
+  if (/no such idea/.test(m)) return { status: "error", message: "That idea isn't there any more, or isn't yours to build." } as const;
   if (/published version/.test(m)) return { status: "error", message: "A solution has to start from a published version of the process." } as const;
   if (error.code === "42501") return forbidden;
   if (error.code === "23503") return { status: "error", message: "The process, its live version or an issue is no longer there. Reload and try again." } as const;
@@ -30,9 +33,13 @@ function failure(error: { code?: string; message?: string }) {
   return { status: "error", message: "Couldn't save the solution. Try again." } as const;
 }
 
-/** Save a solution, with the issues it solves and the automatic verdict against each (worked out here). */
-export async function createSolution(workspaceId: unknown, input: unknown): Promise<SaveSolutionResult> {
+/**
+ * Save a solution, with the issues it solves and the automatic verdict against each (worked out here). With `ideaId` (A52: "Build it" on
+ * a solution idea) the solution is saved through `build_proposal`, which also marks the idea built, in the same transaction.
+ */
+export async function createSolution(workspaceId: unknown, input: unknown, ideaId?: unknown): Promise<SaveSolutionResult> {
   if (!isId(workspaceId)) return invalid;
+  if (ideaId !== undefined && ideaId !== null && !isId(ideaId)) return invalid;
   const parsed = parseSolutionInput(input);
   if (!parsed.ok) return { status: "error", message: parsed.error };
   const supabase = await createClient();
@@ -51,7 +58,7 @@ export async function createSolution(workspaceId: unknown, input: unknown): Prom
     const checked = r.verdict.status !== "unchecked";
     links.push({ issue_id: l.issueId, auto_verdict: checked ? r.verdict.status : null, holds_pct: checked ? r.verdict.holdsPct : null, auto_note: r.verdict.note });
   }
-  const { data, error } = await supabase.rpc("save_solution", {
+  const args = {
     p_workspace: workspaceId,
     p_process: v.processId,
     p_base_revision: v.baseRevisionId,
@@ -60,8 +67,11 @@ export async function createSolution(workspaceId: unknown, input: unknown): Prom
     p_changed: v.changedStepIds as unknown as Json,
     p_levers: v.levers as unknown as Json,
     p_links: links as unknown as Json,
-  });
+  };
+  const { data, error } = typeof ideaId === "string" ? await supabase.rpc("build_proposal", { ...args, p_proposal: ideaId }) : await supabase.rpc("save_solution", args);
   if (error) return failure(error);
+  // The sidebar's pending count lives in the shared layout, which navigation doesn't re-render.
+  if (typeof ideaId === "string") refresh();
   const solution = data as unknown as SolutionRow;
   const { data: saved } = await supabase.from("solution_issues").select(SOLUTION_ISSUE_COLUMNS).eq("solution_id", solution.id);
   return { status: "ok", solution, links: (saved ?? []) as unknown as SolutionIssueRow[] };

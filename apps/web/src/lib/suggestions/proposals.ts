@@ -161,8 +161,18 @@ export async function reviewProposalsInMemory(
 export const SUGGESTIONS_HELP = {
   ideas: {
     label: "Solution ideas",
-    description: "Ideas for fixing an issue, from AI or from someone trying their own changes. They are not built and not simulated, and nothing changes until someone acts on them.",
+    description: "Ideas for fixing an issue, from AI or from someone trying their own changes. They are not built and not simulated. Build one to open the Editor with the steps placed, or dismiss it. Nothing changes until you do.",
     example: "“Fast-track partner leads past Check fit”, for the issue about slow first contact.",
+  },
+  buildIt: {
+    label: "Build it",
+    description: "Opens the Editor in solution mode with the idea's steps already placed. Adjust them, simulate, then save: that turns the idea into a real solution, tested against the issue.",
+    example: "Build “Fast-track partner leads”, check the new steps, and save it as a solution.",
+  },
+  ideaMap: {
+    label: "Proposed steps",
+    description: "A small picture of the steps the idea would add, left to right. If it would replace a step you already have, that step is named beside it.",
+    example: "Partner lead arrives, then Book discovery call, then Quick check by AI.",
   },
   dismiss: {
     label: "Dismiss",

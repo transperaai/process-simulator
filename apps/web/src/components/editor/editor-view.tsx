@@ -9,11 +9,13 @@
 // mode (issue #114: a copy of live, edited in memory and saved as a solution of its own; the process's live version and its
 // single draft are never touched, D18).
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { isUnpublished, type BlockRow, type ProcessBundle, type ScenarioRow, type SourceRow } from "@transpera-flow/db";
 import { createSolution } from "@/app/w/[slug]/solution-actions";
 import { blockFromSteps } from "@/lib/blocks/blocks";
+import { markDemoIdeaBuilt } from "@/lib/demo/company-store";
+import { placeIdea, type IdeaSeed } from "@/lib/suggestions/idea";
 import { parseBlockInput } from "@/lib/blocks/save";
 import { newStepRow } from "@/lib/editor/commands";
 import { discardChange, revertField } from "@/lib/drafts/discard";
@@ -69,6 +71,7 @@ export function EditorView({
   horizonMonths = null,
   extraChanges = 0,
   issue = null,
+  idea = null,
 }: {
   live: ProcessBundle;
   draft: ProcessBundle | null;
@@ -93,6 +96,8 @@ export function EditorView({
   extraChanges?: number;
   /** Solution mode: the issue the solution is built for, whose steps are outlined and whose target the verdict is checked against. */
   issue?: SolutionIssue | null;
+  /** Solution mode opened from a solution idea (A52, "Build it"): its steps are placed on first load, and saving marks it built. */
+  idea?: IdeaSeed | null;
 }) {
   const router = useRouter();
   const stamp = useCallback(() => ({ at: new Date().toISOString(), by: userId }), [userId]);
@@ -111,7 +116,9 @@ export function EditorView({
   const marksChanges = hasDraft || solutionMode;
   const live = drafts.live;
   const working = state.bundle;
-  const [selection, setSelection] = useState<Selection>(NO_SELECTION);
+  // Worked out up front, on the live map the copy starts as, so the steps are selected as soon as they arrive.
+  const [placement] = useState(() => (solutionMode && idea ? placeIdea(initialLive, idea) : null));
+  const [selection, setSelection] = useState<Selection>(placement ? { steps: [placement.id], edges: [] } : NO_SELECTION);
   const me = viewer ?? (mode === "demo" ? DEMO_VIEWER : null);
   const [sync, realtime] = useRealtime(session, connection.transport, me, "draft");
 
@@ -164,7 +171,14 @@ export function EditorView({
 
   // Solution mode: what the solution is called, the automatic verdict against the issue's target, and saving. Nothing is
   // written until then, and then only the solution's own rows: not live, not the draft.
-  const [solutionName, setSolutionName] = useState("");
+  const [solutionName, setSolutionName] = useState(solutionMode && idea ? idea.title : "");
+  // Build it: the AI's steps go into the copy once, in place of the step the idea would replace (or, with none, at the end of the map).
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (!placement || seeded.current) return;
+    seeded.current = true;
+    editor.run(() => placement.edit);
+  }, [placement, editor]);
   const [solutionSaving, setSolutionSaving] = useState(false);
   const [solutionError, setSolutionError] = useState<string | null>(null);
   const added = useMemo(() => [...diff.steps.values()].filter((c) => c.kind === "added").map((c) => c.id), [diff]);
@@ -202,8 +216,11 @@ export function EditorView({
     const checked = parseSolutionInput(input);
     let result: SaveSolutionResult;
     if (!checked.ok) result = { status: "error", message: checked.error };
-    else if (mode === "demo") result = { status: "ok", ...addDemoSolution(checked.value) };
-    else result = await createSolution(live.workspace.id, input);
+    else if (mode === "demo") {
+      const made = addDemoSolution(checked.value);
+      result = { status: "ok", ...made };
+      if (idea) markDemoIdeaBuilt(idea.id, made.solution.id);
+    } else result = await createSolution(live.workspace.id, input, idea?.id);
     setSolutionSaving(false);
     if (result.status === "error") return setSolutionError(result.message);
     router.push(exitHref);
@@ -331,6 +348,11 @@ export function EditorView({
       <div className="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-[264px_minmax(0,1fr)_320px] lg:grid-rows-[minmax(0,1fr)]">
         <aside aria-label="Palette" className="flex flex-col gap-4 border-b border-line bg-panel p-3.5 lg:overflow-y-auto lg:border-r lg:border-b-0">
           <Palette bundle={working} editor={editor} selected={selected} setSelection={setSelection} blocks={blockTools} />
+          {solutionMode && placement && (
+            <p role="note" data-idea-note className="rounded-token border border-edit/50 bg-edit-soft p-2 text-xs">
+              {placement.note}
+            </p>
+          )}
           {solutionMode && <IssueArea issue={issue} steps={[...live.steps, ...working.steps]} present={new Set(working.steps.map((s) => s.id))} onSelect={select} />}
           {mode === "demo" && (
             <p role="note" className="text-xs text-muted-foreground">

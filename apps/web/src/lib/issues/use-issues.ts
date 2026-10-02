@@ -25,7 +25,7 @@ export interface IssuesState {
   saver(id: string, field: IssueField): Saver<Scalar>;
   remove(id: string): Promise<boolean>;
   /** Mark an issue resolved, with how and a note. Null when it failed; `error` says why. */
-  resolve(id: string, how: ResolveHow, note: string | null): Promise<IssueRow | null>;
+  resolve(id: string, how: ResolveHow, note: string | null, solution?: { id: string; name: string } | null): Promise<IssueRow | null>;
   /** Set a resolved issue back to Open. */
   reopen(id: string): Promise<IssueRow | null>;
   /** An issue's history, oldest first. */
@@ -108,7 +108,7 @@ export function useIssues(
         setBusy(false);
       }
     },
-    resolve: (id, how, note) => add(() => store.resolve(id, how, note)),
+    resolve: (id, how, note, solution) => add(() => store.resolve(id, how, note, solution)),
     reopen: (id) => add(() => store.reopen(id)),
     events: (id) => store.events(id).catch(() => []),
     dismissError: () => setError(null),

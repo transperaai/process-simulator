@@ -5,7 +5,7 @@ import { IssuesPage } from "@/components/issues-page";
 import { loadLiveFirstPrinciples } from "@/lib/first-principles/data";
 import { canEditWorkspace } from "@/lib/access-data";
 import { loadWorkspaceAnalysisRules } from "@/lib/rules/data";
-import { loadLiveProcess, loadProcessNames, loadWorkspaceIssues, loadWorkspaceLiveRevisionIds, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
+import { loadLiveProcess, loadProcessNames, loadWorkspaceIssues, loadWorkspaceLiveRevisionIds, loadWorkspaceScenarios, loadWorkspaceSolutions, loadWorkspaceSources } from "@/lib/data";
 
 /** The Issues list (A48): the problems people have confirmed, filtered by Open / Resolved / All and rating (both in the URL). */
 export default async function WorkspaceIssuesPage(props: PageProps<"/w/[slug]/issues">) {
@@ -13,7 +13,7 @@ export default async function WorkspaceIssuesPage(props: PageProps<"/w/[slug]/is
   const bundle = await loadLiveProcess(slug);
   if (!bundle) notFound();
   const ws = bundle.workspace.id;
-  const [canEdit, issues, scenarios, processes, rules, sources, liveRevisions, firstPrinciples] = await Promise.all([
+  const [canEdit, issues, scenarios, processes, rules, sources, liveRevisions, firstPrinciples, solutions] = await Promise.all([
     canEditWorkspace(ws),
     loadWorkspaceIssues(ws),
     loadWorkspaceScenarios(ws),
@@ -22,6 +22,7 @@ export default async function WorkspaceIssuesPage(props: PageProps<"/w/[slug]/is
     loadWorkspaceSources(ws),
     loadWorkspaceLiveRevisionIds(ws),
     loadLiveFirstPrinciples(bundle.process.id, bundle.revision.id),
+    loadWorkspaceSolutions(ws),
   ]);
   return (
     <Page
@@ -44,6 +45,7 @@ export default async function WorkspaceIssuesPage(props: PageProps<"/w/[slug]/is
         processes={processes}
         sources={sources}
         liveRevisions={liveRevisions}
+        solutions={solutions}
         analysisRules={rules.settings}
         firstPrinciples={firstPrinciples}
         base={`/w/${slug}`}

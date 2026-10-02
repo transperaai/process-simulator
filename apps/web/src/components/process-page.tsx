@@ -109,7 +109,7 @@ export function ProcessPage({
    * This process's solutions and where the Editor lives for them (A49): `base` is `/w/<slug>` or `/demo`. The section lists them,
    * and offers New solution and Build solution to those who can edit.
    */
-  solutions?: { data: SolutionsData; base: string };
+  solutions?: { data: SolutionsData; base: string; viewerId?: string | null; memberNames?: Readonly<Record<string, string>> };
   /** Processes inside this one. */
   inside?: ChildProcess[];
   /** The version's first principles for the card at the top (A54); on the demo the answers edited in this tab replace `doc`. */
@@ -393,6 +393,9 @@ export function ProcessPage({
         >
           <ProcessSolutions
             processId={bundle.process.id}
+            processName={bundle.process.name}
+            viewerId={solutions?.viewerId}
+            memberNames={solutions?.memberNames}
             base={solutions?.base ?? (mode === "demo" ? "/demo" : "")}
             demo={mode === "demo"}
             canEdit={mode !== "readonly" && !old && !!solutions?.base}

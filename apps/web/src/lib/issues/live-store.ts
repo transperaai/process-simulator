@@ -10,7 +10,7 @@ export function liveIssueStore(workspaceId: string): IssueStore {
     save: (input) => saveIssueFromDialog(workspaceId, input),
     saveField: (id, field, base, value) => saveIssueField(id, field, base, value),
     remove: (id) => deleteIssue(id),
-    resolve: (id, how, note) => resolveIssueAction(workspaceId, id, how, note),
+    resolve: (id, how, note, solution) => resolveIssueAction(workspaceId, id, how, note, solution?.id ?? null),
     reopen: (id) => reopenIssue(workspaceId, id),
     events: (id) => issueEvents(workspaceId, id),
   };

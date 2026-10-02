@@ -37,15 +37,15 @@ export interface IssueStore {
   saveField(id: string, field: IssueField, base: Scalar, value: Scalar): Promise<SaveOutcome<Scalar>>;
   remove(id: string): Promise<RemoveIssueResult>;
   /** Mark an issue resolved, saying how and leaving a note. One history entry carries both. */
-  resolve(id: string, how: ResolveHow, note: string | null): Promise<SaveIssueResult>;
+  resolve(id: string, how: ResolveHow, note: string | null, solution?: { id: string; name: string } | null): Promise<SaveIssueResult>;
   /** Set a resolved issue back to Open. Its history, resolved entry included, stays. */
   reopen(id: string): Promise<SaveIssueResult>;
   /** An issue's history, oldest first. */
   events(id: string): Promise<IssueEventRow[]>;
 }
 
-type NewRow = Omit<IssueRow, "id" | "workspace_id" | "created_at" | "updated_at" | "resolved_at" | "client_id" | "dismissed_revision_id" | "number" | "links" | "owner_ids" | "source_ids" | "target_measure" | "target_now" | "target_goal" | "resolved_how" | "resolution_note"> &
-  Partial<Pick<IssueRow, "client_id" | "dismissed_revision_id" | "resolved_how" | "resolution_note" | "target_measure" | "target_now" | "target_goal" | "links" | "owner_ids" | "source_ids">>;
+type NewRow = Omit<IssueRow, "id" | "workspace_id" | "created_at" | "updated_at" | "resolved_at" | "client_id" | "dismissed_revision_id" | "number" | "links" | "owner_ids" | "source_ids" | "target_measure" | "target_now" | "target_goal" | "resolved_how" | "resolved_solution_id" | "resolution_note"> &
+  Partial<Pick<IssueRow, "client_id" | "dismissed_revision_id" | "resolved_how" | "resolved_solution_id" | "resolution_note" | "target_measure" | "target_now" | "target_goal" | "links" | "owner_ids" | "source_ids">>;
 
 const closed = (s: string) => s === "resolved" || s === "wont_fix" || s === "dismissed";
 
@@ -73,7 +73,7 @@ export class MemoryIssueStore implements IssueStore {
   }
 
   /** What a change of status is in the history: the same kinds the database's trigger writes. */
-  private recordStatus(row: IssueRow, next: IssueRow) {
+  private recordStatus(row: IssueRow, next: IssueRow, solutionName?: string) {
     if (row.status === next.status) return;
     const closedNow = next.status === "resolved" || next.status === "wont_fix";
     const closedBefore = row.status === "resolved" || row.status === "wont_fix";
@@ -81,7 +81,7 @@ export class MemoryIssueStore implements IssueStore {
     this.record(row.id, kind, {
       from: row.status,
       to: next.status,
-      ...(kind === "resolved" ? { ...(next.resolved_how ? { how: next.resolved_how } : {}), ...(next.resolution_note ? { note: next.resolution_note } : {}) } : {}),
+      ...(kind === "resolved" ? { ...(next.resolved_how ? { how: next.resolved_how } : {}), ...(next.resolution_note ? { note: next.resolution_note } : {}), ...(next.resolved_solution_id && solutionName ? { solution_id: next.resolved_solution_id, solution: solutionName } : {}) } : {}),
     });
   }
 
@@ -94,6 +94,7 @@ export class MemoryIssueStore implements IssueStore {
       target_now: null,
       target_goal: null,
       resolved_how: null,
+      resolved_solution_id: null,
       resolution_note: null,
       // What it touches and who owns it, as the link tables would hold them.
       links: fields.step_id ? [{ process_id: fields.process_id, step_id: fields.step_id }] : fields.process_id ? [{ process_id: fields.process_id, step_id: null }] : [],
@@ -209,7 +210,7 @@ export class MemoryIssueStore implements IssueStore {
     if (field === "status") {
       next.resolved_at = closed(next.status) ? (closed(row.status) ? row.resolved_at : at) : null;
       // As the database's trigger: what was recorded about a resolution goes when the issue is not resolved any more.
-      if (next.status !== "resolved" && next.status !== "wont_fix") Object.assign(next, { resolved_how: null, resolution_note: null });
+      if (next.status !== "resolved" && next.status !== "wont_fix") Object.assign(next, { resolved_how: null, resolved_solution_id: null, resolution_note: null });
       this.recordStatus(row, next);
     }
     this.rows.set(id, next);
@@ -221,8 +222,8 @@ export class MemoryIssueStore implements IssueStore {
     return { status: "ok" };
   }
 
-  async resolve(id: string, how: ResolveHow, note: string | null): Promise<SaveIssueResult> {
-    const parsed = parseResolveInput({ how, note });
+  async resolve(id: string, how: ResolveHow, note: string | null, solution: { id: string; name: string } | null = null): Promise<SaveIssueResult> {
+    const parsed = parseResolveInput({ how, note, solutionId: solution?.id ?? null });
     if (!parsed.ok) return { status: "error", message: parsed.error };
     const row = this.rows.get(id);
     if (!row || row.status === "dismissed") return { status: "error", message: "That issue no longer exists." };
@@ -232,12 +233,13 @@ export class MemoryIssueStore implements IssueStore {
       ...row,
       status: "resolved",
       resolved_how: parsed.value.how,
+      resolved_solution_id: parsed.value.solutionId,
       resolution_note: parsed.value.note,
       resolved_at: closed(row.status) ? row.resolved_at : at,
       updated_at: at,
     };
     this.rows.set(id, next);
-    this.recordStatus(row, next);
+    this.recordStatus(row, next, solution?.name);
     return { status: "ok", issue: next };
   }
 
@@ -245,7 +247,7 @@ export class MemoryIssueStore implements IssueStore {
     const row = this.rows.get(id);
     if (!row || row.status === "dismissed") return { status: "error", message: "That issue no longer exists." };
     const at = this.now();
-    const next: IssueRow = { ...row, status: "open", resolved_how: null, resolution_note: null, resolved_at: null, updated_at: at };
+    const next: IssueRow = { ...row, status: "open", resolved_how: null, resolved_solution_id: null, resolution_note: null, resolved_at: null, updated_at: at };
     this.rows.set(id, next);
     this.recordStatus(row, next);
     return { status: "ok", issue: next };

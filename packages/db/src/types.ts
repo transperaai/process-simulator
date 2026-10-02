@@ -869,6 +869,8 @@ export interface IssueRow {
   dismissed_revision_id: string | null;
   /** How it was resolved, while it is resolved (cleared on reopen; the history keeps it). Null for an issue resolved before this was recorded. */
   resolved_how: ResolveHow | null;
+  /** The solution that fixed it, when `resolved_how` is "solution" and one was picked (A50). Cleared on reopen; the history keeps its name. */
+  resolved_solution_id: string | null;
   /** The note written when it was resolved. */
   resolution_note: string | null;
   /** What is measured ("Wait at Check fit"), its value now ("1.4 d") and the goal ("under 4 hours"). */

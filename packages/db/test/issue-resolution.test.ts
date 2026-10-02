@@ -111,8 +111,18 @@ describe("resolve_issue", () => {
     expect(body).toContain("create or replace function private.log_issue_change()");
     // The function must come back before the columns go.
     expect(body.indexOf("create or replace function private.log_issue_change()")).toBeLessThan(body.indexOf("drop column resolved_how"));
+    // Rollbacks run newest first: A50's migration (20261125000000) sits on top of this one, and its trigger reads `resolved_how`.
+    const newer = readFileSync(new URL("../supabase/migrations/20261125000000_resolution_solution.sql", import.meta.url), "utf8");
+    const newerSteps = newer
+      .slice(newer.indexOf("-- Rollback"), newer.indexOf("\nalter table public.issues add column"))
+      .split("\n")
+      .filter((l) => l.startsWith("--   ") || l === "--")
+      .map((l) => l.slice(5))
+      .join("\n");
+    const newerBody = newerSteps.slice(newerSteps.indexOf("begin;") + 6, newerSteps.indexOf("commit;")).replace(/delete from supabase_migrations\.schema_migrations[^;]*;/, "");
     await db.client.query("begin");
     try {
+      await db.client.query(newerBody);
       await db.client.query(body);
       const cols = (await db.client.query("select count(*)::int as n from information_schema.columns where table_name = 'issues' and column_name in ('resolved_how', 'resolution_note')")).rows[0].n;
       expect(cols).toBe(0);

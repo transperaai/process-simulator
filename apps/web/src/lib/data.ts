@@ -6,6 +6,7 @@ import {
   listProcesses,
   loadBlocks,
   loadSolutionIssues,
+  loadProposals,
   loadSolutions,
   loadChurnDrivers,
   loadClientGroups,
@@ -156,6 +157,40 @@ export async function loadWorkspaceSolutions(workspaceId: string, processId?: st
   } catch (err) {
     console.error("Couldn't load the solutions; showing none.", err instanceof Error ? err.message : err);
     return { solutions: [], links: [] };
+  }
+}
+
+/** How many AI solution ideas are waiting in Suggestions (pending proposals of kind solution idea). Zero if they can't be read. */
+export async function loadPendingIdeaCount(workspaceId: string): Promise<number> {
+  try {
+    return (await loadProposals(await createClient(), workspaceId, "pending")).filter((p) => p.kind === "solution_idea").length;
+  } catch (err) {
+    console.error("Couldn't count AI ideas; showing none.", err instanceof Error ? err.message : err);
+    return 0;
+  }
+}
+
+/**
+ * Who the workspace's members are, by user id: the name of the person linked to each membership (Settings > Access). A member with
+ * no person linked is left out, so pages say "A team member" for them. (RLS: everyone in the workspace can read both tables.)
+ */
+export async function loadMemberNames(workspaceId: string): Promise<Record<string, string>> {
+  try {
+    const db = await createClient();
+    const [members, people] = await Promise.all([
+      db.from("memberships").select("user_id, person_id").eq("workspace_id", workspaceId),
+      db.from("people").select("id, name").eq("workspace_id", workspaceId),
+    ]);
+    const nameOf = new Map((people.data ?? []).map((p) => [p.id, p.name]));
+    const out: Record<string, string> = {};
+    for (const m of members.data ?? []) {
+      const name = m.person_id ? nameOf.get(m.person_id) : undefined;
+      if (name) out[m.user_id] = name;
+    }
+    return out;
+  } catch (err) {
+    console.error("Couldn't load member names; showing none.", err instanceof Error ? err.message : err);
+    return {};
   }
 }
 

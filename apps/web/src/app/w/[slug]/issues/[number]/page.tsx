@@ -5,7 +5,7 @@ import { IssuePage } from "@/components/issues/issue-page";
 import { Page } from "@/components/shell/page";
 import { canEditWorkspace, currentUserId } from "@/lib/access-data";
 import { findIssue } from "@/lib/issues/pages";
-import { loadProcessForEditing, loadProcessNames, loadWorkspaceIssueEvents, loadWorkspaceIssues, loadWorkspaceLiveRevisionIds, loadWorkspaceSources } from "@/lib/data";
+import { loadProcessForEditing, loadProcessNames, loadMemberNames, loadWorkspaceIssueEvents, loadWorkspaceIssues, loadWorkspaceLiveRevisionIds, loadWorkspaceSolutions, loadWorkspaceSources } from "@/lib/data";
 
 /**
  * One issue (A48): where it sits on the map, what is wrong, the solutions tested, AI ideas and its history, with its
@@ -25,13 +25,15 @@ export default async function WorkspaceIssuePage(props: PageProps<"/w/[slug]/iss
   const own = processId && processId !== probe.live.process.id ? await loadProcessForEditing(slug, processId) : probe;
   const { live, draft } = own ?? probe;
   const bundle = isUnpublished(live) && draft ? draft : live;
-  const [canEdit, sources, processes, events, liveRevisions, viewerId] = await Promise.all([
+  const [canEdit, sources, processes, events, liveRevisions, viewerId, solutions, memberNames] = await Promise.all([
     canEditWorkspace(ws),
     loadWorkspaceSources(ws),
     loadProcessNames(ws),
     loadWorkspaceIssueEvents(ws, issue.id),
     loadWorkspaceLiveRevisionIds(ws),
     currentUserId(),
+    loadWorkspaceSolutions(ws),
+    loadMemberNames(ws),
   ]);
   const base = `/w/${slug}`;
   return (
@@ -48,6 +50,8 @@ export default async function WorkspaceIssuePage(props: PageProps<"/w/[slug]/iss
         buildHref={buildSolutionHref(base, issue, `${base}/issues/${issue.number}`) ?? solutionEditorHref(base, bundle.process.id, { issueId: issue.id })}
         viewerId={viewerId}
         liveRevisions={liveRevisions}
+        solutions={solutions}
+        memberNames={memberNames}
       />
     </Page>
   );

@@ -41,6 +41,7 @@ vi.mock("@/lib/supabase/server", () => ({
       insert: (...args: unknown[]) => (db.calls.push({ op: "insert", args }), chain),
       delete: () => (db.calls.push({ op: "delete", args: [] }), chain),
       eq: (...args: unknown[]) => (db.calls.push({ op: "eq", args }), chain),
+      in: (...args: unknown[]) => (db.calls.push({ op: "in", args }), chain),
       order: () => chain,
       select: () => chain,
       single: async () => db.result,
@@ -408,6 +409,32 @@ describe("issue Server Actions", () => {
     expect(call.p_fields).toMatchObject({ title: "Slow check", status: "testing" });
     expect(call.p_fields).not.toHaveProperty("source");
     expect(call.p_fields).not.toHaveProperty("type");
+  });
+
+  it("an edit takes the links of only the sources it removed from the issue's list (A53): one made elsewhere stays", async () => {
+    const S1 = "30000000-0000-4000-8000-000000000001";
+    const S2 = "30000000-0000-4000-8000-000000000002";
+    const S3 = "30000000-0000-4000-8000-000000000003";
+    // The issue's list before the save is [S1, S2] (what the select returns); the dialog saves [S2, S3].
+    db.result = { data: [{ source_id: S1 }, { source_id: S2 }], error: null };
+    const id = northbeamIssues()[0]!.id;
+    await saveIssueFromDialog(WS, dialog({ id, source_ids: [S2, S3] }));
+    const at = db.calls.findIndex((c) => c.op === "from" && c.args[0] === "source_links");
+    expect(at).toBeGreaterThan(-1);
+    const after = db.calls.slice(at);
+    expect(after.find((c) => c.op === "delete")).toBeTruthy();
+    expect(after.find((c) => c.op === "in")?.args).toEqual(["source_id", [S1]]);
+  });
+
+  it("an edit that removes nothing leaves the links alone, and a new issue has none to take off", async () => {
+    const S1 = "30000000-0000-4000-8000-000000000001";
+    db.result = { data: [{ source_id: S1 }], error: null };
+    await saveIssueFromDialog(WS, dialog({ id: northbeamIssues()[0]!.id, source_ids: [S1] }));
+    // (Reading the issue back reads its links; nothing is deleted.)
+    expect(db.calls.some((c) => c.op === "delete")).toBe(false);
+    db.calls.length = 0;
+    await saveIssueFromDialog(WS, dialog({ source_ids: [S1] }));
+    expect(db.calls.some((c) => c.op === "delete")).toBe(false);
   });
 
   it("the dialog's save is refused without a title, or without steps or the whole process", async () => {

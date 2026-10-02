@@ -226,6 +226,20 @@ describe("who may touch the company map", () => {
     expect((await q("select name, kind, parent_process_id from processes where id = $1", [company.id]))[0]).toEqual({ name: "Company map", kind: "pipeline", parent_process_id: null });
   });
 
+  it("is not fooled by an editor setting the system flag themselves", async () => {
+    const [company] = await q("select id, live_revision_id from processes where workspace_id = $1 and is_company", [ws]);
+    const flagged = async (sql: string, params: unknown[], message: RegExp) => {
+      await rejects(async (c) => {
+        await c.query("select set_config('transpera.company_system', 'on', true)");
+        await c.query(sql, params);
+      }, message);
+    };
+    await flagged("update processes set name = 'Renamed' where id = $1", [company.id], /can't be changed yet/);
+    await flagged("update processes set live_revision_id = null where id = $1", [company.id], /can't be changed yet/);
+    await flagged("select open_draft($1)", [company.id], /can't be versioned yet/);
+    await flagged("insert into processes (workspace_id, name, is_company) values ($1, 'Second', true)", [ws], /made by the system/);
+  });
+
   it("holds a process once: a parent-less process on the company map only, a child in its parent only", async () => {
     const [company] = await q("select id, live_revision_id from processes where workspace_id = $1 and is_company", [ws]);
     const top = await q("select id from processes where workspace_id = $1 and not is_company and parent_process_id is null order by id", [ws]);

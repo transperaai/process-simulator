@@ -119,8 +119,10 @@ create function private.company_signed_in() returns boolean
 language sql stable
 set search_path = ''
 as $$
+  -- The system flag is honoured only for a caller that is not itself authenticated or anon (the owner, inside
+  -- ensure_company_map): a signed-in role can set any setting, so for it the flag means nothing.
   select (auth.uid() is not null or current_user in ('authenticated', 'anon'))
-     and coalesce(current_setting('transpera.company_system', true), '') <> 'on';
+     and not (coalesce(current_setting('transpera.company_system', true), '') = 'on' and current_user not in ('authenticated', 'anon'));
 $$;
 
 create function private.company_process_guard() returns trigger

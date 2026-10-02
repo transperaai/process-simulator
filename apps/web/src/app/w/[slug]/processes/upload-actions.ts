@@ -1,0 +1,103 @@
+"use server";
+
+import { redirect } from "next/navigation";
+import { checkProcessFileText, type ProcessFileCheck } from "@transpera-flow/db/process-file";
+import { importProcessFile, previewProcessFile, ToolError } from "@transpera-flow/mcp";
+import { isId } from "@/lib/editor/validate";
+import { sourceLabel, uploadSizeProblem, type CreateUploadInput, type CreateUploadResult, type PreviewResult, type UploadPreview } from "@/lib/processes/upload";
+import { createClient } from "@/lib/supabase/server";
+
+// Upload a process (issue #166, B13). The file is checked here, not trusted from the browser, and written by the same code
+// the MCP `import_process` tool uses (packages/mcp/src/import-file.ts), acting as the signed-in user through RLS: only
+// editors can, nothing is published, and no role, person or client is created. The result opens in the editor as a draft.
+
+const MAX_NAME = 120;
+const GENERIC = "Couldn't read that. Try again.";
+
+async function context(workspaceId: string) {
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  const userId = claims?.claims?.sub;
+  if (!userId) return null;
+  return { db: supabase, tokenHash: "", userId, activeWorkspaceId: workspaceId, today: new Date().toISOString().slice(0, 10) };
+}
+
+const failure = (check: ProcessFileCheck, source: string): UploadPreview => ({
+  source,
+  name: "",
+  kind: "pipeline",
+  steps: 0,
+  links: 0,
+  groups: 0,
+  errors: check.errors,
+  warnings: check.warnings,
+  roles: [],
+  matchedRoles: [],
+  unknownRoles: [],
+  unknownPeople: [],
+  nameTaken: null,
+});
+
+/** Check an uploaded file and say what creating it would do, without writing anything. */
+export async function previewUpload(workspaceId: string, _slug: string, input: { text: string; fileName: string }): Promise<PreviewResult> {
+  if (!isId(workspaceId) || typeof input?.text !== "string" || typeof input.fileName !== "string") return { error: GENERIC };
+  const source = sourceLabel(input.fileName);
+  const tooBig = uploadSizeProblem(Buffer.byteLength(input.text));
+  if (tooBig) return { preview: failure({ file: null, errors: [tooBig], warnings: [] }, source) };
+  const check = checkProcessFileText(input.text);
+  if (!check.file) return { preview: failure(check, source) };
+  const ctx = await context(workspaceId);
+  if (!ctx) return { error: "Your session has ended. Sign in again." };
+  try {
+    const p = await previewProcessFile(ctx, workspaceId, check.file);
+    if (!p.canEdit) return { error: "Only editors and owners can upload a process." };
+    return {
+      preview: {
+        source,
+        name: check.file.name,
+        kind: check.file.kind,
+        steps: check.file.steps.length,
+        links: check.file.links.length,
+        groups: check.file.groups.length,
+        errors: check.errors,
+        warnings: [
+          ...check.warnings,
+          ...p.unknownPeople.map((n) => `'${n}' isn't in your company, so the steps that name them are left unassigned. Uploading never adds people.`),
+        ],
+        roles: p.roles,
+        matchedRoles: p.matchedRoles.map((m) => ({ name: m.name, role: m.role.name })),
+        unknownRoles: p.unknownRoles,
+        unknownPeople: p.unknownPeople,
+        nameTaken: p.nameTaken?.name ?? null,
+      },
+    };
+  } catch (e) {
+    return { error: e instanceof ToolError ? e.message : GENERIC };
+  }
+}
+
+/** Create the process, with a draft, from the file and the person's choices; opens it in the editor. */
+export async function createUpload(workspaceId: string, slug: string, input: CreateUploadInput): Promise<CreateUploadResult> {
+  if (!isId(workspaceId) || typeof slug !== "string" || typeof input?.text !== "string" || typeof input.source !== "string") return { error: GENERIC };
+  const name = String(input.name ?? "").trim();
+  if (!name || name.length > MAX_NAME) return { error: `Give it a name (up to ${MAX_NAME} characters).` };
+  const tooBig = uploadSizeProblem(Buffer.byteLength(input.text));
+  if (tooBig) return { error: tooBig };
+  const check = checkProcessFileText(input.text);
+  if (!check.file) return { error: check.errors[0] ?? GENERIC };
+  const roleMap: Record<string, string | null> = {};
+  for (const [role, id] of Object.entries(input.roleMap ?? {})) {
+    if (id !== null && !isId(id)) return { error: GENERIC };
+    roleMap[role] = id;
+  }
+  const ctx = await context(workspaceId);
+  if (!ctx) return { error: "Your session has ended. Sign in again." };
+  let processId: string;
+  try {
+    processId = (await importProcessFile(ctx, check.file, { workspaceId, source: sourceLabel(input.source), name, roleMap })).process.id;
+  } catch (e) {
+    if (e instanceof ToolError) return { error: e.message };
+    return { error: "Couldn't create it. Try again." };
+  }
+  redirect(`/w/${encodeURIComponent(slug)}/p/${processId}/edit`);
+}

@@ -478,6 +478,7 @@ export function InsightsSection({
     return buildInsights(stepIds ? entriesInProcess(entries, processId, stepIds) : entries);
   }, [detected, state.issues, state.revisionOf, stepIds, processId]);
   const ctx: InsightContext = { processId, processOfStep, scenarios, options: rest.formOptions };
+  const linking = useSourceLinking();
   return (
     <Insights
       {...rest}
@@ -486,7 +487,12 @@ export function InsightsSection({
       canAct={canEdit}
       busy={state.busy}
       error={state.error}
-      ackDraft={(i) => acknowledgeDraft(i, ctx)}
+      ackDraft={(i) => {
+        const draft = acknowledgeDraft(i, ctx);
+        // The sources linked to the insight itself come along to the issue it becomes, beside the ones its steps cite.
+        const linked = linking?.linkedTo({ kind: "insight", insightKey: i.key }).map((x) => x.source.id) ?? [];
+        return linked.length ? { ...draft, sourceIds: [...new Set([...draft.sourceIds, ...linked])] } : draft;
+      }}
       onAcknowledge={(i, draft) => acknowledgeInsight(state, i, ctx, draft)}
       onDismiss={(i) => dismissInsight(state, i, ctx)}
     />

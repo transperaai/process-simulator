@@ -161,6 +161,7 @@ export {
   ISSUE_COLUMNS,
   ISSUE_EVENT_COLUMNS,
   assembleIssues,
+  unionIssueSources,
   loadIssue,
   loadLiveRevisionIds,
   loadIssueEvents,

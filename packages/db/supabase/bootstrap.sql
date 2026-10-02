@@ -16595,14 +16595,18 @@ grant execute on function public.save_solution(uuid, uuid, uuid, text, jsonb, js
 --     invoker, so row-level security decides), one at a time, in the shape of `review_suggestions`. A solution idea is
 --     "rejected" as `dismissed`; accepting one is refused (it is built in the Editor, slice 2). An API-token request
 --     (the MCP server) can't review: a person decides.
+--   * the payload is checked at insert: an issue's `severity` and `type` must be values `issues` accepts;
+--   * accepting a proposed issue also links the sources its evidence cites (this workspace's), as Acknowledge does;
+--   * a visitor's email (`proposer_email`) can't be read by the app's users: SELECT is granted on every other column;
 --   * `private.suggestion_proposals_before_write`: a new proposal starts pending; a request with a signed-in user is
 --     recorded as `mcp` with no visitor details (only a function with no user, such as B4's, can say `play_link`); what
---     was proposed never changes; the decision columns change only inside `review_proposals`.
+--     was proposed never changes; the decision columns change only inside `review_proposals`. Deleting a user nulls
+--     `created_by` or `reviewed_by` through the foreign key, and that one change is let through.
 --
 -- Row-level security as `suggestions`: everyone in the workspace reads; owners and editors (and the MCP server acting
 -- as one) propose and review. Nobody deletes. Privileges: Supabase gives every new table full rights to anon and
--- authenticated, so this revokes them all and grants back select, insert and an UPDATE limited to the five decision
--- columns.
+-- authenticated, so this revokes them all and grants back insert, a column-wise select (not `proposer_email`) and an
+-- UPDATE limited to the five decision columns.
 --
 -- Preflight (run with `bash packages/db/scripts/prod-sql.sh -c "..."`; each should be as described):
 --
@@ -16615,11 +16619,13 @@ grant execute on function public.save_solution(uuid, uuid, uuid, text, jsonb, js
 --   4. The tables it references exist. Expect 2 rows:
 --        select table_name from information_schema.tables where table_schema = 'public' and table_name in ('issues', 'workspaces');
 --
--- Post-apply grant check (authenticated must show INSERT and SELECT only, with UPDATE on exactly the five decision
--- columns; anon nothing at all):
+-- Post-apply grant check (authenticated must show table-level INSERT only, SELECT on every column but proposer_email, and
+-- UPDATE on exactly the five decision columns; anon nothing at all):
 --        select grantee, privilege_type from information_schema.role_table_grants where table_schema = 'public' and table_name = 'suggestion_proposals' and grantee in ('anon', 'authenticated') order by 1, 2;
 --        select column_name from information_schema.column_privileges where table_schema = 'public' and table_name = 'suggestion_proposals' and grantee = 'authenticated' and privilege_type = 'UPDATE' order by 1;
---   Expect: authenticated INSERT, SELECT; columns applied, review_note, reviewed_at, reviewed_by, status; no anon rows.
+--        select column_name from information_schema.column_privileges where table_schema = 'public' and table_name = 'suggestion_proposals' and grantee = 'authenticated' and privilege_type = 'SELECT' order by 1;
+--   Expect: authenticated INSERT (table level); UPDATE columns applied, review_note, reviewed_at, reviewed_by, status; SELECT on
+--   all columns but proposer_email; no anon rows.
 --
 -- Rollback (run as one transaction; nothing existing was changed, so there is nothing to put back):
 --
@@ -16646,7 +16652,11 @@ create table public.suggestion_proposals (
   payload jsonb not null default '{}' constraint suggestion_proposals_payload check (coalesce(
     jsonb_typeof(payload) = 'object' and octet_length(payload::text) <= 100000
     and (kind <> 'solution_idea' or jsonb_typeof(payload -> 'steps') = 'array')
-    and (kind <> 'issue' or not payload ? 'links' or jsonb_typeof(payload -> 'links') = 'array'), false)),
+    and (kind <> 'issue' or not payload ? 'links' or jsonb_typeof(payload -> 'links') = 'array')
+    -- A proposed issue's rating and type are the values `issues` accepts, so accepting it can't fail on them.
+    and (kind <> 'issue' or not payload ? 'severity' or payload ->> 'severity' in ('critical', 'serious', 'warning', 'info'))
+    and (kind <> 'issue' or not payload ? 'type' or payload ->> 'type' in (
+      'bottleneck', 'spof', 'manual', 'delay', 'failure', 'idea', 'capacity', 'sla', 'churn_risk', 'perception_gap', 'broken_scenario')), false)),
   -- Citations, as in suggestions: [{source_id, speaker, quote, timestamp}].
   evidence jsonb not null default '[]' constraint suggestion_proposals_evidence check (
     jsonb_typeof(evidence) = 'array' and jsonb_array_length(evidence) <= 20 and octet_length(evidence::text) <= 50000),
@@ -16700,6 +16710,14 @@ begin
     end if;
     return new;
   end if;
+  -- Deleting a user sets `created_by` or `reviewed_by` to null through the foreign key's own trigger (depth 2 here).
+  -- That, and nothing else, is let through.
+  if pg_catalog.pg_trigger_depth() > 1
+    and (to_jsonb(new) - 'created_by' - 'reviewed_by' - 'updated_at') = (to_jsonb(old) - 'created_by' - 'reviewed_by' - 'updated_at')
+    and (new.created_by is null or new.created_by is not distinct from old.created_by)
+    and (new.reviewed_by is null or new.reviewed_by is not distinct from old.reviewed_by) then
+    return new;
+  end if;
   if new.workspace_id is distinct from old.workspace_id or new.kind is distinct from old.kind
     or new.title is distinct from old.title or new.detail is distinct from old.detail
     or new.payload is distinct from old.payload or new.evidence is distinct from old.evidence
@@ -16734,8 +16752,12 @@ create policy "update proposals" on public.suggestion_proposals for update to au
 
 -- Supabase's default privileges give anon and authenticated everything on a new table: take it all back, then grant
 -- only what is used. No delete (a decided proposal is the record), and UPDATE only on the decision columns.
+-- A visitor's email (B4) is not readable by the app's users: SELECT is granted column by column, leaving it out. B4 decides
+-- who may see it and how.
 revoke all on public.suggestion_proposals from anon, authenticated;
-grant select, insert on public.suggestion_proposals to authenticated;
+grant insert on public.suggestion_proposals to authenticated;
+grant select (id, workspace_id, kind, title, detail, payload, evidence, note, issue_id, status, created_via, proposer_name,
+  applied, review_note, reviewed_by, reviewed_at, created_at, updated_at, created_by) on public.suggestion_proposals to authenticated;
 grant update (status, applied, review_note, reviewed_by, reviewed_at) on public.suggestion_proposals to authenticated;
 
 -- Accept or reject proposals, as the signed-in user. Each is handled on its own: one that can't be applied is reported
@@ -16767,7 +16789,10 @@ begin
   foreach pid in array ids loop
     p := null;
     -- RLS: a proposal the user can't update is not found.
-    select * into p from public.suggestion_proposals x where x.id = pid for update;
+    -- Every column but the visitor's email, which this role can't read (position matters: it is the table's order).
+    select x.id, x.workspace_id, x.kind, x.title, x.detail, x.payload, x.evidence, x.note, x.issue_id, x.status, x.created_via,
+      x.proposer_name, null::text, x.applied, x.review_note, x.reviewed_by, x.reviewed_at, x.created_at, x.updated_at, x.created_by
+      into p from public.suggestion_proposals x where x.id = pid for update;
     if p.id is null then
       results := results || jsonb_build_array(jsonb_build_object('id', pid, 'status', 'not_found'));
       continue;
@@ -16798,7 +16823,10 @@ begin
           null,
           coalesce(p.payload -> 'links', '[]'),
           null,
-          null);
+          -- The sources it cites, as Acknowledge links them (only this workspace's).
+          array(
+            select distinct src.id from jsonb_array_elements(p.evidence) e
+            join public.sources src on src.workspace_id = p.workspace_id and src.id::text = lower(e ->> 'source_id')));
         outcome := jsonb_build_object('issue_id', saved ->> 'id', 'number', saved -> 'number');
       end if;
       new_status := case when decision = 'accept' then 'accepted' when p.kind = 'solution_idea' then 'dismissed' else 'rejected' end;
@@ -16859,14 +16887,18 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --     invoker, so row-level security decides), one at a time, in the shape of `review_suggestions`. A solution idea is
 --     "rejected" as `dismissed`; accepting one is refused (it is built in the Editor, slice 2). An API-token request
 --     (the MCP server) can''t review: a person decides.
+--   * the payload is checked at insert: an issue''s `severity` and `type` must be values `issues` accepts;
+--   * accepting a proposed issue also links the sources its evidence cites (this workspace''s), as Acknowledge does;
+--   * a visitor''s email (`proposer_email`) can''t be read by the app''s users: SELECT is granted on every other column;
 --   * `private.suggestion_proposals_before_write`: a new proposal starts pending; a request with a signed-in user is
 --     recorded as `mcp` with no visitor details (only a function with no user, such as B4''s, can say `play_link`); what
---     was proposed never changes; the decision columns change only inside `review_proposals`.
+--     was proposed never changes; the decision columns change only inside `review_proposals`. Deleting a user nulls
+--     `created_by` or `reviewed_by` through the foreign key, and that one change is let through.
 --
 -- Row-level security as `suggestions`: everyone in the workspace reads; owners and editors (and the MCP server acting
 -- as one) propose and review. Nobody deletes. Privileges: Supabase gives every new table full rights to anon and
--- authenticated, so this revokes them all and grants back select, insert and an UPDATE limited to the five decision
--- columns.
+-- authenticated, so this revokes them all and grants back insert, a column-wise select (not `proposer_email`) and an
+-- UPDATE limited to the five decision columns.
 --
 -- Preflight (run with `bash packages/db/scripts/prod-sql.sh -c "..."`; each should be as described):
 --
@@ -16879,11 +16911,13 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --   4. The tables it references exist. Expect 2 rows:
 --        select table_name from information_schema.tables where table_schema = ''public'' and table_name in (''issues'', ''workspaces'');
 --
--- Post-apply grant check (authenticated must show INSERT and SELECT only, with UPDATE on exactly the five decision
--- columns; anon nothing at all):
+-- Post-apply grant check (authenticated must show table-level INSERT only, SELECT on every column but proposer_email, and
+-- UPDATE on exactly the five decision columns; anon nothing at all):
 --        select grantee, privilege_type from information_schema.role_table_grants where table_schema = ''public'' and table_name = ''suggestion_proposals'' and grantee in (''anon'', ''authenticated'') order by 1, 2;
 --        select column_name from information_schema.column_privileges where table_schema = ''public'' and table_name = ''suggestion_proposals'' and grantee = ''authenticated'' and privilege_type = ''UPDATE'' order by 1;
---   Expect: authenticated INSERT, SELECT; columns applied, review_note, reviewed_at, reviewed_by, status; no anon rows.
+--        select column_name from information_schema.column_privileges where table_schema = ''public'' and table_name = ''suggestion_proposals'' and grantee = ''authenticated'' and privilege_type = ''SELECT'' order by 1;
+--   Expect: authenticated INSERT (table level); UPDATE columns applied, review_note, reviewed_at, reviewed_by, status; SELECT on
+--   all columns but proposer_email; no anon rows.
 --
 -- Rollback (run as one transaction; nothing existing was changed, so there is nothing to put back):
 --
@@ -16910,7 +16944,11 @@ create table public.suggestion_proposals (
   payload jsonb not null default ''{}'' constraint suggestion_proposals_payload check (coalesce(
     jsonb_typeof(payload) = ''object'' and octet_length(payload::text) <= 100000
     and (kind <> ''solution_idea'' or jsonb_typeof(payload -> ''steps'') = ''array'')
-    and (kind <> ''issue'' or not payload ? ''links'' or jsonb_typeof(payload -> ''links'') = ''array''), false)),
+    and (kind <> ''issue'' or not payload ? ''links'' or jsonb_typeof(payload -> ''links'') = ''array'')
+    -- A proposed issue''s rating and type are the values `issues` accepts, so accepting it can''t fail on them.
+    and (kind <> ''issue'' or not payload ? ''severity'' or payload ->> ''severity'' in (''critical'', ''serious'', ''warning'', ''info''))
+    and (kind <> ''issue'' or not payload ? ''type'' or payload ->> ''type'' in (
+      ''bottleneck'', ''spof'', ''manual'', ''delay'', ''failure'', ''idea'', ''capacity'', ''sla'', ''churn_risk'', ''perception_gap'', ''broken_scenario'')), false)),
   -- Citations, as in suggestions: [{source_id, speaker, quote, timestamp}].
   evidence jsonb not null default ''[]'' constraint suggestion_proposals_evidence check (
     jsonb_typeof(evidence) = ''array'' and jsonb_array_length(evidence) <= 20 and octet_length(evidence::text) <= 50000),
@@ -16964,6 +17002,14 @@ begin
     end if;
     return new;
   end if;
+  -- Deleting a user sets `created_by` or `reviewed_by` to null through the foreign key''s own trigger (depth 2 here).
+  -- That, and nothing else, is let through.
+  if pg_catalog.pg_trigger_depth() > 1
+    and (to_jsonb(new) - ''created_by'' - ''reviewed_by'' - ''updated_at'') = (to_jsonb(old) - ''created_by'' - ''reviewed_by'' - ''updated_at'')
+    and (new.created_by is null or new.created_by is not distinct from old.created_by)
+    and (new.reviewed_by is null or new.reviewed_by is not distinct from old.reviewed_by) then
+    return new;
+  end if;
   if new.workspace_id is distinct from old.workspace_id or new.kind is distinct from old.kind
     or new.title is distinct from old.title or new.detail is distinct from old.detail
     or new.payload is distinct from old.payload or new.evidence is distinct from old.evidence
@@ -16998,8 +17044,12 @@ create policy "update proposals" on public.suggestion_proposals for update to au
 
 -- Supabase''s default privileges give anon and authenticated everything on a new table: take it all back, then grant
 -- only what is used. No delete (a decided proposal is the record), and UPDATE only on the decision columns.
+-- A visitor''s email (B4) is not readable by the app''s users: SELECT is granted column by column, leaving it out. B4 decides
+-- who may see it and how.
 revoke all on public.suggestion_proposals from anon, authenticated;
-grant select, insert on public.suggestion_proposals to authenticated;
+grant insert on public.suggestion_proposals to authenticated;
+grant select (id, workspace_id, kind, title, detail, payload, evidence, note, issue_id, status, created_via, proposer_name,
+  applied, review_note, reviewed_by, reviewed_at, created_at, updated_at, created_by) on public.suggestion_proposals to authenticated;
 grant update (status, applied, review_note, reviewed_by, reviewed_at) on public.suggestion_proposals to authenticated;
 
 -- Accept or reject proposals, as the signed-in user. Each is handled on its own: one that can''t be applied is reported
@@ -17031,7 +17081,10 @@ begin
   foreach pid in array ids loop
     p := null;
     -- RLS: a proposal the user can''t update is not found.
-    select * into p from public.suggestion_proposals x where x.id = pid for update;
+    -- Every column but the visitor''s email, which this role can''t read (position matters: it is the table''s order).
+    select x.id, x.workspace_id, x.kind, x.title, x.detail, x.payload, x.evidence, x.note, x.issue_id, x.status, x.created_via,
+      x.proposer_name, null::text, x.applied, x.review_note, x.reviewed_by, x.reviewed_at, x.created_at, x.updated_at, x.created_by
+      into p from public.suggestion_proposals x where x.id = pid for update;
     if p.id is null then
       results := results || jsonb_build_array(jsonb_build_object(''id'', pid, ''status'', ''not_found''));
       continue;
@@ -17062,7 +17115,10 @@ begin
           null,
           coalesce(p.payload -> ''links'', ''[]''),
           null,
-          null);
+          -- The sources it cites, as Acknowledge links them (only this workspace''s).
+          array(
+            select distinct src.id from jsonb_array_elements(p.evidence) e
+            join public.sources src on src.workspace_id = p.workspace_id and src.id::text = lower(e ->> ''source_id'')));
         outcome := jsonb_build_object(''issue_id'', saved ->> ''id'', ''number'', saved -> ''number'');
       end if;
       new_status := case when decision = ''accept'' then ''accepted'' when p.kind = ''solution_idea'' then ''dismissed'' else ''rejected'' end;

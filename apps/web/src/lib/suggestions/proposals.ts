@@ -186,7 +186,7 @@ export const SUGGESTIONS_HELP = {
   },
   reject: {
     label: "Reject",
-    description: "Says no. Nothing is created or changed. You can add a reason, and it is kept with a company change.",
+    description: "Says no. Nothing is created or changed, and the proposal leaves this list.",
     example: "Reject a proposed issue you already know about.",
   },
   model: {

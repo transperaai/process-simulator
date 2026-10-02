@@ -973,9 +973,8 @@ export interface ProposalRow {
   issue_id: string | null;
   status: ProposalStatus;
   created_via: "mcp" | "play_link";
-  /** A play-link visitor's name and email (B4). */
+  /** A play-link visitor's name (B4). Their email is stored but not readable by the app's users; B4 decides who sees it. */
   proposer_name: string | null;
-  proposer_email: string | null;
   applied: ProposalApplied | null;
   review_note: string | null;
   reviewed_by: string | null;

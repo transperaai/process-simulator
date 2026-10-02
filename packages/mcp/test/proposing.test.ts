@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildIssueProposal, buildSolutionIdeaProposal, matchIssue, MAX_PROPOSED_STEPS } from "../src";
+import { buildIssueProposal, buildSolutionIdeaProposal, matchIssue, MAX_PROPOSED_STEPS, requireSwitch } from "../src";
 import { ToolError } from "../src/result";
 
 // What the proposal tools store (issue #117, A52): a proposed issue or a solution idea, never an issue or a solution.
@@ -139,5 +139,18 @@ describe("matchIssue", () => {
   });
   it("refuses an issue that is already closed", () => {
     fails(() => matchIssue(issues, "16"), "invalid_input");
+  });
+});
+
+describe("requireSwitch", () => {
+  const on = { suggest_issues: true, suggest_solutions: true };
+  it("lets a proposal through when its switch is on", () => {
+    expect(() => requireSwitch(on, "suggest_issues")).not.toThrow();
+    expect(() => requireSwitch({ ...on, suggest_issues: false }, "suggest_solutions")).not.toThrow();
+  });
+  it("refuses with a clear message naming the setting when it is off", () => {
+    const err = fails(() => requireSwitch({ ...on, suggest_issues: false }, "suggest_issues"), "switched_off");
+    expect(err.message).toBe('Proposing issues is turned off in AI settings (Settings, AI analysis: "Suggest issues (they land in Suggestions)"). Ask an owner to turn it on.');
+    expect(fails(() => requireSwitch({ ...on, suggest_solutions: false }, "suggest_solutions"), "switched_off").message).toMatch(/Proposing solution ideas is turned off in AI settings/);
   });
 });

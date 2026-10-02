@@ -111,7 +111,6 @@ export function demoProposals(): ProposalRow[] {
     status: "pending" as const,
     created_via: "mcp" as const,
     proposer_name: null,
-    proposer_email: null,
     applied: null,
     review_note: null,
     reviewed_by: null,

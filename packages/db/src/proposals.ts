@@ -7,7 +7,7 @@ import type { Db } from "./queries";
 import type { ProposalRow, ProposalStatus } from "./types";
 
 export const PROPOSAL_ROW_COLUMNS =
-  "id, workspace_id, kind, title, detail, payload, evidence, note, issue_id, status, created_via, proposer_name, proposer_email, applied, review_note, reviewed_by, reviewed_at, created_at, created_by" as const;
+  "id, workspace_id, kind, title, detail, payload, evidence, note, issue_id, status, created_via, proposer_name, applied, review_note, reviewed_by, reviewed_at, created_at, created_by" as const;
 
 /** The workspace's proposals, newest first; optionally only one status. */
 export async function loadProposals(db: Db, workspaceId: string, status?: ProposalStatus): Promise<ProposalRow[]> {
@@ -22,5 +22,10 @@ export async function loadProposals(db: Db, workspaceId: string, status?: Propos
 /** How many proposals wait for a person (for the sidebar's pending count). */
 export async function countPendingProposals(db: Db, workspaceId: string): Promise<number> {
   const r = await db.from("suggestion_proposals").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId).eq("status", "pending");
+  // 42P01 (Postgres) and PGRST205 (PostgREST): the table isn't there yet, so nothing waits. Anything else is a real failure.
+  if (r.error) {
+    if (r.error.code === "42P01" || r.error.code === "PGRST205") return 0;
+    throw r.error;
+  }
   return r.count ?? 0;
 }

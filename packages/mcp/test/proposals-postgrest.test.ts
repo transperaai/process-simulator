@@ -135,6 +135,25 @@ describe.skipIf(!POSTGREST_URL)("proposal tools over PostgREST", () => {
     await client.close();
   });
 
+  it("obeys the AI switches: off means a clear error and nothing stored; on again, it works", async () => {
+    const client = await connect(editorToken, options);
+    const stored = async () => (await admin.query("select count(*)::int as n from suggestion_proposals where workspace_id = $1", [ids.ws])).rows[0].n as number;
+    const before = await stored();
+    await admin.query("insert into ai_settings (workspace_id, suggest_issues, suggest_solutions) values ($1, false, false) on conflict (workspace_id) do update set suggest_issues = false, suggest_solutions = false", [ids.ws]);
+    try {
+      expect(await call(client, "propose_issue", { title: "Off" })).toMatchObject({ ok: false, error: { code: "switched_off", message: expect.stringMatching(/turned off in AI settings/) } });
+      expect(await call(client, "propose_solution_idea", { issue: "Leads wait for a reply", title: "Off", steps: [{ name: "A" }] })).toMatchObject({ ok: false, error: { code: "switched_off" } });
+      expect(await stored()).toBe(before);
+      // One switch at a time.
+      await admin.query("update ai_settings set suggest_issues = true where workspace_id = $1", [ids.ws]);
+      expect(await call(client, "propose_issue", { title: "On again" })).toMatchObject({ ok: true });
+      expect(await call(client, "propose_solution_idea", { issue: "Leads wait for a reply", title: "Still off", steps: [{ name: "A" }] })).toMatchObject({ ok: false, error: { code: "switched_off" } });
+    } finally {
+      await admin.query("delete from ai_settings where workspace_id = $1", [ids.ws]);
+    }
+    await client.close();
+  });
+
   it("a viewer can't propose", async () => {
     const viewer = await connect(viewerToken, options);
     expect(await call(viewer, "propose_issue", { title: "Sneaky" })).toMatchObject({ ok: false, error: { code: "forbidden" } });
@@ -142,7 +161,7 @@ describe.skipIf(!POSTGREST_URL)("proposal tools over PostgREST", () => {
   });
 
   it("a token can't review: a person accepts in the app, and that creates the issue", async () => {
-    const pending = (await admin.query("select id from suggestion_proposals where workspace_id = $1 and kind = 'issue' and status = 'pending'", [ids.ws])).rows[0].id;
+    const pending = (await admin.query("select id from suggestion_proposals where workspace_id = $1 and kind = 'issue' and status = 'pending' and title = 'Enquiries wait two days for a reply'", [ids.ws])).rows[0].id;
     // With the token: refused.
     const viaToken = await fetch(`${POSTGREST_URL}/rpc/review_proposals`, {
       method: "POST",

@@ -13,6 +13,7 @@ import {
   describeSuggestion,
   isVisibleIssue,
   loadBlocks,
+  loadAiSettings,
   loadCompanyModel,
   loadIssues,
   loadProposals,
@@ -30,7 +31,7 @@ import { ISSUE_TYPES, RATINGS, storedOfRating } from "@transpera-flow/engine";
 import { matchNamed } from "./analysis";
 import { processSteps } from "./analysis-tools";
 import { resolveProcess, resolveWorkspace, type ToolContext, type WorkspaceRef } from "./context";
-import { buildIssueProposal, buildSolutionIdeaProposal, matchIssue, MAX_PROPOSED_STEPS, type ProposalInsert } from "./proposing";
+import { buildIssueProposal, buildSolutionIdeaProposal, matchIssue, MAX_PROPOSED_STEPS, requireSwitch, type ProposalInsert } from "./proposing";
 import { runTool, ToolError } from "./result";
 import {
   buildClientSuggestion,
@@ -431,6 +432,7 @@ export function registerSuggestionTools(server: McpServer, ctx: ToolContext): vo
     (args) =>
       runTool(async (assumptions) => {
         const ws = await resolveWorkspace(ctx, args.workspace, assumptions);
+        requireSwitch(await loadAiSettings(ctx.db, ws.id), "suggest_issues");
         let links: IssueLinkRef[] = [];
         if (args.process || args.steps?.length) {
           const proc = await resolveProcess(ctx, ws, args.process, assumptions);
@@ -495,6 +497,7 @@ export function registerSuggestionTools(server: McpServer, ctx: ToolContext): vo
     (args) =>
       runTool(async (assumptions) => {
         const ws = await resolveWorkspace(ctx, args.workspace, assumptions);
+        requireSwitch(await loadAiSettings(ctx.db, ws.id), "suggest_solutions");
         const issues = (await loadIssues(ctx.db, ws.id)).filter(isVisibleIssue);
         const issue = matchIssue(issues, args.issue);
         const blocks = args.steps.some((s) => s.block) ? await loadBlocks(ctx.db, ws.id) : [];

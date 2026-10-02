@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { NORTHBEAM_PROCESS_ID, NORTHBEAM_WORKSPACE_ID, northbeamIssues, northbeamStepIds } from "../src";
+import { NORTHBEAM_PROCESS_ID, NORTHBEAM_WORKSPACE_ID, northbeamIssues, northbeamSourceIds, northbeamStepIds } from "../src";
 import { createTestDb, createUser, type TestDb } from "./harness";
 
 // Suggestions v2 (issue #117, A52 slice 1; docs/PRD.md §7.1c): proposed issues and solution ideas wait in
@@ -30,6 +30,8 @@ afterAll(async () => {
   await db?.close();
 });
 
+// Everything but the visitor's email, which the app's users can't read (so `returning *` would be refused).
+const COLS = "id, workspace_id, kind, title, detail, payload, evidence, note, issue_id, status, created_via, proposer_name, applied, review_note, reviewed_by, reviewed_at, created_at, updated_at, created_by";
 const one = async (c: pg.Client, sql: string, params: unknown[] = []) => (await c.query(sql, params)).rows[0];
 
 async function propose(
@@ -39,7 +41,7 @@ async function propose(
 ) {
   return (
     await c.query(
-      "insert into suggestion_proposals (workspace_id, kind, title, detail, payload, issue_id) values ($1, $2, $3, $4, $5, $6) returning *",
+      "insert into suggestion_proposals (workspace_id, kind, title, detail, payload, issue_id) values ($1, $2, $3, $4, $5, $6) returning " + COLS + "",
       [
         ws,
         kind,
@@ -62,7 +64,7 @@ describe("proposing", () => {
       const issuesBefore = (await one(c, "select count(*)::int as n from issues")).n;
       const p = (
         await c.query(
-          "insert into suggestion_proposals (workspace_id, kind, title, payload, status, reviewed_at, created_via, proposer_name) values ($1, 'issue', 'X', '{}', 'accepted', now(), 'play_link', 'Visitor') returning *",
+          "insert into suggestion_proposals (workspace_id, kind, title, payload, status, reviewed_at, created_via, proposer_name) values ($1, 'issue', 'X', '{}', 'accepted', now(), 'play_link', 'Visitor') returning " + COLS + "",
           [ws],
         )
       ).rows[0];
@@ -263,5 +265,93 @@ describe("who can review", () => {
       await c.query("rollback to savepoint s");
       await expect(c.query("select public.review_proposals('{}'::uuid[], 'accept')")).rejects.toThrow(/between 1 and 500/);
     });
+  });
+});
+
+describe("what accepting carries over", () => {
+  it("links the sources the proposal cites, this workspace's only, once each", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      const cite = [
+        { source_id: northbeamSourceIds.salesNotes, quote: "a" },
+        { source_id: northbeamSourceIds.salesNotes, quote: "b" },
+        { source_id: northbeamSourceIds.strategyInterview, quote: "c" },
+        { source_id: randomUUID(), quote: "a source that isn't there" },
+        { source_id: "not-a-uuid", quote: "d" },
+      ];
+      const p = (
+        await c.query("insert into suggestion_proposals (workspace_id, kind, title, evidence) values ($1, 'issue', 'Cites sources', $2) returning id", [ws, JSON.stringify(cite)])
+      ).rows[0];
+      const [r] = await review(c, [p.id], "accept");
+      expect(r!.status).toBe("accepted");
+      const linked = (await c.query("select source_id from issue_sources where issue_id = $1 order by 1", [r!.applied!.issue_id])).rows.map((x) => x.source_id);
+      expect(linked).toEqual([northbeamSourceIds.salesNotes, northbeamSourceIds.strategyInterview].sort());
+    });
+  });
+
+  it("a source from another workspace isn't linked", async () => {
+    const otherWs = (await db.client.query("insert into workspaces (name, slug) values ('Elsewhere', 'elsewhere-proposals') returning id")).rows[0].id;
+    const foreign = (await db.client.query("insert into sources (workspace_id, title) values ($1, 'Theirs') returning id", [otherWs])).rows[0].id;
+    await db.as(users.editor!.claims, async (c) => {
+      const p = (
+        await c.query("insert into suggestion_proposals (workspace_id, kind, title, evidence) values ($1, 'issue', 'Foreign cite', $2) returning id", [ws, JSON.stringify([{ source_id: foreign, quote: "x" }])])
+      ).rows[0];
+      const [r] = await review(c, [p.id], "accept");
+      expect(r!.status).toBe("accepted");
+      expect((await c.query("select count(*)::int as n from issue_sources where issue_id = $1", [r!.applied!.issue_id])).rows[0].n).toBe(0);
+    });
+  });
+});
+
+describe("the payload is checked when it is proposed", () => {
+  it("refuses a rating or type an issue can't have, and accepts every one it can", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      for (const payload of [{ severity: "risk" }, { severity: 3 }, { type: "nonsense" }, { type: null }, { links: "x" }]) {
+        await c.query("savepoint s");
+        await expect(c.query("insert into suggestion_proposals (workspace_id, kind, title, payload) values ($1, 'issue', 'Bad payload', $2)", [ws, JSON.stringify(payload)]), JSON.stringify(payload)).rejects.toThrow(/suggestion_proposals_payload/);
+        await c.query("rollback to savepoint s");
+      }
+      for (const severity of ["critical", "serious", "warning", "info"]) {
+        for (const type of ["bottleneck", "spof", "manual", "delay", "failure", "idea", "capacity", "sla", "churn_risk", "perception_gap", "broken_scenario"]) {
+          await c.query("insert into suggestion_proposals (workspace_id, kind, title, payload) values ($1, 'issue', 'Good', $2)", [ws, JSON.stringify({ severity, type })]);
+        }
+      }
+      // And every one of them can be accepted: the check keeps the issue's own constraints from failing at review.
+      const ids = (await c.query("select id from suggestion_proposals where title = 'Good' limit 5")).rows.map((x) => x.id);
+      expect((await review(c, ids, "accept")).every((r) => r.status === "accepted")).toBe(true);
+    });
+  });
+});
+
+describe("deleting a user", () => {
+  it("works when they created or reviewed a proposal: the foreign key's null is let through, the proposal is untouched", async () => {
+    const author = await createUser(db, "author@proposals.example.com");
+    await db.client.query("insert into memberships (workspace_id, user_id, role) values ($1, $2, 'editor')", [ws, author.id]);
+    const id = (await db.client.query("insert into suggestion_proposals (workspace_id, kind, title) values ($1, 'issue', 'Authored') returning id", [ws])).rows[0].id;
+    // A proposal made by this author (the trigger sets created_by from the signed-in user, so write it as the owner of the table).
+    await db.client.query("alter table suggestion_proposals disable trigger before_write");
+    await db.client.query("update suggestion_proposals set created_by = $2 where id = $1", [id, author.id]);
+    await db.client.query("alter table suggestion_proposals enable trigger before_write");
+    // A decision that stays (db.as rolls back): made inside the guard's own window, as review_proposals does.
+    await db.client.query("begin");
+    await db.client.query("select set_config('transpera.reviewing_proposals', 'on', true)");
+    await db.client.query("update suggestion_proposals set status = 'rejected', reviewed_by = $2, reviewed_at = now() where id = $1", [id, users.owner!.id]);
+    await db.client.query("commit");
+    expect((await db.client.query("select created_by, reviewed_by from suggestion_proposals where id = $1", [id])).rows[0]).toEqual({ created_by: author.id, reviewed_by: users.owner!.id });
+
+    await db.client.query("delete from auth.users where id = $1", [author.id]);
+    await db.client.query("delete from auth.users where id = $1", [users.owner!.id]);
+    expect((await db.client.query("select title, status, created_by, reviewed_by, reviewed_at is not null as reviewed from suggestion_proposals where id = $1", [id])).rows[0]).toEqual({
+      title: "Authored",
+      status: "rejected",
+      created_by: null,
+      reviewed_by: null,
+      reviewed: true,
+    });
+  });
+
+  it("still refuses any other change made inside a trigger or by hand", async () => {
+    const id = (await db.client.query("insert into suggestion_proposals (workspace_id, kind, title) values ($1, 'issue', 'Guarded') returning id", [ws])).rows[0].id;
+    await expect(db.client.query("update suggestion_proposals set title = 'Changed' where id = $1", [id])).rejects.toThrow(/can't be changed/);
+    await expect(db.client.query("update suggestion_proposals set status = 'accepted', reviewed_at = now() where id = $1", [id])).rejects.toThrow(/review_proposals/);
   });
 });

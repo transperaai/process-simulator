@@ -8,7 +8,7 @@ export { applyOverrides, createMcpServer, DEFAULT_REPS, DEFAULT_SEED, summarizeR
 export { ANALYSIS_TOOL_NAMES, DEFAULT_ROBUSTNESS_SECONDS, MAX_ROBUSTNESS_SECONDS } from "./analysis-tools";
 export { bottleneckReport, checkScenarioRobustness, compareScenarios, matchNamed, robustnessParameters, stackPatches, type NamedScenario } from "./analysis";
 export { SUGGESTION_TOOL_NAMES } from "./suggestion-tools";
-export { buildIssueProposal, buildSolutionIdeaProposal, matchIssue, MAX_PROPOSED_STEPS, type ProposalInsert } from "./proposing";
+export { buildIssueProposal, buildSolutionIdeaProposal, matchIssue, MAX_PROPOSED_STEPS, requireSwitch, type ProposalInsert } from "./proposing";
 export { buildClientSuggestion, buildCompanySuggestion, buildDemandSuggestions, buildPersonSuggestion, buildRoleSuggestion, buildServiceSuggestion, matchForUpsert } from "./suggesting";
 export { BUILDING_TOOL_NAMES } from "./building-tools";
 export { buildNewStep, buildStepChange, planImport, resolveName, revisionDiff, type ImportInput, type ImportPlan, type RevisionDiff, type StepFields } from "./building";

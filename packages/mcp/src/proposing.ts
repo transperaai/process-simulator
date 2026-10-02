@@ -162,3 +162,20 @@ export function matchIssue(issues: readonly IssueRef[], ref: string): IssueRef {
   }
   return issue;
 }
+
+const SWITCH_LABELS = {
+  suggest_issues: "Suggest issues (they land in Suggestions)",
+  suggest_solutions: "Suggest solution ideas using blocks from the library",
+} as const;
+
+/**
+ * Settings -> AI analysis can turn off Claude's proposals of each kind. A tool whose switch is off refuses with a clear
+ * message, so Claude can tell the person instead of retrying.
+ */
+export function requireSwitch(settings: Record<"suggest_issues" | "suggest_solutions", boolean>, key: keyof typeof SWITCH_LABELS): void {
+  if (settings[key]) return;
+  throw new ToolError(
+    "switched_off",
+    `Proposing ${key === "suggest_issues" ? "issues" : "solution ideas"} is turned off in AI settings (Settings, AI analysis: "${SWITCH_LABELS[key]}"). Ask an owner to turn it on.`,
+  );
+}

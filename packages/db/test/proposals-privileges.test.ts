@@ -37,10 +37,29 @@ describe("with Supabase's default table privileges", () => {
     expect(other).toContain("UPDATE");
   });
 
-  it("leaves authenticated with insert and select only, and anon nothing", async () => {
+  it("leaves authenticated with table-level insert only (select is by column), and anon nothing", async () => {
     const g = await grants();
-    expect(g.filter((x) => x.grantee === "authenticated").map((x) => x.privilege_type)).toEqual(["INSERT", "SELECT"]);
+    expect(g.filter((x) => x.grantee === "authenticated").map((x) => x.privilege_type)).toEqual(["INSERT"]);
     expect(g.filter((x) => x.grantee === "anon")).toEqual([]);
+  });
+
+  it("lets authenticated read every column but the visitor's email", async () => {
+    const readable = (
+      await db.client.query(
+        "select column_name from information_schema.column_privileges where table_schema = 'public' and table_name = 'suggestion_proposals' and privilege_type = 'SELECT' and grantee = 'authenticated'",
+      )
+    ).rows.map((r) => r.column_name as string);
+    const all = (await db.client.query("select column_name from information_schema.columns where table_schema = 'public' and table_name = 'suggestion_proposals'")).rows.map((r) => r.column_name as string);
+    expect(all).toContain("proposer_email");
+    expect(readable.sort()).toEqual(all.filter((c) => c !== "proposer_email").sort());
+    await db.as(editor.claims, async (c) => {
+      await c.query("savepoint s");
+      await expect(c.query("select proposer_email from suggestion_proposals")).rejects.toThrow(/permission denied/);
+      await c.query("rollback to savepoint s");
+      await expect(c.query("select * from suggestion_proposals")).rejects.toThrow(/permission denied/);
+      await c.query("rollback to savepoint s");
+      expect((await c.query("select id, proposer_name from suggestion_proposals")).rows.length).toBeGreaterThan(0);
+    });
   });
 
   it("allows updating only the five decision columns", async () => {

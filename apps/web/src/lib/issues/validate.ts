@@ -264,6 +264,8 @@ export const MAX_NOTE = 2000;
 export interface ResolveInput {
   how: ResolveHow;
   note: string | null;
+  /** The solution that fixed it (A50): only with "A solution fixed it", and only one linked to the issue (the database checks). */
+  solutionId: string | null;
 }
 
 export function parseResolveInput(input: unknown): Parsed<ResolveInput> {
@@ -273,5 +275,8 @@ export function parseResolveInput(input: unknown): Parsed<ResolveInput> {
   if (o.note !== undefined && o.note !== null && typeof o.note !== "string") return { ok: false, error: "The note isn't valid." };
   const note = typeof o.note === "string" ? o.note.trim() : "";
   if (note.length > MAX_NOTE) return { ok: false, error: `Keep the note to ${MAX_NOTE} characters.` };
-  return { ok: true, value: { how: o.how as ResolveHow, note: note || null } };
+  if (o.solutionId !== undefined && o.solutionId !== null && (typeof o.solutionId !== "string" || !UUID.test(o.solutionId))) return { ok: false, error: "That solution isn't valid." };
+  const solutionId = typeof o.solutionId === "string" ? o.solutionId : null;
+  if (solutionId && o.how !== "solution") return { ok: false, error: "A solution can only be named when a solution fixed it." };
+  return { ok: true, value: { how: o.how as ResolveHow, note: note || null, solutionId } };
 }

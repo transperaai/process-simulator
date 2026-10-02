@@ -50,6 +50,53 @@ export function addDemoSolution(input: SolutionInput): { solution: SolutionRow; 
   return { solution, links };
 }
 
+const emit = () => {
+  for (const l of listeners) l();
+};
+
+/** Your verdict (and optionally your note) on one issue a solution solves, in this tab. `verdict` null clears it. */
+export function setDemoVerdict(solutionId: string, issueId: string, verdict: "pass" | "fail" | null, notes?: string): SolutionIssueRow | null {
+  let found: SolutionIssueRow | null = null;
+  state = {
+    ...state,
+    links: state.links.map((l) => {
+      if (l.solution_id !== solutionId || l.issue_id !== issueId) return l;
+      found = { ...l, user_verdict: verdict, ...(notes === undefined ? {} : { user_notes: notes }), updated_at: new Date().toISOString() };
+      return found;
+    }),
+  };
+  emit();
+  return found;
+}
+
+/** The notes on a solution, in this tab. */
+export function setDemoNotes(solutionId: string, notes: string): void {
+  state = { ...state, solutions: state.solutions.map((s) => (s.id === solutionId ? { ...s, notes, updated_at: new Date().toISOString() } : s)) };
+  emit();
+}
+
+/** Link a solution to another issue in this tab, with the verdict worked out by the caller (null: not checked). */
+export function addDemoLink(solutionId: string, issueId: string, verdict: { autoVerdict: "pass" | "fail" | null; holdsPct: number | null; autoNote: string }): SolutionIssueRow | null {
+  if (!state.solutions.some((s) => s.id === solutionId) || state.links.some((l) => l.solution_id === solutionId && l.issue_id === issueId)) return null;
+  const now = new Date().toISOString();
+  const link: SolutionIssueRow = {
+    solution_id: solutionId,
+    issue_id: issueId,
+    workspace_id: NORTHBEAM_WORKSPACE_ID,
+    auto_verdict: verdict.autoVerdict,
+    holds_pct: verdict.autoVerdict ? verdict.holdsPct : null,
+    auto_note: verdict.autoNote,
+    user_verdict: null,
+    user_notes: "",
+    created_at: now,
+    updated_at: now,
+    created_by: null,
+  };
+  state = { ...state, links: [...state.links, link] };
+  emit();
+  return link;
+}
+
 /** The demo's solutions, kept up to date as the Editor saves more. Server rendering and hydration see none. */
 export function useDemoSolutions(): DemoState {
   return useSyncExternalStore(

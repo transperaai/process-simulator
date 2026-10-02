@@ -36,6 +36,8 @@ const failure = (error: { code?: string; message?: string }) =>
         ? ({ status: "error", message: "Some of those values aren't allowed." } as const)
         : error.code === "22023" && /already resolved/.test(error.message ?? "")
           ? ({ status: "error", message: ALREADY_RESOLVED } as const)
+        : error.code === "22023" && /not linked to this issue/.test(error.message ?? "")
+          ? ({ status: "error", message: "That solution isn't linked to this issue. Pick one of the solutions listed." } as const)
         : error.code === "23503"
           ? ({ status: "error", message: "Something the issue links to no longer exists." } as const)
           : ({ status: "error", message: "Couldn't save. Try again." } as const);
@@ -161,13 +163,13 @@ export async function deleteIssue(id: unknown): Promise<RemoveIssueResult> {
  * Mark an issue resolved: how it was resolved (a solution fixed it, the process was changed directly, or it is no longer
  * a problem) and a note, in one write, so the history gets one entry carrying both (public.resolve_issue).
  */
-export async function resolveIssueAction(workspaceId: unknown, id: unknown, how: unknown, note: unknown): Promise<SaveIssueResult> {
+export async function resolveIssueAction(workspaceId: unknown, id: unknown, how: unknown, note: unknown, solutionId: unknown = null): Promise<SaveIssueResult> {
   if (!isId(workspaceId) || !isId(id)) return invalid;
-  const parsed = parseResolveInput({ how, note });
+  const parsed = parseResolveInput({ how, note, solutionId });
   if (!parsed.ok) return { status: "error", message: parsed.error };
   const supabase = await signedInClient();
   if (!supabase) return signedOut;
-  const done = await resolveIssue(supabase, { workspaceId, id, how: parsed.value.how, note: parsed.value.note });
+  const done = await resolveIssue(supabase, { workspaceId, id, how: parsed.value.how, note: parsed.value.note, solutionId: parsed.value.solutionId });
   if ("error" in done) return failure(done.error);
   const issue = await loadIssue(supabase, workspaceId, id);
   return issue ? { status: "ok", issue } : forbidden;

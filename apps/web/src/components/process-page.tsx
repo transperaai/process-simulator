@@ -393,6 +393,7 @@ export function ProcessPage({
         >
           <ProcessSolutions
             processId={bundle.process.id}
+            processName={bundle.process.name}
             base={solutions?.base ?? (mode === "demo" ? "/demo" : "")}
             demo={mode === "demo"}
             canEdit={mode !== "readonly" && !old && !!solutions?.base}

@@ -4,13 +4,17 @@
 // this tab (issue #25). Lost on reload.
 
 import { useSyncExternalStore } from "react";
-import type { CompanyModel, RunRow, SuggestionRow } from "@transpera-flow/db";
+import { NORTHBEAM_WORKSPACE_ID, northbeamIssues, type CompanyModel, type ProposalRow, type RunRow, type SuggestionRow } from "@transpera-flow/db";
+import { MemoryIssueStore } from "@/lib/issues/store";
+import { reviewProposalsInMemory, type ProposalBackend } from "@/lib/suggestions/proposals";
 import { reviewInMemory, type SuggestionBackend } from "@/lib/suggestions/review";
-import { demoCompany, demoSuggestions } from "@/lib/suggestions/demo";
+import { demoCompany, demoProposals, demoSuggestions } from "@/lib/suggestions/demo";
 
 export interface DemoCompanyState {
   model: CompanyModel;
   suggestions: SuggestionRow[];
+  /** Proposed issues and solution ideas (A52). */
+  proposals: ProposalRow[];
   /** Runs saved in this tab, newest first. */
   runs: RunRow[];
 }
@@ -20,7 +24,7 @@ let state: DemoCompanyState | null = null;
 const listeners = new Set<() => void>();
 
 function first(): DemoCompanyState {
-  initial ??= { model: demoCompany(), suggestions: demoSuggestions(), runs: [] };
+  initial ??= { model: demoCompany(), suggestions: demoSuggestions(), proposals: demoProposals(), runs: [] };
   return initial;
 }
 
@@ -54,3 +58,17 @@ export function saveDemoRun(run: RunRow): void {
   const now = get();
   set({ ...now, runs: [run, ...now.runs] });
 }
+
+/** Where accepted proposals become issues on the demo: the issue store's own `save`, as the Acknowledge dialog uses. */
+let issues: MemoryIssueStore | null = null;
+
+/** Reviews proposals in memory, as the database would. An accepted issue is numbered after Northbeam's sample issues. */
+export const demoProposalBackend: ProposalBackend = {
+  async review(ids, decision, note) {
+    issues ??= new MemoryIssueStore(NORTHBEAM_WORKSPACE_ID, northbeamIssues());
+    const now = get();
+    const next = await reviewProposalsInMemory(now.proposals, ids, decision, note, { at: new Date().toISOString(), by: null, issues });
+    set({ ...now, proposals: next.proposals });
+    return { status: "ok", results: next.results, proposals: next.proposals };
+  },
+};

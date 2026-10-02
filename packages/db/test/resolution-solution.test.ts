@@ -175,6 +175,11 @@ describe("resolve_issue with a solution", () => {
         // Update: the stranger can't see the row, so nothing changes and nothing is said.
         expect((await c.query("update issues set status = 'done', resolved_how = 'solution', resolved_solution_id = $2 where id = $1", [issueB, sol])).rowCount).toBe(0);
       });
+      // A token with role authenticated but no user (`auth.uid()` null) is held to the same: the trigger doesn't answer for it either.
+      await db.as({ role: "authenticated" }, async (c) => {
+        await fails(c, () => c.query(insert, [ws, sol]), /row-level security/);
+        await fails(c, () => c.query(insert, [ws, randomUUID()]), /row-level security/);
+      });
     } finally {
       await db.client.query("delete from solutions where id = $1", [sol]);
     }

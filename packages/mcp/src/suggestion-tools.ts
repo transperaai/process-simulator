@@ -11,15 +11,27 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
   describeSuggestion,
+  isVisibleIssue,
+  loadBlocks,
+  loadAiSettings,
   loadCompanyModel,
+  loadIssues,
+  loadProposals,
   loadSuggestions,
+  PROPOSAL_ROW_COLUMNS,
   SUGGESTION_ROW_COLUMNS,
   type CompanyModel,
   type EvidenceCitation,
+  type IssueLinkRef,
   type Json,
+  type ProposalRow,
   type SuggestionRow,
 } from "@transpera-flow/db";
-import { resolveWorkspace, type ToolContext, type WorkspaceRef } from "./context";
+import { ISSUE_TYPES, RATINGS, storedOfRating } from "@transpera-flow/engine";
+import { matchNamed } from "./analysis";
+import { processSteps } from "./analysis-tools";
+import { resolveProcess, resolveWorkspace, type ToolContext, type WorkspaceRef } from "./context";
+import { buildIssueProposal, buildSolutionIdeaProposal, matchIssue, MAX_PROPOSED_STEPS, requireSwitch, type ProposalInsert } from "./proposing";
 import { runTool, ToolError } from "./result";
 import {
   buildClientSuggestion,
@@ -31,7 +43,18 @@ import {
   type Built,
 } from "./suggesting";
 
-export const SUGGESTION_TOOL_NAMES = ["set_company", "upsert_service", "upsert_person", "upsert_client", "upsert_role", "set_demand", "list_suggestions"] as const;
+export const SUGGESTION_TOOL_NAMES = [
+  "set_company",
+  "upsert_service",
+  "upsert_person",
+  "upsert_client",
+  "upsert_role",
+  "set_demand",
+  "list_suggestions",
+  "propose_issue",
+  "propose_solution_idea",
+  "list_proposals",
+] as const;
 
 const workspaceArg = z.string().optional().describe("Workspace id, slug or name. Defaults to the active workspace (set_active_workspace).");
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "an ISO date (YYYY-MM-DD)");
@@ -128,6 +151,37 @@ async function store(ctx: ToolContext, ws: WorkspaceRef, model: CompanyModel, bu
     message: rows.length
       ? `Created ${rows.length} suggestion${rows.length === 1 ? "" : "s"}. Nothing changes until someone accepts ${rows.length === 1 ? "it" : "them"} on the workspace's Suggestions page.`
       : "Nothing to suggest: the model already has those values.",
+  };
+}
+
+/** Store one proposal, as the user, and describe it. */
+async function storeProposal(ctx: ToolContext, ws: WorkspaceRef, p: ProposalInsert, what: string) {
+  await checkSources(ctx, ws, p.evidence);
+  const { data, error } = await ctx.db
+    .from("suggestion_proposals")
+    .insert({
+      workspace_id: ws.id,
+      kind: p.kind,
+      title: p.title,
+      detail: p.detail,
+      payload: p.payload as unknown as Json,
+      evidence: p.evidence as unknown as Json,
+      note: p.note,
+      issue_id: p.issue_id,
+    })
+    .select(PROPOSAL_ROW_COLUMNS)
+    .single();
+  if (error) {
+    if (error.code === "42501") throw new ToolError("forbidden", "You don't have permission to propose changes in this workspace (editors and owners can).");
+    if (error.code === "23514") throw new ToolError("invalid_input", `Some of those values aren't allowed: ${error.message}`);
+    if (error.code === "23503") throw new ToolError("not_found", "The issue this idea is for no longer exists.");
+    throw new ToolError("write_failed", `Couldn't save the proposal: ${error.message}`);
+  }
+  const row = data as unknown as ProposalRow;
+  return {
+    workspace: { id: ws.id, name: ws.name },
+    proposal: { id: row.id, kind: row.kind, status: row.status, title: row.title, issue_id: row.issue_id },
+    message: `Proposed ${what}. Nothing is created until someone ${row.kind === "issue" ? "accepts it" : "builds it"} on the workspace's Suggestions page.`,
   };
 }
 
@@ -345,6 +399,171 @@ export function registerSuggestionTools(server: McpServer, ctx: ToolContext): vo
             created_at: r.created_at,
             reviewed_at: r.reviewed_at,
             review_note: r.review_note,
+          })),
+        };
+      }),
+  );
+
+  const proposalNote = " Creates a proposal for a person to review on the Suggestions page; it never writes an issue or a solution.";
+
+  server.registerTool(
+    "propose_issue",
+    {
+      title: "Propose an issue",
+      description:
+        "Propose a new issue (a problem worth tracking) for a person to accept or reject. Accepting logs it in the issues register like an acknowledged insight; rejecting drops it. " +
+        "Use log_issue only when told to log one directly." +
+        proposalNote,
+      inputSchema: {
+        title: z.string().trim().min(1).max(200).describe("The problem, in plain words, e.g. 'Ad-hoc requests wait 20 h for an SEO specialist'"),
+        detail: z.string().max(5000).optional().describe("What was seen or said, and where. Shown on the card and kept as the issue's evidence."),
+        rating: z.enum(RATINGS).optional().describe("great, good (could improve), bad (not urgent) or risk (operational risk). Default good."),
+        type: z.enum(ISSUE_TYPES).optional().describe("Default manual."),
+        process: z.string().optional().describe("The process it touches (id or name)."),
+        steps: z.array(z.string().min(1)).max(20).optional().describe("Steps of that process it touches (ids or names). Without steps it touches the whole process."),
+        target_measure: z.string().max(200).optional().describe("What would be measured, e.g. 'Wait at Ad-hoc requests'"),
+        target_now: z.string().max(200).optional().describe("Where it is now, e.g. '20 h'"),
+        target_goal: z.string().max(200).optional().describe("Where it should be, e.g. 'under 8 h'"),
+        evidence: evidenceArg,
+        note: noteArg,
+        workspace: workspaceArg,
+      },
+    },
+    (args) =>
+      runTool(async (assumptions) => {
+        const ws = await resolveWorkspace(ctx, args.workspace, assumptions);
+        requireSwitch(await loadAiSettings(ctx.db, ws.id), "suggest_issues");
+        let links: IssueLinkRef[] = [];
+        if (args.process || args.steps?.length) {
+          const proc = await resolveProcess(ctx, ws, args.process, assumptions);
+          if (args.steps?.length) {
+            const known = await processSteps(ctx, proc);
+            links = args.steps.map((s) => ({ process_id: proc.id, step_id: matchNamed(known, s, "step", ` in '${proc.name}'`).id }));
+          } else {
+            links = [{ process_id: proc.id, step_id: null }];
+          }
+        }
+        if (!args.rating) assumptions.push("rating defaulted to good (could improve).");
+        const built = buildIssueProposal({
+          title: args.title,
+          detail: args.detail,
+          severity: storedOfRating(args.rating ?? "good"),
+          type: args.type,
+          links,
+          target_measure: args.target_measure,
+          target_now: args.target_now,
+          target_goal: args.target_goal,
+          evidence: args.evidence,
+          note: args.note,
+        });
+        return storeProposal(ctx, ws, built, "an issue");
+      }),
+  );
+
+  server.registerTool(
+    "propose_solution_idea",
+    {
+      title: "Propose a solution idea",
+      description:
+        "Propose an idea for solving an issue, as the steps you would place (in order, each leading to the next), optionally from library blocks. " +
+        "It is not built and not simulated: a person builds it in the Editor (or dismisses it)." +
+        proposalNote,
+      inputSchema: {
+        issue: z.string().min(1).describe("The issue it is for: its number (12 or #12), id or title. It must be open or being tested."),
+        title: z.string().trim().min(1).max(200).describe("The idea in a line, e.g. 'Fast-track partner leads past Check fit'"),
+        detail: z.string().max(5000).optional().describe("The idea in plain words: what changes and why it should help."),
+        steps: z
+          .array(
+            z
+              .object({
+                name: z.string().trim().min(1).max(200),
+                kind: z.string().max(40).optional().describe("task, decision, wait, or another step kind"),
+                role: z.string().max(200).optional().describe("The role who does it"),
+                block: z.string().optional().describe("A library block it comes from (id or name)"),
+                ai: z.boolean().optional().describe("True when the step is done by AI and no library block covers it"),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(MAX_PROPOSED_STEPS)
+          .describe("The proposed steps, in order."),
+        replaces: z.array(z.string().min(1)).max(20).optional().describe("Existing steps (ids or names, in the issue's process) the new steps would replace."),
+        expect: z.string().max(1000).optional().describe("What you expect, in plain words, e.g. 'First contact for partner leads under 2 h'. Not simulated."),
+        evidence: evidenceArg,
+        note: noteArg,
+        workspace: workspaceArg,
+      },
+    },
+    (args) =>
+      runTool(async (assumptions) => {
+        const ws = await resolveWorkspace(ctx, args.workspace, assumptions);
+        requireSwitch(await loadAiSettings(ctx.db, ws.id), "suggest_solutions");
+        const issues = (await loadIssues(ctx.db, ws.id)).filter(isVisibleIssue);
+        const issue = matchIssue(issues, args.issue);
+        const blocks = args.steps.some((s) => s.block) ? await loadBlocks(ctx.db, ws.id) : [];
+        let replaces: string[] = [];
+        if (args.replaces?.length) {
+          const full = issues.find((i) => i.id === issue.id)!;
+          const processId = full.links.find((l) => l.process_id)?.process_id ?? full.process_id;
+          if (!processId) throw new ToolError("invalid_input", "That issue isn't linked to a process, so there are no steps to replace");
+          const proc = await resolveProcess(ctx, ws, processId, assumptions);
+          const known = await processSteps(ctx, proc);
+          replaces = args.replaces.map((r) => matchNamed(known, r, "step", ` in '${proc.name}'`).id);
+        }
+        assumptions.push("Edges: each proposed step leads to the next, in the order given.");
+        const built = buildSolutionIdeaProposal({
+          issue_id: issue.id,
+          title: args.title,
+          detail: args.detail,
+          steps: args.steps.map((s) => ({
+            name: s.name,
+            kind: s.kind,
+            role: s.role,
+            ai: s.ai,
+            block_id: s.block ? matchNamed(blocks, s.block, "block", ` in '${ws.name}'`).id : null,
+          })),
+          replaces_step_ids: replaces,
+          expect: args.expect,
+          evidence: args.evidence,
+          note: args.note,
+        });
+        return storeProposal(ctx, ws, built, `an idea for issue #${issue.number}`);
+      }),
+  );
+
+  server.registerTool(
+    "list_proposals",
+    {
+      title: "List proposals",
+      description: "Proposed issues and solution ideas, and whether a person has accepted, rejected, dismissed or built them, newest first.",
+      inputSchema: {
+        status: z.enum(["pending", "accepted", "rejected", "dismissed", "built"]).optional(),
+        workspace: workspaceArg,
+      },
+      annotations: { readOnlyHint: true },
+    },
+    ({ status, workspace }) =>
+      runTool(async (assumptions) => {
+        const ws = await resolveWorkspace(ctx, workspace, assumptions);
+        const rows = await loadProposals(ctx.db, ws.id, status);
+        return {
+          workspace: { id: ws.id, name: ws.name },
+          proposals: rows.map((r) => ({
+            id: r.id,
+            kind: r.kind,
+            status: r.status,
+            title: r.title,
+            detail: r.detail,
+            issue_id: r.issue_id,
+            payload: r.payload,
+            evidence: r.evidence,
+            note: r.note,
+            created_via: r.created_via,
+            proposer_name: r.proposer_name,
+            created_at: r.created_at,
+            reviewed_at: r.reviewed_at,
+            review_note: r.review_note,
+            applied: r.applied,
           })),
         };
       }),

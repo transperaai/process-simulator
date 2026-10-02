@@ -132,7 +132,7 @@ const header = (l: Loaded) => ({
 });
 
 /** Stable-id steps of a process (live revision, then the draft's for steps only drafted so far). */
-async function processSteps(ctx: ToolContext, proc: ProcessWithDraft): Promise<{ id: string; name: string }[]> {
+export async function processSteps(ctx: ToolContext, proc: ProcessWithDraft): Promise<{ id: string; name: string }[]> {
   const ids = [proc.live_revision_id, proc.draft_revision_id].filter((id): id is string => !!id);
   if (!ids.length) return [];
   const rows = check(await ctx.db.from("steps").select("id, name, revision_id").in("revision_id", ids));

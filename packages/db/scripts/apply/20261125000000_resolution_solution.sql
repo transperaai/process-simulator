@@ -214,7 +214,11 @@ begin
   end if;
   -- This runs before row-level security and reads across the link table, so it must say nothing to someone who can't edit the
   -- workspace: they are let through here and row-level security refuses the write with its own plain error.
-  if auth.uid() is not null and not coalesce(public.can_edit_workspace(new.workspace_id), false) then
+  -- A request role is held to this even when its token has no user (`auth.uid()` null); only a trusted connection (service_role,
+  -- postgres, a migration or test session) goes on to the check. `role` is the role the session switched to: current_user is the
+  -- function's owner inside a security definer function.
+  if (auth.uid() is not null or coalesce(current_setting('role', true), '') in ('authenticated', 'anon'))
+    and not coalesce(public.can_edit_workspace(new.workspace_id), false) then
     return new;
   end if;
   -- Once resolved, the pick stays as it was. (Clearing it, as deleting the solution does, is allowed.) Reopen to change it.
@@ -570,7 +574,11 @@ begin
   end if;
   -- This runs before row-level security and reads across the link table, so it must say nothing to someone who can't edit the
   -- workspace: they are let through here and row-level security refuses the write with its own plain error.
-  if auth.uid() is not null and not coalesce(public.can_edit_workspace(new.workspace_id), false) then
+  -- A request role is held to this even when its token has no user (`auth.uid()` null); only a trusted connection (service_role,
+  -- postgres, a migration or test session) goes on to the check. `role` is the role the session switched to: current_user is the
+  -- function's owner inside a security definer function.
+  if (auth.uid() is not null or coalesce(current_setting('role', true), '') in ('authenticated', 'anon'))
+    and not coalesce(public.can_edit_workspace(new.workspace_id), false) then
     return new;
   end if;
   -- Once resolved, the pick stays as it was. (Clearing it, as deleting the solution does, is allowed.) Reopen to change it.

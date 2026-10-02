@@ -1,6 +1,6 @@
 // The five switches of Settings -> AI analysis (issue #111, A46), with their plain-English help. Wording follows the
-// prototype (apps/web/prototype/app-flow.html, Settings -> AI analysis). Two of them belong to pages that aren't built
-// yet (Suggestions, solution ideas); the switch is stored now and its (i) says what it will do once they land.
+// prototype (apps/web/prototype/app-flow.html, Settings -> AI analysis). The two "suggest" switches are enforced by the MCP
+// propose tools (A52): when one is off, Claude can't propose that kind of suggestion.
 
 import type { AiSettingKey } from "@transpera-flow/db";
 
@@ -9,7 +9,7 @@ export interface AiSwitch {
   label: string;
   description: string;
   example: string;
-  /** True while the page it feeds doesn't exist: the switch saves, and does nothing yet. */
+  /** True while the page it feeds doesn't exist: the switch saves, and does nothing yet. No switch needs it now. */
   later?: boolean;
 }
 
@@ -30,17 +30,15 @@ export const AI_SWITCHES: readonly AiSwitch[] = [
     key: "suggest_issues",
     label: "Suggest issues (they land in Suggestions)",
     description:
-      "AI can suggest new issues. You decide whether to accept them. The Suggestions page isn't built yet, so for now this switch is saved but nothing is suggested; once it arrives, the suggestions will wait there for you to accept or dismiss.",
+      "AI can suggest new issues. They wait in Suggestions until you accept or reject them, and nothing is added to your issues on its own. Turn it off and Claude can no longer propose issues.",
     example: "“Clients wait 20 hours for answers to requests.”",
-    later: true,
   },
   {
     key: "suggest_solutions",
     label: "Suggest solution ideas using blocks from the library",
     description:
-      "AI can suggest ideas for solutions, built from the blocks in your library. Someone has to build them before they're tested. Solution ideas aren't built yet, so for now this switch is saved but nothing is suggested; once they arrive they will wait in Suggestions.",
+      "AI can suggest ideas for solutions, built from the blocks in your library. They wait in Suggestions until someone builds or dismisses them, and nothing is tested before then. Turn it off and Claude can no longer propose solution ideas.",
     example: "“Let partner leads skip the fit check.”",
-    later: true,
   },
   {
     key: "read_sources",

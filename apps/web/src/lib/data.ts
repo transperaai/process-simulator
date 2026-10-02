@@ -6,6 +6,7 @@ import {
   listProcesses,
   loadBlocks,
   loadSolutionIssues,
+  loadProposals,
   loadSolutions,
   loadChurnDrivers,
   loadClientGroups,
@@ -136,6 +137,16 @@ export async function loadWorkspaceSolutions(workspaceId: string, processId?: st
   } catch (err) {
     console.error("Couldn't load the solutions; showing none.", err instanceof Error ? err.message : err);
     return { solutions: [], links: [] };
+  }
+}
+
+/** How many AI solution ideas are waiting in Suggestions (pending proposals of kind solution idea). Zero if they can't be read. */
+export async function loadPendingIdeaCount(workspaceId: string): Promise<number> {
+  try {
+    return (await loadProposals(await createClient(), workspaceId, "pending")).filter((p) => p.kind === "solution_idea").length;
+  } catch (err) {
+    console.error("Couldn't count AI ideas; showing none.", err instanceof Error ? err.message : err);
+    return 0;
   }
 }
 

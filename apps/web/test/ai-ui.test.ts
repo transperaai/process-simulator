@@ -139,14 +139,19 @@ describe("Settings -> AI analysis", () => {
     expect((html.match(/role="switch"/g) ?? []).length).toBe(5);
   });
 
-  it("gives every switch plain-English help with an example, and the two that wait on other pages say what they will do", () => {
+  it("gives every switch plain-English help with an example, and the two suggest switches say what turning them off does", () => {
     for (const s of AI_SWITCHES) {
       expect(s.description.length, s.key).toBeGreaterThan(40);
       expect(s.example.length, s.key).toBeGreaterThan(10);
     }
-    const later = AI_SWITCHES.filter((s) => s.later).map((s) => s.key);
-    expect(later).toEqual(["suggest_issues", "suggest_solutions"]);
-    for (const s of AI_SWITCHES.filter((x) => x.later)) expect(s.description).toMatch(/built yet.*for now this switch is saved but nothing is suggested.*once/);
+    // Both feed the Suggestions page now, and Claude's propose tools obey them.
+    expect(AI_SWITCHES.filter((s) => s.later)).toEqual([]);
+    for (const key of ["suggest_issues", "suggest_solutions"]) {
+      const d = AI_SWITCHES.find((x) => x.key === key)!.description;
+      expect(d).toMatch(/wait in Suggestions/);
+      expect(d).toMatch(/Turn it off and Claude can no longer propose/);
+      expect(d).not.toMatch(/built yet|isn't built|aren't built/);
+    }
   });
 
   it("says what is sent whatever the sources switch is", () => {

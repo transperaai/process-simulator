@@ -110,6 +110,7 @@ export {
   type SuggestionChange,
   type SuggestionView,
 } from "./suggestions";
+export { countPendingProposals, loadProposals, PROPOSAL_ROW_COLUMNS } from "./proposals";
 export { changesSinceRun, runResults, type RunResults, type RunRow } from "./runs";
 export {
   NORTHBEAM_DOMAIN,

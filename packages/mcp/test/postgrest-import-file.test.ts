@@ -241,6 +241,17 @@ describe.skipIf(!POSTGREST_URL)("uploading a process file over PostgREST (a draf
     expect(renamed.process.name).toBe("Enquiry to signed client (copy)");
   });
 
+  it("doesn't count the company map's name as taken (it isn't in the process list)", async () => {
+    const company = (await admin.query("select name from processes where workspace_id = $1 and is_company", [workspaceId])).rows[0];
+    expect(company).toBeDefined();
+    const file = example((f) => {
+      f.name = company.name;
+    });
+    expect((await previewProcessFile(editorCtx, workspaceId, file)).nameTaken).toBeNull();
+    const r = await importProcessFile(editorCtx, file, { workspaceId, source: "company.json" });
+    expect(r.process.name).toBe(company.name);
+  });
+
   it("is for editors: a viewer and someone outside the workspace create nothing", async () => {
     const before = await processCount();
     const file = example((f) => {

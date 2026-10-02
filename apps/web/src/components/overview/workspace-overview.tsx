@@ -8,7 +8,7 @@ import { ShellHeader } from "@/components/shell/shell-header";
 import { loadLiveProcess, loadWorkspaceHead, loadWorkspaceIssues, loadWorkspaceOverview, loadWorkspaceSources } from "@/lib/data";
 import { canEditWorkspace } from "@/lib/access-data";
 import { loadLiveFirstPrinciples } from "@/lib/first-principles/data";
-import { loadLiveParts } from "@/lib/overview/data";
+import { loadLiveCompany, loadLiveParts } from "@/lib/overview/data";
 import { loadWorkspaceAnalysisRules } from "@/lib/rules/data";
 
 /** The Overview of a workspace (issue #100): the landing page, at `/w/[slug]` and `/w/[slug]/overview`. */
@@ -21,8 +21,9 @@ export async function WorkspaceOverview({ slug }: { slug: string }) {
     return <EmptyOverview slug={slug} name={head.name} unpublished={overview?.processes ?? []} />;
   }
   const ws = live.workspace.id;
-  const [parts, issues, sources, rules, canEdit, firstPrinciples, aiViews] = await Promise.all([
+  const [parts, company, issues, sources, rules, canEdit, firstPrinciples, aiViews] = await Promise.all([
     loadLiveParts(ws),
+    loadLiveCompany(ws),
     loadWorkspaceIssues(ws),
     loadWorkspaceSources(ws),
     loadWorkspaceAnalysisRules(ws),
@@ -37,6 +38,7 @@ export async function WorkspaceOverview({ slug }: { slug: string }) {
       workspaceName={live.workspace.name}
       live={live}
       parts={parts}
+      company={company}
       issues={issues}
       sources={sources}
       mode={canEdit ? "live" : "readonly"}

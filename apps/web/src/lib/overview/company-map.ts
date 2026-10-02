@@ -3,10 +3,11 @@
 // inside its parent, in the place of the step that held it. Opening a group shows what is in it, closing it rolls
 // the steps up (their count, hours, issues and worst rating), so the canvas needs nothing new.
 //
-// The groups are laid out here, not stored: opening one makes it bigger, so what sits beside and below it moves
-// out of the way. Pure: the same processes and the same open groups always give the same map.
+// Where each process card sits, and the handoff lines between them, are stored: they come from the live revision of the
+// workspace's company map process (B11, #163). Opening a card makes it bigger, so what sits beside and below it moves
+// out of the way here. Pure: the same processes, stored map and open groups always give the same map.
 
-import { isGroup, type EdgeRow, type ProcessBundle, type ProcessPart, type StepRow } from "@transpera-flow/db";
+import { defaultCompanyPart, isGroup, type EdgeRow, type ProcessBundle, type ProcessPart, type StepRow } from "@transpera-flow/db";
 import { GROUP_CARD, GROUP_PADDING, openGroupSize, type Size } from "@/lib/map/groups";
 
 /** Space between cards, side to side and top to bottom. */
@@ -60,18 +61,6 @@ function groupRow(template: Template, part: ProcessPart, over: Partial<StepRow>)
   };
 }
 
-const edgeRow = (template: EdgeRow | undefined, workspaceId: string, from: string, to: string, label: string | null = null): EdgeRow => ({
-  id: `company:${from}:${to}`,
-  revision_id: template?.revision_id ?? "company",
-  workspace_id: workspaceId,
-  process_id: template?.process_id ?? "company",
-  from_step_id: from,
-  to_step_id: to,
-  probability: 1,
-  condition_tag: null,
-  label,
-});
-
 /**
  * One process as steps inside its group. Its start and end markers are dropped; a step holding a child process becomes
  * that child's group (so a connection to the holder leads to the group); the others keep their own groups and order.
@@ -120,8 +109,8 @@ function inside(part: ProcessPart, byProcess: ReadonlyMap<string, ProcessPart>, 
 }
 
 /** Opening a group inside a process makes it bigger: what is to its right moves right, what is below it moves down. */
-function makeRoom(steps: StepRow[], groupId: string, expanded: ReadonlySet<string>, all: readonly StepRow[]): void {
-  const kids = steps.filter((s) => s.parent_step_id === groupId);
+function makeRoom(steps: StepRow[], groupId: string | null, expanded: ReadonlySet<string>, all: readonly StepRow[]): void {
+  const kids = steps.filter((s) => (s.parent_step_id ?? null) === groupId);
   const sizeOf = (s: StepRow): Size => (isGroup(s) && expanded.has(s.id) ? openGroupSize(all, s.id, expanded) : isGroup(s) ? GROUP_CARD : { width: 192, height: 92 });
   const opened = kids.filter((s) => isGroup(s) && expanded.has(s.id)).sort((a, b) => Number(a.x) - Number(b.x) || Number(a.y) - Number(b.y));
   for (const g of opened) {
@@ -140,10 +129,13 @@ function makeRoom(steps: StepRow[], groupId: string, expanded: ReadonlySet<strin
 }
 
 /**
- * The company map. Top-level processes go in columns: sales pipelines first, then the processes that serve clients
- * after a win, each one a card (or a box, when open). Child processes sit inside their parents.
+ * The company map. Each top-level process is a card (or a box, when open) at the position its holder has in the stored
+ * company map `stored`, joined by the stored handoff lines; child processes sit inside their parents. With no stored
+ * map, the default layout: sales pipelines in a first column, then the processes that serve clients after a win.
  */
-export function companyMap(base: ProcessBundle, parts: readonly ProcessPart[], expanded: ReadonlySet<string> = new Set()): CompanyMap {
+export function companyMap(base: ProcessBundle, parts: readonly ProcessPart[], expanded: ReadonlySet<string> = new Set(), stored?: ProcessPart | null): CompanyMap {
+  // The stored company map; without one (the demo, or a workspace nobody has migrated yet) the default layout.
+  const company = stored ?? defaultCompanyPart(base.workspace.id, parts);
   const byProcess = new Map(parts.map((p) => [p.process.id, p]));
   const template = parts.flatMap((p) => p.steps)[0];
   const processOfStep = new Map<string, string>();
@@ -176,25 +168,26 @@ export function companyMap(base: ProcessBundle, parts: readonly ProcessPart[], e
   const all = out.steps;
   for (const part of tops) makeRoom(all, part.process.id, expanded, all);
 
-  // Columns: pipelines, then everything that serves clients. A card's size depends on whether it is open.
-  const columns: ProcessPart[][] = [tops.filter((p) => p.process.kind !== "servicing"), tops.filter((p) => p.process.kind === "servicing")].filter((c) => c.length);
-  const sizeOf = (id: string): Size => (expanded.has(id) ? openGroupSize(all, id, expanded) : GROUP_CARD);
-  let x = 0;
-  const heights = columns.map((col) => col.reduce((h, p) => h + sizeOf(p.process.id).height, 0) + GAP_Y * (col.length - 1));
-  const tallest = Math.max(0, ...heights);
-  columns.forEach((col, ci) => {
-    let y = (tallest - heights[ci]!) / 2;
-    for (const part of col) {
-      const g = all.find((s) => s.id === part.process.id)!;
-      g.x = x;
-      g.y = y;
-      y += sizeOf(part.process.id).height + GAP_Y;
-    }
-    x += Math.max(...col.map((p) => sizeOf(p.process.id).width)) + GAP_X;
-  });
-  // A pipeline hands its wins to the processes that serve them: one connection from each pipeline to each servicing process.
-  const [pipelines, servicing] = columns.length === 2 ? columns : [[], []];
-  for (const from of pipelines) for (const to of servicing) out.edges.push(edgeRow(from.edges[0], base.workspace.id, from.process.id, to.process.id));
+  // Where each top-level card sits, and which handoff lines join them, come from the stored company map: the holders'
+  // positions and the edges between them. A process the map has no holder for goes below the others in its column.
+  const holders = new Map((company.steps ?? []).flatMap((h) => (h.child_process_id ? [[h.child_process_id, h] as const] : [])));
+  const lowest = Math.max(-GROUP_CARD.height - GAP_Y, ...tops.flatMap((p) => (holders.has(p.process.id) ? [Number(holders.get(p.process.id)!.y)] : [])));
+  let below = lowest + GROUP_CARD.height + GAP_Y;
+  for (const part of tops) {
+    const g = all.find((s) => s.id === part.process.id)!;
+    const held = holders.get(part.process.id);
+    g.x = held ? Number(held.x) : part.process.kind === "servicing" ? GROUP_CARD.width + GAP_X : 0;
+    g.y = held ? Number(held.y) : below;
+    if (!held) below += GROUP_CARD.height + GAP_Y;
+  }
+  // Opening a card makes it bigger: what sits to its right moves right, what sits below it moves down.
+  makeRoom(all, null, expanded, all);
+  const processOfHolder = new Map([...holders].map(([process, h]) => [h.id, process]));
+  for (const e of company.edges) {
+    const from = processOfHolder.get(e.from_step_id);
+    const to = processOfHolder.get(e.to_step_id);
+    if (from && to) out.edges.push({ ...e, from_step_id: from, to_step_id: to });
+  }
 
   // Only what is on the map: no connection to a step that isn't.
   const ids = new Set(all.map((s) => s.id));

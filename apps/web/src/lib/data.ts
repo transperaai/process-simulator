@@ -357,6 +357,8 @@ export async function loadWorkspaceSettings(slug: string): Promise<WorkspaceSett
     .from("processes")
     .select("id, name, kind, live_revision_id")
     .eq("workspace_id", ws)
+    // The company map is not a process to put roles or tags on.
+    .eq("is_company", false)
     .order("created_at")
     .order("id");
   if (pError) throw pError;

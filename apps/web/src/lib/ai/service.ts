@@ -177,8 +177,9 @@ export async function runAiAnalysis(
   { trigger, force = false, model = anthropicAnalyst() }: { trigger: AiAnalysisTrigger; force?: boolean; model?: AiModel | null },
 ): Promise<AiRunResult> {
   try {
-    const { data: process, error } = await db.from("processes").select("id, workspace_id, live_revision_id").eq("id", processId).maybeSingle();
+    const { data: process, error } = await db.from("processes").select("id, workspace_id, live_revision_id, is_company").eq("id", processId).maybeSingle();
     if (error || !process) return { status: "error", message: "That process isn't available." };
+    if (process.is_company) return { status: "error", message: "The company map can't be analysed: it is a picture of the business, not a process." };
     const workspaceId = process.workspace_id;
     const revisionId = process.live_revision_id;
     const [settings, canWrite, existing] = await Promise.all([

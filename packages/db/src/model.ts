@@ -227,6 +227,8 @@ function pipelineOf(bundle: ProcessBundle): ProcessPart {
 export function toEngineModel(bundle: ProcessBundle, options: ModelOptions = {}): EngineModel {
   const { workspace, roles } = bundle;
   const s = workspace.settings;
+  // The company map's steps are holders of whole processes, laid out as a picture: nothing to simulate (B11).
+  if (bundle.process.is_company) throw new ModelError("The company map is a picture of the business, not a process: it can't be simulated. Simulate one of its processes.");
   const pipeline = pipelineOf(bundle);
   const baseServices = engineServices(bundle, pipeline.process.id);
   const held = heldProcesses(bundle);

@@ -54,6 +54,8 @@ export interface OverviewProps {
   live: ProcessBundle;
   /** Every process at its live revision, for the company map. */
   parts: ProcessPart[];
+  /** The company map process at its live revision: where each process sits and the handoff lines (B11). Absent: the default layout. */
+  company?: ProcessPart | null;
   /** Tracked issues: the confirmed ones colour and badge the map. */
   issues: IssueRow[];
   /** The workspace's sources, which the Acknowledge dialog can link to an issue. */
@@ -113,7 +115,7 @@ function Section({ title, description, action, help, children }: { title: string
   );
 }
 
-export function Overview({ workspaceName, live, parts, issues, sources = NO_SOURCES, mode, analysisRules, firstPrinciples, hrefs, processesHref, issuesHref, rulesHref, ai }: OverviewProps) {
+export function Overview({ workspaceName, live, parts, company, issues, sources = NO_SOURCES, mode, analysisRules, firstPrinciples, hrefs, processesHref, issuesHref, rulesHref, ai }: OverviewProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -174,7 +176,7 @@ export function Overview({ workspaceName, live, parts, issues, sources = NO_SOUR
   // The company map: open groups in place; opening one moves its neighbours.
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [lit, setLit] = useState<string[] | null>(null);
-  const map = useMemo(() => companyMap(live, parts, expanded), [live, parts, expanded]);
+  const map = useMemo(() => companyMap(live, parts, expanded, company), [live, parts, expanded, company]);
   const stepNames = useMemo(() => new Map(map.bundle.steps.map((s) => [s.id, s.name])), [map]);
   const processNames = useMemo(() => new Map(parts.map((p) => [p.process.id, p.process.name])), [parts]);
   const openProcess = (stepId: string) => {

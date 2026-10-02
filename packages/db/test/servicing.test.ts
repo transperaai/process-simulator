@@ -134,7 +134,7 @@ describe("service_servicing (database)", () => {
 
   it("seeds Northbeam's two published servicing processes, linked to both services", async () => {
     const processes = (
-      await db.client.query("select name, kind, live_revision_id is not null as live from processes where workspace_id = $1 order by id", [ws])
+      await db.client.query("select name, kind, live_revision_id is not null as live from processes where workspace_id = $1 and not is_company order by id", [ws])
     ).rows;
     expect(processes).toEqual([
       { name: "Lead to live", kind: "pipeline", live: true },

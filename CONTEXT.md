@@ -18,6 +18,10 @@ _Avoid_: Child map. Say "child process" for a process that sits inside another, 
 A box of steps inside one process, opened or closed on the map. It has no hours, role or rework of its own; a closed group shows a roll-up of its steps (how many, total hands-on time, open issues, worst rating). Example: "Qualify" holding "Receive enquiry" and "Check fit".
 _Avoid_: Folder, container, sub-process (that is a group or a child process)
 
+**Company map**:
+The workspace's top process, stored like any other (one per workspace). Each process on it is a card held by a link in its live version, at a stored position; a **handoff** is a line between two cards (a picture for now: the simulation ignores it). Placing a process on the map never edits that process. The engine never simulates the company map.
+_Avoid_: Root process (in the UI), overview map
+
 **Child process**:
 A process that sits inside a step of another process, with its own page, versions and first principles. The company map is the root: its steps are the top-level processes. A process has one parent. Example: "Onboarding" inside the step "Onboarding" of "Lead to live".
 _Avoid_: Sub-map, nested process

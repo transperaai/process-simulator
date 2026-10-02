@@ -1,6 +1,15 @@
 import "server-only";
-import { listProcesses, partitionSteps, type EdgeRow, type ProcessPart, type ProcessRevisionRow, type StepRow } from "@transpera-flow/db";
+import { listProcesses, loadLiveCompanyPart, partitionSteps, type EdgeRow, type ProcessPart, type ProcessRevisionRow, type StepRow } from "@transpera-flow/db";
 import { createClient } from "../supabase/server";
+
+/**
+ * The workspace's company map at its live revision, which the Overview draws its map from (B11): where each process
+ * sits and the handoff lines. Null when there is none (the Overview then lays the map out as it always did). As the
+ * signed-in user (RLS decides what is visible).
+ */
+export async function loadLiveCompany(workspaceId: string): Promise<ProcessPart | null> {
+  return loadLiveCompanyPart(await createClient(), workspaceId);
+}
 
 /**
  * Every process of the workspace at its live revision, for the Overview's company map (issue #100): the

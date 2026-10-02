@@ -53,6 +53,7 @@ beforeAll(async () => {
   await db.client.query("insert into process_revisions (id, workspace_id, process_id, number, status) values ($1, $2, $3, 1, 'draft')", [revision, other, process]);
   await db.client.query("update process_revisions set status = 'published' where id = $1", [revision]);
   foreignSolution = (await db.client.query("insert into solutions (workspace_id, process_id, base_revision_id, name, steps) values ($1, $2, $3, 'Theirs', $4::jsonb) returning id", [other, process, revision, bundle])).rows[0].id;
+  users.stranger = await createUser(db, "stranger@resolution-solution.example");
   for (const role of ["editor", "member", "viewer"] as const) {
     users[role] = await createUser(db, `${role}@resolution-solution.example`);
     await db.client.query("insert into memberships (workspace_id, user_id, role) values ($1, $2, $3)", [ws, users[role]!.id, role]);
@@ -131,19 +132,74 @@ describe("resolve_issue with a solution", () => {
     });
   });
 
-  it("refuses a viewer and anon, and only authenticated may run it", async () => {
+  it("refuses a viewer", async () => {
     await db.as(users.viewer!.claims, async (c) => {
       await expect(resolve6(c, issueA, "solution", null)).rejects.toThrow(/cannot change issues/);
     });
-    const grants = (
-      await db.client.query(
-        "select grantee from information_schema.routine_privileges where routine_schema = 'public' and routine_name = 'resolve_issue' and grantee in ('anon', 'public', 'authenticated') order by 1",
-      )
-    ).rows.map((r) => r.grantee);
-    expect(grants).toEqual(["authenticated", "authenticated"]);
-    const anon = (await db.client.query("select has_function_privilege('anon', 'public.resolve_issue(uuid, uuid, text, text, text, uuid)', 'execute') as x")).rows[0].x;
-    expect(anon).toBe(false);
   });
+
+  it("refuses won't fix with a named solution", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      const sol = await save(c, [issueA], "Wont fix");
+      await fails(c, () => c.query("select public.resolve_issue($1, $2, 'solution', null, 'wont_fix', $3)", [ws, issueA, sol.id]), /won't fix wasn't fixed by a solution/);
+    });
+  });
+
+  it("refuses changing the pick once resolved, but lets reopening clear it and keeps it when the link is removed", async () => {
+    await db.as(users.editor!.claims, async (c) => {
+      const first = await save(c, [issueA], "First");
+      const second = await save(c, [issueA], "Second");
+      await resolve6(c, issueA, "solution", first.id);
+      await fails(c, () => c.query("update issues set resolved_solution_id = $2 where id = $1", [issueA, second.id]), /can't be changed/);
+      expect((await c.query("select resolved_solution_id from issues where id = $1", [issueA])).rows[0].resolved_solution_id).toBe(first.id);
+      // Unlinking afterwards keeps the pick.
+      await c.query("delete from solution_issues where solution_id = $1 and issue_id = $2", [first.id, issueA]);
+      expect((await c.query("select resolved_solution_id from issues where id = $1", [issueA])).rows[0].resolved_solution_id).toBe(first.id);
+      // Reopen, then a new pick is allowed.
+      await reopen(c, issueA);
+      await resolve6(c, issueA, "solution", second.id);
+      expect((await c.query("select resolved_solution_id from issues where id = $1", [issueA])).rows[0].resolved_solution_id).toBe(second.id);
+    });
+  });
+
+  it("tells a stranger nothing about another workspace's links: only the row-level security error", async () => {
+    // A linked pair that exists for real (made outside the per-test transaction).
+    const sol = (await db.client.query("insert into solutions (workspace_id, process_id, base_revision_id, name, steps) values ($1, $2, $3, 'Linked', $4::jsonb) returning id", [ws, NORTHBEAM_PROCESS_ID, NORTHBEAM_REVISION_ID, bundle])).rows[0].id as string;
+    await db.client.query("insert into solution_issues (solution_id, issue_id, workspace_id) values ($1, $2, $3)", [sol, issueB, ws]);
+    const insert = "insert into issues (workspace_id, title, type, severity, source, status, resolved_how, resolved_solution_id) values ($1, 'x', 'delay', 'warning', 'manual', 'done', 'solution', $2)";
+    try {
+      await db.as(users.stranger!.claims, async (c) => {
+        // The before-write trigger runs ahead of row-level security, so it must not answer first, whether or not the pair exists.
+        await fails(c, () => c.query(insert, [ws, sol]), /row-level security/);
+        await fails(c, () => c.query(insert, [ws, randomUUID()]), /row-level security/);
+        // Update: the stranger can't see the row, so nothing changes and nothing is said.
+        expect((await c.query("update issues set status = 'done', resolved_how = 'solution', resolved_solution_id = $2 where id = $1", [issueB, sol])).rowCount).toBe(0);
+      });
+    } finally {
+      await db.client.query("delete from solutions where id = $1", [sol]);
+    }
+  });
+});
+
+describe("privileges, as a Supabase project grants them", () => {
+  it("only authenticated may run either resolve_issue, and anon and public may not", async () => {
+    const supa = await createTestDb({ supabaseDefaultPrivileges: true });
+    try {
+      const rows = (
+        await supa.client.query(
+          "select p.pronargs, has_function_privilege('anon', p.oid, 'execute') as anon, has_function_privilege('authenticated', p.oid, 'execute') as authed from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname = 'resolve_issue' order by 1",
+        )
+      ).rows;
+      expect(rows).toEqual([
+        { pronargs: 5, anon: false, authed: true },
+        { pronargs: 6, anon: false, authed: true },
+      ]);
+      const trig = (await supa.client.query("select has_function_privilege('authenticated', 'private.solution_verdict_logged()', 'execute') as a, has_function_privilege('anon', 'private.issues_resolved_solution_before_write()', 'execute') as b")).rows[0];
+      expect(trig).toEqual({ a: false, b: false });
+    } finally {
+      await supa.close();
+    }
+  }, 60000);
 });
 
 describe("your verdict and notes on a solution are logged on the issue", () => {

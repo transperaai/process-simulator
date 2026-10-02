@@ -17,6 +17,18 @@
 --   select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname = 'resolve_issue' and pronargs = 5;
 --   select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname = 'resolve_issue' and pronargs = 6;
 --
+--   -- 5. Postgres 15 or later: expect true.
+--   select current_setting('server_version_num')::int >= 150000;
+--
+--   -- 6. private.log_issue_change is still A48's version: expect e3c4a1341119b086f90da1414f467edc.
+--   select md5(prosrc) from pg_proc where pronamespace = 'private'::regnamespace and proname = 'log_issue_change';
+--
+--   -- 7. Nothing this creates exists yet: expect no rows from each.
+--   select tgname from pg_trigger where tgname in ('issues_resolved_solution', 'solution_verdict_logged') and not tgisinternal;
+--   select proname from pg_proc where pronamespace = 'private'::regnamespace and proname in ('issues_resolved_solution_before_write', 'solution_verdict_logged');
+--   select conname from pg_constraint where conname in ('issues_resolved_solution_fkey', 'issues_resolved_solution_check');
+--   select indexname from pg_indexes where schemaname = 'public' and indexname = 'issues_resolved_solution_idx';
+--
 -- DEPLOY ORDER: apply this BEFORE deploying the app (ISSUE_COLUMNS selects the new column); rolling back after the deploy breaks issue loads.
 --
 -- Verify after applying: the column (1 row), both resolve_issue overloads (pronargs 5 and 6), execute for authenticated only (anon and public nothing),
@@ -65,6 +77,19 @@ set local lock_timeout = '5s';
 --   4. The five-argument resolve_issue exists and the six-argument one does not. Expect 1, then 0:
 --        select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname = 'resolve_issue' and pronargs = 5;
 --        select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname = 'resolve_issue' and pronargs = 6;
+--   5. Postgres is 15 or later (`on delete set null (column)` needs it). Expect true:
+--        select current_setting('server_version_num')::int >= 150000;
+--   6. private.log_issue_change is still A48's version, the one this migration copies and the rollback restores. Expect e3c4a1341119b086f90da1414f467edc:
+--        select md5(prosrc) from pg_proc where pronamespace = 'private'::regnamespace and proname = 'log_issue_change';
+--   7. Nothing this migration creates exists yet. Expect 0 rows from each:
+--        select tgname from pg_trigger where tgname in ('issues_resolved_solution', 'solution_verdict_logged') and not tgisinternal;
+--        select proname from pg_proc where pronamespace = 'private'::regnamespace and proname in ('issues_resolved_solution_before_write', 'solution_verdict_logged');
+--        select conname from pg_constraint where conname in ('issues_resolved_solution_fkey', 'issues_resolved_solution_check');
+--        select indexname from pg_indexes where schemaname = 'public' and indexname = 'issues_resolved_solution_idx';
+--
+-- Unlinking: removing the link between a solution and an issue AFTER the issue was resolved by that solution does not clear the
+-- pick. The issue still says which solution fixed it (the link rows are only the test results; deleting the solution itself does
+-- clear the pick, and the history keeps the name). Changing the pick of an issue that is already resolved is refused: reopen it first.
 --
 -- Post-apply check:
 --   1. The column exists. Expect 1 row:
@@ -152,6 +177,7 @@ set local lock_timeout = '5s';
 --   end;
 --   $$;
 --   -- then drop the column (its foreign key and check go with it):
+--   drop index if exists public.issues_resolved_solution_idx;
 --   alter table public.issues drop constraint if exists issues_resolved_solution_check, drop constraint if exists issues_resolved_solution_fkey,
 --     drop column if exists resolved_solution_id;
 --   delete from supabase_migrations.schema_migrations where version = '20261125000000';
@@ -168,6 +194,9 @@ alter table public.issues
     references public.solutions (id, workspace_id) on delete set null (resolved_solution_id),
   add constraint issues_resolved_solution_check check (resolved_solution_id is null or resolved_how = 'solution');
 
+-- Deleting a solution looks up the issues that name it (to clear the pick): without this that is a scan of issues.
+create index issues_resolved_solution_idx on public.issues (resolved_solution_id) where resolved_solution_id is not null;
+
 -- Not resolved by a solution (open, reopened, resolved another way): nothing to record. Named to run after
 -- `issues_resolved_how` (before triggers run in name order), which clears `resolved_how` first. A solution that is not linked
 -- to the issue is refused, whoever writes it. Security definer so it can read the link whatever the caller can see.
@@ -180,13 +209,23 @@ begin
   if new.status <> 'done' or new.resolved_how is distinct from 'solution' then
     new.resolved_solution_id := null;
   end if;
-  if new.resolved_solution_id is not null
-    and (tg_op = 'INSERT' or new.resolved_solution_id is distinct from old.resolved_solution_id)
-    and not exists (
-      select 1 from public.solution_issues l
-      where l.solution_id = new.resolved_solution_id and l.issue_id = new.id and l.workspace_id = new.workspace_id
-    ) then
-    raise exception 'resolve_issue: that solution is not linked to this issue' using errcode = '22023';
+  if new.resolved_solution_id is null or (tg_op = 'UPDATE' and new.resolved_solution_id is not distinct from old.resolved_solution_id) then
+    return new;
+  end if;
+  -- This runs before row-level security and reads across the link table, so it must say nothing to someone who can't edit the
+  -- workspace: they are let through here and row-level security refuses the write with its own plain error.
+  if auth.uid() is not null and not coalesce(public.can_edit_workspace(new.workspace_id), false) then
+    return new;
+  end if;
+  -- Once resolved, the pick stays as it was. (Clearing it, as deleting the solution does, is allowed.) Reopen to change it.
+  if tg_op = 'UPDATE' and old.status = 'done' then
+    raise exception 'issues: the solution that fixed a resolved issue can''t be changed. Reopen the issue first.' using errcode = '22023';
+  end if;
+  if not exists (
+    select 1 from public.solution_issues l
+    where l.solution_id = new.resolved_solution_id and l.issue_id = new.id and l.workspace_id = new.workspace_id
+  ) then
+    raise exception 'issues: that solution is not linked to this issue' using errcode = '22023';
   end if;
   return new;
 end;
@@ -291,6 +330,9 @@ begin
   end if;
   if p_solution is not null and p_how <> 'solution' then
     raise exception 'resolve_issue: a solution can only be named when a solution fixed it' using errcode = '22023';
+  end if;
+  if p_solution is not null and p_status = 'wont_fix' then
+    raise exception 'resolve_issue: an issue marked won''t fix wasn''t fixed by a solution' using errcode = '22023';
   end if;
   select i.status into v_status from public.issues i where i.id = p_id and i.workspace_id = p_workspace for update;
   if v_status is null or v_status = 'dismissed' then
@@ -391,6 +433,19 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --   4. The five-argument resolve_issue exists and the six-argument one does not. Expect 1, then 0:
 --        select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname = 'resolve_issue' and pronargs = 5;
 --        select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname = 'resolve_issue' and pronargs = 6;
+--   5. Postgres is 15 or later (`on delete set null (column)` needs it). Expect true:
+--        select current_setting('server_version_num')::int >= 150000;
+--   6. private.log_issue_change is still A48's version, the one this migration copies and the rollback restores. Expect e3c4a1341119b086f90da1414f467edc:
+--        select md5(prosrc) from pg_proc where pronamespace = 'private'::regnamespace and proname = 'log_issue_change';
+--   7. Nothing this migration creates exists yet. Expect 0 rows from each:
+--        select tgname from pg_trigger where tgname in ('issues_resolved_solution', 'solution_verdict_logged') and not tgisinternal;
+--        select proname from pg_proc where pronamespace = 'private'::regnamespace and proname in ('issues_resolved_solution_before_write', 'solution_verdict_logged');
+--        select conname from pg_constraint where conname in ('issues_resolved_solution_fkey', 'issues_resolved_solution_check');
+--        select indexname from pg_indexes where schemaname = 'public' and indexname = 'issues_resolved_solution_idx';
+--
+-- Unlinking: removing the link between a solution and an issue AFTER the issue was resolved by that solution does not clear the
+-- pick. The issue still says which solution fixed it (the link rows are only the test results; deleting the solution itself does
+-- clear the pick, and the history keeps the name). Changing the pick of an issue that is already resolved is refused: reopen it first.
 --
 -- Post-apply check:
 --   1. The column exists. Expect 1 row:
@@ -478,6 +533,7 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --   end;
 --   $$;
 --   -- then drop the column (its foreign key and check go with it):
+--   drop index if exists public.issues_resolved_solution_idx;
 --   alter table public.issues drop constraint if exists issues_resolved_solution_check, drop constraint if exists issues_resolved_solution_fkey,
 --     drop column if exists resolved_solution_id;
 --   delete from supabase_migrations.schema_migrations where version = '20261125000000';
@@ -494,6 +550,9 @@ alter table public.issues
     references public.solutions (id, workspace_id) on delete set null (resolved_solution_id),
   add constraint issues_resolved_solution_check check (resolved_solution_id is null or resolved_how = 'solution');
 
+-- Deleting a solution looks up the issues that name it (to clear the pick): without this that is a scan of issues.
+create index issues_resolved_solution_idx on public.issues (resolved_solution_id) where resolved_solution_id is not null;
+
 -- Not resolved by a solution (open, reopened, resolved another way): nothing to record. Named to run after
 -- `issues_resolved_how` (before triggers run in name order), which clears `resolved_how` first. A solution that is not linked
 -- to the issue is refused, whoever writes it. Security definer so it can read the link whatever the caller can see.
@@ -506,13 +565,23 @@ begin
   if new.status <> 'done' or new.resolved_how is distinct from 'solution' then
     new.resolved_solution_id := null;
   end if;
-  if new.resolved_solution_id is not null
-    and (tg_op = 'INSERT' or new.resolved_solution_id is distinct from old.resolved_solution_id)
-    and not exists (
-      select 1 from public.solution_issues l
-      where l.solution_id = new.resolved_solution_id and l.issue_id = new.id and l.workspace_id = new.workspace_id
-    ) then
-    raise exception 'resolve_issue: that solution is not linked to this issue' using errcode = '22023';
+  if new.resolved_solution_id is null or (tg_op = 'UPDATE' and new.resolved_solution_id is not distinct from old.resolved_solution_id) then
+    return new;
+  end if;
+  -- This runs before row-level security and reads across the link table, so it must say nothing to someone who can't edit the
+  -- workspace: they are let through here and row-level security refuses the write with its own plain error.
+  if auth.uid() is not null and not coalesce(public.can_edit_workspace(new.workspace_id), false) then
+    return new;
+  end if;
+  -- Once resolved, the pick stays as it was. (Clearing it, as deleting the solution does, is allowed.) Reopen to change it.
+  if tg_op = 'UPDATE' and old.status = 'done' then
+    raise exception 'issues: the solution that fixed a resolved issue can''t be changed. Reopen the issue first.' using errcode = '22023';
+  end if;
+  if not exists (
+    select 1 from public.solution_issues l
+    where l.solution_id = new.resolved_solution_id and l.issue_id = new.id and l.workspace_id = new.workspace_id
+  ) then
+    raise exception 'issues: that solution is not linked to this issue' using errcode = '22023';
   end if;
   return new;
 end;
@@ -617,6 +686,9 @@ begin
   end if;
   if p_solution is not null and p_how <> 'solution' then
     raise exception 'resolve_issue: a solution can only be named when a solution fixed it' using errcode = '22023';
+  end if;
+  if p_solution is not null and p_status = 'wont_fix' then
+    raise exception 'resolve_issue: an issue marked won''t fix wasn''t fixed by a solution' using errcode = '22023';
   end if;
   select i.status into v_status from public.issues i where i.id = p_id and i.workspace_id = p_workspace for update;
   if v_status is null or v_status = 'dismissed' then

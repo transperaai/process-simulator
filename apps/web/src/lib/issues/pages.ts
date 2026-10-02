@@ -97,7 +97,7 @@ export interface SolutionTest {
   type: string;
   built: string;
   /** The automatic verdict against this issue's target. */
-  auto: "pass" | "fail" | "unclear" | null;
+  auto: "pass" | "fail" | "unchecked" | null;
   /** How often it holds across the simulated runs, as a share (0 to 1), or null. */
   holds: number | null;
   /** The person's own verdict. */

@@ -20,7 +20,7 @@ import {
   type SolutionsData,
 } from "@/lib/solutions/cards";
 import { addDemoLink, addDemoSolution, setDemoNotes, setDemoVerdict } from "@/lib/solutions/demo";
-import { RESOLVE_SOLUTION_HELP, SOLUTIONS_LIST_HELP, SOLUTION_PAGE_HELP } from "@/lib/solutions/help";
+import { RESOLVE_SOLUTION_HELP, SOLUTIONS_LIST_HELP, SOLUTION_PAGE_HELP, newOnProcessHelp } from "@/lib/solutions/help";
 import { solutionCopy } from "@/lib/solutions/bundle";
 import { demoBundle } from "@/lib/sources/demo";
 
@@ -93,7 +93,7 @@ describe("the cards", () => {
     expect(solutionsForIssue(data, issueA!.id).map((x) => x.solution.id)).toEqual(["s2", "s1"]);
     const tests = solutionTests(issueA!.id, data, "/w/s");
     expect(tests.map((t) => [t.id, t.auto, t.holds, t.yours, t.href])).toEqual([
-      ["s2", "unclear", null, null, "/w/s/solutions/s2"],
+      ["s2", "unchecked", null, null, "/w/s/solutions/s2"],
       ["s1", "pass", 0.92, null, "/w/s/solutions/s1"],
     ]);
     expect(solutionSummaries(data)).toEqual({
@@ -170,8 +170,11 @@ describe("the demo's solutions, in this tab", () => {
       levers: [],
       links: [{ issueId: issueA!.id, autoVerdict: "pass", holdsPct: 90, autoNote: "ok" }],
     });
-    expect(setDemoVerdict(s.id, issueA!.id, "fail", "Too slow in a downturn")).toMatchObject({ user_verdict: "fail", user_notes: "Too slow in a downturn" });
-    expect(setDemoVerdict(s.id, issueA!.id, null)).toMatchObject({ user_verdict: null, user_notes: "Too slow in a downturn" });
+    expect(setDemoVerdict(s.id, issueA!.id, { verdict: "fail", notes: "Too slow in a downturn" })).toMatchObject({ user_verdict: "fail", user_notes: "Too slow in a downturn" });
+    expect(setDemoVerdict(s.id, issueA!.id, { verdict: null })).toMatchObject({ user_verdict: null, user_notes: "Too slow in a downturn" });
+    // A note on its own leaves the verdict as it is.
+    setDemoVerdict(s.id, issueA!.id, { verdict: "pass" });
+    expect(setDemoVerdict(s.id, issueA!.id, { notes: "Later" })).toMatchObject({ user_verdict: "pass", user_notes: "Later" });
     setDemoNotes(s.id, "Needs a trial");
     const added = addDemoLink(s.id, issueB!.id, { autoVerdict: "fail", holdsPct: 12, autoNote: "no" });
     expect(added).toMatchObject({ solution_id: s.id, issue_id: issueB!.id, auto_verdict: "fail", holds_pct: 12 });
@@ -211,11 +214,23 @@ describe("(i) help on every control", () => {
       for (const key of Object.keys(set)) {
         // Spread into an (i), or handed to the placeholder sections, which draw one.
         const used = src.includes(`{...${name}.${key}}`) || src.includes(`help={${name}.${key}}`);
-        // The prototype's "Open in Editor" on the page spells its own help; the list's is the same words.
-        expect(used || (name === "SOLUTIONS_LIST_HELP" && key === "openInEditor"), `${name}.${key} has no (i)`).toBe(true);
+        expect(used, `${name}.${key} has no (i)`).toBe(true);
       }
     }
     expect(read("components/issues/resolve-dialog.tsx")).toContain("{...RESOLVE_SOLUTION_HELP}");
+  });
+
+  it("says plainly that the button starts a new solution from live, not this solution's changes", () => {
+    const h = newOnProcessHelp("Sales");
+    expect(h.description).toBe("Starts a new solution from the live version of Sales. This solution's changes are not carried over yet; that comes later.");
+    expect(read("components/solutions/solution-cards.tsx") + read("components/solutions/solution-page.tsx")).not.toMatch(/✎ Open in Editor/);
+  });
+
+  it("names who built it: you, the person linked to the member, a team member, or someone", () => {
+    expect(builtBy("u2", "u1", false, { u2: "Rosa Diaz" })).toBe("Rosa Diaz");
+    expect(builtBy("u3", "u1", false, { u2: "Rosa Diaz" })).toBe("A team member");
+    expect(builtBy("u1", "u1", false, { u1: "Austin" })).toBe("You");
+    expect(builtBy(null, "u1", false, {})).toBe("Someone");
   });
 
   it("the Resolve help no longer says the pick isn't recorded", () => {
@@ -225,9 +240,9 @@ describe("(i) help on every control", () => {
 
   it("the pages use the prototype's words", () => {
     const page = read("components/solutions/solution-page.tsx");
-    for (const t of ["Solves", "+ Link an issue", "✎ Open in Editor", "Built by", "Automatic", "Holds in", "Yours", "Notes", "Solutions never change the live map", "Live vs this solution", "Market stress test"]) expect(page).toContain(t);
+    for (const t of ["Solves", "+ Link an issue", "✎ New solution on", "Built by", "Automatic", "Holds in", "Yours", "Notes", "Solutions never change the live map", "Live vs this solution", "Market stress test"]) expect(page).toContain(t);
     const cards = read("components/solutions/solution-cards.tsx");
-    for (const t of ["Solves", "Open", "Open in Editor", "Not linked to an issue yet", "Changes"]) expect(cards).toContain(t);
+    for (const t of ["Solves", "Open", "✎ New solution on", "Not linked to an issue yet", "Changes"]) expect(cards).toContain(t);
     expect(read("components/solutions/solutions-list.tsx")).toContain("✎ New solution");
   });
 

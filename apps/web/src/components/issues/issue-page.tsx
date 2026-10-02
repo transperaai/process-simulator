@@ -61,6 +61,8 @@ export interface IssuePageProps {
   liveRevisions?: Record<string, string>;
   /** The workspace's solutions and which issues they solve (the demo keeps its own in this tab). */
   solutions?: SolutionsData;
+  /** Member names by user id (the person linked to each membership), so the history says who by name. */
+  memberNames?: Readonly<Record<string, string>>;
 }
 
 export function IssuePage(props: IssuePageProps) {
@@ -122,7 +124,7 @@ export function IssuePage(props: IssuePageProps) {
     step: (id) => stepName.get(id),
     person: (id) => personName.get(id),
     source: (id) => sourceTitle.get(id),
-    who: (actor) => (actor && actor === viewerId ? "You" : mode === "demo" ? "You" : actor ? "A team member" : "System"),
+    who: (actor) => (actor && actor === viewerId ? "You" : mode === "demo" ? "You" : actor ? (props.memberNames?.[actor] ?? "A team member") : "System"),
   };
   const lines = historyLines(events, names);
   const bar = resolvedBar(issue, undefined, fixedBy?.name);
@@ -441,7 +443,7 @@ function Chip({ children }: { children: React.ReactNode }) {
   return <span className="inline-flex h-6 items-center rounded-full border border-border px-2 text-xs">{children}</span>;
 }
 
-const VERDICT_LABELS = { pass: "Pass", fail: "Fail", unclear: "Unclear" } as const;
+const VERDICT_LABELS = { pass: "Pass", fail: "Fail", unchecked: "Not checked" } as const;
 const Verdict = ({ v }: { v: keyof typeof VERDICT_LABELS | null }) => (v ? <span className="font-medium">{VERDICT_LABELS[v]}</span> : <span className="text-muted-foreground">—</span>);
 
 /** The solutions tested for the issue, as the prototype's table. A49 supplies the rows. */

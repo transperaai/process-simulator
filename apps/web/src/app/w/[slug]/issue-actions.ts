@@ -38,6 +38,10 @@ const failure = (error: { code?: string; message?: string }) =>
           ? ({ status: "error", message: ALREADY_RESOLVED } as const)
         : error.code === "22023" && /not linked to this issue/.test(error.message ?? "")
           ? ({ status: "error", message: "That solution isn't linked to this issue. Pick one of the solutions listed." } as const)
+        : error.code === "22023" && /can't be changed/.test(error.message ?? "")
+          ? ({ status: "error", message: "The solution that fixed a resolved issue can't be changed. Reopen the issue first." } as const)
+        : error.code === "22023" && /won't fix wasn't fixed/.test(error.message ?? "")
+          ? ({ status: "error", message: "An issue marked Won't fix wasn't fixed by a solution." } as const)
         : error.code === "23503"
           ? ({ status: "error", message: "Something the issue links to no longer exists." } as const)
           : ({ status: "error", message: "Couldn't save. Try again." } as const);

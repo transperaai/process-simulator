@@ -21,9 +21,9 @@ import { issueHref } from "@/lib/issues/pages";
 import { saveSolutionNotes, saveSolutionVerdict } from "@/app/w/[slug]/solution-page-actions";
 import { linkSolutionToIssue } from "@/app/w/[slug]/solution-actions";
 import { builtBy, builtDate, changesLine, linkableIssues, linksOf, MAX_NOTES, solutionType, solutionsListHref, type SolutionsData } from "@/lib/solutions/cards";
-import { addDemoLink, setDemoNotes, setDemoVerdict, useDemoSolutions } from "@/lib/solutions/demo";
+import { addDemoLink, setDemoNotes, setDemoVerdict, useDemoSolutions, type VerdictPatch } from "@/lib/solutions/demo";
 import { demoLinkVerdict } from "@/lib/solutions/demo-link";
-import { SOLUTION_PAGE_HELP } from "@/lib/solutions/help";
+import { SOLUTION_PAGE_HELP, newOnProcessHelp } from "@/lib/solutions/help";
 import { solutionEditorHref } from "@/lib/solutions/links";
 import { cn } from "@/lib/utils";
 
@@ -41,6 +41,7 @@ export interface SolutionPageProps {
   base: string;
   mode: "live" | "demo" | "readonly";
   viewerId?: string | null;
+  memberNames?: Readonly<Record<string, string>>;
 }
 
 export function SolutionPage(props: SolutionPageProps) {
@@ -83,10 +84,11 @@ export function SolutionPage(props: SolutionPageProps) {
   const putLink = (link: SolutionIssueRow) =>
     setLocal((d) => ({ ...d, links: d.links.some((l) => l.solution_id === link.solution_id && l.issue_id === link.issue_id) ? d.links.map((l) => (l.solution_id === link.solution_id && l.issue_id === link.issue_id ? link : l)) : [...d.links, link] }));
 
-  const saveVerdict = async (link: SolutionIssueRow, verdict: SolutionVerdict | null, notes?: string) => {
+  // Only what changed is sent: a note saved on its own never rewrites a verdict someone else gave in the meantime, and the other way round.
+  const saveVerdict = async (link: SolutionIssueRow, patch: VerdictPatch) => {
     setError(null);
-    if (mode === "demo") return void setDemoVerdict(solution.id, link.issue_id, verdict, notes);
-    const r = await saveSolutionVerdict(workspaceId, solution.id, link.issue_id, verdict, notes);
+    if (mode === "demo") return void setDemoVerdict(solution.id, link.issue_id, patch);
+    const r = await saveSolutionVerdict(workspaceId, solution.id, link.issue_id, patch);
     if (r.status === "error") return setError(r.message);
     putLink(r.link);
   };
@@ -111,7 +113,7 @@ export function SolutionPage(props: SolutionPageProps) {
               {type}
             </span>
             <span className="flex items-center text-sm text-muted-foreground" data-built>
-              Built by {builtBy(solution.created_by, viewerId, mode === "demo")} · {builtDate(solution)} · changes {processName}
+              Built by {builtBy(solution.created_by, viewerId, mode === "demo", props.memberNames)} · {builtDate(solution)} · changes {processName}
               <Help {...SOLUTION_PAGE_HELP.built} />
             </span>
           </div>
@@ -122,11 +124,11 @@ export function SolutionPage(props: SolutionPageProps) {
             <Link
               href={solutionEditorHref(base, solution.process_id, { from: `${base}/solutions/${solution.id}` })}
               className="inline-flex h-9 items-center rounded-md bg-edit px-3 text-sm font-medium text-edit-fg hover:opacity-90"
-              data-open-editor
+              data-new-on-process
             >
-              ✎ Open in Editor
+              ✎ New solution on {processName}
             </Link>
-            <Help label="Open in Editor" description="Opens the Editor in solution mode on this solution's process, to build a variation. Saving there makes a new solution; this one stays exactly as it is. Nothing you do there changes the live map." example="Start from the same process and try keeping the manual check for large leads." />
+            <Help {...newOnProcessHelp(processName)} />
           </span>
         )}
       </header>
@@ -168,8 +170,8 @@ export function SolutionPage(props: SolutionPageProps) {
                 issue={issueById.get(l.issue_id)}
                 base={base}
                 canEdit={canEdit}
-                onVerdict={(v) => saveVerdict(l, v)}
-                onNote={(notes) => saveVerdict(l, l.user_verdict, notes)}
+                onVerdict={(verdict) => saveVerdict(l, { verdict })}
+                onNote={(notes) => saveVerdict(l, { notes })}
               />
             ))}
           </div>

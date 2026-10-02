@@ -54,14 +54,20 @@ const emit = () => {
   for (const l of listeners) l();
 };
 
-/** Your verdict (and optionally your note) on one issue a solution solves, in this tab. `verdict` null clears it. */
-export function setDemoVerdict(solutionId: string, issueId: string, verdict: "pass" | "fail" | null, notes?: string): SolutionIssueRow | null {
+/** What one save changes: your verdict (null clears it), your note, or both. A field left out is not written. */
+export interface VerdictPatch {
+  verdict?: "pass" | "fail" | null;
+  notes?: string;
+}
+
+/** Your verdict and/or note on one issue a solution solves, in this tab. Only the fields in `patch` change. */
+export function setDemoVerdict(solutionId: string, issueId: string, patch: VerdictPatch): SolutionIssueRow | null {
   let found: SolutionIssueRow | null = null;
   state = {
     ...state,
     links: state.links.map((l) => {
       if (l.solution_id !== solutionId || l.issue_id !== issueId) return l;
-      found = { ...l, user_verdict: verdict, ...(notes === undefined ? {} : { user_notes: notes }), updated_at: new Date().toISOString() };
+      found = { ...l, ...(patch.verdict === undefined ? {} : { user_verdict: patch.verdict }), ...(patch.notes === undefined ? {} : { user_notes: patch.notes }), updated_at: new Date().toISOString() };
       return found;
     }),
   };

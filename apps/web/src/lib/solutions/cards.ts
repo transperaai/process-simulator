@@ -32,11 +32,14 @@ export function solutionType(solution: Pick<SolutionRow, "id">): SolutionType {
   return "By hand";
 }
 
-/** Who built it, for a card: "You", or a team member (the database holds the user, not a name; the demo is always you). */
-export function builtBy(createdBy: string | null, viewerId: string | null | undefined, demo = false): string {
+/**
+ * Who built it, for a card: "You" for the viewer, the person linked to that member (`names`, by user id) when there is one,
+ * "A team member" when the member has no person linked, and "Someone" when nobody is recorded. The demo is always you.
+ */
+export function builtBy(createdBy: string | null, viewerId: string | null | undefined, demo = false, names: Readonly<Record<string, string>> = {}): string {
   if (demo) return "You";
   if (!createdBy) return "Someone";
-  return createdBy === viewerId ? "You" : "A team member";
+  return createdBy === viewerId ? "You" : (names[createdBy] ?? "A team member");
 }
 
 /** The verdict that counts for a link: the person's own, else the automatic one, else none. */
@@ -103,7 +106,7 @@ export function solutionTests(issueId: string, data: SolutionsData, base: string
     name: solution.name,
     type: solutionType(solution),
     built: builtDate(solution, now),
-    auto: link.auto_verdict ?? "unclear",
+    auto: link.auto_verdict ?? "unchecked",
     holds: link.holds_pct === null ? null : link.holds_pct / 100,
     yours: link.user_verdict,
     href: solutionHref(base, solution.id),

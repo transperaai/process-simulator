@@ -41,7 +41,7 @@ describe("saveSolutionVerdict", () => {
   it("saves a pass, a fail or a cleared verdict on that solution and issue only", async () => {
     for (const v of ["pass", "fail", null]) {
       db.calls = [];
-      expect((await saveSolutionVerdict(WS, SOL, ISSUE, v)).status).toBe("ok");
+      expect((await saveSolutionVerdict(WS, SOL, ISSUE, { verdict: v })).status).toBe("ok");
       expect(updates()).toEqual([{ user_verdict: v }]);
       expect(db.calls.filter((c) => c.op === "eq").map((c) => c.args)).toEqual([["solution_id", SOL], ["issue_id", ISSUE], ["workspace_id", WS]]);
       expect(db.calls.find((c) => c.op === "from")!.args[0]).toBe("solution_issues");
@@ -49,25 +49,33 @@ describe("saveSolutionVerdict", () => {
   });
 
   it("saves your note with it, or on its own, and never touches the automatic verdict", async () => {
-    await saveSolutionVerdict(WS, SOL, ISSUE, "fail", "Too slow");
+    await saveSolutionVerdict(WS, SOL, ISSUE, { verdict: "fail", notes: "Too slow" });
     expect(updates()).toEqual([{ user_verdict: "fail", user_notes: "Too slow" }]);
+    // A note on its own does not write the verdict, and a verdict on its own does not write the note.
+    db.calls = [];
+    await saveSolutionVerdict(WS, SOL, ISSUE, { notes: "Only a note" });
+    expect(updates()).toEqual([{ user_notes: "Only a note" }]);
+    db.calls = [];
+    await saveSolutionVerdict(WS, SOL, ISSUE, { verdict: "pass" });
+    expect(updates()).toEqual([{ user_verdict: "pass" }]);
     expect(JSON.stringify(updates())).not.toContain("auto_");
   });
 
   it("refuses anything that isn't a pass, a fail or nothing, an id that isn't one, and a note that is too long", async () => {
-    expect((await saveSolutionVerdict(WS, SOL, ISSUE, "maybe")).status).toBe("error");
-    expect((await saveSolutionVerdict(WS, SOL, "nope", "pass")).status).toBe("error");
-    expect((await saveSolutionVerdict(WS, SOL, ISSUE, "pass", "x".repeat(4001))).status).toBe("error");
+    expect((await saveSolutionVerdict(WS, SOL, ISSUE, { verdict: "maybe" })).status).toBe("error");
+    expect((await saveSolutionVerdict(WS, SOL, "nope", { verdict: "pass" })).status).toBe("error");
+    expect((await saveSolutionVerdict(WS, SOL, ISSUE, { notes: "x".repeat(4001) })).status).toBe("error");
+    expect((await saveSolutionVerdict(WS, SOL, ISSUE, {})).status).toBe("error");
     expect(db.calls).toEqual([]);
   });
 
   it("says so when no row changed (a viewer, or a solution that is gone) and when the session has ended", async () => {
     db.result = { data: [], error: null };
-    expect(await saveSolutionVerdict(WS, SOL, ISSUE, "pass")).toEqual({ status: "error", message: expect.stringMatching(/permission/) });
+    expect(await saveSolutionVerdict(WS, SOL, ISSUE, { verdict: "pass" })).toEqual({ status: "error", message: expect.stringMatching(/permission/) });
     db.result = { data: [], error: { code: "42501" } };
-    expect((await saveSolutionVerdict(WS, SOL, ISSUE, "pass")).status).toBe("error");
+    expect((await saveSolutionVerdict(WS, SOL, ISSUE, { verdict: "pass" })).status).toBe("error");
     db.signedIn = false;
-    expect(await saveSolutionVerdict(WS, SOL, ISSUE, "pass")).toEqual({ status: "error", message: expect.stringMatching(/session has ended/) });
+    expect(await saveSolutionVerdict(WS, SOL, ISSUE, { verdict: "pass" })).toEqual({ status: "error", message: expect.stringMatching(/session has ended/) });
   });
 });
 

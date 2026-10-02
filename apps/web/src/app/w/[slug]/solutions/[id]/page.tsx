@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { SolutionPage } from "@/components/solutions/solution-page";
 import { Page } from "@/components/shell/page";
 import { canEditWorkspace, currentUserId } from "@/lib/access-data";
-import { loadLiveProcess, loadProcessNames, loadWorkspaceIssues, loadWorkspaceSolutions } from "@/lib/data";
+import { loadLiveProcess, loadMemberNames, loadProcessNames, loadWorkspaceIssues, loadWorkspaceSolutions } from "@/lib/data";
 import { isId } from "@/lib/sources/validate";
 
 /**
@@ -15,12 +15,13 @@ export default async function WorkspaceSolutionPage(props: PageProps<"/w/[slug]/
   const bundle = await loadLiveProcess(slug);
   if (!bundle) notFound();
   const ws = bundle.workspace.id;
-  const [canEdit, viewerId, solutions, issues, processes] = await Promise.all([
+  const [canEdit, viewerId, solutions, issues, processes, memberNames] = await Promise.all([
     canEditWorkspace(ws),
     currentUserId(),
     loadWorkspaceSolutions(ws),
     loadWorkspaceIssues(ws),
     loadProcessNames(ws),
+    loadMemberNames(ws),
   ]);
   const solution = solutions.solutions.find((s) => s.id === id);
   if (!solution) notFound();
@@ -35,6 +36,7 @@ export default async function WorkspaceSolutionPage(props: PageProps<"/w/[slug]/
         base={`/w/${slug}`}
         mode={canEdit ? "live" : "readonly"}
         viewerId={viewerId}
+        memberNames={memberNames}
       />
     </Page>
   );

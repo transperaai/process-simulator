@@ -18,6 +18,7 @@ export function ProcessSolutions({
   processId,
   processName,
   viewerId,
+  memberNames,
   base,
   demo,
   canEdit,
@@ -27,6 +28,7 @@ export function ProcessSolutions({
   processId: string;
   processName: string;
   viewerId?: string | null;
+  memberNames?: Readonly<Record<string, string>>;
   /** `/w/<slug>` or `/demo`: where the Editor lives. */
   base: string;
   demo: boolean;
@@ -70,6 +72,7 @@ export function ProcessSolutions({
         demo={demo}
         canEdit={canEdit}
         viewerId={viewerId}
+        memberNames={memberNames}
         from={from}
       />
       {canEdit && toSolve.length > 0 && (

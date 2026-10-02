@@ -9,7 +9,7 @@ import type { IssueRow, SolutionIssueRow, SolutionRow, SolutionVerdict } from "@
 import { Help } from "@/components/help";
 import { Card } from "@/components/ui/card";
 import { issueHref } from "@/lib/issues/pages";
-import { SOLUTIONS_LIST_HELP } from "@/lib/solutions/help";
+import { SOLUTIONS_LIST_HELP, newOnProcessHelp } from "@/lib/solutions/help";
 import { builtBy, builtDate, changesLine, effectiveVerdict, linksOf, solutionHref, solutionType, VERDICT_WORDS, type SolutionsData } from "@/lib/solutions/cards";
 import { solutionEditorHref } from "@/lib/solutions/links";
 import { cn } from "@/lib/utils";
@@ -36,6 +36,7 @@ export function SolutionCards({
   demo,
   canEdit,
   viewerId,
+  memberNames,
   from,
   empty,
 }: {
@@ -49,6 +50,7 @@ export function SolutionCards({
   /** Who can open the Editor: owners and editors. */
   canEdit: boolean;
   viewerId?: string | null;
+  memberNames?: Readonly<Record<string, string>>;
   /** Where Exit editor goes back to. */
   from: string;
   empty?: string;
@@ -75,6 +77,7 @@ export function SolutionCards({
             demo={demo}
             canEdit={canEdit}
             viewerId={viewerId}
+            memberNames={memberNames}
             from={from}
           />
         </li>
@@ -92,6 +95,7 @@ function SolutionCard({
   demo,
   canEdit,
   viewerId,
+  memberNames,
   from,
 }: {
   solution: SolutionRow;
@@ -102,6 +106,7 @@ function SolutionCard({
   demo: boolean;
   canEdit: boolean;
   viewerId?: string | null;
+  memberNames?: Readonly<Record<string, string>>;
   from: string;
 }) {
   const type = solutionType(s);
@@ -118,7 +123,7 @@ function SolutionCard({
           <Help {...SOLUTIONS_LIST_HELP.type} />
         </span>
         <span className="text-xs text-muted-foreground">
-          {builtBy(s.created_by, viewerId, demo)} · {builtDate(s)}
+          {builtBy(s.created_by, viewerId, demo, memberNames)} · {builtDate(s)}
         </span>
       </div>
       <h3 className="font-heading text-base leading-snug font-semibold">
@@ -177,9 +182,9 @@ function SolutionCard({
               href={solutionEditorHref(base, s.process_id, { from })}
               className="inline-flex h-8 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-muted"
             >
-              Open in Editor
+              ✎ New solution on {processName}
             </Link>
-            <Help {...SOLUTIONS_LIST_HELP.openInEditor} />
+            <Help {...newOnProcessHelp(processName)} />
           </span>
         )}
       </div>

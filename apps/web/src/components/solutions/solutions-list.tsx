@@ -70,6 +70,7 @@ export function SolutionsList({
   base,
   mode,
   viewerId,
+  memberNames,
   ideas = 0,
 }: {
   /** As loaded with the page; the demo ignores it and shows what this tab has saved. */
@@ -81,6 +82,7 @@ export function SolutionsList({
   base: string;
   mode: "live" | "demo" | "readonly";
   viewerId?: string | null;
+  memberNames?: Readonly<Record<string, string>>;
   /** AI ideas waiting in Suggestions (A52 supplies the count). Zero hides the bar. */
   ideas?: number;
 }) {
@@ -103,7 +105,7 @@ export function SolutionsList({
           <Help {...SOLUTIONS_LIST_HELP.ideas} className="ml-0" />
         </div>
       )}
-      <SolutionCards data={shown} issues={issues} processes={processes} base={base} demo={mode === "demo"} canEdit={canEdit} viewerId={viewerId} from={solutionsListHref(base)} />
+      <SolutionCards data={shown} issues={issues} processes={processes} base={base} demo={mode === "demo"} canEdit={canEdit} viewerId={viewerId} memberNames={memberNames} from={solutionsListHref(base)} />
     </div>
   );
 }

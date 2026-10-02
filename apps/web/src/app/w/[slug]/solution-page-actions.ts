@@ -19,25 +19,24 @@ const failure = (error: { code?: string }) =>
 export type VerdictResult = { status: "ok"; link: SolutionIssueRow } | { status: "error"; message: string };
 
 /**
- * Your verdict (and optionally your note) on one issue a solution solves. `verdict` null clears it. Anyone who can't edit the
- * workspace changes no rows, and is told so.
+ * Your verdict and/or your note on one issue a solution solves. Only the fields in `patch` are written, so saving a note never
+ * rewrites a verdict (and the other way round): `verdict` null clears it, and a field left out is left alone. Anyone who can't
+ * edit the workspace changes no rows, and is told so.
  */
-export async function saveSolutionVerdict(
-  workspaceId: unknown,
-  solutionId: unknown,
-  issueId: unknown,
-  verdict: unknown,
-  notes?: unknown,
-): Promise<VerdictResult> {
+export async function saveSolutionVerdict(workspaceId: unknown, solutionId: unknown, issueId: unknown, patch: unknown): Promise<VerdictResult> {
   if (!isId(workspaceId) || !isId(solutionId) || !isId(issueId)) return invalid;
-  if (verdict !== null && verdict !== "pass" && verdict !== "fail") return invalid;
-  if (notes !== undefined && (typeof notes !== "string" || notes.length > MAX_NOTES)) return { status: "error", message: "Keep the note to 4,000 characters." };
+  const p = (typeof patch === "object" && patch !== null ? patch : {}) as { verdict?: unknown; notes?: unknown };
+  const hasVerdict = "verdict" in p && p.verdict !== undefined;
+  const hasNotes = "notes" in p && p.notes !== undefined;
+  if (!hasVerdict && !hasNotes) return invalid;
+  if (hasVerdict && p.verdict !== null && p.verdict !== "pass" && p.verdict !== "fail") return invalid;
+  if (hasNotes && (typeof p.notes !== "string" || p.notes.length > MAX_NOTES)) return { status: "error", message: "Keep the note to 4,000 characters." };
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims?.claims?.sub) return signedOut;
   const { data, error } = await supabase
     .from("solution_issues")
-    .update({ user_verdict: verdict, ...(notes === undefined ? {} : { user_notes: notes }) })
+    .update({ ...(hasVerdict ? { user_verdict: p.verdict as "pass" | "fail" | null } : {}), ...(hasNotes ? { user_notes: p.notes as string } : {}) })
     .eq("solution_id", solutionId)
     .eq("issue_id", issueId)
     .eq("workspace_id", workspaceId)

@@ -221,7 +221,7 @@ Both must return no rows. The guard trigger tells a signed-in caller from the sy
 
 ## Audit entry for an uploaded process (B13 slice 1, migration 20261127000000)
 
-Verified only against plain Postgres (`packages/db/test/log-process-import.test.ts`, and `packages/mcp/test/postgrest-import-file.test.ts` through PostgREST with the auth shim). `public.log_process_import` is `security definer` with an empty `search_path`, because `audit_log` has no client INSERT. It checks `can_edit_workspace` itself (wrapped in `coalesce(..., false)`: for someone outside the workspace the function returns NULL, not false, and `not NULL` would let them through). After applying, check the grants on Supabase:
+Verified only against plain Postgres (`packages/db/test/log-process-import.test.ts`, and `packages/mcp/test/postgrest-import-file.test.ts` through PostgREST with the auth shim). `public.log_process_import` is `security definer` with an empty `search_path`, because `audit_log` has no client INSERT. It checks `can_edit_workspace` itself, and that the caller created the process in the last ten minutes (wrapped in `coalesce(..., false)`: for someone outside the workspace the function returns NULL, not false, and `not NULL` would let them through). After applying, check the grants on Supabase:
 
 ```sql
 select grantee, privilege_type from information_schema.routine_privileges where routine_schema = 'public' and routine_name = 'log_process_import' and grantee in ('anon', 'authenticated', 'PUBLIC') order by 1;

@@ -17,6 +17,13 @@ export type FileStepType = (typeof FILE_STEP_TYPES)[number];
 export const MAX_FILE_STEPS = 200;
 export const MAX_FILE_LINKS = 500;
 const MAX_NAME = 120;
+/** Step ids are short labels ("review"); anything longer is a mistake, and checking it for typos would cost time. */
+const MAX_ID = 64;
+const MAX_GROUPS = 100;
+/** Typo suggestions are a courtesy: only the first few unknown references get one, so a hostile file can't make the checker slow. */
+const MAX_SUGGESTIONS = 20;
+/** The most problems listed; the rest are counted. */
+const MAX_LISTED = 50;
 const MAX_HOURS = 10_000;
 const MAX_WAIT_HOURS = 100_000;
 const MAX_NOTES = 4000;
@@ -171,7 +178,8 @@ export const PROCESS_FILE_EXAMPLE = {
 // ---------------------------------------------------------------------------
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-const q = (s: string) => `'${s}'`;
+/** A name or id in quotes, cut when it is absurdly long so a message stays readable. */
+const q = (s: string) => `'${s.length > 60 ? `${s.slice(0, 57)}...` : s}'`;
 const norm = (s: string) => s.trim().toLowerCase().replace(/&/g, " and ").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
 const TOP_FIELDS = ["$schema", "format", "name", "kind", "description", "entity_name", "steps", "links", "groups"];
@@ -193,14 +201,21 @@ function distance(a: string, b: string): number {
   return row[b.length]!;
 }
 
-/** The step id closest to `ref`, when it is near enough to be a typo. */
-function suggest(ref: string, ids: readonly string[]): string | null {
+/**
+ * The step id closest to `ref`, when it is near enough to be a typo. Bounded: ids and references longer than MAX_ID get none, ids
+ * whose length can't be close enough are skipped without comparing, and `budget` limits how many suggestions a file can ask for.
+ */
+function suggest(ref: string, ids: readonly string[], budget: { left: number }): string | null {
+  if (ref.length > MAX_ID || budget.left <= 0) return null;
+  budget.left--;
+  const limit = Math.max(1, Math.floor(ref.length / 3));
   let best: { id: string; d: number } | null = null;
   for (const id of ids) {
+    if (id.length > MAX_ID || Math.abs(id.length - ref.length) > limit) continue;
     const d = distance(ref.toLowerCase(), id.toLowerCase());
     if (!best || d < best.d) best = { id, d };
   }
-  return best && best.d <= Math.max(1, Math.floor(ref.length / 3)) ? best.id : null;
+  return best && best.d <= limit ? best.id : null;
 }
 
 function plural(n: number, word: string): string {
@@ -219,7 +234,10 @@ const round = (n: number) => Math.round(n * 1000) / 1000;
 export function checkProcessFile(input: unknown): ProcessFileCheck {
   const errors: string[] = [];
   const warnings: string[] = [];
-  const fail = (): ProcessFileCheck => ({ file: null, errors, warnings });
+  const budget = { left: MAX_SUGGESTIONS };
+  /** A long list of problems is cut, so a hostile file can't make a huge answer. */
+  const listed = (list: string[]): string[] => (list.length > MAX_LISTED ? [...list.slice(0, MAX_LISTED), `…and ${list.length - MAX_LISTED} more problems like these.`] : list);
+  const fail = (): ProcessFileCheck => ({ file: null, errors: listed(errors), warnings: listed(warnings) });
 
   if (!isObject(input)) {
     errors.push("The file isn't a process: it should be one JSON object with a format, a name and steps. Use 'Copy prompt for Claude' to ask for one, or 'Download example' to see what it looks like.");
@@ -291,6 +309,8 @@ export function checkProcessFile(input: unknown): ProcessFileCheck {
       if (!id) errors.push(`${label} has no id. Give each step a short unique id (like "review") so links can point at it.`);
       if (!nm) errors.push(`${label} has no name.`);
       else if (nm.length > MAX_NAME) errors.push(`${label}'s name is ${nm.length} characters long; the most is ${MAX_NAME}.`);
+      else if (!norm(nm)) errors.push(`${label} has no letters or numbers in its name. Give it a name people can read.`);
+      if (id.length > MAX_ID) errors.push(`${label}'s id is ${id.length} characters long; ids are short labels (the most is ${MAX_ID}).`);
       for (const key of Object.keys(raw)) {
         if (!STEP_FIELDS.includes(key)) warnings.push(`${label} has a field ${q(key)} that Transpera doesn't use. It was ignored.`);
       }
@@ -367,6 +387,7 @@ export function checkProcessFile(input: unknown): ProcessFileCheck {
     });
   }
   const ids = steps.map((s) => s.id);
+  const nameTaken = (nm: string) => steps.some((s) => norm(s.name) === norm(nm)) || groups.some((g) => norm(g.name) === norm(nm));
   const byId = new Map(steps.map((s) => [s.id, s]));
   const stepName = (id: string) => byId.get(id)?.name ?? id;
 
@@ -395,7 +416,7 @@ export function checkProcessFile(input: unknown): ProcessFileCheck {
       for (const [end, ref] of [["from", from], ["to", to]] as const) {
         if (declared.has(ref) && !byId.has(ref)) return;
         if (!byId.has(ref)) {
-          const near = suggest(ref, ids);
+          const near = suggest(ref, ids, budget);
           errors.push(
             end === "from"
               ? `Link from ${q(from)} goes to ${q(to)}, but ${q(from)} isn't a step.${near ? ` Did you mean ${q(near)}?` : ""}`
@@ -434,23 +455,27 @@ export function checkProcessFile(input: unknown): ProcessFileCheck {
   if (rawGroups !== undefined && !Array.isArray(rawGroups)) errors.push("\"groups\" should be a list of {name, steps} boxes.");
   else if (Array.isArray(rawGroups)) {
     const inGroup = new Map<string, string>();
-    rawGroups.forEach((raw, i) => {
+    const taken = new Set(steps.map((x) => norm(x.name)));
+    if (rawGroups.length > MAX_GROUPS) errors.push(`The file has ${rawGroups.length} groups; the most Transpera takes in one upload is ${MAX_GROUPS}.`);
+    rawGroups.slice(0, MAX_GROUPS).forEach((raw, i) => {
       if (!isObject(raw)) return void errors.push(`Group ${i + 1} should be an object with a name and a list of step ids.`);
       const nm = typeof raw.name === "string" ? raw.name.trim() : "";
       if (!nm) return void errors.push(`Group ${i + 1} has no name.`);
+      if (nm.length > MAX_NAME) return void errors.push(`Group ${q(nm)}'s name is ${nm.length} characters long; the most is ${MAX_NAME}.`);
+      if (!norm(nm)) return void errors.push(`Group ${q(nm)} has no letters or numbers in its name. Give it a name people can read.`);
       for (const key of Object.keys(raw)) {
         if (!GROUP_FIELDS.includes(key)) warnings.push(`Group ${q(nm)} has a field ${q(key)} that Transpera doesn't use. It was ignored.`);
       }
       if (!Array.isArray(raw.steps)) return void errors.push(`Group ${q(nm)} needs a "steps" list of step ids.`);
-      if (steps.some((s) => norm(s.name) === norm(nm)) || groups.some((g) => norm(g.name) === norm(nm))) {
-        return void errors.push(`A group and a step (or two groups) are both called ${q(nm)}. Give them different names.`);
-      }
+      if (taken.has(norm(nm))) return void errors.push(`A group and a step (or two groups) are both called ${q(nm)}. Give them different names.`);
+      taken.add(norm(nm));
+      if (raw.steps.length > MAX_FILE_STEPS) return void errors.push(`Group ${q(nm)} lists ${raw.steps.length} steps; a file can't have that many.`);
       const members: string[] = [];
       for (const ref of raw.steps) {
         const id = typeof ref === "string" ? ref.trim() : "";
         const s = byId.get(id);
         if (!s) {
-          const near = id ? suggest(id, ids) : null;
+          const near = id ? suggest(id, ids, budget) : null;
           errors.push(`Group ${q(nm)} lists ${q(String(ref))}, which isn't a step.${near ? ` Did you mean ${q(near)}?` : ""}`);
         } else if (s.type === "start" || s.type === "end") errors.push(`Group ${q(nm)} holds ${q(s.name)}, but start and end steps stay outside groups.`);
         else if (inGroup.has(id)) errors.push(`${q(s.name)} is in two groups (${q(inGroup.get(id)!)} and ${q(nm)}); a step can be in one.`);
@@ -487,17 +512,40 @@ export function checkProcessFile(input: unknown): ProcessFileCheck {
   }
   if (errors.length) return fail();
 
+  // A start step is where items come in, and the simulation takes it as the entry only: it must lead to exactly one step.
+  for (const s of starts) {
+    const leaving = out.get(s.id) ?? [];
+    if (leaving.length > 1) {
+      errors.push(`Start step ${q(s.name)} leads to ${leaving.length} steps, but a start step leads to exactly one. Link it to one step, and put a decision step after it to branch.`);
+    }
+  }
+  if (errors.length) return fail();
+
   const normalised = steps.map((s) => ({ ...s }));
   if (!starts.length) {
     const entry = steps.find((s) => s.type !== "end" && !into.has(s.id)) ?? steps.find((s) => s.type !== "end");
-    if (entry && entry.type === "step") {
+    const grouped = new Set(groups.flatMap((g) => g.steps));
+    // A step can stand in as the start only if that costs it nothing: no numbers, role or person of its own (a start step is an
+    // entry point, so they would be lost), one way out, nothing leading into it, and not inside a group.
+    const plain =
+      entry !== undefined &&
+      entry.type === "step" &&
+      entry.hands_on_hours === undefined &&
+      entry.wait_hours === undefined &&
+      entry.rework_rate === undefined &&
+      entry.role === undefined &&
+      entry.person === undefined &&
+      !into.has(entry.id) &&
+      (out.get(entry.id) ?? []).length === 1 &&
+      !grouped.has(entry.id);
+    if (entry && plain) {
       warnings.push(`No start step: ${q(entry.name)} will be used as the start.`);
       normalised.find((s) => s.id === entry.id)!.type = "start";
     } else if (entry) {
       let id = "start";
-      for (let n = 2; byId.has(id); n++) id = `start-${n}`;
+      for (let n = 2; declared.has(id); n++) id = `start-${n}`;
       let nm = "Start";
-      for (let n = 2; steps.some((s) => norm(s.name) === norm(nm)) || groups.some((g) => norm(g.name) === norm(nm)); n++) nm = `Start ${n}`;
+      for (let n = 2; nameTaken(nm); n++) nm = `Start ${n}`;
       warnings.push(`No start step: a start step will be added in front of ${q(entry.name)}.`);
       normalised.unshift({ id, name: nm, type: "start" });
       links.unshift({ from: id, to: entry.id });
@@ -516,7 +564,6 @@ export function checkProcessFile(input: unknown): ProcessFileCheck {
       warnings.push(`Nothing leaves ${q(s.name)}, so items stop there. Link it to the next step, or make it an end step.`);
       continue;
     }
-    if (s.type === "start" && leaving.length > 1) warnings.push(`${label} leads to ${leaving.length} steps; a start step should lead to just one.`);
     if (s.type !== "start" && leaving.length) {
       const given = leaving.filter((l) => l.probability !== undefined);
       const total = given.reduce((sum, l) => sum + l.probability!, 0);

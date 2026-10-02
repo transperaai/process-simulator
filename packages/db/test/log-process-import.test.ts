@@ -24,8 +24,14 @@ afterAll(async () => {
   await db?.close();
 });
 
-const imported = async (source = "import") =>
-  (await db.client.query("insert into processes (workspace_id, name, kind, entity_name, source) values ($1, $2, 'pipeline', 'lead', $3) returning id", [ws, `Uploaded ${randomUUID()}`, source])).rows[0].id as string;
+/** A process as an import leaves it: made by `by` (the editor unless said), `age` ago. */
+const imported = async (source = "import", by: string | null = users.editor!.id, age = "0 seconds") =>
+  (
+    await db.client.query(
+      "insert into processes (workspace_id, name, kind, entity_name, source, created_by, created_at) values ($1, $2, 'pipeline', 'lead', $3, $4, now() - $5::interval) returning id",
+      [ws, `Uploaded ${randomUUID()}`, source, by, age],
+    )
+  ).rows[0].id as string;
 
 /** The import entries for a process, read as the database owner (the change log is for managers; this is inside the test's transaction). */
 const entries = async (c: pg.Client, id: string) => {
@@ -83,6 +89,18 @@ describe("log_process_import", () => {
       await fails(c, () => log(c, randomUUID(), "a.json"), /no such process/);
     });
     expect(await db.as(users.editor!.claims, (c) => entries(c, id))).toEqual([]);
+  });
+
+  it("refuses a process someone else made, and one made more than ten minutes ago", async () => {
+    const theirs = await imported("import", users.viewer!.id);
+    const old = await imported("import", users.editor!.id, "11 minutes");
+    const fresh = await imported("import", users.editor!.id, "9 minutes");
+    await db.as(users.editor!.claims, async (c) => {
+      await fails(c, () => log(c, theirs, "a.json"), /no such process/);
+      await fails(c, () => log(c, old, "a.json"), /no such process/);
+      await log(c, fresh, "a.json");
+      expect(await entries(c, fresh)).toHaveLength(1);
+    });
   });
 
   it("refuses a process an import did not make, and an empty source", async () => {

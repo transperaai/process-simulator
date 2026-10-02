@@ -86,9 +86,10 @@ export interface ImportFileOptions {
   name?: string;
   /**
    * For each role in the file the company doesn't have: the id of a company role to use instead, or null for none. A role
-   * the company has is matched by name without being listed here; one that is missing from here is left blank.
+   * the company has is matched by name without being listed here; one that is missing from here is left blank. A Map, not an
+   * object: a role can be called anything, "constructor" and "__proto__" included.
    */
-  roleMap?: Record<string, string | null>;
+  roleMap?: ReadonlyMap<string, string | null>;
 }
 
 export interface ImportFileResult {
@@ -164,7 +165,7 @@ export async function importProcessFile(ctx: ToolContext, file: ProcessFile, opt
   const { roles, people } = await lookups(ctx, ws.id);
   const warnings: string[] = [];
   const mapped = new Map<string, string | null>();
-  for (const [from, to] of Object.entries(opts.roleMap ?? {})) {
+  for (const [from, to] of opts.roleMap ?? []) {
     if (to !== null && !roles.some((r) => r.id === to)) throw new ToolError("invalid_input", `Role '${from}' was matched to a role that isn't one of this company's.`);
     mapped.set(normalizeName(from), to);
   }

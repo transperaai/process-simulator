@@ -20038,10 +20038,12 @@ select private.relayout_company_map(w.id) from public.workspaces w order by w.cr
 --
 --   * `public.log_process_import(target_process, import_source)`: SECURITY DEFINER with an empty search_path. It writes one
 --     `audit_log` row (action `import`, target `processes`, diff `{source, text}`) for a process the caller may edit
---     (`can_edit_workspace`). It is not a general-purpose logger: the process must be one made by an import
---     (`processes.source = 'import'`), and an import is logged once (a second call is refused), so it cannot be used to put
---     arbitrary text on an unrelated process or to repeat an entry. The source text is cut to 300 characters. The actor kind
---     is `mcp` for an API-token request and `user` otherwise.
+--     (`can_edit_workspace`). It is not a general-purpose logger. The process must be one made by an import
+--     (`processes.source = 'import'`), made by the caller (`created_by = auth.uid()`) in the last ten minutes, and not logged
+--     yet; the row is locked (`for update`) while that is checked, so two calls at once cannot both write. So it cannot put text
+--     on someone else's process, on an old one, or repeat an entry. The source text is cut to 300 characters. The actor kind is
+--     `mcp` for an API-token request and `user` otherwise. (A process made a moment ago by the caller's own MCP `import_process`
+--     also passes: the caller can write one entry saying where it came from, about their own new process.)
 --
 -- STRICTLY ADDITIVE: one function. No table, column, constraint, trigger or existing function is changed.
 --
@@ -20080,9 +20082,12 @@ declare
   proc public.processes;
   label text := left(trim(coalesce(import_source, '')), 300);
 begin
-  select p.* into proc from public.processes p where p.id = target_process;
-  -- Not found and not allowed look the same.
-  if not found or not coalesce(public.can_edit_workspace(proc.workspace_id), false) then
+  select p.* into proc from public.processes p where p.id = target_process for update;
+  -- Not found, not allowed, someone else's and too old all look the same.
+  if not found
+    or not coalesce(public.can_edit_workspace(proc.workspace_id), false)
+    or proc.created_by is distinct from auth.uid()
+    or proc.created_at < now() - interval '10 minutes' then
     raise exception 'log_process_import: no such process' using errcode = '42501';
   end if;
   if proc.source <> 'import' then
@@ -20121,10 +20126,12 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --
 --   * `public.log_process_import(target_process, import_source)`: SECURITY DEFINER with an empty search_path. It writes one
 --     `audit_log` row (action `import`, target `processes`, diff `{source, text}`) for a process the caller may edit
---     (`can_edit_workspace`). It is not a general-purpose logger: the process must be one made by an import
---     (`processes.source = ''import''`), and an import is logged once (a second call is refused), so it cannot be used to put
---     arbitrary text on an unrelated process or to repeat an entry. The source text is cut to 300 characters. The actor kind
---     is `mcp` for an API-token request and `user` otherwise.
+--     (`can_edit_workspace`). It is not a general-purpose logger. The process must be one made by an import
+--     (`processes.source = ''import''`), made by the caller (`created_by = auth.uid()`) in the last ten minutes, and not logged
+--     yet; the row is locked (`for update`) while that is checked, so two calls at once cannot both write. So it cannot put text
+--     on someone else''s process, on an old one, or repeat an entry. The source text is cut to 300 characters. The actor kind is
+--     `mcp` for an API-token request and `user` otherwise. (A process made a moment ago by the caller''s own MCP `import_process`
+--     also passes: the caller can write one entry saying where it came from, about their own new process.)
 --
 -- STRICTLY ADDITIVE: one function. No table, column, constraint, trigger or existing function is changed.
 --
@@ -20163,9 +20170,12 @@ declare
   proc public.processes;
   label text := left(trim(coalesce(import_source, '''')), 300);
 begin
-  select p.* into proc from public.processes p where p.id = target_process;
-  -- Not found and not allowed look the same.
-  if not found or not coalesce(public.can_edit_workspace(proc.workspace_id), false) then
+  select p.* into proc from public.processes p where p.id = target_process for update;
+  -- Not found, not allowed, someone else''s and too old all look the same.
+  if not found
+    or not coalesce(public.can_edit_workspace(proc.workspace_id), false)
+    or proc.created_by is distinct from auth.uid()
+    or proc.created_at < now() - interval ''10 minutes'' then
     raise exception ''log_process_import: no such process'' using errcode = ''42501'';
   end if;
   if proc.source <> ''import'' then

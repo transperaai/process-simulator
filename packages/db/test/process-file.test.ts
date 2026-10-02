@@ -267,15 +267,59 @@ describe("warnings", () => {
     expect(warnings).toContain("Nothing leaves 'Work', so items stop there. Link it to the next step, or make it an end step.");
   });
 
-  it("warns about a step that can't be reached from the start, and a start that leads to several steps", () => {
+  it("warns about a step that can't be reached from the start", () => {
     const f = base();
     f.steps.push({ id: "d", name: "Orphan", type: "step" });
     f.links.push({ from: "d", to: "c" });
-    f.links.push({ from: "a", to: "c", probability: 0.5 });
+    expect(checkProcessFile(f).warnings).toContain("'Orphan' can't be reached from the start step, so no item would ever get there.");
+  });
+
+  it("refuses a start step that leads to several steps (the simulation takes one way in)", () => {
+    const f = base();
+    f.steps.push({ id: "d", name: "Other", type: "step" });
+    f.links.push({ from: "a", to: "d", probability: 0.5 }, { from: "d", to: "c" });
     f.links[0].probability = 0.5;
-    const { warnings } = checkProcessFile(f);
-    expect(warnings).toContain("'Orphan' can't be reached from the start step, so no item would ever get there.");
-    expect(warnings).toContain("Start step 'Begin' leads to 2 steps; a start step should lead to just one.");
+    expect(checkProcessFile(f).errors).toEqual(["Start step 'Begin' leads to 2 steps, but a start step leads to exactly one. Link it to one step, and put a decision step after it to branch."]);
+  });
+
+  it("only turns a step into the start when that costs it nothing; otherwise it adds a start in front", () => {
+    for (const extra of [{ hands_on_hours: 2 }, { wait_hours: 1 }, { rework_rate: 0.1 }, { role: "Consultant" }, { person: "Sam" }]) {
+      const f = base();
+      f.steps[0] = { id: "a", name: "Begin", type: "step", ...extra };
+      const { file, warnings } = checkProcessFile(f);
+      expect(warnings).toEqual(["No start step: a start step will be added in front of 'Begin'."]);
+      expect(file!.steps[0]).toEqual({ id: "start", name: "Start", type: "start" });
+      expect(file!.steps[1]).toMatchObject({ id: "a", type: "step", ...extra });
+    }
+  });
+
+  it("adds a start in front when every step has something leading into it (a loop through a decision)", () => {
+    const f = clone({
+      format: "transpera-process/1",
+      name: "Loop",
+      steps: [
+        { id: "a", name: "Draft", type: "step" },
+        { id: "b", name: "Approved?", type: "decision" },
+        { id: "c", name: "Done", type: "end" },
+      ],
+      links: [
+        { from: "a", to: "b" },
+        { from: "b", to: "a", probability: 0.3 },
+        { from: "b", to: "c", probability: 0.7 },
+      ],
+    });
+    const { file, errors, warnings } = checkProcessFile(f);
+    expect(errors).toEqual([]);
+    expect(warnings).toEqual(["No start step: a start step will be added in front of 'Draft'."]);
+    expect(file!.steps.filter((s) => s.type === "start")).toHaveLength(1);
+    expect(file!.links[0]).toEqual({ from: "start", to: "a" });
+  });
+
+  it("doesn't take a step in a group as the start", () => {
+    const f = base();
+    f.steps[0] = { id: "a", name: "Begin", type: "step" };
+    f.groups = [{ name: "Box", steps: ["a"] }];
+    expect(checkProcessFile(f).warnings[0]).toBe("No start step: a start step will be added in front of 'Begin'.");
   });
 
   it("places a step automatically when only one of x and y is given", () => {
@@ -284,5 +328,46 @@ describe("warnings", () => {
     const { file, warnings } = checkProcessFile(f);
     expect(warnings).toEqual(["Step 'Work' has a position that isn't two numbers (x and y), so it will be placed automatically."]);
     expect(file!.steps[1]).not.toHaveProperty("x");
+  });
+});
+
+describe("hostile files", () => {
+  it("answers a worst-case file quickly: long ids, hundreds of unknown links, many groups", () => {
+    const long = (i: number) => `${"x".repeat(60)}${i}`;
+    const steps = Array.from({ length: 200 }, (_, i) => ({ id: long(i), name: `Step ${i}`, type: "step" }));
+    const links = Array.from({ length: 500 }, (_, i) => ({ from: long(i % 200), to: `${"y".repeat(60)}${i}` }));
+    const groups = Array.from({ length: 40 }, (_, i) => ({ name: `G${i}`, steps: Array.from({ length: 100 }, (_, j) => `${"z".repeat(60)}${j}`) }));
+    const f = { format: "transpera-process/1", name: "Hostile", steps, links, groups };
+    expect(JSON.stringify(f).length).toBeLessThan(500_000);
+    const started = performance.now();
+    const { errors, file } = checkProcessFile(f);
+    expect(performance.now() - started).toBeLessThan(200);
+    expect(file).toBeNull();
+    expect(errors.length).toBeLessThanOrEqual(51);
+    expect(errors.at(-1)).toMatch(/…and \d+ more problems/);
+  });
+
+  it("answers a file with enormous ids and names quickly, without echoing them", () => {
+    const huge = "q".repeat(200_000);
+    const f = { format: "transpera-process/1", name: "Huge", steps: [{ id: huge, name: huge }, { id: "b", name: "Fine" }], links: [{ from: huge, to: huge }, { from: "b", to: huge.slice(1) }], groups: [{ name: huge, steps: [huge] }] };
+    const started = performance.now();
+    const { errors } = checkProcessFile(f);
+    expect(performance.now() - started).toBeLessThan(200);
+    expect(errors.join("\n").length).toBeLessThan(5_000);
+    expect(errors.some((e) => /id is 200000 characters long/.test(e))).toBe(true);
+  });
+
+  it("says a group name that is too long, or empty of letters, as a group (not a step)", () => {
+    const f = base();
+    f.groups = [{ name: "g".repeat(121), steps: ["b"] }, { name: "???", steps: ["b"] }];
+    const { errors } = checkProcessFile(f);
+    expect(errors[0]).toMatch(/^Group 'g+\.\.\.''s name is 121 characters long; the most is 120\.$/);
+    expect(errors[1]).toBe("Group '???' has no letters or numbers in its name. Give it a name people can read.");
+  });
+
+  it("refuses a step whose name has no letters or numbers", () => {
+    const f = base();
+    f.steps[1].name = "???";
+    expect(checkProcessFile(f).errors).toEqual(["Step '???' has no letters or numbers in its name. Give it a name people can read."]);
   });
 });

@@ -110,7 +110,7 @@ describe("the Upload process dialog", () => {
     await page.locator("#upload-name").fill("My renamed process");
     await page.locator("[data-upload-create]").click();
     await page.waitForFunction(() => window.uploads.length === 1);
-    expect(await page.evaluate(() => window.uploads[0])).toMatchObject({ source: "process.json", name: "My renamed process", roleMap: {} });
+    expect(await page.evaluate(() => window.uploads[0])).toMatchObject({ source: "process.json", name: "My renamed process", roleMap: [["Managing director", null]] });
     expect(errors).toEqual([]);
     await page.close();
   }, 60_000);
@@ -132,7 +132,7 @@ describe("the Upload process dialog", () => {
     await page.selectOption("#upload-role-0", { label: "Consultant" });
     await page.locator("[data-upload-create]").click();
     await page.waitForFunction(() => window.uploads.length === 1);
-    expect(await page.evaluate(() => window.uploads[0]!.roleMap)).toEqual({ "Sales lead": COMPANY.roles[1]!.id, Founder: null });
+    expect(await page.evaluate(() => window.uploads[0]!.roleMap)).toEqual([["Sales lead", COMPANY.roles[1]!.id], ["Founder", null]]);
     await page.close();
   }, 60_000);
 
@@ -206,4 +206,51 @@ describe("the Upload process dialog", () => {
     expect(await page.locator("[data-upload-create]").isEnabled()).toBe(true);
     await page.close();
   }, 60_000);
+
+  it("keeps a role choice per role even when roles are called constructor or __proto__", async () => {
+    const f = example();
+    f.steps[1].role = "constructor";
+    f.steps[2].role = "__proto__";
+    f.steps[3].role = "toString";
+    const { page } = await mount();
+    await choose(page, file("odd-roles.json", json(f)));
+    expect(await page.locator("[data-upload-roles] label").allInnerTexts()).toEqual(["“constructor”", "“__proto__”", "“toString”"]);
+    expect(await page.locator("#upload-role-0").inputValue()).toBe("");
+    await page.selectOption("#upload-role-1", { label: "Consultant" });
+    expect(await page.locator("#upload-role-0").inputValue()).toBe("");
+    expect(await page.locator("#upload-role-2").inputValue()).toBe("");
+    await page.locator("[data-upload-create]").click();
+    await page.waitForFunction(() => window.uploads.length === 1);
+    expect(await page.evaluate(() => window.uploads[0]!.roleMap)).toEqual([["constructor", null], ["__proto__", COMPANY.roles[1]!.id], ["toString", null]]);
+    await page.close();
+  }, 60_000);
+
+  it("says plainly when creating fails, and does not mistake the redirect to the editor for a failure", async () => {
+    const failing = await mount({ ...COMPANY, createThrows: "failure" });
+    await choose(failing.page, file("process.json", json(example())));
+    await failing.page.locator("[data-upload-create]").click();
+    await failing.page.waitForSelector("[data-upload-error]");
+    expect(await failing.page.locator("[data-upload-error]").innerText()).toBe("Couldn't create it. Try again.");
+    await failing.page.close();
+
+    const redirecting = await mount({ ...COMPANY, createThrows: "redirect" });
+    await choose(redirecting.page, file("process.json", json(example())));
+    await redirecting.page.locator("[data-upload-create]").click();
+    await redirecting.page.waitForFunction(() => window.uploads.length === 1);
+    await redirecting.page.waitForTimeout(300);
+    expect(await redirecting.page.locator("[data-upload-error]").count()).toBe(0);
+    await redirecting.page.close();
+  }, 60_000);
+
+  it("lists the first 20 warnings and counts the rest", async () => {
+    const f = example();
+    for (let i = 0; i < 30; i++) f[`extra${i}`] = i;
+    const { page } = await mount();
+    await choose(page, file("noisy.json", json(f)));
+    const items = await page.locator("[data-upload-problems=warning] li").allInnerTexts();
+    expect(items).toHaveLength(21);
+    expect(items.at(-1)).toBe("…and 10 more.");
+    await page.close();
+  }, 60_000);
 });
+

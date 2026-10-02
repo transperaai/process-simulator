@@ -39,8 +39,8 @@ export interface CreateUploadInput {
   source: string;
   /** A different name than the file gives. */
   name: string;
-  /** For each unknown role: a company role id, or null to leave blank. */
-  roleMap: Record<string, string | null>;
+  /** For each unknown role: [role as the file names it, a company role id or null to leave blank]. Pairs, not an object: a role can be called "__proto__". */
+  roleMap: [string, string | null][];
 }
 
 export interface CreateUploadResult {
@@ -64,4 +64,9 @@ export function sourceLabel(fileName: string): string {
 /** The file Claude (or the person) made, as the example download: pretty-printed JSON. */
 export function downloadHref(text: string): string {
   return `data:application/json;charset=utf-8,${encodeURIComponent(text)}`;
+}
+
+/** True for the error a server action's redirect() throws on its way to the new page (it carries a digest starting NEXT_REDIRECT). */
+export function isRedirect(e: unknown): boolean {
+  return typeof e === "object" && e !== null && typeof (e as { digest?: unknown }).digest === "string" && (e as { digest: string }).digest.startsWith("NEXT_REDIRECT");
 }

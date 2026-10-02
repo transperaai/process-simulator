@@ -14,6 +14,8 @@ export interface HarnessCompany {
   processes: string[];
   /** What the next create answers with (an error message), or nothing for success. */
   createError?: string;
+  /** What the next create throws: a plain failure, or the redirect a successful create ends in. */
+  createThrows?: "failure" | "redirect";
 }
 
 declare global {
@@ -66,6 +68,8 @@ function makeUpload(company: HarnessCompany): UploadProcess {
     },
     async create(input) {
       window.uploads.push(input);
+      if (company.createThrows === "failure") throw new Error("network down");
+      if (company.createThrows === "redirect") throw Object.assign(new Error("NEXT_REDIRECT"), { digest: "NEXT_REDIRECT;push;/w/x/p/y/edit;307;" });
       return company.createError ? { error: company.createError } : {};
     },
   };

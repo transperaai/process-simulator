@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import { downloadHref, uploadSizeProblem, type CreateUploadInput, type CreateUploadResult, type PreviewResult, type UploadPreview } from "@/lib/processes/upload";
+import { downloadHref, isRedirect, uploadSizeProblem, type CreateUploadInput, type CreateUploadResult, type PreviewResult, type UploadPreview } from "@/lib/processes/upload";
 import { cn } from "@/lib/utils";
 
 export interface UploadProcess {
@@ -23,6 +23,8 @@ export interface UploadProcess {
   create: (input: CreateUploadInput) => Promise<CreateUploadResult>;
 }
 
+/** The most errors or warnings listed at once; the rest are counted. */
+const MAX_SHOWN = 20;
 const EXAMPLE_TEXT = `${JSON.stringify(PROCESS_FILE_EXAMPLE, null, 2)}\n`;
 const norm = (s: string) => s.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
@@ -197,7 +199,8 @@ function Choose({ upload, onLoaded, onCancel }: { upload: UploadProcess; onLoade
 function Preview({ upload, loaded, onBack, onCancel }: { upload: UploadProcess; loaded: Loaded; onBack: () => void; onCancel: () => void }) {
   const { preview: p, text } = loaded;
   const [name, setName] = useState(p.name);
-  const [roles, setRoles] = useState<Record<string, string>>({});
+  // A Map: a role can be called anything, "constructor" and "__proto__" included.
+  const [roles, setRoles] = useState<ReadonlyMap<string, string>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const stopped = p.errors.length > 0;
@@ -208,10 +211,11 @@ function Preview({ upload, loaded, onBack, onCancel }: { upload: UploadProcess; 
     setError(null);
     start(async () => {
       try {
-        const r = await upload.create({ text, source: p.source, name: name.trim(), roleMap: Object.fromEntries(p.unknownRoles.map((role) => [role, roles[role] || null])) });
+        const r = await upload.create({ text, source: p.source, name: name.trim(), roleMap: p.unknownRoles.map((role) => [role, roles.get(role) || null]) });
         if (r?.error) setError(r.error);
-      } catch {
-        // A redirect to the editor ends the page's work here; anything else is a failed request.
+      } catch (e) {
+        // The redirect to the editor ends the page's work here; anything else is a failed request, and is said plainly.
+        if (!isRedirect(e)) setError("Couldn't create it. Try again.");
       }
     });
   };
@@ -274,7 +278,7 @@ function Preview({ upload, loaded, onBack, onCancel }: { upload: UploadProcess; 
                     <label htmlFor={`upload-role-${i}`} className="text-sm break-words">
                       “{role}”
                     </label>
-                    <NativeSelect id={`upload-role-${i}`} value={roles[role] ?? ""} onChange={(e) => setRoles((r) => ({ ...r, [role]: e.target.value }))}>
+                    <NativeSelect id={`upload-role-${i}`} value={roles.get(role) ?? ""} onChange={(e) => setRoles((r) => new Map(r).set(role, e.target.value))}>
                       <option value="">No role (leave blank)</option>
                       {p.roles.map((r) => (
                         <option key={r.id} value={r.id}>
@@ -321,11 +325,12 @@ function Problems({ tone, title, items }: { tone: "error" | "warning"; title: st
     >
       <p className="font-medium">{title}</p>
       <ul className="mt-1 list-disc space-y-1 pl-5">
-        {items.map((m, i) => (
+        {items.slice(0, MAX_SHOWN).map((m, i) => (
           <li key={i} className="break-words">
             {m}
           </li>
         ))}
+        {items.length > MAX_SHOWN && <li>…and {items.length - MAX_SHOWN} more.</li>}
       </ul>
     </div>
   );

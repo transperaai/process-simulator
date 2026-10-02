@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { MAX_UPLOAD_BYTES, downloadHref, sourceLabel, uploadSizeProblem } from "@/lib/processes/upload";
+import { MAX_UPLOAD_BYTES, downloadHref, isRedirect, sourceLabel, uploadSizeProblem } from "@/lib/processes/upload";
+import { noticeValue, parseNotice } from "@/lib/processes/upload-notice";
 
 // The small rules behind the Upload process dialog (issue #166): what a file name becomes in the change log, and which
 // files are refused before they are read.
@@ -37,5 +38,37 @@ describe("downloadHref", () => {
     const href = downloadHref(text);
     expect(href.startsWith("data:application/json;charset=utf-8,")).toBe(true);
     expect(decodeURIComponent(href.split(",").slice(1).join(","))).toBe(text);
+  });
+});
+
+describe("isRedirect", () => {
+  it("is true only for the error redirect() throws", () => {
+    expect(isRedirect(Object.assign(new Error("NEXT_REDIRECT"), { digest: "NEXT_REDIRECT;push;/w/x;307;" }))).toBe(true);
+    expect(isRedirect(new Error("network down"))).toBe(false);
+    expect(isRedirect(Object.assign(new Error("x"), { digest: "something else" }))).toBe(false);
+    expect(isRedirect(null)).toBe(false);
+    expect(isRedirect("NEXT_REDIRECT")).toBe(false);
+  });
+});
+
+describe("the note an upload leaves for the editor", () => {
+  const id = "10000000-0000-4000-8000-000000000001";
+
+  it("round-trips a few warnings, and leaves nothing when there are none", () => {
+    expect(noticeValue(id, [])).toBeNull();
+    expect(parseNotice(noticeValue(id, ["One step has no role."])!)).toEqual({ processId: id, warnings: ["One step has no role."] });
+  });
+
+  it("keeps the first five, cuts long ones, and says how many more", () => {
+    const value = noticeValue(id, Array.from({ length: 9 }, (_, i) => `${i} ${"w".repeat(400)}`))!;
+    expect(value.length).toBeLessThan(3_500);
+    const { warnings } = parseNotice(value)!;
+    expect(warnings).toHaveLength(6);
+    expect(warnings[0]!.length).toBeLessThanOrEqual(220);
+    expect(warnings[5]).toBe("…and 4 more. They show on the map and the checklist.");
+  });
+
+  it("ignores anything that isn't a notice", () => {
+    for (const bad of ["", "nope", "[]", "null", '{"processId":1,"warnings":[]}', '{"processId":"x","warnings":[1]}']) expect(parseNotice(bad), bad).toBeNull();
   });
 });

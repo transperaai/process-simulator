@@ -3,7 +3,7 @@ import { bundleForProcess, northbeamIssues } from "@transpera-flow/db";
 import { EditorView } from "@/components/editor/editor-view";
 import { withDemoGroups } from "@/lib/demo/nested";
 import { exitHref, parseEditorMode, parseHorizon, parseIssueParam } from "@/lib/editor/modes";
-import { solutionIssueOf } from "@/lib/solutions/area";
+import { issueAboutProcess, solutionIssueOf } from "@/lib/solutions/area";
 import { demoBundle, demoSources } from "@/lib/sources/demo";
 
 /**
@@ -27,7 +27,7 @@ export default async function DemoEditPage(props: PageProps<"/demo/edit">) {
       draft={null}
       mode="demo"
       editorMode={editorMode}
-      issue={issueRow ? solutionIssueOf(issueRow, bundle.process.id, bundle.steps) : null}
+      issue={issueRow && issueAboutProcess(issueRow, bundle.process.id) ? solutionIssueOf(issueRow, bundle.process.id, bundle.steps) : null}
       sources={demoSources()}
       sourcesHref="/demo/sources"
       exitHref={exitHref(search.from, back)}

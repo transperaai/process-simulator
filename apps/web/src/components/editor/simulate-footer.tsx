@@ -80,7 +80,7 @@ export function SimulateFooter({
                 <Help
                   label="Automatic verdict"
                   description="Pass or fail against the issue's target, worked out from the simulation, with how many of the 30 runs meet the goal. It is a first opinion: you make the final call after saving."
-                  example="Pass, holds in 95% means 29 of the 30 runs got first contact under the 4 hour goal."
+                  example="Pass, holds in 97% means 29 of the 30 runs (97%) got first contact under the 4 hour goal."
                 />
               </span>
               <b className={verdict.result.status === "pass" ? "text-good" : verdict.result.status === "fail" ? "text-crit" : "text-muted-foreground"}>

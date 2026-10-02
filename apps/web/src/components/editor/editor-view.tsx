@@ -9,7 +9,7 @@
 // mode (issue #114: a copy of live, edited in memory and saved as a solution of its own; the process's live version and its
 // single draft are never touched, D18).
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { isUnpublished, type BlockRow, type ProcessBundle, type ScenarioRow, type SourceRow } from "@transpera-flow/db";
 import { createSolution } from "@/app/w/[slug]/solution-actions";
@@ -28,12 +28,13 @@ import type { Viewer } from "@/lib/realtime/transport";
 import { useRealtime } from "@/lib/realtime/use-realtime";
 import { newlyBroken, retiredSteps } from "@/lib/scenarios/broken";
 import { useSimulation } from "@/lib/sim/use-simulation";
-import { simulate as runSimulation, type EngineModel } from "@transpera-flow/engine";
+import type { EngineModel } from "@transpera-flow/engine";
 import { currentArea, verdictArea, type SolutionIssue } from "@/lib/solutions/area";
 import { changedStepIds, solutionCopy } from "@/lib/solutions/bundle";
 import { addDemoSolution } from "@/lib/solutions/demo";
 import { parseSolutionInput, type SaveSolutionResult } from "@/lib/solutions/save";
-import { checkTarget, type TargetVerdict } from "@/lib/solutions/verdict";
+import type { TargetVerdict } from "@/lib/solutions/verdict";
+import { verdictInWorker } from "@/lib/solutions/verdict-client";
 import { Button } from "@/components/ui/button";
 import { NO_SELECTION, ProcessCanvas, type Selection } from "@/components/process-canvas";
 import { PresenceBar } from "@/components/presence-bar";
@@ -179,12 +180,16 @@ export function EditorView({
     const changes = diffBundles(live, now);
     if (!changes.list.length) return setSolutionError("Change at least one step first. A solution with no changes has nothing to test.");
     setSolutionSaving(true);
-    // The automatic verdict: from the run on screen if it is current, else from a fresh one with the same seed.
+    // The automatic verdict. In a workspace the server works it out again from the stored copy and ignores what is sent; the demo has no
+    // server, so it keeps the one worked out here, in a worker.
     let auto: TargetVerdict | null = null;
-    if (issue) {
-      const model = workingModel.model;
-      const current = pair?.draft.result && !stale ? pair.draft.result : null;
-      auto = model ? checkTarget({ target: issue.target, model, result: current ?? runSimulation(model, 30, 1), area: verdictArea(now.steps, issue, changedStepIds(changes).filter((id) => changes.steps.get(id)?.kind === "added")) }) : null;
+    if (issue && mode === "demo" && workingModel.model) {
+      const addedIds = changedStepIds(changes).filter((id) => changes.steps.get(id)?.kind === "added");
+      try {
+        auto = await verdictInWorker({ target: issue.target, model: workingModel.model, area: verdictArea(now.steps, issue, addedIds) }).promise;
+      } catch {
+        auto = null;
+      }
     }
     const input = {
       name: solutionName,
@@ -243,10 +248,17 @@ export function EditorView({
   // Solution mode: the automatic verdict for the run on screen, against the issue's target.
   const draftResult = draftSim.status === "done" ? draftSim.run.result : null;
   const liveResult = liveSim.status === "done" ? liveSim.run.result : null;
-  const verdict = useMemo(() => {
-    if (!solutionMode || !issue || stale || !asked || !draftResult || !asked.live || !liveResult) return null;
-    return { issue, result: checkTarget({ target: issue.target, model: asked.draft, result: draftResult, area }) };
-  }, [solutionMode, issue, stale, asked, draftResult, liveResult, area]);
+  const [verdictState, setVerdictState] = useState<{ key: string; result: TargetVerdict } | null>(null);
+  const verdictKey = solutionMode && issue && !stale && asked && draftResult && asked.live && liveResult ? `${asked.draftKey}|${area.join(",")}` : null;
+  useEffect(() => {
+    if (!verdictKey || !issue || !asked) return;
+    const job = verdictInWorker({ target: issue.target, model: asked.draft, area });
+    job.promise.then((result) => setVerdictState({ key: verdictKey, result })).catch(() => undefined);
+    return () => job.cancel();
+    // `asked` and `area` are what verdictKey is made of.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [verdictKey]);
+  const verdict = issue && verdictKey && verdictState?.key === verdictKey ? { issue, result: verdictState.result } : null;
 
   const breaks = useMemo(
     () =>

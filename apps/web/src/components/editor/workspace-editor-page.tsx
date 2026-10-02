@@ -4,7 +4,7 @@ import { canEditWorkspace, currentViewer } from "@/lib/access-data";
 import { loadProcessForEditing, loadWorkspaceBlocks, loadWorkspaceIssues, loadWorkspaceScenarios, loadWorkspaceSources } from "@/lib/data";
 import { firstPrinciplesDraftChanged } from "@/lib/first-principles/data";
 import { exitHref, parseEditorMode, parseHorizon, parseIssueParam } from "@/lib/editor/modes";
-import { solutionIssueOf } from "@/lib/solutions/area";
+import { issueAboutProcess, solutionIssueOf } from "@/lib/solutions/area";
 
 /**
  * The Editor for a process of the workspace (issue #104): `/w/[slug]/p/[processId]/edit`. Full screen, outside the
@@ -44,7 +44,7 @@ export async function WorkspaceEditorPage({
       mode="live"
       extraChanges={fpChanged ? 1 : 0}
       editorMode={editorMode}
-      issue={issueRow ? solutionIssueOf(issueRow, live.process.id, live.steps) : null}
+      issue={issueRow && issueAboutProcess(issueRow, live.process.id) ? solutionIssueOf(issueRow, live.process.id, live.steps) : null}
       scenarios={scenarios}
       blocks={blocks}
       sources={sources}

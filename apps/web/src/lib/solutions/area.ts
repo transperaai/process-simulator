@@ -23,6 +23,10 @@ export function issueProcessId(issue: Pick<IssueRow, "links" | "process_id">): s
   return issue.links.find((l) => l.process_id)?.process_id ?? issue.process_id;
 }
 
+/** Whether the issue is about the process: its own process, or one of its links. */
+export const issueAboutProcess = (issue: Pick<IssueRow, "process_id" | "links">, processId: string): boolean =>
+  issue.process_id === processId || issue.links.some((l) => l.process_id === processId);
+
 /** An issue as the Editor shows it, for the map of process `processId` whose steps are `steps`. */
 export function solutionIssueOf(issue: IssueRow, processId: string, steps: readonly Pick<StepRow, "id">[]): SolutionIssue {
   const here = new Set(steps.map((s) => s.id));

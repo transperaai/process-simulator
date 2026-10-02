@@ -12,7 +12,7 @@ import type { IssueRow, ScenarioRow } from "@transpera-flow/db";
 import { RATING_LABELS, type Rating } from "@transpera-flow/engine";
 import { AcknowledgeDialog } from "@/components/acknowledge-dialog";
 import { Help } from "@/components/help";
-import { LinkedSources, useSourceLinking } from "@/components/sources/linking";
+import { LinkedSources, useSourceLinking } from "@/components/sources/linking-context";
 import { RatingPill } from "@/components/overview/rating-pill";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";

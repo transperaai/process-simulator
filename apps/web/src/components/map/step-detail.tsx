@@ -8,7 +8,7 @@ import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { RATING_LABELS, type Rating } from "@transpera-flow/engine";
 import { EVIDENCE_COLUMNS, evidenceOf, type StepRow } from "@transpera-flow/db";
-import { LinkedSources, useSourceLinking } from "@/components/sources/linking";
+import { LinkedSources, useSourceLinking } from "@/components/sources/linking-context";
 import { formatHours } from "@/lib/format";
 import { RATING_STYLE } from "@/lib/map/rating";
 

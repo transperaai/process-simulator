@@ -10,7 +10,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { IssueRow, ProcessBundle, ScenarioRow, SourceRow } from "@transpera-flow/db";
 import { RATING_LABELS, type AnalysisSettings, type EngineModel, type FirstPrinciples, type Rating } from "@transpera-flow/engine";
 import { Help } from "@/components/help";
-import { LinkedSources, useSourceLinking } from "@/components/sources/linking";
+import { LinkedSources, useSourceLinking } from "@/components/sources/linking-context";
 import { AiRead } from "@/components/ai/ai-read";
 import type { AiPanelData } from "@/lib/ai/types";
 import { FirstPrinciplesCard } from "@/components/first-principles/first-principles-card";

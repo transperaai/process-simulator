@@ -6,7 +6,7 @@
 import { useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { isGroup, type EvidenceStamp, type ProcessBundle, type SourceRow, type StepRow } from "@transpera-flow/db";
 import { Help } from "@/components/help";
-import { LinkedSources } from "@/components/sources/linking";
+import { LinkedSources } from "@/components/sources/linking-context";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { NO_SELECTION, type Selection } from "@/components/process-canvas";

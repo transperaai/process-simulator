@@ -5,7 +5,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { LinkTargets, SourceLinkRow, SourceRow } from "@transpera-flow/db";
 import { linkColumns } from "@transpera-flow/db";
-import { LINKED_SOURCES_HELP, LinkedSources, SourceLinkingProvider, withTarget } from "@/components/sources/linking";
+import { SourceLinkingProvider, withTarget } from "@/components/sources/linking";
+import { LINKED_SOURCES_HELP, LinkedSources } from "@/components/sources/linking-context";
 import { StepDetail } from "@/components/map/step-detail";
 import { NEEDS_A_SOURCE } from "@/lib/sources/links";
 
@@ -46,7 +47,7 @@ const targets: LinkTargets = {
 };
 
 const inProvider = (child: ReturnType<typeof createElement>, mode: "live" | "demo" | "readonly" = "live") =>
-  renderToStaticMarkup(createElement(SourceLinkingProvider, { workspaceId: WS, mode, sources, links, targets }, child));
+  renderToStaticMarkup(createElement(SourceLinkingProvider, { workspaceId: WS, mode, sources, links, targets } as Parameters<typeof SourceLinkingProvider>[0], child));
 const text = (html: string) => html.replace(/<[^>]*>/g, " ").replace(/&#x27;|&apos;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ");
 const stepBlock = createElement(LinkedSources, { target: { kind: "step", processId: P1, stepId: S1 }, label: "Step: Audit & proposal" });
 
@@ -154,6 +155,6 @@ describe("every screen has it", () => {
   });
 
   it("leaves the solution page for A50 with a note, since it isn't built yet", () => {
-    expect(read("components/sources/linking.tsx")).toContain("TODO(A50)");
+    expect(read("components/sources/linking-context.tsx")).toContain("TODO(A50)");
   });
 });

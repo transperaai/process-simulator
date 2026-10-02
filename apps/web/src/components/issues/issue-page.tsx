@@ -17,7 +17,7 @@ import { ISSUE_PAGE_HELP } from "@/lib/issues/help";
 import { ResolveDialog } from "@/components/issues/resolve-dialog";
 import { StatusChip } from "@/components/issues-page";
 import { RatingPill } from "@/components/overview/rating-pill";
-import { LinkedSources, useSourceLinking } from "@/components/sources/linking";
+import { LinkedSources, useSourceLinking } from "@/components/sources/linking-context";
 import { StepIssueBadges } from "@/components/step-issue-badges";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";

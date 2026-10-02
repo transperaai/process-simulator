@@ -123,6 +123,9 @@ describe.skipIf(!POSTGREST_URL)("MCP process building over PostgREST (drafts onl
     sourceA = a.data.source.id;
     const b = await call<{ source: { id: string } }>(editor, "add_source", { title: "Ops notes", kind: "notes", speakers: ["Ben Cole"] });
     sourceB = b.data.source.id;
+    const data = await call<{ source: { id: string; kind: string } }>(editor, "add_source", { title: "HubSpot export", kind: "data" });
+    expect(data.ok, JSON.stringify(data)).toBe(true);
+    expect(data.data.source.kind).toBe("data");
 
     const r = await call<{
       created: boolean;
@@ -172,6 +175,10 @@ describe.skipIf(!POSTGREST_URL)("MCP process building over PostgREST (drafts onl
     expect(r.ok, JSON.stringify(r)).toBe(true);
     expect(r.data.created).toBe(true);
     expect(r.data.diff.steps.added).toHaveLength(6);
+    // The sources the new steps cite are linked to those steps by the database (A53), so none is flagged "Not linked" beside "Cited by".
+    const linked = await admin.query("select source_id, kind, step_id from source_links where source_id = any($1::uuid[]) order by kind", [[sourceA, sourceB]]);
+    expect(new Set(linked.rows.map((l) => l.source_id))).toEqual(new Set([sourceA, sourceB]));
+    expect(linked.rows.every((l) => l.kind === "step" && l.step_id)).toBe(true);
     expect(r.data.diff.text).toMatch(/^New process: 6 steps added/);
     expect(r.data.conflicts).toEqual([expect.objectContaining({ step: "Proposal", field: "work_hours" })]);
     // Conflicts first, then assumptions, as the canvas's checklist rail lists them.

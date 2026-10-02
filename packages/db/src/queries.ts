@@ -1,3 +1,4 @@
+import type { LinkTargets } from "./source-links";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "./database.types";
 import type { CompanyModel, SnapshotProcess } from "./company";
@@ -33,6 +34,7 @@ import type {
   SeasonalityRow,
   ServiceRow,
   ServiceServicingRow,
+  SourceLinkRow,
   SourceRow,
   StepRow,
   SuggestionRow,
@@ -501,6 +503,55 @@ export async function loadSources(db: Db, workspaceId: string): Promise<SourceRo
     .order("id");
   // The check constraint limits kind to SourceRow's union.
   return rows(r) as unknown as SourceRow[];
+}
+
+/** The `SourceLinkRow` columns. */
+export const SOURCE_LINK_COLUMNS = "id, workspace_id, source_id, kind, process_id, step_id, insight_key, issue_id, solution_id, created_at, created_by" as const;
+
+/** What every source of the workspace is linked to, oldest link first (RLS: everyone in the workspace can read them). */
+export async function loadSourceLinks(db: Db, workspaceId: string): Promise<SourceLinkRow[]> {
+  const r = await db.from("source_links").select(SOURCE_LINK_COLUMNS).eq("workspace_id", workspaceId).order("created_at").order("id");
+  // The check constraint limits kind to SourceLinkRow's union.
+  return rows(r) as unknown as SourceLinkRow[];
+}
+
+/** The names of steps by their stable ids, from whichever version holds them (the latest written wins). For links to steps that are in no current version. */
+export async function loadStepNames(db: Db, ids: readonly string[]): Promise<{ id: string; name: string }[]> {
+  const seen = new Set<string>();
+  const out: { id: string; name: string }[] = [];
+  // In batches: every id goes into the request's URL, which PostgREST limits.
+  for (let i = 0; i < ids.length; i += 100) {
+    const r = await db.from("steps").select("id, name, updated_at").in("id", ids.slice(i, i + 100)).order("updated_at", { ascending: false });
+    for (const s of rows(r)) if (!seen.has(s.id)) out.push({ id: s.id, name: (seen.add(s.id), s.name) });
+  }
+  return out;
+}
+
+/**
+ * What a source can be linked to (issue #118): the processes, the steps of each one's live version (its draft if it was
+ * never published), and the issues, insights and solutions, as the pickers list them. An insight here is a detection the
+ * team has acted on (an issue with a detection key); a dismissed one is left out. RLS decides what is visible.
+ */
+export async function loadLinkTargets(db: Db, workspaceId: string): Promise<LinkTargets> {
+  const processes = await listProcesses(db, workspaceId);
+  const revisions = processes.flatMap((p) => {
+    const id = p.live_revision_id ?? p.draft_revision_id;
+    return id ? [id] : [];
+  });
+  const [steps, issues, solutions] = await Promise.all([
+    revisions.length ? db.from("steps").select("id, name, process_id, replaced_by").in("revision_id", revisions).order("created_at").order("id") : Promise.resolve({ data: [], error: null }),
+    db.from("issues").select("id, number, title, status, detected_key").eq("workspace_id", workspaceId).order("created_at", { ascending: false }).order("id"),
+    db.from("solutions").select("id, name").eq("workspace_id", workspaceId).order("created_at", { ascending: false }).order("id"),
+  ]);
+  const seen = new Set<string>();
+  const live = rows(issues).filter((i) => i.status !== "dismissed");
+  return {
+    processes: processes.map((p) => ({ id: p.id, name: p.name })),
+    steps: rows(steps).flatMap((s) => (s.replaced_by.length === 0 && !seen.has(s.id) && seen.add(s.id) ? [{ id: s.id, processId: s.process_id, name: s.name }] : [])),
+    insights: live.flatMap((i) => (i.detected_key ? [{ key: i.detected_key, title: i.title }] : [])),
+    issues: live.map((i) => ({ id: i.id, number: i.number, title: i.title })),
+    solutions: rows(solutions).map((s) => ({ id: s.id, name: s.name })),
+  };
 }
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];

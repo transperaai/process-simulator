@@ -55,4 +55,33 @@ describe("Tidewater dry run fixtures", () => {
     expect(text).toMatch(/must cite its midpoint/);
     expect(text).toMatch(/needs evidence/);
   });
+  it("catches a first-principles quote that is not verbatim, an item with neither quote nor reasoning, and a truth with no quote", () => {
+    const run = clone(readRun("run-1.json"));
+    const fp = run.calls.find((c) => c.tool === "update_first_principles")!.arguments as {
+      statements: { source: string; kind: string }[];
+      requirements: { why: string }[];
+      improvements: { text: string }[];
+    };
+    fp.statements[0]!.source = "Hana says it is in the retainer terms.";
+    fp.requirements[0]!.why = fp.requirements[0]!.why.replace("He reviews every report", "He reviews all reports");
+    fp.improvements[0]!.text = "A template for the commentary.";
+    const text = lintRun(run).join("\n");
+    expect(text).toMatch(/a truth cites the quote that is its source/);
+    expect(text).toMatch(/not in the transcript verbatim: "He reviews all reports before it goes out"/);
+    expect(text).toMatch(/neither a quote nor "Assumed:" reasoning/);
+  });
+
+  it("lints the steps inside a group and a child process like any other, and refuses numbers on the group itself", () => {
+    const run = clone(readRun("run-1.json"));
+    const pj = run.calls.find((c) => c.tool === "import_process")!.arguments.process_json as { steps: Record<string, unknown>[] };
+    const [pull, write] = [pj.steps[1]!, pj.steps[2]!];
+    // Pull ranking data becomes a group of itself (a cited inner step), Write commentary a sub-process step.
+    pj.steps[1] = { name: "Ranking pack", work_hours: 1, steps: [{ ...pull, name: "Pull ranking data", evidence: [{ ...(pull.evidence as object[])[0]!, quote: "about an hour per client" }] }, { name: "Check rankings", work_hours: 1 }] };
+    pj.steps[2] = { name: "Commentary", process: { name: "Commentary process", steps: [{ name: "Draft", work_hours: 2 }, { ...write, name: "Polish" }] } };
+    const text = lintRun(run).join("\n");
+    expect(text).toMatch(/step 'Ranking pack': a group or sub-process step has no work_hours of its own/);
+    expect(text).toMatch(/not in the transcript verbatim: "about an hour per client"/);
+    expect(text).toMatch(/step 'Check rankings': work_hours is given with neither a citation nor reasoning/);
+    expect(text).toMatch(/step 'Draft': work_hours is given with neither a citation nor reasoning/);
+  });
 });

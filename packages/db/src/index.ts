@@ -189,6 +189,7 @@ export {
   loadSources,
   loadSourceLinks,
   loadLinkTargets,
+  loadStepNames,
   loadCitingRows,
   loadCompanyModel,
   loadLiveRevisions,

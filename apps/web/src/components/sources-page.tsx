@@ -1,7 +1,7 @@
 "use client";
 
 // The Sources screen (docs/PRD.md §8 screen 7, issue #21; A53, issue #118): transcripts, notes
-// and screenshots from the audit, each with its quote, what it is linked to (chips, "+ Link") and
+// data exports and screenshots from the audit, each with its quote, what it is linked to (chips, "+ Link") and
 // every value that cites it, so any inferred number can be traced to what someone said. A source
 // linked to nothing is flagged: it doesn't count as evidence.
 
@@ -29,7 +29,7 @@ import { SOURCE_KIND_LABELS, SOURCE_KINDS, parseSpeakers, type SourceField } fro
 
 /** Plain-English (i) text for a source's fields, with an example (issue #123). */
 const SOURCE_HELP = {
-  kind: { description: "What sort of material this is: a transcript of a conversation, notes someone wrote up, or a screenshot.", example: "Transcript, for the typed-up discovery interview." },
+  kind: { description: "What sort of material this is: a transcript of a conversation, notes someone wrote up, a data export, or a screenshot.", example: "Transcript, for the typed-up discovery interview." },
   title: { description: "A name that tells people what this is.", example: "Discovery interview with Maya." },
   speakers: { description: "Who is talking or wrote it, separated by commas. Quotes show who said them.", example: "Maya Collins, Rosa Diaz." },
   date: { description: "When it was recorded or written.", example: "3 October." },

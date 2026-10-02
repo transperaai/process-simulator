@@ -1,4 +1,4 @@
-// What a source is evidence for (issue #118, A53; migration 20261123000000_source_links.sql).
+// What a source is evidence for (issue #118, A53; migration 20261124500000_source_links.sql).
 //
 // Every source must be linked to at least one process, step, insight, issue or solution, and can have several links.
 // The table keeps one column per kind and a check that sets exactly the right ones; here a link is a tagged union
@@ -72,7 +72,7 @@ export function unlinkedSources<S extends Pick<SourceRow, "id">>(sources: readon
   return sources.filter((s) => !linked.has(s.id));
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /** The link rows without their generated columns (`id`, `created_at`, `created_by`). */
@@ -100,7 +100,7 @@ export function derivedSourceLinks(
       const evidence = isObject(entry) && Array.isArray(entry.evidence) ? entry.evidence : [];
       for (const ev of evidence) {
         if (!isObject(ev) || typeof ev.source_id !== "string" || !UUID.test(ev.source_id)) continue;
-        add({ workspace_id: st.workspace_id, source_id: ev.source_id, ...linkColumns({ kind: "step", processId: st.process_id, stepId: st.id }) });
+        add({ workspace_id: st.workspace_id, source_id: ev.source_id.toLowerCase(), ...linkColumns({ kind: "step", processId: st.process_id, stepId: st.id }) });
       }
     }
   }
@@ -118,6 +118,8 @@ export interface LinkTargets {
   insights: { key: string; title: string }[];
   issues: { id: string; number: number | null; title: string }[];
   solutions: { id: string; name: string }[];
+  /** Linked steps that are in no current version (an earlier version, or one removed since), by their latest name: so a chip can say so. */
+  olderSteps?: { id: string; name: string }[];
 }
 
 export const NO_LINK_TARGETS: LinkTargets = { processes: [], steps: [], insights: [], issues: [], solutions: [] };

@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   NORTHBEAM_PROCESS_ID,
   NORTHBEAM_WORKSPACE_ID,
+  citeEvidence,
   derivedSourceLinks,
   linkColumns,
   northbeamIssues,
@@ -13,20 +14,45 @@ import {
   northbeamSources,
   northbeamStepIds,
   type SourceLinkTarget,
+  type StepRow,
 } from "../src";
 import { createTestDb, createUser, type TestDb } from "./harness";
 
-// Sources must link (issue #118, A53, migration 20261123000000_source_links.sql): the link table under row-level
+// Sources must link (issue #118, A53, migration 20261124500000_source_links.sql): the link table under row-level
 // security, adding a source only with a link, the unlinked count, the check on step links, and the copy of today's
 // step citations and issue sources into links.
 
-const MIGRATION = "20261123000000_source_links.sql";
+const MIGRATION = "20261124500000_source_links.sql";
 const dir = (p: string) => new URL(p, import.meta.url);
 const ADMIN_URL = process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/postgres";
 const ws = NORTHBEAM_WORKSPACE_ID;
 const interview = northbeamSourceIds.strategyInterview;
 const notes = northbeamSourceIds.salesNotes;
 const issue = northbeamIssues()[1]!.id;
+
+const migrationText = readFileSync(dir(`../supabase/migrations/${MIGRATION}`), "utf8");
+
+/** The SQL of one preflight query (P5, P7, P8) as written in the migration's header: its lines indented by eight spaces or more. */
+function preflight(n: number): string {
+  const lines = migrationText.split("\n");
+  const from = lines.findIndex((l) => l.startsWith(`--   P${n}.`));
+  const rest = lines.slice(from + 1);
+  const to = rest.findIndex((l) => /^--   P\d\./.test(l) || l.startsWith("-- Post-apply"));
+  return rest
+    .slice(0, to)
+    .filter((l) => l.startsWith("--        "))
+    .map((l) => l.slice(2))
+    .join("\n")
+    .replace(/;\s*$/, "");
+}
+
+/** The rollback block in the migration's header, as SQL. */
+function rollbackSql(): string {
+  const lines = migrationText.split("\n");
+  const from = lines.findIndex((l) => l.startsWith("--   begin;"));
+  const to = lines.findIndex((l, i) => i > from && l.startsWith("--   commit;"));
+  return lines.slice(from, to + 1).map((l) => l.slice(2)).join("\n");
+}
 
 describe("migrating today's step citations", () => {
   let client: pg.Client;
@@ -44,6 +70,8 @@ describe("migrating today's step citations", () => {
   const srcUncited = randomUUID();
   const srcOther = randomUUID();
   const gone = randomUUID();
+  const stepD = randomUUID();
+  let expected: { steps: number; issues: number; orphans: number; unlinked: { workspace_id: string; will_be_unlinked: string }[] };
   const issueId = randomUUID();
   const cite = (source_id: string, value = 1) => ({ source_id, speaker: "Rosa", quote: "q", timestamp: null, value });
   const prov = (cols: Record<string, string[]>) =>
@@ -77,6 +105,8 @@ describe("migrating today's step citations", () => {
     await step(rev1, stepA, "Check fit", prov({ work_hours: [src1], wait_hours: [src1, src2] }));
     await step(rev1, stepB, "Send proposal", prov({ rework_rate: [src1, gone] }));
     await step(rev1, stepC, "Review", prov({ work_hours: [srcOther] }));
+    // A citation spelled in capitals still names the source; and a value that is not an id at all gives nothing.
+    await step(rev1, stepD, "Hand over", prov({ work_hours: [src2.toUpperCase(), "not an id"] }));
     await client.query("update process_revisions set status = 'published' where id = $1", [rev1]);
     await client.query("update processes set live_revision_id = $1 where id = $2", [rev1, proc]);
     // A later draft holds step A again (same stable id) citing src2 for another column, and a step with no provenance object at all.
@@ -86,6 +116,14 @@ describe("migrating today's step citations", () => {
     // An issue that lists a source.
     await client.query("insert into issues (id, workspace_id, type, title) values ($1, $2, 'manual', 'An issue')", [issueId, w1]);
     await client.query("insert into issue_sources (issue_id, source_id, workspace_id) values ($1, $2, $3)", [issueId, src2, w1]);
+    // The preflight queries in the header, run before the migration: what it promises to copy.
+    const n = async (sql: string) => Number((await client.query(sql)).rows[0].count);
+    expected = {
+      steps: await n(preflight(5)),
+      issues: await n(preflight(6)),
+      orphans: await n(preflight(7)),
+      unlinked: (await client.query(preflight(8))).rows,
+    };
     beforeSteps = (await client.query("select * from steps order by revision_id, id")).rows;
     beforeSources = (await client.query("select * from sources order by id")).rows;
     beforeIssueSources = (await client.query("select * from issue_sources order by issue_id, source_id")).rows;
@@ -105,7 +143,7 @@ describe("migrating today's step citations", () => {
   it("links every source a step's values cite to that step, once per source and step, whatever the revision or column", async () => {
     const stepLinks = (await links()).filter((l) => l.kind === "step");
     const pair = (l: { source_id: string; step_id: string }) => `${l.source_id}:${l.step_id}`;
-    expect(stepLinks.map(pair).sort()).toEqual([`${src1}:${stepA}`, `${src2}:${stepA}`, `${src1}:${stepB}`].sort());
+    expect(stepLinks.map(pair).sort()).toEqual([`${src1}:${stepA}`, `${src2}:${stepA}`, `${src1}:${stepB}`, `${src2}:${stepD}`].sort());
     for (const l of stepLinks) {
       expect(l.process_id).toBe(proc);
       expect(l.workspace_id).toBe(w1);
@@ -119,7 +157,7 @@ describe("migrating today's step citations", () => {
     const cited = new Set<string>();
     for (const row of (await client.query("select id, workspace_id, provenance from steps")).rows) {
       for (const entry of Object.values(row.provenance as Record<string, { evidence?: { source_id: string }[] }>)) {
-        for (const ev of entry.evidence ?? []) if (row.workspace_id === w1 && sourceIds.has(ev.source_id)) cited.add(`${ev.source_id}:${row.id}`);
+        for (const ev of entry.evidence ?? []) if (row.workspace_id === w1 && sourceIds.has(ev.source_id.toLowerCase())) cited.add(`${ev.source_id.toLowerCase()}:${row.id}`);
       }
     }
     const linked = new Set((await links()).filter((l) => l.kind === "step").map((l) => `${l.source_id}:${l.step_id}`));
@@ -136,10 +174,68 @@ describe("migrating today's step citations", () => {
     expect((await client.query("select public.unlinked_source_count($1) as n", [w2])).rows[0].n).toBe(1);
   });
 
+  it("makes exactly the links the header's preflight promised, and finds nothing that would abort it", async () => {
+    expect(expected.orphans).toBe(0);
+    expect(expected.steps).toBe(4);
+    expect(expected.issues).toBe(1);
+    const count = async (kind: string) => Number((await client.query("select count(*) from source_links where kind = $1", [kind])).rows[0].count);
+    expect(await count("step")).toBe(expected.steps);
+    expect(await count("issue")).toBe(expected.issues);
+    // P8: the sources it said would be flagged are the ones the count flags.
+    expect(expected.unlinked.map((r) => [r.workspace_id, Number(r.will_be_unlinked)]).sort()).toEqual(
+      [[w1, 1], [w2, 1]].sort(),
+    );
+    for (const r of expected.unlinked) expect((await client.query("select public.unlinked_source_count($1) as n", [r.workspace_id])).rows[0].n).toBe(Number(r.will_be_unlinked));
+  });
+
   it("loses nothing: steps, sources and issue_sources are exactly as they were (a copy, not a move)", async () => {
     expect((await client.query("select * from steps order by revision_id, id")).rows).toEqual(beforeSteps);
     expect((await client.query("select * from sources order by id")).rows).toEqual(beforeSources);
     expect((await client.query("select * from issue_sources order by issue_id, source_id")).rows).toEqual(beforeIssueSources);
+  });
+});
+
+describe("the rollback in the header", () => {
+  let client: pg.Client;
+  let name: string;
+
+  beforeAll(async () => {
+    name = `transpera_flow_test_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
+    const admin = new pg.Client({ connectionString: ADMIN_URL });
+    await admin.connect();
+    await admin.query(`create database ${name}`);
+    await admin.end();
+    const url = new URL(ADMIN_URL);
+    url.pathname = `/${name}`;
+    client = new pg.Client({ connectionString: url.toString() });
+    await client.connect();
+    await client.query(readFileSync(dir("./sql/auth-shim.sql"), "utf8"));
+    for (const f of readdirSync(dir("../supabase/migrations")).filter((f) => f.endsWith(".sql")).sort()) {
+      await client.query(readFileSync(dir(`../supabase/migrations/${f}`), "utf8"));
+    }
+    await client.query("create schema supabase_migrations; create table supabase_migrations.schema_migrations (version text primary key, name text, statements text[])");
+    await client.query("insert into supabase_migrations.schema_migrations (version, name) values ('20261124500000', 'source_links')");
+  });
+
+  afterAll(async () => {
+    await client?.end();
+    const a = new pg.Client({ connectionString: ADMIN_URL });
+    await a.connect();
+    await a.query(`drop database if exists ${name} with (force)`);
+    await a.end();
+  });
+
+  it("undoes the migration: no table, functions or triggers left, data sources become notes, the narrow check is back", async () => {
+    const w = randomUUID();
+    await client.query("insert into workspaces (id, name, slug) values ($1, 'Roll Co', 'roll-co')", [w]);
+    await client.query("insert into sources (workspace_id, title, kind) values ($1, 'An export', 'data')", [w]);
+    await client.query(rollbackSql());
+    expect((await client.query("select to_regclass('public.source_links') as t")).rows[0].t).toBeNull();
+    expect((await client.query("select count(*)::int as n from pg_proc where proname in ('add_source', 'unlinked_source_count', 'cited_source_ids', 'link_cited_sources', 'link_issue_source', 'source_links_before_insert')")).rows[0].n).toBe(0);
+    expect((await client.query("select count(*)::int as n from pg_trigger where tgname in ('link_cited_sources', 'link_issue_source')")).rows[0].n).toBe(0);
+    expect((await client.query("select kind from sources where title = 'An export'")).rows[0].kind).toBe("notes");
+    await expect(client.query("insert into sources (workspace_id, title, kind) values ($1, 'Another', 'data')", [w])).rejects.toThrow(/sources_kind/);
+    expect((await client.query("select count(*)::int as n from supabase_migrations.schema_migrations where version = '20261124500000'")).rows[0].n).toBe(0);
   });
 });
 
@@ -306,7 +402,97 @@ describe("source links", () => {
     await db.client.query("delete from sources where id = $1", [sourceKept]);
   });
 
+  describe("links follow citations from now on", () => {
+    const at = "2026-10-01T09:00:00.000Z";
+    const draftOf = async (c: pg.Client) => (await c.query("select public.open_draft($1) as r", [process])).rows[0].r.revision_id as string;
+    const linksOf = async (c: pg.Client, source: string) =>
+      (await c.query("select kind, step_id, process_id, issue_id from source_links where source_id = $1 order by kind, step_id", [source])).rows;
+    const count = async (c: pg.Client) => Number((await c.query("select public.unlinked_source_count($1) as n", [ws])).rows[0].n);
+
+    it("links a source cited in the inspector's way (a per-field save), and the unlinked count drops", async () => {
+      await db.as(users.editor!.claims, async (c) => {
+        const source = await newSource(c, "Fresh interview");
+        expect(await count(c)).toBe(1);
+        const rev = await draftOf(c);
+        const row = (await c.query("select * from steps where revision_id = $1 and id = $2", [rev, audit])).rows[0] as StepRow;
+        const patch = citeEvidence({ ...row, work_hours: Number(row.work_hours) }, "work_hours", { source_id: source, speaker: "Leah", quote: "Six hours.", timestamp: null, value: 6 }, { at, by: users.editor!.id });
+        const base = Object.fromEntries(
+          Object.keys(patch).map((f) => {
+            const [col, sub] = f.split(".") as [keyof StepRow & string, string | undefined];
+            const v = (row as unknown as Record<string, unknown>)[col];
+            return [f, sub ? ((v as Record<string, unknown> | null)?.[sub] ?? null) : v];
+          }),
+        );
+        const saved = (await c.query("select public.save_fields('steps', $1::jsonb, $2::jsonb, $3::jsonb) as r", [JSON.stringify({ revision_id: rev, id: audit }), JSON.stringify(base), JSON.stringify(patch)])).rows[0].r;
+        expect(saved.status).toBe("saved");
+        expect(await linksOf(c, source)).toEqual([{ kind: "step", step_id: audit, process_id: process, issue_id: null }]);
+        expect(await count(c)).toBe(0);
+      });
+    });
+
+    it("links a source cited in the MCP server's way (a plain update of the provenance), whatever the id's case", async () => {
+      await db.as(users.editor!.claims, async (c) => {
+        const source = await newSource(c, "Call notes");
+        const rev = await draftOf(c);
+        const evidence = JSON.stringify([{ source_id: source.toUpperCase(), speaker: null, quote: "q", timestamp: null, value: 2 }]);
+        await c.query("update steps set provenance = provenance || jsonb_build_object('wait_hours', jsonb_build_object('source', 'estimated', 'at', $3::text, 'evidence', $4::jsonb)) where revision_id = $1 and id = $2", [rev, northbeamStepIds.kickoff, at, evidence]);
+        expect(await linksOf(c, source)).toEqual([{ kind: "step", step_id: northbeamStepIds.kickoff, process_id: process, issue_id: null }]);
+        expect(await count(c)).toBe(0);
+      });
+    });
+
+    it("links a source that an issue starts to list, and does not undo a link when the citation or the listing goes", async () => {
+      await db.as(users.editor!.claims, async (c) => {
+        const listed = await newSource(c, "Listed");
+        const mine = (await c.query("insert into issues (workspace_id, type, title) values ($1, 'manual', 'Mine') returning id", [ws])).rows[0].id;
+        await c.query("insert into issue_sources (issue_id, source_id, workspace_id) values ($1, $2, $3)", [mine, listed, ws]);
+        expect(await linksOf(c, listed)).toEqual([{ kind: "issue", step_id: null, process_id: null, issue_id: mine }]);
+        await c.query("delete from issue_sources where issue_id = $1", [mine]);
+        expect((await linksOf(c, listed)).length, "the link is the person's own statement: it stays").toBe(1);
+
+        const cited = await newSource(c, "Cited then un-cited");
+        const rev = await draftOf(c);
+        await c.query("update steps set provenance = jsonb_build_object('wait_hours', jsonb_build_object('source', 'estimated', 'at', $3::text, 'evidence', jsonb_build_array(jsonb_build_object('source_id', $4::text)))) where revision_id = $1 and id = $2", [rev, audit, at, cited]);
+        expect((await linksOf(c, cited)).length).toBe(1);
+        await c.query("update steps set provenance = '{}' where revision_id = $1 and id = $2", [rev, audit]);
+        expect((await linksOf(c, cited)).length, "taking a citation away leaves the link").toBe(1);
+      });
+    });
+
+    it("ignores a citation of a source that is not there or is another workspace's", async () => {
+      await db.as(users.editor!.claims, async (c) => {
+        const rev = await draftOf(c);
+        const before = await count(c);
+        const evidence = JSON.stringify([{ source_id: otherSource }, { source_id: randomUUID() }, { source_id: "nope" }]);
+        await c.query("update steps set provenance = jsonb_build_object('wait_hours', jsonb_build_object('source', 'estimated', 'at', $3::text, 'evidence', $4::jsonb)) where revision_id = $1 and id = $2", [rev, audit, at, evidence]);
+        expect((await c.query("select count(*)::int as n from source_links where source_id = $1", [otherSource])).rows[0].n).toBe(0);
+        expect(await count(c)).toBe(before);
+      });
+    });
+  });
+
+  describe("the data type", () => {
+    it("takes a source of kind data, directly and through add_source, and still refuses an unknown kind", async () => {
+      await db.as(users.editor!.claims, async (c) => {
+        const direct = (await c.query("insert into sources (workspace_id, title, kind) values ($1, 'HubSpot export', 'data') returning kind", [ws])).rows[0].kind;
+        expect(direct).toBe("data");
+        const id = (await c.query("select public.add_source($1, $2::jsonb, $3::jsonb) as id", [ws, JSON.stringify({ kind: "data", title: "Deals Jan to Aug" }), JSON.stringify([{ kind: "process", process_id: process }])])).rows[0].id;
+        expect((await c.query("select kind from sources where id = $1", [id])).rows[0].kind).toBe("data");
+        await fails(c, () => c.query("insert into sources (workspace_id, title, kind) values ($1, 'x', 'video')", [ws]), /sources_kind/);
+        await fails(c, () => c.query("select public.add_source($1, $2::jsonb, $3::jsonb)", [ws, JSON.stringify({ kind: "spreadsheet", title: "x" }), JSON.stringify([{ kind: "process", process_id: process }])]), /sources_kind/);
+      });
+    });
+  });
+
   describe("add_source", () => {
+    it("treats the same link named twice as one", async () => {
+      await db.as(users.editor!.claims, async (c) => {
+        const same = { kind: "step", process_id: process, step_id: audit };
+        const id = (await c.query("select public.add_source($1, $2::jsonb, $3::jsonb) as id", [ws, JSON.stringify({ title: "Twice" }), JSON.stringify([same, same, { kind: "process", process_id: process }])])).rows[0].id;
+        expect((await c.query("select count(*)::int as n from source_links where source_id = $1", [id])).rows[0].n).toBe(2);
+      });
+    });
+
     const add = (c: pg.Client, source: object, links: object[]) => c.query("select public.add_source($1, $2::jsonb, $3::jsonb) as id", [ws, JSON.stringify(source), JSON.stringify(links)]);
 
     it("saves the source and its links together, and returns the new id", async () => {

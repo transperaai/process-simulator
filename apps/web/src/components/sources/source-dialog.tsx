@@ -37,8 +37,8 @@ export const SOURCE_DIALOG_HELP = {
   },
   type: {
     label: "Type",
-    description: "What sort of material it is: a Transcript of a conversation, Notes someone wrote up, or a Screenshot of a screen or document.",
-    example: "Transcript, for the typed-up interview with Maya.",
+    description: "What sort of material it is: a Transcript of a conversation, Notes someone wrote up, Data such as an export or a spreadsheet, or a Screenshot of a screen or document.",
+    example: "Data, for the HubSpot export of last year's deals.",
   },
   date: {
     label: "Date",

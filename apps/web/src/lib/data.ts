@@ -22,6 +22,7 @@ import {
   loadSources,
   loadSourceLinks,
   loadLinkTargets,
+  loadStepNames,
   loadCitingRows,
   citationsBySource,
   type LinkTargets,
@@ -99,7 +100,11 @@ export async function loadSourcesPage(
     loadSourceLinks(supabase, workspace.id),
     loadLinkTargets(supabase, workspace.id),
   ]);
-  return { workspace, sources, citations: Object.fromEntries(citationsBySource(rows)), links, targets };
+  // A link to a step that is in no current version still has a name somewhere: an earlier version's.
+  const current = new Set(targets.steps.map((s) => s.id));
+  const missing = [...new Set(links.flatMap((l) => (l.step_id && !current.has(l.step_id) ? [l.step_id] : [])))];
+  const olderSteps = await loadStepNames(supabase, missing);
+  return { workspace, sources, citations: Object.fromEntries(citationsBySource(rows)), links, targets: { ...targets, olderSteps } };
 }
 
 /** The workspace's first process at its live revision, or null if not visible. */

@@ -21,6 +21,7 @@ import {
 } from "@/lib/sources/links";
 import { demoLinkTargets, demoPageSources, demoSourceLinks, DEMO_UNLINKED_SOURCE_ID } from "@/lib/sources/demo";
 import { MemorySourceStore } from "@/lib/sources/store";
+import { SOURCE_KIND_LABELS, cleanSourceField } from "@/lib/sources/validate";
 
 // The Add / Link source dialog's rules and the pieces under the Sources page (issue #118, A53): what a link is called,
 // what the pickers offer, what makes a draft valid (a title, and a link), what the Server Actions accept, and the
@@ -104,7 +105,11 @@ describe("the Add / Link source dialog's rules", () => {
   });
 
   it("offers the types the database holds, in the prototype's order", () => {
-    expect(KIND_CHOICES).toEqual(["transcript", "notes", "screenshot"]);
+    expect(KIND_CHOICES).toEqual(["transcript", "notes", "data", "screenshot"]);
+    expect(SOURCE_KIND_LABELS.data).toBe("Data");
+    expect(cleanSourceField("kind", "data")).toEqual({ value: "data" });
+    expect(cleanSourceField("kind", "video")).toBeNull();
+    expect(draftToSubmission(draft({ kind: "data" }), targets)).toMatchObject({ ok: true, input: { kind: "data" } });
   });
 });
 
@@ -152,6 +157,15 @@ describe("what a chip says", () => {
     expect(linkTitle(row({ kind: "issue", issueId: I1 }), targets)).toBe(`Issue #12: ${targets.issues[0]!.title}`);
   });
 
+  it("names a step that is only in an earlier version, and says so", () => {
+    const old = "e0000000-0000-4000-8000-0000000000aa";
+    const t = { ...targets, olderSteps: [{ id: old, name: "Old hand-over" }] };
+    expect(linkLabel(row({ kind: "step", processId: P1, stepId: old }), t)).toBe("Step: Old hand-over (in an earlier version)");
+    expect(linkLabel(row({ kind: "step", processId: P1, stepId: old }), targets)).toBe("Step: a step that was removed");
+    // A step in the current version is named plainly even when an older name is known.
+    expect(linkLabel(row({ kind: "step", processId: P1, stepId: S1 }), { ...t, olderSteps: [{ id: S1, name: "Older name" }] })).toBe("Step: Audit & proposal");
+  });
+
   it("says so when the thing is gone, rather than breaking", () => {
     expect(linkLabel(row({ kind: "step", processId: P1, stepId: "e0000000-0000-4000-8000-0000000000ff" }), targets)).toBe("Step: a step that was removed");
     expect(linkLabel(row({ kind: "process", processId: "c0000000-0000-4000-8000-0000000000ff" }), targets)).toBe("Process: a process that was removed");
@@ -180,6 +194,13 @@ describe("what a Server Action accepts", () => {
     expect(parseNewSource({ ...input, title: " " }, [{ kind: "process", processId: P1 }]).ok).toBe(false);
     const ok = parseNewSource(input, [{ kind: "process", processId: P1 }]);
     expect(ok.ok && ok.value.links).toEqual([{ kind: "process", processId: P1 }]);
+  });
+
+  it("treats the same link named twice, in any case, as one", () => {
+    const input = { kind: "notes", title: "Ops call", speakers: [], recorded_at: null, body: null, file_url: null };
+    const made = parseNewSource(input, [{ kind: "process", processId: P1 }, { kind: "process", processId: P1.toUpperCase() }, { kind: "step", processId: P1, stepId: S1 }]);
+    expect(made.ok && made.value.links).toEqual([{ kind: "process", processId: P1 }, { kind: "step", processId: P1, stepId: S1 }]);
+    expect(parseTarget({ kind: "issue", issueId: I1.toUpperCase() })).toEqual({ ok: true, value: { kind: "issue", issueId: I1 } });
   });
 
   it("sends the database the same columns the table checks", () => {
@@ -240,5 +261,8 @@ describe("the demo's sample", () => {
     const [a] = northbeamSources();
     const step = { id: S1, workspace_id: a!.workspace_id, process_id: P1, provenance: { work_hours: { evidence: [{ source_id: a!.id }] }, wait_hours: { evidence: [{ source_id: a!.id }] } } };
     expect(derivedSourceLinks([step], [], [a!])).toHaveLength(1);
+    // A citation spelled in capitals still names the source, and is stored lower case.
+    const shouted = { ...step, provenance: { work_hours: { evidence: [{ source_id: a!.id.toUpperCase() }] } } };
+    expect(derivedSourceLinks([shouted], [], [a!]).map((l) => l.source_id)).toEqual([a!.id]);
   });
 });

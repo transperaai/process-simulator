@@ -103,7 +103,8 @@ export function seedSql(
   }
   if (sourceLinks.length) {
     out.push("-- Source links: what each source is evidence for (the step citations and issue sources above, as links)\n");
-    out.push(insert("source_links", sourceLinks.map((r) => ({ ...r }))));
+    // The citing steps and issue_sources above may already have made some of these through their triggers.
+    out.push(insert("source_links", sourceLinks.map((r) => ({ ...r }))).replace(/;\n$/, " on conflict do nothing;\n"));
   }
   return out.join("\n");
 }

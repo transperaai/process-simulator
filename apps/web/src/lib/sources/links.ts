@@ -7,6 +7,7 @@ import {
   SOURCE_LINK_KINDS,
   linkColumns,
   linkTarget,
+  sameTarget,
   type LinkTargets,
   type SourceKind,
   type SourceLinkKind,
@@ -40,7 +41,11 @@ export function linkLabel(link: Pick<SourceLinkRow, "kind" | "process_id" | "ste
     case "process":
       return `Process: ${targets.processes.find((p) => p.id === t.processId)?.name ?? "a process that was removed"}`;
     case "step":
-      return `Step: ${targets.steps.find((s) => s.id === t.stepId)?.name ?? "a step that was removed"}`;
+    {
+      const now = targets.steps.find((s) => s.id === t.stepId)?.name;
+      const before = targets.olderSteps?.find((s) => s.id === t.stepId)?.name;
+      return `Step: ${now ?? (before ? `${before} (in an earlier version)` : "a step that was removed")}`;
+    }
     case "insight":
       return `Insight: ${trunc(targets.insights.find((i) => i.key === t.insightKey)?.title ?? "a finding the analysis made", MAX_CHIP)}`;
     case "issue": {
@@ -200,6 +205,27 @@ const KEY = /^[a-z_]+:[a-z_]+:[^\s]{1,200}$/;
 
 /** A link target from untrusted input: the kind and the id or key it needs. */
 export function parseTarget(input: unknown): Parsed<SourceLinkTarget> {
+  const parsed = parseTargetAsGiven(input);
+  // The database spells a uuid in lower case: so do we, so "the same thing" compares equal.
+  return parsed.ok ? { ok: true, value: lowerIds(parsed.value) } : parsed;
+}
+
+const lowerIds = (t: SourceLinkTarget): SourceLinkTarget => {
+  switch (t.kind) {
+    case "process":
+      return { kind: "process", processId: t.processId.toLowerCase() };
+    case "step":
+      return { kind: "step", processId: t.processId.toLowerCase(), stepId: t.stepId.toLowerCase() };
+    case "insight":
+      return t;
+    case "issue":
+      return { kind: "issue", issueId: t.issueId.toLowerCase() };
+    case "solution":
+      return { kind: "solution", solutionId: t.solutionId.toLowerCase() };
+  }
+};
+
+function parseTargetAsGiven(input: unknown): Parsed<SourceLinkTarget> {
   const bad = { ok: false, error: "That isn't something a source can be linked to." } as const;
   if (typeof input !== "object" || input === null || Array.isArray(input)) return bad;
   const o = input as Record<string, unknown>;
@@ -231,7 +257,8 @@ export function parseNewSource(input: unknown, links: unknown): Parsed<{ input: 
   for (const l of links) {
     const t = parseTarget(l);
     if (!t.ok) return t;
-    out.push(t.value);
+    // The same thing named twice is one link.
+    if (!out.some((o) => sameTarget(o, t.value))) out.push(t.value);
   }
   return { ok: true, value: { input: source.value, links: out } };
 }

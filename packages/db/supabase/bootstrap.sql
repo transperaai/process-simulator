@@ -16561,8 +16561,9 @@ revoke all on function public.save_solution(uuid, uuid, uuid, text, jsonb, jsonb
 grant execute on function public.save_solution(uuid, uuid, uuid, text, jsonb, jsonb, jsonb, jsonb) to authenticated;
 ']);
 
--- 20261123000000_source_links.sql
+-- 20261124500000_source_links.sql
 -- Sources must link (issue #118, ticket A53, slice 1 of 2; PRD §8 screen 12 "Sources").
+-- Apply after A52's 20261124000000 (this one is numbered 20261124500000 to sort after it).
 --
 -- Every source (transcript, notes, screenshot) must be linked to at least one thing: a process, a step, an insight, an
 -- issue or a solution. A source can have several links. Today a source is only "cited" by the step values whose
@@ -16590,6 +16591,14 @@ grant execute on function public.save_solution(uuid, uuid, uuid, text, jsonb, js
 --     yet" until someone links them.)
 --   * `public.unlinked_source_count(workspace)`: how many of the workspace's sources have no link (the sidebar's count).
 --   * A before-insert trigger that refuses a step link whose step is not in the named process of the workspace.
+--   * Two after-write triggers that keep links in step with citations from now on, so a source someone cites is never
+--     flagged "Not linked" next to "Cited by N values": `link_cited_sources` on `steps` (after insert or update of
+--     `provenance`: a step link for every source the step's values cite, from the inspector, the MCP server or an import) and
+--     `link_issue_source` on `issue_sources` (after insert: the issue link). Both insert with `on conflict do nothing`, run as
+--     the caller (security invoker) and only ever ADD links: removing a citation or an `issue_sources` row does not remove the
+--     link, because a link is the person's explicit statement that the source is evidence for that thing. `private.cited_source_ids`
+--     reads the source ids out of a step's provenance for the one-off copy below and the trigger, so both use one rule.
+--   * `sources.kind` gains `data` (a data export, a spreadsheet): the check is widened, nothing else about `sources` changes.
 --
 -- Row-level security as the other workspace tables: every member of the workspace reads, owners, editors and agency admins
 -- add and remove links (`can_edit_workspace`), `anon` has no access. A link is never updated: to change what a source is
@@ -16601,45 +16610,88 @@ grant execute on function public.save_solution(uuid, uuid, uuid, text, jsonb, js
 -- Existing data is copied, not moved, and nothing existing changes: every step value that cites a source becomes a step
 -- link (`provenance.<column>.evidence[].source_id`, in every revision of every process, one link per source and step
 -- however many values cite it), and every `issue_sources` row becomes an issue link. Citations of a source that no longer
--- exists, or that belongs to another workspace, are skipped (there is nothing to link). The old provenance and
--- `issue_sources` stay as they are and keep working; later slices read the links.
+-- exists, or that belongs to another workspace, are skipped (there is nothing to link). Source ids are matched without regard
+-- to case and stored as the database spells a uuid (lower case). The old provenance and `issue_sources` stay as they are and
+-- keep working; later slices read the links.
 --
--- STRICTLY ADDITIVE: one table, its indexes, trigger, policies and grants, one trigger function and two functions. No
--- existing table, column, constraint or function is changed (`sources.kind` keeps its three values).
+-- EXPAND ONLY: one table, its indexes, triggers, policies and grants, three trigger functions, one helper function and two
+-- functions, and one widened check (`sources_kind` also allows `data`; every existing row still satisfies it). No existing
+-- table, column or function is changed, and no row is rewritten.
 --
 -- Preflight (run with `bash packages/db/scripts/prod-sql.sh -c "..."`; each should be as described):
 --
---   1. The new table and functions do not exist yet. Expect 0 and 0:
+--   P1. The new table and functions do not exist yet. Expect 0 and 0:
 --        select count(*) from information_schema.tables where table_schema = 'public' and table_name = 'source_links';
---        select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname in ('add_source', 'unlinked_source_count');
---   2. Nothing of ours is applied past this one. Expect 0 rows:
---        select version from supabase_migrations.schema_migrations where version >= '20261123000000';
---   3. The tables it points at and the helpers it uses exist. Expect 6 and 3:
+--        select count(*) from pg_proc where (pronamespace = 'public'::regnamespace and proname in ('add_source', 'unlinked_source_count'))
+--          or (pronamespace = 'private'::regnamespace and proname in ('cited_source_ids', 'link_cited_sources', 'link_issue_source', 'source_links_before_insert'));
+--   P2. Nothing of ours is applied past this one. Expect 0 rows:
+--        select version from supabase_migrations.schema_migrations where version >= '20261124500000';
+--   P3. The tables it points at and the helpers it uses exist. Expect 6 and 3:
 --        select count(*) from information_schema.tables where table_schema = 'public' and table_name in ('sources', 'processes', 'steps', 'issues', 'issue_sources', 'solutions');
 --        select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname in ('can_read_workspace', 'can_edit_workspace', 'audit_mcp_write');
---   4. What will be copied (how many sources, and how many step-and-source pairs and issue-source rows exist now):
---        select count(*) as sources from public.sources;
---        select count(*) as issue_source_rows from public.issue_sources;
---        select count(distinct (s.workspace_id, s.process_id, s.id, ev.value ->> 'source_id')) as step_source_pairs
---          from public.steps s, jsonb_each(case when jsonb_typeof(s.provenance) = 'object' then s.provenance else '{}' end) c(k, entry),
---            jsonb_array_elements(case when jsonb_typeof(c.entry -> 'evidence') = 'array' then c.entry -> 'evidence' else '[]' end) ev(value)
---          where jsonb_typeof(ev.value) = 'object';
+--   P4. (optional) How the sources are classed now: by kind, with how many are cited by a step or listed by an issue:
+--        select s.kind, count(*) as sources,
+--          count(*) filter (where exists (select 1 from public.issue_sources i where i.source_id = s.id)) as listed_by_an_issue
+--          from public.sources s group by 1 order by 1;
+--   P5. The step links the copy will make (one per workspace, process, step and source; citations of sources that don't exist or are
+--       in another workspace give none). Note the number: after applying, `kind = 'step'` links must equal it:
+--        select count(*) from (
+--          select distinct st.workspace_id, st.process_id, st.id, src.id
+--          from public.steps st
+--          cross join lateral jsonb_each(case when jsonb_typeof(st.provenance) = 'object' then st.provenance else '{}'::jsonb end) as col(name, entry)
+--          cross join lateral jsonb_array_elements(case when jsonb_typeof(col.entry -> 'evidence') = 'array' then col.entry -> 'evidence' else '[]'::jsonb end) as ev(value)
+--          join public.sources src on src.workspace_id = st.workspace_id
+--            and jsonb_typeof(ev.value) = 'object'
+--            and src.id = case when (ev.value ->> 'source_id') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (ev.value ->> 'source_id')::uuid end
+--        ) pairs;
+--   P6. The issue links the copy will make (one per issue_sources row). After applying, `kind = 'issue'` links must equal it:
+--        select count(*) from public.issue_sources;
+--   P7. What could make the copy fail (the step link needs its process to exist in the workspace). Expect 0:
+--        select count(*) from (
+--          select distinct st.workspace_id, st.process_id, st.id, src.id
+--          from public.steps st
+--          cross join lateral jsonb_each(case when jsonb_typeof(st.provenance) = 'object' then st.provenance else '{}'::jsonb end) as col(name, entry)
+--          cross join lateral jsonb_array_elements(case when jsonb_typeof(col.entry -> 'evidence') = 'array' then col.entry -> 'evidence' else '[]'::jsonb end) as ev(value)
+--          join public.sources src on src.workspace_id = st.workspace_id
+--            and jsonb_typeof(ev.value) = 'object'
+--            and src.id = case when (ev.value ->> 'source_id') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (ev.value ->> 'source_id')::uuid end
+--          where not exists (select 1 from public.processes p where p.id = st.process_id and p.workspace_id = st.workspace_id)
+--        ) orphans;
+--   P8. How many sources will be flagged "Not linked" right after applying (no step cites them and no issue lists them), by workspace:
+--        select s.workspace_id, count(*) as will_be_unlinked from public.sources s
+--          where not exists (select 1 from public.issue_sources i where i.source_id = s.id)
+--            and not exists (
+--              select 1 from public.steps st
+--              cross join lateral jsonb_each(case when jsonb_typeof(st.provenance) = 'object' then st.provenance else '{}'::jsonb end) as col(name, entry)
+--              cross join lateral jsonb_array_elements(case when jsonb_typeof(col.entry -> 'evidence') = 'array' then col.entry -> 'evidence' else '[]'::jsonb end) as ev(value)
+--              where st.workspace_id = s.workspace_id and jsonb_typeof(ev.value) = 'object'
+--                and lower(ev.value ->> 'source_id') = s.id::text)
+--          group by 1 order by 1;
 --
 -- Post-apply check (authenticated must show DELETE and SELECT at table level, INSERT only on the listed columns, no UPDATE
--- anywhere; anon nothing; the step-source pair count above, less citations of sources that are gone, equals the step links):
+-- anywhere; anon nothing; the step and issue link counts equal P5 and P6):
 --        select grantee, privilege_type from information_schema.role_table_grants where table_schema = 'public' and table_name = 'source_links' and grantee in ('anon', 'authenticated') order by 1, 2;
 --        select column_name, privilege_type from information_schema.column_privileges where table_schema = 'public' and table_name = 'source_links' and grantee = 'authenticated' and privilege_type in ('INSERT', 'UPDATE') order by 2, 1;
---        select kind, count(*) from public.source_links group by 1 order by 1;
+--        select kind, count(*) from public.source_links group by 1 order by 1;   -- 'step' = P5, 'issue' = P6
+--        select conname, pg_get_constraintdef(oid) from pg_constraint where conname = 'sources_kind';   -- allows transcript, notes, data, screenshot
 --
 -- Rollback (run as one transaction; it loses every link, and with them every flag: sources are then cited by their
--- values and issues only, as before):
+-- values and issues only, as before. It also REWRITES any source of kind `data` to `notes`, so the narrow check holds again):
 --
 --   begin;
+--   drop trigger if exists link_cited_sources on public.steps;
+--   drop trigger if exists link_issue_source on public.issue_sources;
 --   drop function if exists public.add_source(uuid, jsonb, jsonb);
 --   drop function if exists public.unlinked_source_count(uuid);
 --   drop table if exists public.source_links;   -- its triggers, policies and indexes go with it
 --   drop function if exists private.source_links_before_insert();
---   delete from supabase_migrations.schema_migrations where version = '20261123000000';
+--   drop function if exists private.link_cited_sources();
+--   drop function if exists private.link_issue_source();
+--   drop function if exists private.cited_source_ids(jsonb);
+--   update public.sources set kind = 'notes' where kind = 'data';
+--   alter table public.sources drop constraint sources_kind,
+--     add constraint sources_kind check (kind in ('transcript', 'notes', 'screenshot'));
+--   delete from supabase_migrations.schema_migrations where version = '20261124500000';
 --   commit;
 --
 -- Production data: none needed (the copy is part of the migration).
@@ -16696,16 +16748,29 @@ create index on public.source_links (workspace_id, kind, insight_key);
 -- Today's citations become links (a copy: provenance and issue_sources are untouched)
 -- ---------------------------------------------------------------------------
 
+-- The source ids a step's provenance cites (`provenance.<column>.evidence[].source_id`), as uuids, once each. A value that
+-- is not a uuid is skipped; case does not matter (the uuid type spells it lower case). Used by the copy below and by the
+-- trigger after it. Runs as the caller, who needs execute and the private schema's usage.
+create function private.cited_source_ids(provenance jsonb) returns setof uuid
+language sql
+immutable
+set search_path = ''
+as $$
+  select distinct case when (ev.value ->> 'source_id') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (ev.value ->> 'source_id')::uuid end
+  from jsonb_each(case when pg_catalog.jsonb_typeof(provenance) = 'object' then provenance else '{}'::jsonb end) as col(name, entry)
+  cross join lateral jsonb_array_elements(case when pg_catalog.jsonb_typeof(col.entry -> 'evidence') = 'array' then col.entry -> 'evidence' else '[]'::jsonb end) as ev(value)
+  where pg_catalog.jsonb_typeof(ev.value) = 'object';
+$$;
+
+revoke all on function private.cited_source_ids(jsonb) from public, anon;
+grant execute on function private.cited_source_ids(jsonb) to authenticated;
+
 -- Every step value that cites a source: one step link per source and step, from every revision of every process.
 insert into public.source_links (workspace_id, source_id, kind, process_id, step_id)
   select distinct st.workspace_id, src.id, 'step', st.process_id, st.id
   from public.steps st
-  cross join lateral jsonb_each(case when jsonb_typeof(st.provenance) = 'object' then st.provenance else '{}'::jsonb end) as col(name, entry)
-  cross join lateral jsonb_array_elements(case when jsonb_typeof(col.entry -> 'evidence') = 'array' then col.entry -> 'evidence' else '[]'::jsonb end) as ev(value)
-  join public.sources src on src.workspace_id = st.workspace_id
-    and jsonb_typeof(ev.value) = 'object'
-    and (ev.value ->> 'source_id') ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-    and src.id = (ev.value ->> 'source_id')::uuid
+  cross join lateral private.cited_source_ids(st.provenance) as cited(id)
+  join public.sources src on src.workspace_id = st.workspace_id and src.id = cited.id
   on conflict do nothing;
 
 -- Every source an issue already lists.
@@ -16741,6 +16806,44 @@ create trigger source_links_before_insert before insert on public.source_links
 
 create trigger audit_mcp after insert or update or delete on public.source_links
   for each row execute function private.audit_mcp_write();
+
+-- From now on a citation is a link. Whoever cites a source (the inspector, the MCP server, an import, a draft copied from the
+-- live version) adds the step link in the same transaction, so a cited source is never flagged "Not linked". They only add:
+-- taking a citation away does not take the link away, because a link is the person's own statement that the source is
+-- evidence for that thing. Both run as the caller, so row-level security decides (an editor can write steps and links alike).
+create function private.link_cited_sources() returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  insert into public.source_links (workspace_id, source_id, kind, process_id, step_id)
+  select new.workspace_id, src.id, 'step', new.process_id, new.id
+  from private.cited_source_ids(new.provenance) as cited(id)
+  join public.sources src on src.workspace_id = new.workspace_id and src.id = cited.id
+  on conflict do nothing;
+  return null;
+end;
+$$;
+
+create function private.link_issue_source() returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  insert into public.source_links (workspace_id, source_id, kind, issue_id)
+  values (new.workspace_id, new.source_id, 'issue', new.issue_id)
+  on conflict do nothing;
+  return null;
+end;
+$$;
+
+revoke all on function private.link_cited_sources() from public, anon, authenticated;
+revoke all on function private.link_issue_source() from public, anon, authenticated;
+
+create trigger link_cited_sources after insert or update of provenance on public.steps
+  for each row execute function private.link_cited_sources();
+create trigger link_issue_source after insert on public.issue_sources
+  for each row execute function private.link_issue_source();
 
 -- ---------------------------------------------------------------------------
 -- Row-level security and grants
@@ -16808,7 +16911,9 @@ begin
       nullif(link ->> 'step_id', '')::uuid,
       nullif(link ->> 'insight_key', ''),
       nullif(link ->> 'issue_id', '')::uuid,
-      nullif(link ->> 'solution_id', '')::uuid);
+      nullif(link ->> 'solution_id', '')::uuid)
+    -- The same thing named twice is one link.
+    on conflict do nothing;
   end loop;
   return new_id;
 end;
@@ -16833,7 +16938,18 @@ $$;
 revoke all on function public.unlinked_source_count(uuid) from public, anon;
 grant execute on function public.unlinked_source_count(uuid) to authenticated;
 
-insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261123000000', 'source_links', array['-- Sources must link (issue #118, ticket A53, slice 1 of 2; PRD §8 screen 12 "Sources").
+-- ---------------------------------------------------------------------------
+-- A fourth type of source: data (an export, a spreadsheet)
+-- ---------------------------------------------------------------------------
+
+-- Widening only: every existing row (transcript, notes, screenshot) still passes. Added NOT VALID and then validated, so the
+-- table is locked only for the swap, not for the scan.
+alter table public.sources drop constraint sources_kind,
+  add constraint sources_kind check (kind in ('transcript', 'notes', 'data', 'screenshot')) not valid;
+alter table public.sources validate constraint sources_kind;
+
+insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261124500000', 'source_links', array['-- Sources must link (issue #118, ticket A53, slice 1 of 2; PRD §8 screen 12 "Sources").
+-- Apply after A52''s 20261124000000 (this one is numbered 20261124500000 to sort after it).
 --
 -- Every source (transcript, notes, screenshot) must be linked to at least one thing: a process, a step, an insight, an
 -- issue or a solution. A source can have several links. Today a source is only "cited" by the step values whose
@@ -16861,6 +16977,14 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 --     yet" until someone links them.)
 --   * `public.unlinked_source_count(workspace)`: how many of the workspace''s sources have no link (the sidebar''s count).
 --   * A before-insert trigger that refuses a step link whose step is not in the named process of the workspace.
+--   * Two after-write triggers that keep links in step with citations from now on, so a source someone cites is never
+--     flagged "Not linked" next to "Cited by N values": `link_cited_sources` on `steps` (after insert or update of
+--     `provenance`: a step link for every source the step''s values cite, from the inspector, the MCP server or an import) and
+--     `link_issue_source` on `issue_sources` (after insert: the issue link). Both insert with `on conflict do nothing`, run as
+--     the caller (security invoker) and only ever ADD links: removing a citation or an `issue_sources` row does not remove the
+--     link, because a link is the person''s explicit statement that the source is evidence for that thing. `private.cited_source_ids`
+--     reads the source ids out of a step''s provenance for the one-off copy below and the trigger, so both use one rule.
+--   * `sources.kind` gains `data` (a data export, a spreadsheet): the check is widened, nothing else about `sources` changes.
 --
 -- Row-level security as the other workspace tables: every member of the workspace reads, owners, editors and agency admins
 -- add and remove links (`can_edit_workspace`), `anon` has no access. A link is never updated: to change what a source is
@@ -16872,45 +16996,88 @@ insert into supabase_migrations.schema_migrations (version, name, statements) va
 -- Existing data is copied, not moved, and nothing existing changes: every step value that cites a source becomes a step
 -- link (`provenance.<column>.evidence[].source_id`, in every revision of every process, one link per source and step
 -- however many values cite it), and every `issue_sources` row becomes an issue link. Citations of a source that no longer
--- exists, or that belongs to another workspace, are skipped (there is nothing to link). The old provenance and
--- `issue_sources` stay as they are and keep working; later slices read the links.
+-- exists, or that belongs to another workspace, are skipped (there is nothing to link). Source ids are matched without regard
+-- to case and stored as the database spells a uuid (lower case). The old provenance and `issue_sources` stay as they are and
+-- keep working; later slices read the links.
 --
--- STRICTLY ADDITIVE: one table, its indexes, trigger, policies and grants, one trigger function and two functions. No
--- existing table, column, constraint or function is changed (`sources.kind` keeps its three values).
+-- EXPAND ONLY: one table, its indexes, triggers, policies and grants, three trigger functions, one helper function and two
+-- functions, and one widened check (`sources_kind` also allows `data`; every existing row still satisfies it). No existing
+-- table, column or function is changed, and no row is rewritten.
 --
 -- Preflight (run with `bash packages/db/scripts/prod-sql.sh -c "..."`; each should be as described):
 --
---   1. The new table and functions do not exist yet. Expect 0 and 0:
+--   P1. The new table and functions do not exist yet. Expect 0 and 0:
 --        select count(*) from information_schema.tables where table_schema = ''public'' and table_name = ''source_links'';
---        select count(*) from pg_proc where pronamespace = ''public''::regnamespace and proname in (''add_source'', ''unlinked_source_count'');
---   2. Nothing of ours is applied past this one. Expect 0 rows:
---        select version from supabase_migrations.schema_migrations where version >= ''20261123000000'';
---   3. The tables it points at and the helpers it uses exist. Expect 6 and 3:
+--        select count(*) from pg_proc where (pronamespace = ''public''::regnamespace and proname in (''add_source'', ''unlinked_source_count''))
+--          or (pronamespace = ''private''::regnamespace and proname in (''cited_source_ids'', ''link_cited_sources'', ''link_issue_source'', ''source_links_before_insert''));
+--   P2. Nothing of ours is applied past this one. Expect 0 rows:
+--        select version from supabase_migrations.schema_migrations where version >= ''20261124500000'';
+--   P3. The tables it points at and the helpers it uses exist. Expect 6 and 3:
 --        select count(*) from information_schema.tables where table_schema = ''public'' and table_name in (''sources'', ''processes'', ''steps'', ''issues'', ''issue_sources'', ''solutions'');
 --        select count(*) from pg_proc where pronamespace = ''public''::regnamespace and proname in (''can_read_workspace'', ''can_edit_workspace'', ''audit_mcp_write'');
---   4. What will be copied (how many sources, and how many step-and-source pairs and issue-source rows exist now):
---        select count(*) as sources from public.sources;
---        select count(*) as issue_source_rows from public.issue_sources;
---        select count(distinct (s.workspace_id, s.process_id, s.id, ev.value ->> ''source_id'')) as step_source_pairs
---          from public.steps s, jsonb_each(case when jsonb_typeof(s.provenance) = ''object'' then s.provenance else ''{}'' end) c(k, entry),
---            jsonb_array_elements(case when jsonb_typeof(c.entry -> ''evidence'') = ''array'' then c.entry -> ''evidence'' else ''[]'' end) ev(value)
---          where jsonb_typeof(ev.value) = ''object'';
+--   P4. (optional) How the sources are classed now: by kind, with how many are cited by a step or listed by an issue:
+--        select s.kind, count(*) as sources,
+--          count(*) filter (where exists (select 1 from public.issue_sources i where i.source_id = s.id)) as listed_by_an_issue
+--          from public.sources s group by 1 order by 1;
+--   P5. The step links the copy will make (one per workspace, process, step and source; citations of sources that don''t exist or are
+--       in another workspace give none). Note the number: after applying, `kind = ''step''` links must equal it:
+--        select count(*) from (
+--          select distinct st.workspace_id, st.process_id, st.id, src.id
+--          from public.steps st
+--          cross join lateral jsonb_each(case when jsonb_typeof(st.provenance) = ''object'' then st.provenance else ''{}''::jsonb end) as col(name, entry)
+--          cross join lateral jsonb_array_elements(case when jsonb_typeof(col.entry -> ''evidence'') = ''array'' then col.entry -> ''evidence'' else ''[]''::jsonb end) as ev(value)
+--          join public.sources src on src.workspace_id = st.workspace_id
+--            and jsonb_typeof(ev.value) = ''object''
+--            and src.id = case when (ev.value ->> ''source_id'') ~* ''^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'' then (ev.value ->> ''source_id'')::uuid end
+--        ) pairs;
+--   P6. The issue links the copy will make (one per issue_sources row). After applying, `kind = ''issue''` links must equal it:
+--        select count(*) from public.issue_sources;
+--   P7. What could make the copy fail (the step link needs its process to exist in the workspace). Expect 0:
+--        select count(*) from (
+--          select distinct st.workspace_id, st.process_id, st.id, src.id
+--          from public.steps st
+--          cross join lateral jsonb_each(case when jsonb_typeof(st.provenance) = ''object'' then st.provenance else ''{}''::jsonb end) as col(name, entry)
+--          cross join lateral jsonb_array_elements(case when jsonb_typeof(col.entry -> ''evidence'') = ''array'' then col.entry -> ''evidence'' else ''[]''::jsonb end) as ev(value)
+--          join public.sources src on src.workspace_id = st.workspace_id
+--            and jsonb_typeof(ev.value) = ''object''
+--            and src.id = case when (ev.value ->> ''source_id'') ~* ''^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'' then (ev.value ->> ''source_id'')::uuid end
+--          where not exists (select 1 from public.processes p where p.id = st.process_id and p.workspace_id = st.workspace_id)
+--        ) orphans;
+--   P8. How many sources will be flagged "Not linked" right after applying (no step cites them and no issue lists them), by workspace:
+--        select s.workspace_id, count(*) as will_be_unlinked from public.sources s
+--          where not exists (select 1 from public.issue_sources i where i.source_id = s.id)
+--            and not exists (
+--              select 1 from public.steps st
+--              cross join lateral jsonb_each(case when jsonb_typeof(st.provenance) = ''object'' then st.provenance else ''{}''::jsonb end) as col(name, entry)
+--              cross join lateral jsonb_array_elements(case when jsonb_typeof(col.entry -> ''evidence'') = ''array'' then col.entry -> ''evidence'' else ''[]''::jsonb end) as ev(value)
+--              where st.workspace_id = s.workspace_id and jsonb_typeof(ev.value) = ''object''
+--                and lower(ev.value ->> ''source_id'') = s.id::text)
+--          group by 1 order by 1;
 --
 -- Post-apply check (authenticated must show DELETE and SELECT at table level, INSERT only on the listed columns, no UPDATE
--- anywhere; anon nothing; the step-source pair count above, less citations of sources that are gone, equals the step links):
+-- anywhere; anon nothing; the step and issue link counts equal P5 and P6):
 --        select grantee, privilege_type from information_schema.role_table_grants where table_schema = ''public'' and table_name = ''source_links'' and grantee in (''anon'', ''authenticated'') order by 1, 2;
 --        select column_name, privilege_type from information_schema.column_privileges where table_schema = ''public'' and table_name = ''source_links'' and grantee = ''authenticated'' and privilege_type in (''INSERT'', ''UPDATE'') order by 2, 1;
---        select kind, count(*) from public.source_links group by 1 order by 1;
+--        select kind, count(*) from public.source_links group by 1 order by 1;   -- ''step'' = P5, ''issue'' = P6
+--        select conname, pg_get_constraintdef(oid) from pg_constraint where conname = ''sources_kind'';   -- allows transcript, notes, data, screenshot
 --
 -- Rollback (run as one transaction; it loses every link, and with them every flag: sources are then cited by their
--- values and issues only, as before):
+-- values and issues only, as before. It also REWRITES any source of kind `data` to `notes`, so the narrow check holds again):
 --
 --   begin;
+--   drop trigger if exists link_cited_sources on public.steps;
+--   drop trigger if exists link_issue_source on public.issue_sources;
 --   drop function if exists public.add_source(uuid, jsonb, jsonb);
 --   drop function if exists public.unlinked_source_count(uuid);
 --   drop table if exists public.source_links;   -- its triggers, policies and indexes go with it
 --   drop function if exists private.source_links_before_insert();
---   delete from supabase_migrations.schema_migrations where version = ''20261123000000'';
+--   drop function if exists private.link_cited_sources();
+--   drop function if exists private.link_issue_source();
+--   drop function if exists private.cited_source_ids(jsonb);
+--   update public.sources set kind = ''notes'' where kind = ''data'';
+--   alter table public.sources drop constraint sources_kind,
+--     add constraint sources_kind check (kind in (''transcript'', ''notes'', ''screenshot''));
+--   delete from supabase_migrations.schema_migrations where version = ''20261124500000'';
 --   commit;
 --
 -- Production data: none needed (the copy is part of the migration).
@@ -16967,16 +17134,29 @@ create index on public.source_links (workspace_id, kind, insight_key);
 -- Today''s citations become links (a copy: provenance and issue_sources are untouched)
 -- ---------------------------------------------------------------------------
 
+-- The source ids a step''s provenance cites (`provenance.<column>.evidence[].source_id`), as uuids, once each. A value that
+-- is not a uuid is skipped; case does not matter (the uuid type spells it lower case). Used by the copy below and by the
+-- trigger after it. Runs as the caller, who needs execute and the private schema''s usage.
+create function private.cited_source_ids(provenance jsonb) returns setof uuid
+language sql
+immutable
+set search_path = ''''
+as $$
+  select distinct case when (ev.value ->> ''source_id'') ~* ''^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'' then (ev.value ->> ''source_id'')::uuid end
+  from jsonb_each(case when pg_catalog.jsonb_typeof(provenance) = ''object'' then provenance else ''{}''::jsonb end) as col(name, entry)
+  cross join lateral jsonb_array_elements(case when pg_catalog.jsonb_typeof(col.entry -> ''evidence'') = ''array'' then col.entry -> ''evidence'' else ''[]''::jsonb end) as ev(value)
+  where pg_catalog.jsonb_typeof(ev.value) = ''object'';
+$$;
+
+revoke all on function private.cited_source_ids(jsonb) from public, anon;
+grant execute on function private.cited_source_ids(jsonb) to authenticated;
+
 -- Every step value that cites a source: one step link per source and step, from every revision of every process.
 insert into public.source_links (workspace_id, source_id, kind, process_id, step_id)
   select distinct st.workspace_id, src.id, ''step'', st.process_id, st.id
   from public.steps st
-  cross join lateral jsonb_each(case when jsonb_typeof(st.provenance) = ''object'' then st.provenance else ''{}''::jsonb end) as col(name, entry)
-  cross join lateral jsonb_array_elements(case when jsonb_typeof(col.entry -> ''evidence'') = ''array'' then col.entry -> ''evidence'' else ''[]''::jsonb end) as ev(value)
-  join public.sources src on src.workspace_id = st.workspace_id
-    and jsonb_typeof(ev.value) = ''object''
-    and (ev.value ->> ''source_id'') ~ ''^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$''
-    and src.id = (ev.value ->> ''source_id'')::uuid
+  cross join lateral private.cited_source_ids(st.provenance) as cited(id)
+  join public.sources src on src.workspace_id = st.workspace_id and src.id = cited.id
   on conflict do nothing;
 
 -- Every source an issue already lists.
@@ -17012,6 +17192,44 @@ create trigger source_links_before_insert before insert on public.source_links
 
 create trigger audit_mcp after insert or update or delete on public.source_links
   for each row execute function private.audit_mcp_write();
+
+-- From now on a citation is a link. Whoever cites a source (the inspector, the MCP server, an import, a draft copied from the
+-- live version) adds the step link in the same transaction, so a cited source is never flagged "Not linked". They only add:
+-- taking a citation away does not take the link away, because a link is the person''s own statement that the source is
+-- evidence for that thing. Both run as the caller, so row-level security decides (an editor can write steps and links alike).
+create function private.link_cited_sources() returns trigger
+language plpgsql
+set search_path = ''''
+as $$
+begin
+  insert into public.source_links (workspace_id, source_id, kind, process_id, step_id)
+  select new.workspace_id, src.id, ''step'', new.process_id, new.id
+  from private.cited_source_ids(new.provenance) as cited(id)
+  join public.sources src on src.workspace_id = new.workspace_id and src.id = cited.id
+  on conflict do nothing;
+  return null;
+end;
+$$;
+
+create function private.link_issue_source() returns trigger
+language plpgsql
+set search_path = ''''
+as $$
+begin
+  insert into public.source_links (workspace_id, source_id, kind, issue_id)
+  values (new.workspace_id, new.source_id, ''issue'', new.issue_id)
+  on conflict do nothing;
+  return null;
+end;
+$$;
+
+revoke all on function private.link_cited_sources() from public, anon, authenticated;
+revoke all on function private.link_issue_source() from public, anon, authenticated;
+
+create trigger link_cited_sources after insert or update of provenance on public.steps
+  for each row execute function private.link_cited_sources();
+create trigger link_issue_source after insert on public.issue_sources
+  for each row execute function private.link_issue_source();
 
 -- ---------------------------------------------------------------------------
 -- Row-level security and grants
@@ -17079,7 +17297,9 @@ begin
       nullif(link ->> ''step_id'', '''')::uuid,
       nullif(link ->> ''insight_key'', ''''),
       nullif(link ->> ''issue_id'', '''')::uuid,
-      nullif(link ->> ''solution_id'', '''')::uuid);
+      nullif(link ->> ''solution_id'', '''')::uuid)
+    -- The same thing named twice is one link.
+    on conflict do nothing;
   end loop;
   return new_id;
 end;
@@ -17103,6 +17323,16 @@ $$;
 
 revoke all on function public.unlinked_source_count(uuid) from public, anon;
 grant execute on function public.unlinked_source_count(uuid) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- A fourth type of source: data (an export, a spreadsheet)
+-- ---------------------------------------------------------------------------
+
+-- Widening only: every existing row (transcript, notes, screenshot) still passes. Added NOT VALID and then validated, so the
+-- table is locked only for the swap, not for the scan.
+alter table public.sources drop constraint sources_kind,
+  add constraint sources_kind check (kind in (''transcript'', ''notes'', ''data'', ''screenshot'')) not valid;
+alter table public.sources validate constraint sources_kind;
 ']);
 
 -- seed.sql
@@ -17735,6 +17965,6 @@ insert into public.source_links (workspace_id, source_id, process_id, step_id, i
   ('a0000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000003', null, null, null, 'step'),
   ('a0000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000002', 'c0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000003', null, null, null, 'step'),
   ('a0000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000002', 'c0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000004', null, null, null, 'step'),
-  ('a0000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001', null, null, null, '40000000-0000-4000-8000-000000000001', null, 'issue');
+  ('a0000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001', null, null, null, '40000000-0000-4000-8000-000000000001', null, 'issue') on conflict do nothing;
 
 commit;

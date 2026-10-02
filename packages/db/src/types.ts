@@ -467,7 +467,7 @@ export interface AiAnalysisRow {
   updated_at: string;
 }
 
-export type SourceKind = "transcript" | "notes" | "screenshot";
+export type SourceKind = "transcript" | "notes" | "data" | "screenshot";
 
 /**
  * A transcript, note set or screenshot from the audit (docs/PRD.md §3 Source,

@@ -182,7 +182,7 @@ select grantee, privilege_type from information_schema.role_table_grants where t
 
 `authenticated` must show DELETE, INSERT and SELECT only (no UPDATE), and `anon` nothing. The two before-insert triggers are security invoker and use `auth.uid()`; they skip the can-edit check only when it is null (a plain database connection), which was exercised here with the auth shim, not Supabase's `auth.uid()`.
 
-## Source links (A53 slice 1, migration 20261123000000)
+## Source links (A53 slice 1, migration 20261124500000)
 
 Verified only against plain Postgres, with Supabase's default table privileges emulated (`packages/db/test/source-links-privileges.test.ts`). The migration starts with `revoke all on public.source_links from anon, authenticated`, then grants `select, delete` and a column-limited `insert` (the target columns; `id`, `created_at` and `created_by` come from defaults, so a link cannot claim another author). `authenticated` has no UPDATE: a link is removed and added again.
 

@@ -115,15 +115,16 @@ describe.skipIf(!POSTGREST_URL)("MCP process building over PostgREST (drafts onl
     const a = await call<{ source: { id: string } }>(editor, "add_source", {
       title: "Discovery interview",
       speakers: "Ana Ruiz, Ben Cole",
+      link_later: true,
       recorded_at: "2026-10-01",
       body: "[00:02:10] Ana Ruiz: A discovery call is an hour and a half with notes...",
     });
     expect(a.ok).toBe(true);
     expect(a.assumptions).toContain("kind defaulted to transcript.");
     sourceA = a.data.source.id;
-    const b = await call<{ source: { id: string } }>(editor, "add_source", { title: "Ops notes", kind: "notes", speakers: ["Ben Cole"] });
+    const b = await call<{ source: { id: string } }>(editor, "add_source", { title: "Ops notes", kind: "notes", speakers: ["Ben Cole"], link_later: true });
     sourceB = b.data.source.id;
-    const data = await call<{ source: { id: string; kind: string } }>(editor, "add_source", { title: "HubSpot export", kind: "data" });
+    const data = await call<{ source: { id: string; kind: string } }>(editor, "add_source", { title: "HubSpot export", kind: "data", link_later: true });
     expect(data.ok, JSON.stringify(data)).toBe(true);
     expect(data.data.source.kind).toBe("data");
 
@@ -392,12 +393,71 @@ describe.skipIf(!POSTGREST_URL)("MCP process building over PostgREST (drafts onl
     await editor.close();
   });
 
+  it("add_source needs links (or link_later), resolves them by name, and link_source adds more", async () => {
+    const editor = await connect(editorToken, options);
+    const issueNumber = (await admin.query("insert into issues (workspace_id, type, title) values ($1, 'manual', 'Slow proposals') returning number", [workspaceId])).rows[0].number as number;
+    const sourcesBefore = Number((await admin.query("select count(*) from sources where workspace_id = $1", [workspaceId])).rows[0].count);
+
+    // No links: refused with the way out, and nothing is added.
+    const none = await call(editor, "add_source", { title: "No links" });
+    expect(none).toMatchObject({ ok: false, error: { code: "links_required" } });
+    expect(JSON.stringify(none)).toMatch(/link_later: true/);
+    expect(await call(editor, "add_source", { title: "Empty", links: [] })).toMatchObject({ ok: false, error: { code: "links_required" } });
+    expect(await call(editor, "add_source", { title: "Both", links: [{ process: "Sales pipeline" }], link_later: true })).toMatchObject({ ok: false, error: { code: "invalid_input" } });
+    // A link that names nothing, two things, or something that isn't there: refused before anything is written.
+    expect(await call(editor, "add_source", { title: "Bad", links: [{}] })).toMatchObject({ ok: false, error: { code: "invalid_input" } });
+    expect(await call(editor, "add_source", { title: "Bad", links: [{ step: "Discovery", issue: 1 }] })).toMatchObject({ ok: false, error: { code: "invalid_input" } });
+    expect(await call(editor, "add_source", { title: "Bad", links: [{ step: "No such step" }] })).toMatchObject({ ok: false, error: { code: "not_found" } });
+    expect(await call(editor, "add_source", { title: "Bad", links: [{ insight: "not a key" }] })).toMatchObject({ ok: false, error: { code: "invalid_input" } });
+    expect(Number((await admin.query("select count(*) from sources where workspace_id = $1", [workspaceId])).rows[0].count)).toBe(sourcesBefore);
+
+    // Linked by name and number; the same thing named twice is one link.
+    const ok = await call<{ source: { id: string }; links: string[]; text: string }>(editor, "add_source", {
+      title: "Ops walkthrough",
+      kind: "notes",
+      links: [{ process: "Sales pipeline" }, { step: "Discovery" }, { issue: issueNumber }, { step: "Discovery", process: "Sales pipeline" }],
+    });
+    expect(ok.ok, JSON.stringify(ok)).toBe(true);
+    expect(ok.data.links).toEqual(["Process: Sales pipeline", "Step: Discovery", `Issue #${issueNumber}`]);
+    const made = await admin.query("select kind from source_links where source_id = $1 order by kind", [ok.data.source.id]);
+    expect(made.rows.map((r) => r.kind)).toEqual(["issue", "process", "step"]);
+    // The issue's own list of sources records it too, so its history says "linked a source".
+    const listed = await admin.query("select count(*)::int as n from issue_sources s join issues i on i.id = s.issue_id where s.source_id = $1 and i.number = $2 and i.workspace_id = $3", [ok.data.source.id, issueNumber, workspaceId]);
+    expect(listed.rows[0].n).toBe(1);
+
+    // link_source adds more, and says what was already there.
+    const more = await call<{ added: string[]; already_linked: string[] }>(editor, "link_source", {
+      source: "Ops walkthrough",
+      links: [{ step: "Proposal" }, { process: "Sales pipeline" }, { insight: `spof:step:${randomUUID()}` }],
+    });
+    expect(more.ok, JSON.stringify(more)).toBe(true);
+    expect(more.data.already_linked).toEqual(["Process: Sales pipeline"]);
+    expect(more.data.added).toHaveLength(2);
+    // link_source to an issue does the same.
+    const second = await call<{ added: string[] }>(editor, "link_source", { source: "Ops notes", links: [{ issue: issueNumber }] });
+    expect(second.ok, JSON.stringify(second)).toBe(true);
+    const listed2 = await admin.query("select count(*)::int as n from issue_sources s join issues i on i.id = s.issue_id join sources o on o.id = s.source_id where o.title = 'Ops notes' and i.number = $1 and i.workspace_id = $2", [issueNumber, workspaceId]);
+    expect(listed2.rows[0].n).toBe(1);
+    // An empty list is refused by the tool's input schema (at least one link), before the tool runs: the client gets a protocol error, not a result.
+    const empty = await editor.callTool({ name: "link_source", arguments: { source: "Ops walkthrough", links: [] } }).catch((e: Error) => e);
+    expect(empty instanceof Error ? empty.message : JSON.stringify(empty)).toMatch(/at least 1|too_small|Too small/i);
+    expect(await call(editor, "link_source", { source: "No such source", links: [{ process: "Sales pipeline" }] })).toMatchObject({ ok: false, error: { code: "not_found" } });
+
+    // link_later leaves it unlinked until something cites it.
+    const later = await call<{ source: { id: string }; links: string[] }>(editor, "add_source", { title: "Cited later", link_later: true });
+    expect(later.ok).toBe(true);
+    expect(later.assumptions.join(" ")).toMatch(/not linked to anything yet/);
+    expect((await admin.query("select count(*)::int as n from source_links where source_id = $1", [later.data.source.id])).rows[0].n).toBe(0);
+    await editor.close();
+  });
+
   it("viewers can't build and strangers can't see the workspace", async () => {
     const proc = await processRow("Sales pipeline");
     const before = await snapshot(proc.draft_revision_id!);
     const viewer = await connect(viewerToken, options);
     for (const [tool, args] of [
-      ["add_source", { title: "Mine" }],
+      ["add_source", { title: "Mine", link_later: true }],
+      ["link_source", { source: sourceA, links: [{ process: "Sales pipeline" }] }],
       ["create_process", { name: "Viewer's" }],
       ["add_step", { process: "Sales pipeline", name: "Sneaky" }],
       ["update_step", { process: "Sales pipeline", step: "Discovery", work_hours: 9 }],

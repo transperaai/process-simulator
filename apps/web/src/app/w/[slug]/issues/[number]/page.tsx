@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { buildSolutionHref, solutionEditorHref } from "@/lib/solutions/links";
 import { isUnpublished } from "@transpera-flow/db";
 import { IssuePage } from "@/components/issues/issue-page";
+import { SourceLinkingScope } from "@/components/sources/linking-scope";
 import { Page } from "@/components/shell/page";
 import { canEditWorkspace, currentUserId } from "@/lib/access-data";
 import { IssueIdeas } from "@/components/idea-card";
@@ -41,6 +42,7 @@ export default async function WorkspaceIssuePage(props: PageProps<"/w/[slug]/iss
   const base = `/w/${slug}`;
   return (
     <Page title={issue.number ? `Issue #${issue.number}` : "Issue"} eyebrow="Improve" width="max-w-6xl" hideHeader>
+      <SourceLinkingScope workspaceId={ws} sources={sources} canEdit={canEdit} issueSources={{ issueId: issue.id, sourceIds: issue.source_ids }}>
       <IssuePage
         issue={issue}
         issues={issues}
@@ -68,6 +70,7 @@ export default async function WorkspaceIssuePage(props: PageProps<"/w/[slug]/iss
         solutions={solutions}
         memberNames={memberNames}
       />
+      </SourceLinkingScope>
     </Page>
   );
 }

@@ -43,6 +43,11 @@ export class MemorySourceStore implements SourceStore {
     this.linkRows = new Map(initialLinks.map((l) => [l.id, l]));
   }
 
+  /** Everything it holds now, oldest first: what a page shows after changes made on another page of the tab. */
+  snapshot(): { sources: SourceRow[]; links: SourceLinkRow[] } {
+    return { sources: [...this.rows.values()], links: [...this.linkRows.values()] };
+  }
+
   private makeLink(sourceId: string, target: SourceLinkTarget): SourceLinkRow {
     return { id: crypto.randomUUID(), workspace_id: this.workspaceId, source_id: sourceId, ...linkColumns(target), created_at: this.now(), created_by: null };
   }

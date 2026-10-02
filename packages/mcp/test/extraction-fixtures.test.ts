@@ -34,6 +34,18 @@ describe("Tidewater dry run fixtures", () => {
     expect(text).toMatch(/would fall to the server default/);
   });
 
+  it("catches a link_later source that is never linked after the import", () => {
+    const run = clone(readRun("run-1.json"));
+    run.calls = run.calls.filter((c) => c.tool !== "link_source");
+    expect(lintRun(run).join("\n")).toMatch(/added with link_later but never linked with link_source/);
+  });
+
+  it("catches a source added with neither links nor link_later", () => {
+    const run = clone(readRun("run-1.json"));
+    delete run.calls.find((c) => c.tool === "add_source")!.arguments.link_later;
+    expect(lintRun(run).join("\n")).toMatch(/pass link_later: true \(the import links it\) or links/);
+  });
+
   it("catches a range that does not cite its midpoint, and a suggestion without evidence", () => {
     const run = clone(readRun("run-1.json"));
     const steps = (run.calls.find((c) => c.tool === "import_process")!.arguments.process_json as { steps: Record<string, unknown>[] }).steps;

@@ -13,6 +13,7 @@ import { StatusChip } from "@/components/issues-page";
 import { Help, HelpLabel } from "@/components/help";
 import { VerdictWord } from "@/components/solutions/solution-cards";
 import { SolutionCompare } from "@/components/solutions/solution-compare";
+import { LinkedSources } from "@/components/sources/linking-context";
 import { demoMarket } from "@/lib/market-demo";
 import { demoBundle } from "@/lib/sources/demo";
 import { Button } from "@/components/ui/button";
@@ -235,6 +236,11 @@ export function SolutionPage(props: SolutionPageProps) {
           <p className="mt-1 text-muted-foreground">To make one real, open the process in the Editor, build the new version and publish it.</p>
         </div>
       </div>
+
+      {/* Where the page loads source links (a workspace, and the demo), the sources that back this solution up, with "+ Link". */}
+      <Card className="gap-2 px-4 py-3 empty:hidden" data-section="sources">
+        <LinkedSources target={{ kind: "solution", solutionId: solution.id }} label={`Solution: ${solution.name}`} empty="None linked yet." className="flex flex-col gap-2" />
+      </Card>
 
       <LinkIssueDialog
         open={linking}

@@ -107,6 +107,13 @@ export async function loadSourcesPage(
   return { workspace, sources, citations: Object.fromEntries(citationsBySource(rows)), links, targets: { ...targets, olderSteps } };
 }
 
+/** What "+ Link" needs on any screen: the workspace's source links and the things a source can be linked to. */
+export async function loadSourceLinking(workspaceId: string): Promise<{ links: SourceLinkRow[]; targets: LinkTargets }> {
+  const supabase = await createClient();
+  const [links, targets] = await Promise.all([loadSourceLinks(supabase, workspaceId), loadLinkTargets(supabase, workspaceId)]);
+  return { links, targets };
+}
+
 /** The workspace's first process at its live revision, or null if not visible. */
 export async function loadLiveProcess(slug: string): Promise<ProcessBundle | null> {
   return loadLiveProcessBySlug(await createClient(), slug);

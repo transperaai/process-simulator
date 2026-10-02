@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import { SolutionPage } from "@/components/solutions/solution-page";
 import { Page } from "@/components/shell/page";
+import { SourceLinkingScope } from "@/components/sources/linking-scope";
 import { canEditWorkspace, currentUserId } from "@/lib/access-data";
-import { loadLiveProcess, loadMemberNames, loadSolutionBase, loadProcessNames, loadWorkspaceIssues, loadWorkspaceSolutions } from "@/lib/data";
+import { loadLiveProcess, loadMemberNames, loadSolutionBase, loadProcessNames, loadWorkspaceIssues, loadWorkspaceSolutions, loadWorkspaceSources } from "@/lib/data";
 import { isId } from "@/lib/sources/validate";
 
 /**
@@ -15,12 +16,13 @@ export default async function WorkspaceSolutionPage(props: PageProps<"/w/[slug]/
   const bundle = await loadLiveProcess(slug);
   if (!bundle) notFound();
   const ws = bundle.workspace.id;
-  const [canEdit, viewerId, solutions, issues, processes] = await Promise.all([
+  const [canEdit, viewerId, solutions, issues, processes, sources] = await Promise.all([
     canEditWorkspace(ws),
     currentUserId(),
     loadWorkspaceSolutions(ws),
     loadWorkspaceIssues(ws),
     loadProcessNames(ws),
+    loadWorkspaceSources(ws),
   ]);
   const solution = solutions.solutions.find((s) => s.id === id);
   if (!solution) notFound();
@@ -31,6 +33,7 @@ export default async function WorkspaceSolutionPage(props: PageProps<"/w/[slug]/
   ]);
   return (
     <Page title={solution.name} eyebrow="Improve" width="max-w-6xl" hideHeader>
+      <SourceLinkingScope workspaceId={ws} sources={sources} canEdit={canEdit}>
       <SolutionPage
         workspaceId={ws}
         solutionId={solution.id}
@@ -44,6 +47,7 @@ export default async function WorkspaceSolutionPage(props: PageProps<"/w/[slug]/
         compareBase={compare?.base ?? null}
         movedOn={compare?.movedOn ?? null}
       />
+      </SourceLinkingScope>
     </Page>
   );
 }

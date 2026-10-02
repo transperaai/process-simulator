@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { EditorView } from "@/components/editor/editor-view";
+import { SourceLinkingScope } from "@/components/sources/linking-scope";
 import { canEditWorkspace, currentViewer } from "@/lib/access-data";
 import { loadIdeaProposal } from "@/lib/company-data";
 import { ideaSeed } from "@/lib/suggestions/idea";
@@ -43,6 +44,7 @@ export async function WorkspaceEditorPage({
   const ideaRow = ideaId ? await loadIdeaProposal(live.workspace.id, ideaId) : null;
   const idea = ideaRow && ideaRow.issue_id === issueRow?.id ? ideaSeed(ideaRow, live.roles) : null;
   return (
+    <SourceLinkingScope workspaceId={live.workspace.id} sources={sources} canEdit>
     <EditorView
       key={live.process.id}
       live={live}
@@ -61,5 +63,6 @@ export async function WorkspaceEditorPage({
       exitHref={exitHref(searchParams.from, base)}
       horizonMonths={parseHorizon(searchParams.horizon)}
     />
+    </SourceLinkingScope>
   );
 }

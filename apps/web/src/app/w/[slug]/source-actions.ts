@@ -81,17 +81,36 @@ export async function linkSource(sourceId: unknown, target: unknown): Promise<Li
     .select(SOURCE_LINK_COLUMNS)
     .single();
   if (error) return failure(error);
-  return { status: "ok", link: data as unknown as SourceLinkRow };
+  const link = data as unknown as SourceLinkRow;
+  // An issue keeps its own list of sources too (`issue_sources`, which its history logs): keep it in step. Best effort: a
+  // detected issue has no list to add to, and the link is already there.
+  if (link.kind === "issue" && link.issue_id) {
+    await supabase.from("issue_sources").insert({ issue_id: link.issue_id, source_id: link.source_id, workspace_id: link.workspace_id });
+  }
+  return { status: "ok", link };
 }
 
 /** Take a link away. The source stays; with no link left it is flagged on the Sources page. */
 export async function unlinkSource(linkId: unknown): Promise<RemoveSourceResult> {
+  // A source on an issue's own list that has no link row shows as a link with a made-up id: taking it off is taking it off the list.
+  const listed = typeof linkId === "string" ? /^issue-source:([0-9a-f-]{36}):([0-9a-f-]{36})$/i.exec(linkId) : null;
+  if (listed && isId(listed[1]) && isId(listed[2])) {
+    const supabase = await signedInClient();
+    if (!supabase) return signedOut;
+    const { data, error } = await supabase.from("issue_sources").delete().eq("issue_id", listed[1]).eq("source_id", listed[2]).select("issue_id");
+    if (error) return failure(error);
+    return data?.length ? { status: "ok" } : forbidden;
+  }
   if (!isId(linkId)) return invalid;
   const supabase = await signedInClient();
   if (!supabase) return signedOut;
-  const { data, error } = await supabase.from("source_links").delete().eq("id", linkId).select("id");
+  const { data, error } = await supabase.from("source_links").delete().eq("id", linkId).select("id, kind, issue_id, source_id");
   if (error) return failure(error);
-  return data?.length ? { status: "ok" } : forbidden;
+  if (!data?.length) return forbidden;
+  // Taking a source off an issue takes it off the issue's own list as well, or the issue would still show it.
+  const gone = data[0]!;
+  if (gone.kind === "issue" && gone.issue_id) await supabase.from("issue_sources").delete().eq("issue_id", gone.issue_id).eq("source_id", gone.source_id);
+  return { status: "ok" };
 }
 
 /** Save one field of a source if its stored value is still `base`. Speakers travel as "a, b" text. */

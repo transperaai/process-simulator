@@ -5,6 +5,7 @@ import { isBlank } from "@transpera-flow/engine";
 import { aiConfigured, loadAiViews } from "@/lib/ai/data";
 import { ProcessNav } from "@/components/process-nav";
 import { ProcessPage } from "@/components/process-page";
+import { SourceLinkingScope } from "@/components/sources/linking-scope";
 import { canEditWorkspace, currentUserId } from "@/lib/access-data";
 import { loadProcessFirstPrinciples } from "@/lib/first-principles/data";
 import { loadWorkspaceLeverSettings } from "@/lib/levers/data";
@@ -48,6 +49,7 @@ export async function WorkspaceProcessPage({ slug, processId, version }: { slug:
   const hrefs = Object.fromEntries(processes.map((p) => [p.id, `${base}/p/${p.id}`]));
   const ratings = processRatings(processes, issues, [...live.steps, ...(live.otherProcesses ?? []).flatMap((p) => p.steps)]);
   return (
+    <SourceLinkingScope workspaceId={live.workspace.id} sources={sources} canEdit={canEdit && !earlier}>
     <ProcessPage
       key={live.process.id}
       // A process never published has only its draft to show.
@@ -83,5 +85,6 @@ export async function WorkspaceProcessPage({ slug, processId, version }: { slug:
         />
       }
     />
+    </SourceLinkingScope>
   );
 }

@@ -23,6 +23,7 @@ import { SourceDialog, type SourceSubmission } from "@/components/sources/source
 import { buttonVariants } from "@/components/ui/button";
 import type { Saver } from "@/lib/fields/field-controller";
 import { useDemoSolutions } from "@/lib/solutions/demo";
+import { demoSourceStore } from "@/lib/sources/demo-store";
 import { liveSourceStore } from "@/lib/sources/live-store";
 import { MemorySourceStore, sourceFieldValue, type SourceStore } from "@/lib/sources/store";
 import { SOURCE_KIND_LABELS, SOURCE_KINDS, parseSpeakers, type SourceField } from "@/lib/sources/validate";
@@ -87,9 +88,13 @@ export function SourcesPage({
   const canEdit = mode !== "readonly";
   const router = useRouter();
   const demoSolutions = useDemoSolutions().solutions;
-  const [store] = useState<SourceStore>(() => (mode === "live" ? liveSourceStore(workspaceId) : new MemorySourceStore(workspaceId, initial, undefined, initialLinks)));
-  const [sources, setSources] = useState(initial);
-  const [links, setLinks] = useState(initialLinks);
+  // In the demo every page of the tab shares one store, so a link made on a step or an issue is here too.
+  const [store] = useState<SourceStore>(() =>
+    mode === "live" ? liveSourceStore(workspaceId) : mode === "demo" ? demoSourceStore(workspaceId, initial, initialLinks) : new MemorySourceStore(workspaceId, initial, undefined, initialLinks),
+  );
+  const shared = mode === "demo" && store instanceof MemorySourceStore ? store.snapshot() : null;
+  const [sources, setSources] = useState(shared?.sources ?? initial);
+  const [links, setLinks] = useState(shared?.links ?? initialLinks);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [dialog, setDialog] = useState<{ source: SourceRow | null } | null>(null);

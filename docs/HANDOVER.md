@@ -202,6 +202,15 @@ simulation, waits for Austin's end-of-build review.
   `suggestions_before_write` guard ("Suggestions are accepted or rejected with review_suggestions"). Fix it with a new
   migration that lets a depth > 1 change of only `created_by` or `reviewed_by` to null through (see
   `private.suggestion_proposals_before_write`).
+- Source links (A53, #118), follow-ups:
+  - Taking an issue's removed sources' links away is done in the app's `write()` (issue-actions.ts) after `save_issue`, so it
+    isn't atomic with it. Move it into `save_issue` with a migration (delete the issue links of the sources it removes from
+    `issue_sources`).
+  - MCP `add_source` / `link_source` check an insight link's key only for its shape, not that the analysis ever produced it.
+  - MCP resolves step names against the live revision only (`loadLinkTargets` falls back to the draft only for a
+    never-published process), so a step that exists only in a draft can't be linked by name.
+  - A writer that removes sources through `save_issue` directly (not the app) leaves the issue's links; the issue still shows
+    the source until it is removed on the issue page.
 
 ## Other open items
 

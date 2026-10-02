@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { isBlank } from "@transpera-flow/engine";
 import { Overview } from "@/components/overview/overview";
+import { SourceLinkingScope } from "@/components/sources/linking-scope";
 import { aiConfigured, loadAiViews } from "@/lib/ai/data";
 import { ShellHeader } from "@/components/shell/shell-header";
 import { loadLiveProcess, loadWorkspaceHead, loadWorkspaceIssues, loadWorkspaceOverview, loadWorkspaceSources } from "@/lib/data";
@@ -31,6 +32,7 @@ export async function WorkspaceOverview({ slug }: { slug: string }) {
   ]);
   const base = `/w/${slug}`;
   return (
+    <SourceLinkingScope workspaceId={ws} sources={sources} canEdit={canEdit}>
     <Overview
       workspaceName={live.workspace.name}
       live={live}
@@ -46,6 +48,7 @@ export async function WorkspaceOverview({ slug }: { slug: string }) {
       rulesHref={`${base}/settings/rules`}
       ai={{ view: aiViews[live.revision.id] ?? null, configured: aiConfigured(), hasFirstPrinciples: firstPrinciples !== null && !isBlank(firstPrinciples), versionNumber: live.revision.number }}
     />
+    </SourceLinkingScope>
   );
 }
 

@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { WorkspaceShell } from "@/components/shell/workspace-shell";
-import { northbeamIssues, processesOf, unlinkedSources } from "@transpera-flow/db";
+import { DemoSourceLinkingScope } from "@/components/sources/linking-scope";
+import { NORTHBEAM_WORKSPACE_ID, northbeamIssues, processesOf, unlinkedSources } from "@transpera-flow/db";
 import { demoBundle, demoPageSources, demoSourceLinks } from "@/lib/sources/demo";
 import { demoProposals, demoSuggestions } from "@/lib/suggestions/demo";
 
@@ -20,7 +21,8 @@ export default async function DemoLayout({ children }: LayoutProps<"/demo">) {
   const defaultOpen = (await cookies()).get("sidebar_state")?.value !== "false";
   return (
     <WorkspaceShell mode="demo" defaultOpen={defaultOpen} counts={counts}>
-      {children}
+      {/* "+ Link" on the sample's steps, insights and issues: its sources and links live in the tab. */}
+      <DemoSourceLinkingScope workspaceId={NORTHBEAM_WORKSPACE_ID}>{children}</DemoSourceLinkingScope>
     </WorkspaceShell>
   );
 }

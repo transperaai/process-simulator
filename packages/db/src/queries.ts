@@ -376,6 +376,27 @@ export const ISSUE_EVENT_COLUMNS = "id, issue_id, workspace_id, seq, kind, at, a
 type IssueTableRow = Omit<IssueRow, "links" | "owner_ids" | "source_ids" | "status"> & { status: StoredIssueStatus; resolution: string | null };
 
 /** Join issue rows from `issues` with what each links to, who owns it and its sources. */
+/**
+ * The sources an issue has, from the list an issue keeps (`issue_sources`, A47) and the links a source has to it
+ * (`source_links`, A53): each source once, the issue's own list first. Triggers make a source in either appear in the other, but
+ * a link made by a writer that only knows one of them (the Sources page, the MCP `link_source`) is read from here.
+ */
+export function unionIssueSources(
+  listed: readonly { issue_id: string; source_id: string }[],
+  linked: readonly { issue_id: string; source_id: string }[],
+): { issue_id: string; source_id: string }[] {
+  const seen = new Set<string>();
+  const out: { issue_id: string; source_id: string }[] = [];
+  for (const r of [...listed, ...linked]) {
+    const key = `${r.issue_id}:${r.source_id}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push({ issue_id: r.issue_id, source_id: r.source_id });
+    }
+  }
+  return out;
+}
+
 export function assembleIssues(
   issues: readonly IssueTableRow[],
   links: readonly { issue_id: string; process_id: string | null; step_id: string | null }[],
@@ -410,25 +431,27 @@ export function assembleIssues(
  * `isVisibleIssue`), newest first, each with its links, owners and sources.
  */
 export async function loadIssues(db: Db, workspaceId: string): Promise<IssueRow[]> {
-  const [issues, links, owners, sources] = await Promise.all([
+  const [issues, links, owners, sources, linked] = await Promise.all([
     db.from("issues").select(ISSUE_COLUMNS).eq("workspace_id", workspaceId).order("created_at", { ascending: false }).order("id"),
     db.from("issue_links").select("issue_id, process_id, step_id").eq("workspace_id", workspaceId).order("created_at").order("id"),
     db.from("issue_owners").select("issue_id, person_id").eq("workspace_id", workspaceId).order("created_at").order("person_id"),
     db.from("issue_sources").select("issue_id, source_id").eq("workspace_id", workspaceId).order("created_at").order("source_id"),
+    db.from("source_links").select("issue_id, source_id").eq("workspace_id", workspaceId).eq("kind", "issue").order("created_at").order("id"),
   ]);
   // Check constraints limit type, severity, status and source to IssueRow's unions.
-  return assembleIssues(rows(issues) as unknown as IssueTableRow[], rows(links), rows(owners), rows(sources));
+  return assembleIssues(rows(issues) as unknown as IssueTableRow[], rows(links), rows(owners), unionIssueSources(rows(sources), rows(linked).flatMap((l) => (l.issue_id ? [{ issue_id: l.issue_id, source_id: l.source_id }] : []))));
 }
 
 /** One issue with its relations, or null if it isn't there (or isn't readable). */
 export async function loadIssue(db: Db, workspaceId: string, issueId: string): Promise<IssueRow | null> {
-  const [issues, links, owners, sources] = await Promise.all([
+  const [issues, links, owners, sources, linked] = await Promise.all([
     db.from("issues").select(ISSUE_COLUMNS).eq("workspace_id", workspaceId).eq("id", issueId),
     db.from("issue_links").select("issue_id, process_id, step_id").eq("issue_id", issueId).order("created_at").order("id"),
     db.from("issue_owners").select("issue_id, person_id").eq("issue_id", issueId).order("created_at").order("person_id"),
     db.from("issue_sources").select("issue_id, source_id").eq("issue_id", issueId).order("created_at").order("source_id"),
+    db.from("source_links").select("issue_id, source_id").eq("issue_id", issueId).eq("kind", "issue").order("created_at").order("id"),
   ]);
-  return assembleIssues(rows(issues) as unknown as IssueTableRow[], rows(links), rows(owners), rows(sources))[0] ?? null;
+  return assembleIssues(rows(issues) as unknown as IssueTableRow[], rows(links), rows(owners), unionIssueSources(rows(sources), rows(linked).flatMap((l) => (l.issue_id ? [{ issue_id: l.issue_id, source_id: l.source_id }] : []))))[0] ?? null;
 }
 
 /** An issue's history, oldest first. */

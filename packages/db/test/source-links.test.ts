@@ -15,6 +15,7 @@ import {
   northbeamStepIds,
   type SourceLinkTarget,
   type StepRow,
+  unionIssueSources,
 } from "../src";
 import { createTestDb, createUser, type TestDb } from "./harness";
 
@@ -578,5 +579,21 @@ describe("source links", () => {
     await db.as(users.stranger!.claims, async (c) => {
       expect(Number((await c.query("select public.unlinked_source_count($1) as n", [ws])).rows[0].n)).toBe(0);
     });
+  });
+});
+
+describe("an issue's sources are its own list and its source links, once each", () => {
+  const a = { issue_id: "i1", source_id: "s1" };
+  const b = { issue_id: "i1", source_id: "s2" };
+  const c = { issue_id: "i2", source_id: "s1" };
+
+  it("keeps the issue's own list first and adds what only a link says, without repeats", () => {
+    expect(unionIssueSources([a], [b, a, c])).toEqual([a, b, c]);
+  });
+
+  it("is the list alone when nothing is linked, and the links alone when the list is empty", () => {
+    expect(unionIssueSources([a, b], [])).toEqual([a, b]);
+    expect(unionIssueSources([], [b])).toEqual([b]);
+    expect(unionIssueSources([], [])).toEqual([]);
   });
 });

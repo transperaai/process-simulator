@@ -17,6 +17,7 @@ import { ISSUE_PAGE_HELP } from "@/lib/issues/help";
 import { ResolveDialog } from "@/components/issues/resolve-dialog";
 import { StatusChip } from "@/components/issues-page";
 import { RatingPill } from "@/components/overview/rating-pill";
+import { LinkedSources, useSourceLinking } from "@/components/sources/linking-context";
 import { StepIssueBadges } from "@/components/step-issue-badges";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -27,6 +28,7 @@ import { draftFromIssue, issueFormOptions, toSaveInput } from "@/lib/issues/draf
 import { historyLines, isOpenIssue, issueHref, loggedLine, resolvedBar, type HistoryNames, type SolutionTest } from "@/lib/issues/pages";
 import { mapFeed, registerEntries, stepRatingOf } from "@/lib/issues/register";
 import { useIssues } from "@/lib/issues/use-issues";
+import { editSourceIds } from "@/lib/sources/links";
 import { NO_SOLUTIONS_DATA, effectiveVerdict, solutionHref, solutionTests, solutionsForIssue, type SolutionsData } from "@/lib/solutions/cards";
 import { useDemoSolutions } from "@/lib/solutions/demo";
 import { ratingOfStored } from "@transpera-flow/engine";
@@ -92,6 +94,8 @@ export function IssuePage(props: IssuePageProps) {
   const [edit, setEdit] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [linking, setLinking] = useState(false);
+  // Where the page loads source links, Sources are the links (the Add / Link source dialog); otherwise the issue's own list and its small dialog.
+  const sourceLinking = useSourceLinking();
 
   const allSteps = useMemo(() => [...bundle.steps, ...(bundle.otherProcesses ?? []).flatMap((p) => p.steps)], [bundle]);
   const options = useMemo(
@@ -351,28 +355,39 @@ export function IssuePage(props: IssuePageProps) {
           </Card>
 
           <Card className="gap-2 px-4 py-3" data-section="sources">
-            <div className="flex items-center justify-between gap-2">
-              <span className={EYEBROW}>
-                Sources
-                <Help {...ISSUE_PAGE_HELP.sources} />
-              </span>
-              {canEdit && (
-                <span className="flex items-center">
-                  <Button type="button" size="sm" variant="ghost" onClick={() => setLinking(true)}>
-                    + Link
-                  </Button>
-                  <Help {...ISSUE_PAGE_HELP.link} />
-                </span>
-              )}
-            </div>
-            {issue.source_ids.length ? (
-              issue.source_ids.map((id) => (
-                <div key={id} className="text-sm font-medium">
-                  {sourceTitle.get(id) ?? "A source"}
-                </div>
-              ))
+            {sourceLinking ? (
+              <LinkedSources
+                target={{ kind: "issue", issueId: issue.id }}
+                label={issue.number ? `Issue #${issue.number}` : `Issue: ${issue.title}`}
+                empty="None yet"
+                className="flex flex-col gap-2"
+              />
             ) : (
-              <span className="text-sm text-muted-foreground">None yet</span>
+              <>
+                <div className="flex items-center justify-between gap-2">
+                  <span className={EYEBROW}>
+                    Sources
+                    <Help {...ISSUE_PAGE_HELP.sources} />
+                  </span>
+                  {canEdit && (
+                    <span className="flex items-center">
+                      <Button type="button" size="sm" variant="ghost" onClick={() => setLinking(true)}>
+                        + Link
+                      </Button>
+                      <Help {...ISSUE_PAGE_HELP.link} />
+                    </span>
+                  )}
+                </div>
+                {issue.source_ids.length ? (
+                  issue.source_ids.map((id) => (
+                    <div key={id} className="text-sm font-medium">
+                      {sourceTitle.get(id) ?? "A source"}
+                    </div>
+                  ))
+                ) : (
+                  <span className="text-sm text-muted-foreground">None yet</span>
+                )}
+              </>
             )}
           </Card>
         </aside>
@@ -381,13 +396,15 @@ export function IssuePage(props: IssuePageProps) {
       <AcknowledgeDialog
         open={edit}
         mode="edit"
-        draft={draftFromIssue(issue)}
+        // Where the page loads source links, the sources it shows are the links (they change under "+ Link" and the x, which this
+        // issue's copy from the page load doesn't see): the dialog starts from those, or saving would put back what was just removed.
+        draft={{ ...draftFromIssue(issue), sourceIds: editSourceIds(issue.source_ids, sourceLinking ? sourceLinking.linkedTo({ kind: "issue", issueId: issue.id }).map((x) => x.source.id) : null) }}
         issueNumber={issue.number}
         options={options}
         busy={state.busy}
         error={state.error}
         onClose={() => setEdit(false)}
-        onSubmit={(draft) => state.save(toSaveInput(draft, options)).then((r) => r && (refresh(), r))}
+        onSubmit={(draft) => state.save(toSaveInput(draft, options)).then((r) => r && (void sourceLinking?.syncIssue(issue.id, draft.sourceIds), refresh(), r))}
       />
       <ResolveDialog
         open={resolving}

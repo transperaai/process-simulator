@@ -1,9 +1,13 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ACK_HELP } from "@/components/acknowledge-dialog";
 import { INSIGHT_HELP } from "@/components/insights";
 import { DIALOG_RATINGS, RATING_MEANINGS } from "@/lib/issues/draft";
+
+// The insight pop-up reaches the source-linking provider, which saves through Server Actions: stand them in.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {}, push: () => {}, replace: () => {} }), usePathname: () => "/", useSearchParams: () => new URLSearchParams() }));
+vi.mock("@/app/w/[slug]/source-actions", () => ({ createSource: async () => ({}), saveSourceField: async () => ({}), deleteSource: async () => ({}), linkSource: async () => ({}), unlinkSource: async () => ({}) }));
 
 // Every control in the Acknowledge dialog has an (i) with a plain-English description and an example (issue #112), and each of
 // the four ratings is listed with its one-line meaning.
